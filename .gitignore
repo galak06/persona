@@ -1,0 +1,28 @@
+.claude/settings.local.json
+.claudeignore
+*.env
+.env
+*.log
+/tmp/
+.DS_Store
+.~lock.*
+.venv/
+__pycache__/
+node_modules/
+
+# Session state (cookies, tokens)
+**/state/facebook_session.json
+**/state/instagram_session.json
+**/state/telegram_config.json
+social-automation/.claude/state/
+
+# Content drafts and site assets (local only)
+dogfoodandfun/
+tools/
+post_instructions.md
+CLAUDE.md
+
+# Generated runtime files
+social-automation/data/site_content_cache.json
+social-automation/logs/
+social-automation/config.json

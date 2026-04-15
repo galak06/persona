@@ -1,0 +1,146 @@
+{
+  "_comment": "DogFoodAndFun Social Automation Config. Edit this file to adapt to other sites/channels.",
+  "_version": "1.0",
+
+  "site": {
+    "name": "DogFoodAndFun",
+    "url": "https://dogfoodandfun.com",
+    "rss_feed": "https://dogfoodandfun.com/feed/",
+    "sitemap": "https://dogfoodandfun.com/sitemap.xml",
+    "brand_persona": "Nalla's Dad",
+    "mascot_name": "Nalla",
+    "niche": "dog food reviews, GPS trackers, running with dogs",
+    "target_audience": "dog owners interested in honest food reviews and active dog lifestyle"
+  },
+
+  "social_channels": {
+    "facebook": {
+      "enabled": true,
+      "page_url": "https://www.facebook.com/dogfoodandfun",
+      "page_name": "DogFoodAndFun",
+      "tracker_file": "../../facebook_groups_tracker.xlsx",
+      "tracker_sheet": "Groups Database"
+    },
+    "instagram": {
+      "enabled": true,
+      "profile_url": "https://www.instagram.com/dogfoodandfun",
+      "hashtags_file": "data/instagram_accounts.csv"
+    },
+    "twitter": {
+      "enabled": false,
+      "profile_url": "",
+      "note": "Set enabled: true and add profile_url to activate"
+    },
+    "tiktok": {
+      "enabled": false,
+      "profile_url": "",
+      "note": "Set enabled: true and add profile_url to activate"
+    }
+  },
+
+  "rate_limits": {
+    "facebook": {
+      "comments_per_day": 5,
+      "group_visits_per_day": 6,
+      "min_delay_between_comments_sec": 30,
+      "max_delay_between_comments_sec": 120,
+      "min_delay_between_group_visits_sec": 45,
+      "max_delay_between_group_visits_sec": 180,
+      "group_visit_schedule_hours": [9, 11, 14, 16, 18, 20],
+      "_note_group_visits": "Reduced from 10 to 6 — spread through day to reduce bot detection risk"
+    },
+    "instagram": {
+      "likes_per_day": 8,
+      "comments_per_day": 2,
+      "min_delay_between_likes_sec": 10,
+      "max_delay_between_likes_sec": 45,
+      "min_delay_between_comments_sec": 120,
+      "max_delay_between_comments_sec": 180,
+      "_note_likes": "Increased from 5 to 8 — likes are low-risk, better use of scan bandwidth",
+      "hashtag_rotation": {
+        "monday_thursday": ["#homemadedogfood", "#dognutrition"],
+        "tuesday_friday": ["#canicross", "#runningwithdog", "#gpsdogcollar"],
+        "wednesday_saturday": ["#dogfoodrecipes", "#dogfoodreview", "#homecookeddog"],
+        "sunday": "best_of_week_queue",
+        "always_scan": ["#rawdogfood", "#dogrunning", "#healthydogfood"],
+        "_note": "Tier-1 rotated by day pair to reduce queue bloat; Tier-2 daily"
+      }
+    }
+  },
+
+  "content_analysis": {
+    "relevance_threshold": 0.70,
+    "approval_threshold": 0.80,
+    "site_cache_ttl_hours": 12,
+    "site_cache_max_posts": 50,
+    "site_crawl_depth": 2,
+    "keywords": {
+      "food_nutrition": ["dog food", "homemade", "recipe", "nutrition", "ingredients", "raw", "kibble", "diet", "feeding", "meal", "protein", "grain"],
+      "active_gps": ["gps", "tracker", "running", "canicross", "trail", "hike", "gear", "collar", "leash", "activity", "exercise", "sport"],
+      "health": ["health", "wellness", "holistic", "gut", "immune", "natural", "healing", "supplement", "probiotic"],
+      "brands_reviewed": ["fi collar", "tractive", "whistle", "link akc", "ollie", "nom nom", "the farmer's dog", "open farm"]
+    },
+    "scoring_weights": {
+      "food_nutrition_match": 0.40,
+      "active_gps_match": 0.30,
+      "question_format": 0.20,
+      "reviewed_brand_mention": 0.20,
+      "comment_count_5_to_50": 0.10,
+      "post_under_24h": 0.10,
+      "comment_count_over_100": -0.30,
+      "competitor_account": -0.50
+    }
+  },
+
+  "approval_gates": {
+    "first_post_to_new_group": true,
+    "comment_contains_url": true,
+    "all_instagram_comments": true,
+    "borderline_relevance_score": true,
+    "borderline_score_range_lo": 0.70,
+    "borderline_score_range_hi": 0.80
+  },
+
+  "deduplication": {
+    "ttl_days": 60,
+    "cache_file": ".claude/state/dedup_cache.json"
+  },
+
+  "file_paths": {
+    "state_dir": ".claude/state",
+    "skills_dir": ".claude/skills",
+    "logs_dir": "logs",
+    "data_dir": "data",
+    "lib_dir": "lib",
+    "facebook_tracker": "../../facebook_groups_tracker.xlsx",
+    "post_templates": "data/post_templates.json",
+    "brand_voice_guide": "data/brand_voice_guide.md",
+    "instagram_hashtags": "data/instagram_accounts.csv",
+    "site_content_cache": "data/site_content_cache.json",
+    "comment_queue": ".claude/state/comment_queue.json",
+    "dedup_cache": ".claude/state/dedup_cache.json",
+    "rate_limit_tracker": ".claude/state/rate_limit_tracker.json",
+    "last_run": ".claude/state/last_run.json",
+    "engagement_log": "logs/engagement_log.jsonl",
+    "error_log": "logs/errors.log",
+    "audit_trail": "logs/audit_trail.json"
+  },
+
+  "voice_validation": {
+    "blocked_medical_terms": [
+      "clinical", "veterinary-grade", "clinically proven", "studies show",
+      "research indicates", "scientifically", "diagnosis", "symptoms",
+      "treatment", "prescribe", "consult your vet before"
+    ],
+    "blocked_salesy_phrases": [
+      "check out our", "visit our site", "click here", "buy now",
+      "our product", "shop now", "affiliate", "promo code"
+    ],
+    "blocked_generic_openers": [
+      "great post!", "love this!", "awesome!", "nice post", "amazing!"
+    ],
+    "min_comment_length": 40,
+    "max_comment_length": 500,
+    "must_end_with_question": true
+  }
+}

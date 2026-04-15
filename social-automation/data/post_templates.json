@@ -1,0 +1,54 @@
+{
+  "gps": [
+    "We tested a few GPS trackers with Nalla on trail runs and the difference in accuracy was huge depending on terrain. Have you noticed battery drain being worse in cold weather with this one? That was our main issue last winter 🐾",
+    "Nalla's had two GPS collars now — the range vs. battery tradeoff is real. What's the longest you've left this one on a single charge? We usually get about 3 days on power-saving mode.",
+    "This is exactly the kind of gear test we did with Nalla before buying. Real-world trail use is so different from the spec sheet. Does it hold signal when you're in dense tree cover? That's where most trackers fall apart for us.",
+    "GPS accuracy on open trails vs. forest paths is night and day for us. Nalla's current tracker does about 30m accuracy in the woods which is fine but not great. How's this one compare in your experience?",
+    "We've had the 'dog goes further than the tracker says' problem before 😅 — lag is the killer for active dogs. How's the real-time refresh rate on this one during a run?"
+  ],
+  "food": [
+    "We went through the same kibble-to-homemade transition with Nalla about a year ago. The first two weeks were rough with her stomach adjusting, but protein source made all the difference for us. What protein are you starting with?",
+    "Nalla's on a rotating protein diet now (chicken, salmon, beef every few weeks) and it's made a noticeable difference in her coat. What does your current rotation look like, or are you sticking to one protein for now?",
+    "The transition timing is everything — we did 10% new food per day over 10 days with Nalla and it was smooth. Going faster than that is usually what causes the digestive upset people report. How many days into the switch are you?",
+    "We batch cook Nalla's food on Sundays and freeze portions — makes the daily feeding so much easier. Have you found a prep routine that works for you yet, or still figuring out the quantities?",
+    "Balancing calcium is honestly the trickiest part of homemade food — most recipes skip it. We add ground eggshell as a cheap fix. Are you following a vet-formulated recipe or building it yourself?"
+  ],
+  "health": [
+    "Nalla had gut issues for months before we figured out it was a chicken sensitivity, not the kibble brand. Single-protein elimination diet was the only thing that actually identified it. Have you tried an elimination approach yet?",
+    "We noticed Nalla's energy levels are way more consistent since switching to lower-glycemic carbs. The difference between white rice and sweet potato in her meals is actually visible in how she runs. What carb source are you using?",
+    "Probiotics made a huge difference for Nalla during antibiotic recovery — we use a plain goat kefir. Cheaper than dog-specific probiotics and she goes crazy for it. Have you tried any fermented foods as a supplement?",
+    "Coat condition was the first thing we noticed improving when we got Nalla's omega-3s right. Sardines in water a few times a week is what we landed on. What omega source are you currently using?",
+    "Joint supplements are one thing I wish I'd started earlier with Nalla for long trail runs. We added fish oil + green-lipped mussel at 4 years old. Has your vet weighed in on preventive joint support for your dog's breed?"
+  ],
+  "training": [
+    "Recall training in high-distraction environments is the hardest thing we worked on with Nalla — it took months of practice in progressively busier places before it stuck. What environment are you training in currently?",
+    "We found that 5-minute frequent sessions worked way better for Nalla than longer 20-minute ones — her focus just drops off. What's the session length that seems to work best for your dog?",
+    "The threshold concept was a game-changer for us with Nalla's leash reactivity — once we understood her distance threshold and started working just below it, progress was fast. Have you identified your dog's threshold distance yet?",
+    "High-value treats during training were key for us — Nalla would work for kibble at home but outside she needed real meat. What treat value are you using for the distraction environments?",
+    "Marker timing is everything — we found clicker precision made faster progress than verbal markers for Nalla because it was more consistent. Are you using a clicker or verbal marker currently?"
+  ],
+
+  "food_troubleshooting": [
+    "We had similar digestive issues during Nalla's transition — it usually settles by day 7-10 if you slow the switch down. Are you doing a gradual mix (10% new per day) or a full switch? That timing made all the difference for us.",
+    "Picky eating often means the transition is too fast or the food is too cold. Nalla would refuse new kibble for 3-4 days straight then suddenly eat normally. How many days in are you? The timing matters more than most people realize.",
+    "Before blaming the food, it's worth checking amount and frequency too — we were accidentally overfeeding Nalla during her switch and kept blaming the brand. What does your current routine look like (amounts, times, treats counted in)?"
+  ],
+
+  "gps_comparison": [
+    "We ran parallel tests with Fi and Tractive on the same trail routes for a month with Nalla. Fi was about 15-20m accurate in open terrain, Tractive was more responsive but drained faster. What matters more for your use case — battery life or real-time accuracy?",
+    "The subscription math was honestly what decided it for us — one-time vs monthly adds up fast over 3 years. We did a full cost breakdown before picking Nalla's collar. Have you factored total ownership cost in, or just the device price?",
+    "Both lost signal in the same dense forest sections for us, honestly. The real differentiator was app experience and refresh rate during runs. Which one have you tried hands-on already, or are you going in blind?"
+  ],
+
+  "health_preventive": [
+    "Joint support is one thing I wish we'd started earlier with Nalla for trail running — we added fish oil and green-lipped mussel at 4 years old but vets suggest starting around 3 for active dogs. Has your vet mentioned preventive joint care given your dog's activity level?",
+    "Omega-3s showed the most visible improvement for Nalla within 3 weeks — coat first, then energy consistency around week 6. We use sardines in water a few times a week, way cheaper than supplements. How long are you planning to give the current change before assessing?",
+    "Gut health changes are almost always slower than coat changes — we didn't see the real difference in Nalla's digestion and trail recovery until week 5-6 of consistency. What's the change you're trying and how long have you been at it?"
+  ],
+
+  "advice_seeking": [
+    "We went through this with Nalla — took 3 tries to figure out it wasn't the brand, it was the protein source. A strict 2-week single-protein elimination was the only thing that actually isolated it. How long have you been on the current setup? Sometimes people switch before giving it time to work.",
+    "Same situation here — frustrating when you can't pinpoint the cause. One thing we learned: rule out feeding amount and timing before changing the food. We were overfeeding Nalla during transition and kept blaming the brand. What does your full daily routine look like (food amounts, treats, timing)?",
+    "This is a tough one to troubleshoot remotely, but from our experience with Nalla — digestive changes after a switch usually peak around day 5-7 and resolve by day 12-14 if the transition is slow. How far into the change are you, and are you mixing or doing a full switch?"
+  ]
+}
