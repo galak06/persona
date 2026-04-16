@@ -1,0 +1,127 @@
+{
+  "_description": "DogFoodAndFun — Scheduled agent tasks. All times in Israel local time (UTC+3). USA/Canada target times shown for reference.",
+  "_last_updated": "2026-04-15",
+
+  "tasks": [
+    {
+      "id": "dogfood-site-analyzer",
+      "skill": "site-analyzer",
+      "script": null,
+      "description": "Crawl dogfoodandfun.com RSS + sitemap, cache recent posts for comment context",
+      "schedule": {
+        "cron": "0 15 * * *",
+        "human": "Daily at 3:00 PM Israel",
+        "israel_time": "15:00",
+        "usa_est_time": "08:00",
+        "usa_pst_time": "05:00",
+        "cadence": "daily"
+      },
+      "cowork_task_id": "dogfood-site-analyzer",
+      "output_file": "data/site_content_cache.json",
+      "re_run_guard": true,
+      "requires_browser": false,
+      "requires_approval": false,
+      "telegram_notify": true
+    },
+    {
+      "id": "dogfood-fb-scanner",
+      "skill": "fb-scanner",
+      "script": "scripts/fb_scan.py",
+      "description": "Scan joined Facebook dog groups for relevant posts, queue for commenting",
+      "schedule": {
+        "cron": "30 15 * * *",
+        "human": "Daily at 3:30 PM Israel",
+        "israel_time": "15:30",
+        "usa_est_time": "08:30",
+        "usa_pst_time": "05:30",
+        "cadence": "daily"
+      },
+      "cowork_task_id": "dogfood-fb-scanner",
+      "output_file": ".claude/state/comment_queue.json",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "rate_limits": {
+        "group_visits_per_day": 6,
+        "comments_per_day": 5
+      }
+    },
+    {
+      "id": "dogfood-ig-scanner",
+      "skill": "ig-scanner",
+      "script": "scripts/ig_scan.py",
+      "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
+      "schedule": {
+        "cron": "0 19 * * *",
+        "human": "Daily at 7:00 PM Israel",
+        "israel_time": "19:00",
+        "usa_est_time": "12:00",
+        "usa_pst_time": "09:00",
+        "cadence": "daily"
+      },
+      "cowork_task_id": "dogfood-ig-scanner",
+      "output_file": ".claude/state/comment_queue.json",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "rate_limits": {
+        "likes_per_day": 8,
+        "comments_per_day": 2
+      }
+    },
+    {
+      "id": "dogfood-comment-composer",
+      "skill": "comment-composer",
+      "script": null,
+      "description": "Draft, validate, and post queued comments. Sends approvals via Telegram bot",
+      "schedule": {
+        "cron": "0 22 * * *",
+        "human": "Daily at 10:00 PM Israel",
+        "israel_time": "22:00",
+        "usa_est_time": "15:00",
+        "usa_pst_time": "12:00",
+        "cadence": "daily"
+      },
+      "cowork_task_id": "dogfood-comment-composer",
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": true,
+      "approval_channel": "telegram",
+      "approval_timeout_hours": 12,
+      "telegram_notify": true,
+      "rate_limits": {
+        "fb_comments_per_day": 5,
+        "ig_comments_per_day": 2
+      }
+    },
+    {
+      "id": "dogfood-fb-group-scout",
+      "skill": "fb-group-scout",
+      "script": "scripts/fb_group_scout.py",
+      "description": "Search Facebook for new dog groups (public + private) to join, score and present for approval",
+      "schedule": {
+        "cron": "0 15 1 * *",
+        "human": "1st of every month at 3:00 PM Israel",
+        "israel_time": "15:00",
+        "usa_est_time": "08:00",
+        "usa_pst_time": "05:00",
+        "cadence": "monthly",
+        "next_run": "2026-05-01"
+      },
+      "cowork_task_id": "dogfood-fb-group-scout",
+      "output_file": ".claude/state/pending_groups.json",
+      "re_run_guard": true,
+      "re_run_cadence": "weekly",
+      "requires_browser": true,
+      "requires_approval": true,
+      "approval_channel": "telegram",
+      "telegram_notify": true,
+      "rate_limits": {
+        "join_requests_per_week": 3
+      }
+    }
+  ]
+}

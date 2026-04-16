@@ -22,6 +22,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
+# Force unbuffered output so watchdog/monitors can see progress
+from logger import enable_unbuffered, log_progress, log_step, StepTimer
+enable_unbuffered()
+
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
 from notifier import skill_started, skill_finished, skill_error, skill_skipped
@@ -179,13 +183,13 @@ EXTRACT_POST_DETAILS_JS = """
         }
     }
 
-    // Author
+    // Author — strip all slashes from href e.g. /dogfoodandfun/ → dogfoodandfun
     const authorLink = document.querySelector(
         'header a[href]:not([href="/"])'
     );
     if (authorLink) {
         const href = authorLink.getAttribute('href') || '';
-        result.author = href.replace(/\\x2f/g, '');
+        result.author = href.replace(/\//g, '').trim();
     }
     // Fallback: try the first link with a username-like path
     if (!result.author) {
@@ -193,7 +197,7 @@ EXTRACT_POST_DETAILS_JS = """
         for (const a of links) {
             const h = a.getAttribute('href') || '';
             if (h.match(/^\\/[a-zA-Z0-9_.]+\\/$/) && h !== '/') {
-                result.author = h.replace(/\\x2f/g, '');
+                result.author = h.replace(/\//g, '').trim();
                 break;
             }
         }
@@ -294,7 +298,7 @@ def run_scan() -> None:
     """Main scan entry point."""
     from playwright.sync_api import sync_playwright
 
-    print("=== Instagram Hashtag Scanner (CLI) ===\n")
+    print("=== Instagram Hashtag Scanner (CLI) ===\n", flush=True)
 
     # Re-run guard — skip if already ran successfully today
     last_run = load_last_run()
@@ -341,7 +345,7 @@ def run_scan() -> None:
     queue = load_queue()
 
     relevance_threshold = config["content_analysis"]["relevance_threshold"]
-    ig_comment_threshold = 0.85  # higher bar for IG comments
+    ig_comment_threshold = 0.75  # aligned with FB threshold
 
     # Stats
     hashtags_scanned = 0
@@ -356,6 +360,7 @@ def run_scan() -> None:
     comment_candidates: list[dict] = []
 
     with sync_playwright() as p:
+        log_step("Launching browser")
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(
             storage_state=str(SESSION_FILE),
@@ -367,9 +372,10 @@ def run_scan() -> None:
             ),
         )
         page = context.new_page()
+        log_step("Browser launched OK")
 
         # Quick login check
-        print("Checking Instagram session...")
+        log_step("Checking Instagram session")
         page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
         time.sleep(4)
 
@@ -380,23 +386,23 @@ def run_scan() -> None:
             browser.close()
             return
 
-        print("Instagram session OK.\n")
+        log_step("Instagram session OK")
 
         # Dismiss any startup overlays
         dismiss_ig_overlays(page)
         time.sleep(2)
 
-        for htag_row in hashtags:
+        for htag_idx, htag_row in enumerate(hashtags, 1):
             hashtag = htag_row["hashtag"].strip().lstrip("#")
             category = htag_row.get("category", "general").strip()
 
             if not can_act("instagram", "like"):
-                print(f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.")
+                print(f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.", flush=True)
                 break
 
-            print(f"\n--- Scanning: #{hashtag} ---")
+            log_progress(htag_idx, len(hashtags), f"Scanning: #{hashtag}", f"category={category}")
             tag_url = f"https://www.instagram.com/explore/tags/{hashtag}/"
-            print(f"    URL: {tag_url}")
+            print(f"    URL: {tag_url}", flush=True)
 
             try:
                 page.goto(tag_url, wait_until="domcontentloaded")
@@ -420,13 +426,13 @@ def run_scan() -> None:
 
                 # Extract post links
                 post_links = page.evaluate(EXTRACT_HASHTAG_POSTS_JS)
-                print(f"    Posts found: {len(post_links)}")
+                print(f"    Posts found: {len(post_links)}", flush=True)
 
                 if not post_links:
-                    print("    No posts extracted. Skipping hashtag.")
+                    print("    No posts extracted. Skipping hashtag.", flush=True)
                     continue
 
-                for post_info in post_links:
+                for post_idx, post_info in enumerate(post_links, 1):
                     post_url = post_info["url"]
                     post_id = post_info["post_id"]
 
@@ -435,13 +441,16 @@ def run_scan() -> None:
                         break
 
                     posts_evaluated += 1
+                    print(f"    [{post_idx}/{len(post_links)}] Post {post_id[:12]}...", flush=True)
 
                     # Dedup check
                     if is_duplicate("instagram", post_id):
                         posts_skipped_dedup += 1
+                        print(f"        SKIP: already engaged", flush=True)
                         continue
 
                     # Navigate to individual post
+                    print(f"        Opening post...", flush=True)
                     try:
                         page.goto(post_url, wait_until="domcontentloaded")
                         time.sleep(3)
@@ -461,29 +470,51 @@ def run_scan() -> None:
                         }
 
                     caption = details.get("caption", "")[:800]
-                    author = details.get("author", "").strip()
+                    author = details.get("author", "").strip().strip("/").lower()
 
                     # Fallback: parse author from caption start
                     # IG captions often render as "username  3w Caption..."
                     if not author and caption:
                         m = re.match(r"^([a-zA-Z0-9_.]+)\s", caption)
                         if m:
-                            author = m.group(1)
+                            author = m.group(1).lower()
+
                     like_count = parse_like_count(details.get("like_text", ""))
                     comment_count = parse_comment_count(
                         details.get("comment_text", "")
                     )
 
+                    # Parse post age from caption (e.g. "4h", "3d", "2w", "101w")
+                    post_age_weeks = 0
+                    age_match = re.search(r'\b(\d+)(h|d|w|m)\b', caption)
+                    if age_match:
+                        val, unit = int(age_match.group(1)), age_match.group(2)
+                        if unit == "h":
+                            post_age_weeks = val / (24 * 7)
+                        elif unit == "d":
+                            post_age_weeks = val / 7
+                        elif unit == "w":
+                            post_age_weeks = val
+                        elif unit == "m":
+                            post_age_weeks = val * 4.3
+
                     snippet = caption[:60].replace("\n", " ")
                     print(f"    [{posts_evaluated}] @{author}: {snippet}...")
                     print(
                         f"        likes~{like_count} "
-                        f"comments~{comment_count}"
+                        f"comments~{comment_count} "
+                        f"age~{post_age_weeks:.1f}w"
                     )
 
-                    # Skip own account
-                    if author.lower() == OWN_ACCOUNT:
+                    # Skip own account — check both author field and caption start
+                    if author == OWN_ACCOUNT or caption.lower().startswith(OWN_ACCOUNT):
                         print("        SKIP: own account")
+                        continue
+
+                    # Skip posts older than 2 weeks — too stale for engagement
+                    if post_age_weeks > 2:
+                        print(f"        SKIP: post too old ({post_age_weeks:.0f}w)")
+                        posts_skipped_score += 1
                         continue
 
                     # Skip competitor accounts

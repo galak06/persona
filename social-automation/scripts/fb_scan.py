@@ -13,12 +13,16 @@ from __future__ import annotations
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+
+# Force unbuffered output so watchdog/monitors can see progress
+from logger import enable_unbuffered, log_progress, log_step, StepTimer
+enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate
@@ -307,7 +311,7 @@ def run_scan() -> None:
     """Main scan entry point."""
     from playwright.sync_api import sync_playwright
 
-    print("=== Facebook Group Scanner (CLI) ===\n")
+    print("=== Facebook Group Scanner (CLI) ===\n", flush=True)
 
     # Check session file
     if not SESSION_FILE.exists():
@@ -364,6 +368,7 @@ def run_scan() -> None:
     needs_approval = 0
 
     with sync_playwright() as p:
+        log_step("Launching browser")
         browser = p.chromium.launch(headless=False)
         context = browser.new_context(
             storage_state=str(SESSION_FILE),
@@ -375,9 +380,10 @@ def run_scan() -> None:
             ),
         )
         page = context.new_page()
+        log_step("Browser launched OK")
 
         # Quick login check
-        print("Checking Facebook session...")
+        log_step("Checking Facebook session")
         page.goto("https://www.facebook.com", wait_until="domcontentloaded")
         time.sleep(3)
 
@@ -388,7 +394,7 @@ def run_scan() -> None:
             browser.close()
             return
 
-        print("Facebook session OK.")
+        log_step("Facebook session OK")
 
         # Switch to Page profile (DogFoodAndFun) for group interactions
         print("Switching to Page profile...")
@@ -399,6 +405,7 @@ def run_scan() -> None:
         time.sleep(3)
 
         # Click the page profile switcher
+        log_step("Switching to Page profile")
         page_config = config.get("social_channels", {}).get("facebook", {})
         page_name = page_config.get("page_name", "DogFoodAndFun")
         switched = False
@@ -460,24 +467,51 @@ def run_scan() -> None:
         else:
             print()
 
-        for group in groups:
+        for group_idx, group in enumerate(groups, 1):
             # Check rate limit before each visit
             if not can_act("facebook", "group_visit"):
-                print(f"\nRate limit hit — stopping after {groups_scanned} groups.")
+                print(f"\nRate limit hit — stopping after {groups_scanned} groups.", flush=True)
                 break
 
-            print(f"\n--- Scanning: {group['name']} ---")
-            print(f"    URL: {group['url']}")
+            log_progress(group_idx, len(groups), f"Scanning: {group['name']}")
+            print(f"    URL: {group['url']}", flush=True)
 
             visit_recorded = False
             try:
-                page.goto(group["url"], wait_until="domcontentloaded")
-                time.sleep(4)
+                # Navigate with crash recovery — if context dies, recreate it
+                try:
+                    page.goto(group["url"], wait_until="domcontentloaded", timeout=30000)
+                    time.sleep(4)
+                except Exception as nav_err:
+                    err_str = str(nav_err).lower()
+                    if "target page" in err_str or "context" in err_str or "closed" in err_str:
+                        print(f"    Browser context crashed — recreating...")
+                        log_error(f"CONTEXT_CRASH: {group['name']} — {nav_err}")
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                        context = browser.new_context(
+                            storage_state=str(SESSION_FILE),
+                            viewport={"width": 1280, "height": 900},
+                            user_agent=(
+                                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/131.0.0.0 Safari/537.36"
+                            ),
+                        )
+                        page = context.new_page()
+                        time.sleep(2)
+                        page.goto(group["url"], wait_until="domcontentloaded", timeout=30000)
+                        time.sleep(4)
+                    else:
+                        raise
 
                 # Dismiss welcome popups and overlays
                 dismiss_overlays(page)
 
                 # Scroll to load posts (5 scrolls with pause — more content)
+                print("    Scrolling to load posts...", flush=True)
                 for i in range(5):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     time.sleep(2)
@@ -485,6 +519,7 @@ def run_scan() -> None:
 
                 # Expand truncated posts
                 click_see_more(page)
+                print("    Extracting posts...", flush=True)
 
                 # Record the group visit BEFORE extraction so it's always counted
                 try:

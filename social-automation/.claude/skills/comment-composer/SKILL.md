@@ -211,25 +211,59 @@ requires_approval = (
 )
 ```
 
-If approval required → **PAUSE and show to user:**
+If approval required → **send to Telegram and wait for reply:**
 
+```python
+from notifier import request_approval
+
+result = request_approval(
+    platform=platform,
+    group_or_hashtag=group_or_tag,
+    post_preview=item['post_text'][:200],
+    draft_comment=draft,
+    relevance_score=item['relevance_score'],
+    timeout_hours=12,
+)
+
+if result['action'] == 'approved':
+    draft = result['comment']   # unchanged
+elif result['action'] == 'edited':
+    draft = result['comment']   # user's revised version — re-validate voice
+    is_valid, violations = validate_voice(draft)
+    if not is_valid:
+        item['status'] = 'VALIDATION_FAILED'
+        continue
+elif result['action'] == 'pending':
+    # Telegram unreachable — leave item in queue, retry next run
+    print(f"  ⏸️  Telegram unreachable — keeping pending: {group_or_tag}")
+    approval_pending_count += 1
+    continue
+elif result['action'] in ('skipped', 'timeout'):
+    item['status'] = 'USER_SKIPPED'
+    continue
 ```
-=== Comment Approval Required ===
 
-Platform: {platform}
-Group/Hashtag: {group_name or hashtag}
-Post preview: "{post_text[:200]}..."
-Relevance score: {score}
-
+The bot sends this to Telegram:
+```
+📘 Comment approval needed
+━━━━━━━━━━━━━━━━━━━━
+Platform: Facebook
+Group/Tag: Homemade Dog Food Community
+Score: 78%
+Post: "My dog has been having digestive issues..."
+━━━━━━━━━━━━━━━━━━━━
 Proposed comment:
----
-{draft}
----
-
-Approve? (yes/edit/skip)
+"We went through this with Nalla last winter — switching to Open Farm
+made a real difference. Did you try eliminating one ingredient at a time?"
+━━━━━━━━━━━━━━━━━━━━
+Reply: yes · skip · edit: your new text
+⏳ Waiting up to 12h
 ```
 
-Wait for user response. If "edit" → accept revised comment text. If "skip" → mark status "USER_SKIPPED".
+Gil replies directly in Telegram:
+- `yes` → posts as-is
+- `skip` → marks USER_SKIPPED
+- `edit: We tried this with Nalla and...` → posts with new text (re-validates first)
 
 ### Step 7: Post the comment
 
