@@ -11,6 +11,7 @@ It also handles Facebook's "Save login info" dialog automatically.
 
 import time
 from pathlib import Path
+
 from playwright.sync_api import sync_playwright
 
 STATE_DIR = Path(__file__).parent.parent / ".claude" / "state"

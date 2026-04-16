@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def _ts() -> str:
     """Short UTC timestamp for log lines."""
-    return datetime.now(timezone.utc).strftime("%H:%M:%S")
+    return datetime.now(UTC).strftime("%H:%M:%S")
 
 
 def log(msg: str, level: str = "INFO") -> None:
@@ -63,7 +63,7 @@ class StepTimer:
         self.label = label
         self.start = 0.0
 
-    def __enter__(self) -> "StepTimer":
+    def __enter__(self) -> StepTimer:
         self.start = time.monotonic()
         log_step(self.label, "started")
         return self

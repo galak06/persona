@@ -15,13 +15,13 @@ import json
 import re
 import sys
 import time
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from notifier import skill_started, skill_finished, skill_skipped
+from notifier import skill_finished, skill_skipped, skill_started
 
 SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
 LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
@@ -34,15 +34,52 @@ JOIN_LIMIT_PER_WEEK = 3
 MIN_SCORE = 40
 
 # Niche keywords for scoring
-FOOD_KW = ["food", "nutrition", "recipe", "diet", "raw", "kibble", "homemade",
-           "feeding", "meal", "ingredient", "protein", "grain free"]
-GPS_KW = ["gps", "tracker", "tracking", "running", "canicross", "hike",
-          "hiking", "trail", "sport", "active", "agility"]
-LIFESTYLE_KW = ["dog owner", "dog lifestyle", "dog product", "dog health",
-                "dog care", "dog community", "dog lover"]
+FOOD_KW = [
+    "food",
+    "nutrition",
+    "recipe",
+    "diet",
+    "raw",
+    "kibble",
+    "homemade",
+    "feeding",
+    "meal",
+    "ingredient",
+    "protein",
+    "grain free",
+]
+GPS_KW = [
+    "gps",
+    "tracker",
+    "tracking",
+    "running",
+    "canicross",
+    "hike",
+    "hiking",
+    "trail",
+    "sport",
+    "active",
+    "agility",
+]
+LIFESTYLE_KW = [
+    "dog owner",
+    "dog lifestyle",
+    "dog product",
+    "dog health",
+    "dog care",
+    "dog community",
+    "dog lover",
+]
 COMPETITOR_BRANDS = {
-    "tractive", "fi collar", "ficollar", "whistle", "link akc",
-    "ollie", "nom nom", "farmer's dog", "open farm",
+    "tractive",
+    "fi collar",
+    "ficollar",
+    "whistle",
+    "link akc",
+    "ollie",
+    "nom nom",
+    "farmer's dog",
+    "open farm",
 }
 
 SEARCH_QUERIES = [
@@ -68,7 +105,7 @@ EXTRACT_GROUP_CARDS_JS = """
 
     for (const a of links) {
         const href = a.getAttribute('href') || '';
-        const match = href.match(/\/groups\/([^/?#]+)/);
+        const match = href.match(/\\/groups\\/([^/?#]+)/);
         if (!match) continue;
         const gid = match[1];
         if (['feed', 'discover', 'search', 'explore', 'create'].includes(gid)) continue;
@@ -143,7 +180,7 @@ FIND_JOIN_BUTTON_JS = """
 
 def log_error(msg: str) -> None:
     ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     with ERROR_LOG.open("a") as f:
         f.write(f"[{ts}] [fb_group_scout] {msg}\n")
 
@@ -171,8 +208,10 @@ def join_requests_this_week() -> int:
         for line in f:
             try:
                 entry = json.loads(line)
-                if (entry.get("action") == "group_join_request"
-                        and entry.get("date", "") >= week_ago):
+                if (
+                    entry.get("action") == "group_join_request"
+                    and entry.get("date", "") >= week_ago
+                ):
                     count += 1
             except Exception:
                 continue
@@ -200,9 +239,12 @@ def load_known_groups() -> set[str]:
     if TRACKER_FILE.exists():
         try:
             import openpyxl
+
             wb = openpyxl.load_workbook(str(TRACKER_FILE), read_only=True, data_only=True)
             ws = wb.active
-            headers = [str(c.value).lower().strip() if c.value else "" for c in next(ws.iter_rows())]
+            headers = [
+                str(c.value).lower().strip() if c.value else "" for c in next(ws.iter_rows())
+            ]
             url_col = next((i for i, h in enumerate(headers) if "url" in h), None)
             name_col = next((i for i, h in enumerate(headers) if "name" in h), None)
             for row in ws.iter_rows(min_row=2, values_only=True):
@@ -320,6 +362,7 @@ def append_to_tracker(group: dict) -> None:
         return
     try:
         import openpyxl
+
         wb = openpyxl.load_workbook(str(TRACKER_FILE))
         ws = wb.active
         # Find last row
@@ -341,7 +384,7 @@ def append_to_tracker(group: dict) -> None:
 def log_join_request(group: dict, status: str) -> None:
     entry = {
         "date": date.today().isoformat(),
-        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+        "timestamp": datetime.now(UTC).isoformat() + "Z",
         "platform": "facebook",
         "action": "group_join_request",
         "target_name": group["name"],
@@ -370,12 +413,14 @@ def get_user_approval(candidates: list[dict], budget: int) -> list[dict]:
     for i, g in enumerate(candidates, 1):
         mc = f"{g['member_count']:,}" if g["member_count"] else "unknown"
         print(f"\n #{i}  {g['name']}  [{g['privacy'].upper()}]")
-        print(f"      Members: {mc}  |  Score: {g['score']}  |  {g['post_frequency'] or 'activity unknown'}")
+        print(
+            f"      Members: {mc}  |  Score: {g['score']}  |  {g['post_frequency'] or 'activity unknown'}"
+        )
         print(f"      URL: {g['url']}")
-        print(f"      Found via: \"{g['found_via_query']}\"")
+        print(f'      Found via: "{g["found_via_query"]}"')
         if g["description"]:
             desc = g["description"][:120]
-            print(f"      Description: \"{desc}...\"")
+            print(f'      Description: "{desc}..."')
 
     print("\n" + "-" * 60)
     print(f"Approve which groups to join/request? (max {budget} this week)")
@@ -400,8 +445,9 @@ def get_user_approval(candidates: list[dict], budget: int) -> list[dict]:
 
 
 def run_scout(dry_run: bool = False) -> None:
-    from playwright.sync_api import sync_playwright
     import random
+
+    from playwright.sync_api import sync_playwright
 
     print("=== Facebook Group Scout (CLI) ===\n")
 
@@ -428,7 +474,9 @@ def run_scout(dry_run: bool = False) -> None:
         skill_skipped("fb-group-scout", "Weekly join request limit reached (3/3)")
         return
 
-    skill_started("fb-group-scout", f"Searching for new dog groups to join — budget: {budget}/3 this week")
+    skill_started(
+        "fb-group-scout", f"Searching for new dog groups to join — budget: {budget}/3 this week"
+    )
 
     # Known groups (skip duplicates)
     known_groups = load_known_groups()
@@ -454,7 +502,7 @@ def run_scout(dry_run: bool = False) -> None:
             print(f"\nJoin from pending queue first? (yes/no — budget: {budget}/3 this week)")
             resp = input("Your choice: ").strip().lower()
             if resp == "yes":
-                to_join = pending[:budget]
+                pending[:budget]
                 # Reuse the join logic below by injecting into candidates flow
                 # We'll handle this in the join section
             else:
@@ -494,11 +542,8 @@ def run_scout(dry_run: bool = False) -> None:
 
         # ── Search loop ──────────────────────────────────────────────────────
         for query in SEARCH_QUERIES:
-            search_url = (
-                f"https://www.facebook.com/search/groups/"
-                f"?q={query.replace(' ', '%20')}"
-            )
-            print(f"Searching: \"{query}\"")
+            search_url = f"https://www.facebook.com/search/groups/?q={query.replace(' ', '%20')}"
+            print(f'Searching: "{query}"')
             try:
                 page.goto(search_url, wait_until="domcontentloaded")
                 time.sleep(4)
@@ -554,7 +599,7 @@ def run_scout(dry_run: bool = False) -> None:
             browser.close()
             # Still write last_run so weekly guard activates
             last_run["fb_group_scout"] = {
-                "last_run_at": datetime.now(timezone.utc).isoformat(),
+                "last_run_at": datetime.now(UTC).isoformat(),
                 "groups_found": 0,
                 "groups_approved": 0,
                 "join_requests_sent": 0,
@@ -619,7 +664,11 @@ def run_scout(dry_run: bool = False) -> None:
                     append_to_tracker(group)
                     join_requests_sent += 1
                     known_groups.add(group["url"].lower())
-                    label = "✅ Request sent (pending admin approval)" if group["privacy"] == "private" else "✅ Joined immediately"
+                    label = (
+                        "✅ Request sent (pending admin approval)"
+                        if group["privacy"] == "private"
+                        else "✅ Joined immediately"
+                    )
                     print(f"     {label}")
                 elif result == "already_joined":
                     print("     SKIP: Already a member")
@@ -662,7 +711,7 @@ def run_scout(dry_run: bool = False) -> None:
 
     # Update last run
     last_run["fb_group_scout"] = {
-        "last_run_at": datetime.now(timezone.utc).isoformat(),
+        "last_run_at": datetime.now(UTC).isoformat(),
         "groups_found": len(candidates),
         "groups_approved": len(approved),
         "join_requests_sent": join_requests_sent,

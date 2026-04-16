@@ -6,8 +6,7 @@ Run on the 1st of each month to prune stale data and archive logs.
 from __future__ import annotations
 
 import json
-import shutil
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 BASE = Path(__file__).parent.parent
@@ -80,12 +79,19 @@ def cleanup_comment_queue() -> dict:
         queue = json.load(f)
 
     cutoff = (date.today() - timedelta(days=QUEUE_KEEP_DAYS)).isoformat()
-    terminal_statuses = {"posted", "skipped_duplicate", "skipped_own_post",
-                         "USER_SKIPPED", "VALIDATION_FAILED", "POST_UNAVAILABLE"}
+    terminal_statuses = {
+        "posted",
+        "skipped_duplicate",
+        "skipped_own_post",
+        "USER_SKIPPED",
+        "VALIDATION_FAILED",
+        "POST_UNAVAILABLE",
+    }
 
     before = len(queue)
     queue = [
-        item for item in queue
+        item
+        for item in queue
         if item.get("status") == "pending"
         or item.get("queued_at", "9999")[:10] >= cutoff
         or item.get("status") not in terminal_statuses
@@ -138,34 +144,38 @@ def archive_engagement_log() -> dict:
 def reset_site_cache() -> None:
     """Force-expire the site content cache so next run rebuilds it fresh."""
     cache_file = DATA_DIR / "site_content_cache.json"
-    cache_file.write_text(json.dumps({
-        "cached_at": None,
-        "recent_posts": [],
-        "content_summary": {}
-    }, indent=2))
+    cache_file.write_text(
+        json.dumps({"cached_at": None, "recent_posts": [], "content_summary": {}}, indent=2)
+    )
 
 
 def run_cleanup() -> None:
-    print(f"\n{'='*50}")
+    print(f"\n{'=' * 50}")
     print(f"Monthly Cleanup — {date.today().isoformat()}")
-    print(f"{'='*50}\n")
+    print(f"{'=' * 50}\n")
 
     result = cleanup_dedup_cache()
-    print(f"✅ Dedup cache:       removed {result['removed']} expired entries, {result['remaining']} remaining")
+    print(
+        f"✅ Dedup cache:       removed {result['removed']} expired entries, {result['remaining']} remaining"
+    )
 
     result = cleanup_rate_limit_tracker()
     print(f"✅ Rate limit tracker: removed {result['removed_days']} old days")
 
     result = cleanup_comment_queue()
-    print(f"✅ Comment queue:     removed {result['removed']} completed items, {result['remaining']} remaining")
+    print(
+        f"✅ Comment queue:     removed {result['removed']} completed items, {result['remaining']} remaining"
+    )
 
     result = archive_engagement_log()
-    print(f"✅ Engagement log:    archived {result['archived']} old entries, {result['remaining']} active")
+    print(
+        f"✅ Engagement log:    archived {result['archived']} old entries, {result['remaining']} active"
+    )
 
     reset_site_cache()
-    print(f"✅ Site cache:        force-expired (will rebuild on next run)")
+    print("✅ Site cache:        force-expired (will rebuild on next run)")
 
-    print(f"\nCleanup complete.\n")
+    print("\nCleanup complete.\n")
 
 
 if __name__ == "__main__":

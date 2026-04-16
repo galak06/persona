@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 # Ensure lib is importable
@@ -21,12 +21,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 # Force unbuffered output so watchdog/monitors can see progress
-from logger import enable_unbuffered, log_progress, log_step, StepTimer
+from logger import enable_unbuffered, log_progress, log_step
+
 enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate
-from notifier import skill_started, skill_finished, skill_error, skill_skipped
+from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
 
 TRACKER_PATH = PROJECT_ROOT / "../../facebook_groups_tracker.xlsx"
@@ -37,8 +38,8 @@ ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
 CONFIG_FILE = PROJECT_ROOT / "config.json"
 
 CATEGORY_MAP = {
-    "\U0001f356": "food",   # 🍖
-    "\U0001f3c3": "gps",    # 🏃
+    "\U0001f356": "food",  # 🍖
+    "\U0001f3c3": "gps",  # 🏃
     "\U0001f3e5": "health",  # 🏥
     "\U0001f3be": "training",  # 🎾
     "\U0001f43e": "general",  # 🐾
@@ -57,6 +58,7 @@ def load_groups() -> list[dict]:
     tracker = TRACKER_PATH
     if not tracker.exists():
         from glob import glob
+
         hits = glob(
             str(PROJECT_ROOT / "../../**/facebook_groups_tracker.xlsx"),
             recursive=True,
@@ -79,11 +81,13 @@ def load_groups() -> list[dict]:
         url = str(row["Facebook URL"]).strip()
         if "/groups/search" in url:
             continue
-        groups.append({
-            "name": str(row["Group Name"]),
-            "url": url,
-            "category": str(row.get("Category", "")),
-        })
+        groups.append(
+            {
+                "name": str(row["Group Name"]),
+                "url": url,
+                "category": str(row.get("Category", "")),
+            }
+        )
     return groups
 
 
@@ -96,7 +100,7 @@ def detect_category(group_category: str) -> str:
 
 def log_error(msg: str) -> None:
     ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     with ERROR_LOG.open("a") as f:
         f.write(f"[{ts}] {msg}\n")
 
@@ -329,6 +333,7 @@ def run_scan() -> None:
         print("      Use --force to run again anyway.")
         skill_skipped("fb-scanner", msg)
         import sys
+
         if "--force" not in sys.argv:
             return
 
@@ -412,8 +417,7 @@ def run_scan() -> None:
         try:
             # Method 1: Look for "Switch Now" or page name link
             switch_btn = page.locator(
-                f"a:has-text('{page_name}'), "
-                f"div[role='button']:has-text('Switch')"
+                f"a:has-text('{page_name}'), div[role='button']:has-text('Switch')"
             )
             if switch_btn.count() > 0:
                 switch_btn.first.click(timeout=5000)
@@ -446,9 +450,7 @@ def run_scan() -> None:
                         switched = True
                         print(f"  Switched to Page: {page_name}")
                     else:
-                        see_all = page.locator(
-                            "div[role='menuitem']:has-text('See all profiles')"
-                        )
+                        see_all = page.locator("div[role='menuitem']:has-text('See all profiles')")
                         if see_all.count() > 0:
                             see_all.first.click(timeout=3000)
                             time.sleep(2)
@@ -476,7 +478,6 @@ def run_scan() -> None:
             log_progress(group_idx, len(groups), f"Scanning: {group['name']}")
             print(f"    URL: {group['url']}", flush=True)
 
-            visit_recorded = False
             try:
                 # Navigate with crash recovery — if context dies, recreate it
                 try:
@@ -485,7 +486,7 @@ def run_scan() -> None:
                 except Exception as nav_err:
                     err_str = str(nav_err).lower()
                     if "target page" in err_str or "context" in err_str or "closed" in err_str:
-                        print(f"    Browser context crashed — recreating...")
+                        print("    Browser context crashed — recreating...")
                         log_error(f"CONTEXT_CRASH: {group['name']} — {nav_err}")
                         try:
                             context.close()
@@ -512,7 +513,7 @@ def run_scan() -> None:
 
                 # Scroll to load posts (5 scrolls with pause — more content)
                 print("    Scrolling to load posts...", flush=True)
-                for i in range(5):
+                for _i in range(5):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                     time.sleep(2)
                     dismiss_overlays(page)
@@ -524,7 +525,6 @@ def run_scan() -> None:
                 # Record the group visit BEFORE extraction so it's always counted
                 try:
                     record_action("facebook", "group_visit")
-                    visit_recorded = True
                 except RuntimeError as re:
                     print(f"    Rate limit hit: {re}")
                     break
@@ -548,11 +548,17 @@ def run_scan() -> None:
                 if not posts:
                     # Last resort: scrape visible text for scoring
                     body_text = page.inner_text("body")
-                    print(f"    JS extraction empty (body: {len(body_text)} chars) — trying text fallback")
+                    print(
+                        f"    JS extraction empty (body: {len(body_text)} chars) — trying text fallback"
+                    )
                     if len(body_text) > 500:
                         # Split into paragraphs and treat each as a potential post
-                        paragraphs = [p.strip() for p in body_text.split("\n") if len(p.strip()) > 50]
-                        posts = [{"text": p, "url": "", "comment_count": 0} for p in paragraphs[:15]]
+                        paragraphs = [
+                            p.strip() for p in body_text.split("\n") if len(p.strip()) > 50
+                        ]
+                        posts = [
+                            {"text": p, "url": "", "comment_count": 0} for p in paragraphs[:15]
+                        ]
                         print(f"    Text fallback: {len(posts)} paragraphs")
                     if not posts:
                         print("    Skipping group (no content extracted).")
@@ -578,9 +584,8 @@ def run_scan() -> None:
                     else:
                         # Use text hash as ID — allows scoring posts without URLs
                         import hashlib
-                        post_id = hashlib.md5(
-                            post_text[:200].encode()
-                        ).hexdigest()[:16]
+
+                        post_id = hashlib.md5(post_text[:200].encode()).hexdigest()[:16]
                         post_url = group["url"]  # use group URL as fallback
 
                     if not post_id:
@@ -604,19 +609,21 @@ def run_scan() -> None:
 
                     # Queue it
                     requires_approval = score < approval_threshold
-                    queue.append({
-                        "platform": "facebook",
-                        "post_url": post_url,
-                        "post_id": post_id,
-                        "post_text": post_text[:600],
-                        "group_name": group["name"],
-                        "group_url": group["url"],
-                        "category": category,
-                        "relevance_score": score,
-                        "queued_at": datetime.now(timezone.utc).isoformat(),
-                        "status": "pending",
-                        "requires_approval": requires_approval,
-                    })
+                    queue.append(
+                        {
+                            "platform": "facebook",
+                            "post_url": post_url,
+                            "post_id": post_id,
+                            "post_text": post_text[:600],
+                            "group_name": group["name"],
+                            "group_url": group["url"],
+                            "category": category,
+                            "relevance_score": score,
+                            "queued_at": datetime.now(UTC).isoformat(),
+                            "status": "pending",
+                            "requires_approval": requires_approval,
+                        }
+                    )
                     posts_queued += 1
                     if requires_approval:
                         needs_approval += 1
@@ -624,10 +631,7 @@ def run_scan() -> None:
                         high_confidence += 1
 
                     label = "APPROVAL" if requires_approval else "AUTO"
-                    print(
-                        f"    QUEUED [{label}] "
-                        f"score={score} id={post_id[:20]}"
-                    )
+                    print(f"    QUEUED [{label}] score={score} id={post_id[:20]}")
 
             except Exception as e:
                 msg = f"Error scanning {group['name']}: {e}"
@@ -648,7 +652,7 @@ def run_scan() -> None:
 
     # Update last run — mark success so re-run guard works
     last_run["fb_scanner"] = {
-        "last_run_at": datetime.now(timezone.utc).isoformat(),
+        "last_run_at": datetime.now(UTC).isoformat(),
         "groups_scanned": groups_scanned,
         "posts_queued": posts_queued,
         "status": "success",

@@ -20,7 +20,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -38,7 +38,8 @@ def _take_screenshot() -> Path | None:
     try:
         subprocess.run(
             ["screencapture", "-x", str(path)],
-            timeout=5, capture_output=True,
+            timeout=5,
+            capture_output=True,
         )
         if path.exists() and path.stat().st_size > 0:
             return path
@@ -54,11 +55,11 @@ def run_with_watchdog(
 ) -> int:
     """Run script as subprocess, kill if no output for timeout_secs."""
     script_name = Path(script).stem
-    cmd = [sys.executable, "-u", script] + extra_args  # -u = unbuffered
+    cmd = [sys.executable, "-u", script, *extra_args]  # -u = unbuffered
 
     print(f"[watchdog] Starting: {' '.join(cmd)}", flush=True)
     print(f"[watchdog] Stuck timeout: {timeout_secs}s", flush=True)
-    print(f"[watchdog] PID: launching...", flush=True)
+    print("[watchdog] PID: launching...", flush=True)
 
     proc = subprocess.Popen(
         cmd,
@@ -97,8 +98,7 @@ def run_with_watchdog(
         if silent_secs > timeout_secs:
             killed = True
             print(
-                f"\n[watchdog] STUCK — no output for {int(silent_secs)}s "
-                f"(limit: {timeout_secs}s)",
+                f"\n[watchdog] STUCK — no output for {int(silent_secs)}s (limit: {timeout_secs}s)",
                 flush=True,
             )
             print(f"[watchdog] Last output: {last_line[:120]}", flush=True)
@@ -123,14 +123,14 @@ def run_with_watchdog(
             except Exception:
                 proc.kill()
 
-            print(f"[watchdog] Process killed.", flush=True)
+            print("[watchdog] Process killed.", flush=True)
             break
 
     reader_thread.join(timeout=5)
     exit_code = proc.returncode or (1 if killed else 0)
 
     if killed:
-        print(f"[watchdog] Exiting with code 1 (stuck process killed).", flush=True)
+        print("[watchdog] Exiting with code 1 (stuck process killed).", flush=True)
     else:
         print(f"[watchdog] Process exited normally (code {exit_code}).", flush=True)
 
@@ -140,8 +140,9 @@ def run_with_watchdog(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a script with stuck-process watchdog")
     parser.add_argument("script", help="Python script to run")
-    parser.add_argument("--timeout", type=int, default=180,
-                        help="Seconds of silence before killing (default: 180)")
+    parser.add_argument(
+        "--timeout", type=int, default=180, help="Seconds of silence before killing (default: 180)"
+    )
     # Capture any remaining args to forward to the child script
     args, extra = parser.parse_known_args()
 

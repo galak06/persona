@@ -28,7 +28,7 @@ def _load_cache() -> dict:
             return data
         except Exception:
             # Corrupted — reset and continue
-            CACHE_FILE.write_text('{}')
+            CACHE_FILE.write_text("{}")
     return {}
 
 
@@ -89,10 +89,7 @@ def get_cache_stats() -> dict:
     """Returns count of cached entries per platform."""
     cache = _load_cache()
     cache = _purge_expired(cache)
-    return {
-        platform: len(posts)
-        for platform, posts in cache.items()
-    }
+    return {platform: len(posts) for platform, posts in cache.items()}
 
 
 def print_stats() -> None:

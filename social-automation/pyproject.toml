@@ -1,0 +1,52 @@
+[project]
+name = "dogfoodandfun-social-automation"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["lib", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import sorting)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "T20",   # flake8-print (flag print statements in lib, not scripts)
+    "RUF",   # ruff-specific rules
+]
+ignore = [
+    "T201",   # allow print() — scripts are CLI tools that print output
+    "E501",   # line length handled by formatter
+    "E402",   # import order — scripts need sys.path before lib imports
+    "B905",   # zip strict — not needed for this project
+    "SIM108", # ternary — readability preference
+    "SIM105", # contextlib.suppress — try/except/pass is clearer in Playwright code
+    "RUF001", # ambiguous unicode — en-dashes are intentional in brand copy
+    "RUF002", # ambiguous unicode in docstrings
+    "RUF003", # ambiguous unicode in comments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "SIM300"]  # allow assert True in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["lib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["lib"]
+addopts = "-v --tb=short -q"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true

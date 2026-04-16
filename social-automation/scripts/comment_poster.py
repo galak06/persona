@@ -14,26 +14,25 @@ import json
 import random
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from logger import enable_unbuffered, log_progress, log_step, StepTimer
+from logger import enable_unbuffered, log_progress, log_step
+
 enable_unbuffered()
 
-from deduplication import is_duplicate, mark_engaged
+from deduplication import mark_engaged
 from notifier import (
     request_approval,
-    send,
     skill_error,
     skill_finished,
     skill_skipped,
     skill_started,
 )
 from rate_limiter import can_act, print_status, record_action
-
 
 SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
 IG_SESSION_FILE = PROJECT_ROOT / ".claude/state/instagram_session.json"
@@ -55,7 +54,7 @@ def save_json(path: Path, data) -> None:
 
 
 def log_error(msg: str) -> None:
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     with ERROR_LOG.open("a") as f:
         f.write(f"[{ts}] {msg}\n")
 
@@ -63,7 +62,7 @@ def log_error(msg: str) -> None:
 def log_engagement(action: str, platform: str, target: str, content: str) -> None:
     entry = {
         "date": date.today().isoformat(),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "action": action,
         "platform": platform,
         "target_name": target,
@@ -191,16 +190,12 @@ def run() -> None:
                 relevance_score=item["relevance_score"],
                 timeout_hours=12,
             )
-            if result["action"] == "approved":
-                item["status"] = "approved"
-                item["draft_comment"] = result["comment"]
-                approved.append(item)
-            elif result["action"] == "edited":
+            if result["action"] == "approved" or result["action"] == "edited":
                 item["status"] = "approved"
                 item["draft_comment"] = result["comment"]
                 approved.append(item)
             elif result["action"] == "pending":
-                print(f"  Telegram unreachable — keeping pending", flush=True)
+                print("  Telegram unreachable — keeping pending", flush=True)
             else:
                 item["status"] = "USER_SKIPPED"
         else:
@@ -266,7 +261,7 @@ def run() -> None:
             try:
                 ok = post_comment_fb(page, item["post_url"], draft)
                 if not ok:
-                    print(f"    Comment box not found", flush=True)
+                    print("    Comment box not found", flush=True)
                     item["status"] = "COMMENT_BOX_NOT_FOUND"
                     failed += 1
                     continue
@@ -276,11 +271,11 @@ def run() -> None:
                 log_engagement("comment", platform, group, draft)
 
                 item["status"] = "posted"
-                item["posted_at"] = datetime.now(timezone.utc).isoformat() + "Z"
+                item["posted_at"] = datetime.now(UTC).isoformat() + "Z"
                 item["comment_text"] = draft
                 posted += 1
 
-                print(f"    ✅ Posted!", flush=True)
+                print("    ✅ Posted!", flush=True)
                 save_json(QUEUE_FILE, queue)
 
                 if idx < len(approved) - 1:
@@ -302,7 +297,7 @@ def run() -> None:
     save_json(QUEUE_FILE, queue)
 
     last_run["comment_composer"] = {
-        "last_run_at": datetime.now(timezone.utc).isoformat(),
+        "last_run_at": datetime.now(UTC).isoformat(),
         "comments_posted": posted,
         "comments_failed": failed,
         "status": "success",

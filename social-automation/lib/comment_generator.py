@@ -8,9 +8,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from pathlib import Path
-from typing import Optional
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 TEMPLATES_FILE = DATA_DIR / "post_templates.json"
@@ -18,13 +16,27 @@ BRAND_VOICE_FILE = DATA_DIR / "brand_voice_guide.md"
 
 # Keywords that signal voice failure — never allowed in final comment
 MEDICAL_JARGON = [
-    "clinical", "veterinary-grade", "clinically proven", "studies show",
-    "research indicates", "scientifically", "diagnosis", "symptoms",
-    "treatment", "prescribe", "consult your vet before",
+    "clinical",
+    "veterinary-grade",
+    "clinically proven",
+    "studies show",
+    "research indicates",
+    "scientifically",
+    "diagnosis",
+    "symptoms",
+    "treatment",
+    "prescribe",
+    "consult your vet before",
 ]
 SALESY_PHRASES = [
-    "check out our", "visit our site", "click here", "buy now",
-    "our product", "shop now", "affiliate", "promo code",
+    "check out our",
+    "visit our site",
+    "click here",
+    "buy now",
+    "our product",
+    "shop now",
+    "affiliate",
+    "promo code",
     "dogfoodandfun.com",  # never include the URL unless user explicitly approves
 ]
 
@@ -51,24 +63,77 @@ def score_relevance(
 
     # Food / nutrition signals (broadened — these groups ARE about dog food)
     food_keywords = [
-        "dog food", "homemade", "recipe", "nutrition", "ingredients",
-        "raw", "kibble", "diet", "feeding", "meal", "protein", "grain",
-        "food", "treat", "snack", "chew", "supplement", "vitamin",
-        "probiotic", "omega", "calcium", "freeze dried", "dehydrated",
-        "batch cook", "prep", "topper", "fresh pet", "freshpet",
-        "transition", "switching", "picky eater", "allergy", "sensitive",
-        "stomach", "digestive", "gut", "dental", "teeth", "yogurt",
-        "pumpkin", "sardine", "chicken", "beef", "turkey", "salmon",
-        "sweet potato", "broth", "bone broth", "coconut oil",
+        "dog food",
+        "homemade",
+        "recipe",
+        "nutrition",
+        "ingredients",
+        "raw",
+        "kibble",
+        "diet",
+        "feeding",
+        "meal",
+        "protein",
+        "grain",
+        "food",
+        "treat",
+        "snack",
+        "chew",
+        "supplement",
+        "vitamin",
+        "probiotic",
+        "omega",
+        "calcium",
+        "freeze dried",
+        "dehydrated",
+        "batch cook",
+        "prep",
+        "topper",
+        "fresh pet",
+        "freshpet",
+        "transition",
+        "switching",
+        "picky eater",
+        "allergy",
+        "sensitive",
+        "stomach",
+        "digestive",
+        "gut",
+        "dental",
+        "teeth",
+        "yogurt",
+        "pumpkin",
+        "sardine",
+        "chicken",
+        "beef",
+        "turkey",
+        "salmon",
+        "sweet potato",
+        "broth",
+        "bone broth",
+        "coconut oil",
     ]
     if any(kw in text for kw in food_keywords):
         score += 0.40
 
     # GPS / running / active dog signals
     active_keywords = [
-        "gps", "tracker", "running", "canicross", "trail", "hike", "gear",
-        "collar", "leash", "activity", "exercise", "sport",
-        "fi ", "tractive", "walk", "adventure",
+        "gps",
+        "tracker",
+        "running",
+        "canicross",
+        "trail",
+        "hike",
+        "gear",
+        "collar",
+        "leash",
+        "activity",
+        "exercise",
+        "sport",
+        "fi ",
+        "tractive",
+        "walk",
+        "adventure",
     ]
     if any(kw in text for kw in active_keywords):
         score += 0.30
@@ -79,8 +144,14 @@ def score_relevance(
 
     # Specific brands reviewed on site
     reviewed_brands = [
-        "fi collar", "tractive", "whistle", "link akc",
-        "ollie", "nom nom", "the farmer's dog", "open farm",
+        "fi collar",
+        "tractive",
+        "whistle",
+        "link akc",
+        "ollie",
+        "nom nom",
+        "the farmer's dog",
+        "open farm",
     ]
     if any(brand in text for brand in reviewed_brands):
         score += 0.20
@@ -103,9 +174,7 @@ def score_relevance(
 
     # Group context bonus: posts in food groups about food-adjacent topics
     # get a boost since the group context confirms relevance
-    if group_category == "food" and score >= 0.30:
-        score += 0.15
-    elif group_category == "gps" and score >= 0.20:
+    if (group_category == "food" and score >= 0.30) or (group_category == "gps" and score >= 0.20):
         score += 0.15
     elif group_category == "health" and score >= 0.30:
         score += 0.10
@@ -147,13 +216,15 @@ def validate_voice(comment: str) -> tuple[bool, list[str]]:
 
     # Specificity check — must have Nalla OR a specific detail (number, brand, timeframe)
     has_nalla = "nalla" in comment_lower
-    has_number = bool(re.search(r'\d+', comment))  # any digit = specific detail
-    has_brand = any(b in comment_lower for b in [
-        "fi", "tractive", "whistle", "ollie", "nom nom", "farmer's dog", "open farm"
-    ])
-    has_timeframe = any(t in comment_lower for t in [
-        "day", "week", "month", "year", "hours", "minute", "last winter", "last year"
-    ])
+    has_number = bool(re.search(r"\d+", comment))  # any digit = specific detail
+    has_brand = any(
+        b in comment_lower
+        for b in ["fi", "tractive", "whistle", "ollie", "nom nom", "farmer's dog", "open farm"]
+    )
+    has_timeframe = any(
+        t in comment_lower
+        for t in ["day", "week", "month", "year", "hours", "minute", "last winter", "last year"]
+    )
 
     if not any([has_nalla, has_number, has_brand, has_timeframe]):
         violations.append(
@@ -161,11 +232,25 @@ def validate_voice(comment: str) -> tuple[bool, list[str]]:
         )
 
     # Personal experience check — must claim first-person experience
-    has_personal = any(p in comment_lower for p in [
-        "we ", "we've", "nalla", "our ", "i ", "i've", "found", "noticed", "tried", "tested"
-    ])
+    has_personal = any(
+        p in comment_lower
+        for p in [
+            "we ",
+            "we've",
+            "nalla",
+            "our ",
+            "i ",
+            "i've",
+            "found",
+            "noticed",
+            "tried",
+            "tested",
+        ]
+    )
     if not has_personal:
-        violations.append("Comment must claim personal experience (we, Nalla, our, found, tested...)")
+        violations.append(
+            "Comment must claim personal experience (we, Nalla, our, found, tested...)"
+        )
 
     return len(violations) == 0, violations
 
@@ -174,7 +259,7 @@ def draft_comment_from_template(
     category: str,
     post_text: str,
     post_author: str = "",
-) -> Optional[str]:
+) -> str | None:
     """
     Draft a comment using a category template. Falls back to None if no template exists.
     category: "gps" | "food" | "health" | "training"
@@ -185,6 +270,7 @@ def draft_comment_from_template(
         return None
 
     import random
+
     template = random.choice(category_templates)
 
     # Simple token replacement

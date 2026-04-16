@@ -15,7 +15,7 @@ import json
 import re
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 # Ensure lib is importable
@@ -23,12 +23,13 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 # Force unbuffered output so watchdog/monitors can see progress
-from logger import enable_unbuffered, log_progress, log_step, StepTimer
+from logger import enable_unbuffered, log_progress, log_step
+
 enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
-from notifier import skill_started, skill_finished, skill_error, skill_skipped
+from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
 
 SESSION_FILE = PROJECT_ROOT / ".claude/state/instagram_session.json"
@@ -46,7 +47,7 @@ def load_config() -> dict:
 
 def log_error(msg: str) -> None:
     ERROR_LOG.parent.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now(timezone.utc).isoformat()
+    ts = datetime.now(UTC).isoformat()
     with ERROR_LOG.open("a") as f:
         f.write(f"[{ts}] {msg}\n")
 
@@ -189,7 +190,7 @@ EXTRACT_POST_DETAILS_JS = """
     );
     if (authorLink) {
         const href = authorLink.getAttribute('href') || '';
-        result.author = href.replace(/\//g, '').trim();
+        result.author = href.replace(/\\//g, '').trim();
     }
     // Fallback: try the first link with a username-like path
     if (!result.author) {
@@ -197,7 +198,7 @@ EXTRACT_POST_DETAILS_JS = """
         for (const a of links) {
             const h = a.getAttribute('href') || '';
             if (h.match(/^\\/[a-zA-Z0-9_.]+\\/$/) && h !== '/') {
-                result.author = h.replace(/\//g, '').trim();
+                result.author = h.replace(/\\//g, '').trim();
                 break;
             }
         }
@@ -266,8 +267,13 @@ CLICK_LIKE_JS = """
 
 # Known competitor brand accounts — never like their posts
 COMPETITOR_ACCOUNTS = {
-    "tractive", "tractivepets", "ficollar", "fidogs",
-    "whistlepet", "whistle", "linkakc",
+    "tractive",
+    "tractivepets",
+    "ficollar",
+    "fidogs",
+    "whistlepet",
+    "whistle",
+    "linkakc",
 }
 
 # Our own account — skip to avoid self-engagement
@@ -397,7 +403,10 @@ def run_scan() -> None:
             category = htag_row.get("category", "general").strip()
 
             if not can_act("instagram", "like"):
-                print(f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.", flush=True)
+                print(
+                    f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.",
+                    flush=True,
+                )
                 break
 
             log_progress(htag_idx, len(hashtags), f"Scanning: #{hashtag}", f"category={category}")
@@ -446,11 +455,11 @@ def run_scan() -> None:
                     # Dedup check
                     if is_duplicate("instagram", post_id):
                         posts_skipped_dedup += 1
-                        print(f"        SKIP: already engaged", flush=True)
+                        print("        SKIP: already engaged", flush=True)
                         continue
 
                     # Navigate to individual post
-                    print(f"        Opening post...", flush=True)
+                    print("        Opening post...", flush=True)
                     try:
                         page.goto(post_url, wait_until="domcontentloaded")
                         time.sleep(3)
@@ -465,8 +474,10 @@ def run_scan() -> None:
                         details = page.evaluate(EXTRACT_POST_DETAILS_JS)
                     except Exception:
                         details = {
-                            "caption": "", "like_text": "",
-                            "comment_text": "", "author": "",
+                            "caption": "",
+                            "like_text": "",
+                            "comment_text": "",
+                            "author": "",
                         }
 
                     caption = details.get("caption", "")[:800]
@@ -480,13 +491,11 @@ def run_scan() -> None:
                             author = m.group(1).lower()
 
                     like_count = parse_like_count(details.get("like_text", ""))
-                    comment_count = parse_comment_count(
-                        details.get("comment_text", "")
-                    )
+                    comment_count = parse_comment_count(details.get("comment_text", ""))
 
                     # Parse post age from caption (e.g. "4h", "3d", "2w", "101w")
                     post_age_weeks = 0
-                    age_match = re.search(r'\b(\d+)(h|d|w|m)\b', caption)
+                    age_match = re.search(r"\b(\d+)(h|d|w|m)\b", caption)
                     if age_match:
                         val, unit = int(age_match.group(1)), age_match.group(2)
                         if unit == "h":
@@ -530,10 +539,7 @@ def run_scan() -> None:
                     }
                     base_score = score_relevance(caption, meta)
                     score = ig_score_adjustments(base_score, like_count)
-                    print(
-                        f"        score={score} "
-                        f"(threshold={relevance_threshold})"
-                    )
+                    print(f"        score={score} (threshold={relevance_threshold})")
 
                     if score < relevance_threshold:
                         posts_skipped_score += 1
@@ -554,27 +560,26 @@ def run_scan() -> None:
                         print("        already liked")
                     else:
                         print(f"        like button: {like_result}")
-                        log_error(
-                            f"LIKE_BUTTON_NOT_FOUND: {post_id} "
-                            f"result={like_result}"
-                        )
+                        log_error(f"LIKE_BUTTON_NOT_FOUND: {post_id} result={like_result}")
 
                     # Collect comment candidates (higher bar)
                     if score >= ig_comment_threshold and "?" in caption:
-                        comment_candidates.append({
-                            "platform": "instagram",
-                            "post_url": post_url,
-                            "post_id": post_id,
-                            "post_text": caption[:600],
-                            "hashtag": hashtag,
-                            "author": author,
-                            "category": category,
-                            "relevance_score": score,
-                            "like_count": like_count,
-                            "queued_at": datetime.now(timezone.utc).isoformat(),
-                            "status": "pending",
-                            "requires_approval": True,
-                        })
+                        comment_candidates.append(
+                            {
+                                "platform": "instagram",
+                                "post_url": post_url,
+                                "post_id": post_id,
+                                "post_text": caption[:600],
+                                "hashtag": hashtag,
+                                "author": author,
+                                "category": category,
+                                "relevance_score": score,
+                                "like_count": like_count,
+                                "queued_at": datetime.now(UTC).isoformat(),
+                                "status": "pending",
+                                "requires_approval": True,
+                            }
+                        )
 
                     # Delay between posts
                     wait_random_delay("instagram", "like")
@@ -595,7 +600,8 @@ def run_scan() -> None:
     # Queue top comment candidates (max 2 per day)
     comment_budget = 2
     existing_ig_today = sum(
-        1 for q in queue
+        1
+        for q in queue
         if q.get("platform") == "instagram"
         and q.get("queued_at", "").startswith(date.today().isoformat())
     )
@@ -603,7 +609,7 @@ def run_scan() -> None:
 
     # Sort by score descending, take top N
     comment_candidates.sort(key=lambda c: c["relevance_score"], reverse=True)
-    for candidate in comment_candidates[:max(0, comment_budget)]:
+    for candidate in comment_candidates[: max(0, comment_budget)]:
         queue.append(candidate)
         posts_queued += 1
         print(
@@ -616,7 +622,7 @@ def run_scan() -> None:
 
     # Update last run — mark success so re-run guard skips this on next call
     last_run["ig_scanner"] = {
-        "last_run_at": datetime.now(timezone.utc).isoformat(),
+        "last_run_at": datetime.now(UTC).isoformat(),
         "hashtags_scanned": hashtags_scanned,
         "posts_liked": posts_liked,
         "posts_queued_for_comment": posts_queued,
@@ -625,9 +631,7 @@ def run_scan() -> None:
     save_last_run(last_run)
 
     # Summary
-    like_status = (
-        "8" if not can_act("instagram", "like") else "?"
-    )
+    ("8" if not can_act("instagram", "like") else "?")
     print(f"""
 === Instagram Scan Complete ===
 Hashtags scanned today: {hashtags_scanned}
@@ -644,7 +648,7 @@ Posts skipped — competitor account: {posts_skipped_competitor}
         for i, c in enumerate(comment_candidates[:5], 1):
             snip = c["post_text"][:50].replace("\n", " ")
             print(
-                f"  {i}. @{c['author']} — \"{snip}...\" "
+                f'  {i}. @{c["author"]} — "{snip}..." '
                 f"(score: {c['relevance_score']}) — #{c['hashtag']}"
             )
         print()

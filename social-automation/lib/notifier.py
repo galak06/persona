@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import requests
 
@@ -18,9 +17,11 @@ import requests
 # Store in .claude/state/telegram_config.json to keep out of source code
 _CONFIG_FILE = Path(__file__).resolve().parent.parent / ".claude" / "state" / "telegram_config.json"
 
+
 def _load_config() -> dict:
     if _CONFIG_FILE.exists():
         import json
+
         return json.loads(_CONFIG_FILE.read_text())
     # Fallback to env vars
     return {
@@ -64,7 +65,7 @@ def send(message: str, silent: bool = False) -> bool:
 
 def skill_started(skill_name: str, detail: str = "") -> None:
     """Notify that a skill just started."""
-    ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    ts = datetime.now(UTC).strftime("%H:%M UTC")
     msg = f"🐾 <b>{skill_name}</b> started\n⏰ {ts}"
     if detail:
         msg += f"\n{detail}"
@@ -73,7 +74,7 @@ def skill_started(skill_name: str, detail: str = "") -> None:
 
 def skill_finished(skill_name: str, summary: str = "", success: bool = True) -> None:
     """Notify that a skill finished."""
-    ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    ts = datetime.now(UTC).strftime("%H:%M UTC")
     icon = "✅" if success else "❌"
     msg = f"{icon} <b>{skill_name}</b> finished\n⏰ {ts}"
     if summary:
@@ -83,14 +84,14 @@ def skill_finished(skill_name: str, summary: str = "", success: bool = True) -> 
 
 def skill_error(skill_name: str, error: str) -> None:
     """Notify on error — always audible."""
-    ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    ts = datetime.now(UTC).strftime("%H:%M UTC")
     msg = f"🚨 <b>{skill_name}</b> ERROR\n⏰ {ts}\n<code>{error[:300]}</code>"
     send(msg, silent=False)
 
 
 def skill_skipped(skill_name: str, reason: str = "") -> None:
     """Notify that a skill was skipped (re-run guard, rate limit, etc.)."""
-    ts = datetime.now(timezone.utc).strftime("%H:%M UTC")
+    ts = datetime.now(UTC).strftime("%H:%M UTC")
     msg = f"⏭️ <b>{skill_name}</b> skipped\n⏰ {ts}"
     if reason:
         msg += f"\n{reason}"
@@ -186,7 +187,9 @@ def request_approval(
     if not sent:
         print("[notifier] Telegram send failed — leaving item pending for next run.")
         return {"action": "pending", "comment": draft_comment}
-    print(f"[notifier] Approval request sent to Telegram. Waiting for reply (timeout: {timeout_hours}h)...")
+    print(
+        f"[notifier] Approval request sent to Telegram. Waiting for reply (timeout: {timeout_hours}h)..."
+    )
 
     # Poll for reply
     deadline = time.time() + (timeout_hours * 3600)

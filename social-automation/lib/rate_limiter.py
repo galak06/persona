@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import random
 import time
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Literal
 
@@ -18,8 +18,8 @@ ActionType = Literal["comment", "like", "group_visit", "ig_comment"]
 
 DAILY_LIMITS: dict[str, int] = {
     "facebook:comment": 5,
-    "facebook:group_visit": 6,   # reduced from 10 — spread through day
-    "instagram:like": 8,          # increased from 5 — likes are low-risk
+    "facebook:group_visit": 6,  # reduced from 10 — spread through day
+    "instagram:like": 8,  # increased from 5 — likes are low-risk
     "instagram:ig_comment": 2,
 }
 
@@ -86,9 +86,7 @@ def record_action(platform: Platform, action: ActionType) -> int:
 
     current = state[today].get(key, 0)
     if current >= limit:
-        raise RuntimeError(
-            f"Daily limit reached for {key}: {current}/{limit}. Aborting."
-        )
+        raise RuntimeError(f"Daily limit reached for {key}: {current}/{limit}. Aborting.")
 
     state[today][key] = current + 1
     _save_state(state)
