@@ -103,7 +103,7 @@ def _get_updates(token: str, offset: int = 0, timeout: int = 30) -> list[dict]:
     try:
         resp = requests.get(
             f"https://api.telegram.org/bot{token}/getUpdates",
-            params={"offset": offset, "timeout": timeout, "allowed_updates": ["message"]},
+            params={"offset": str(offset), "timeout": str(timeout), "allowed_updates": "message"},
             timeout=timeout + 5,
         )
         if resp.ok:
