@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "social-automation/**"
+  workflow_dispatch:
 
 defaults:
   run:
