@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 
 
 def _ts() -> str:

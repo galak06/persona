@@ -15,7 +15,9 @@ import json
 import re
 import sys
 import time
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
+
+UTC = timezone.utc
 from pathlib import Path
 
 # Ensure lib is importable
@@ -107,10 +109,10 @@ def parse_like_count(text: str) -> int:
     if not text:
         return 0
     text = text.lower().replace(",", "")
-    m = re.search(r"([\d.]+)\s*k", text)
+    m = re.search(r"(\d+\.?\d*)\s*k", text)
     if m:
         return int(float(m.group(1)) * 1000)
-    m = re.search(r"([\d.]+)\s*m", text)
+    m = re.search(r"(\d+\.?\d*)\s*m", text)
     if m:
         return int(float(m.group(1)) * 1_000_000)
     m = re.search(r"(\d+)", text)
