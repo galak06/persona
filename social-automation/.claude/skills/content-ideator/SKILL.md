@@ -307,7 +307,28 @@ Sources: [X gap], [Y trending], [Z PAA], [W seasonal]
 • "edit 2" → modify idea 2, then re-approve
 ```
 
-Wait for Telegram response with approval instruction.
+**IMPORTANT:** Use `send_and_wait()` from `lib/notifier.py` to send AND automatically poll for the reply. Do NOT just send and stop — the function blocks until the user replies in Telegram.
+
+```python
+from notifier import send_and_wait
+
+result = send_and_wait(msg, timeout_hours=24)
+# result["action"]: "approved" | "skipped" | "edited" | "timeout"
+# result["reply_text"]: raw reply (e.g., "1,2" or "all" or "approve")
+
+if result["action"] == "approved":
+    reply = result["reply_text"].lower().strip()
+    if reply == "all":
+        approved_ids = {idea["id"] for idea in ideas}
+    elif any(c.isdigit() for c in reply):
+        approved_ids = {int(n.strip()) for n in reply.split(",") if n.strip().isdigit()}
+    else:
+        approved_ids = {idea["id"] for idea in ideas}  # default to all
+elif result["action"] == "skipped":
+    approved_ids = set()
+else:
+    approved_ids = set()
+```
 
 ### Step 5b: Record Decisions for Learning
 

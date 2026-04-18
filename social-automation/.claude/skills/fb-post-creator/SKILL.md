@@ -173,23 +173,26 @@ if violations:
     # If still failing after 2 retries, flag in Telegram
 ```
 
-### Step 5 — Telegram Approval
-Send preview to Telegram:
+### Step 5 — Telegram Approval (auto-polling)
+Send preview and automatically wait for reply using `send_and_wait()`:
+
+```python
+from notifier import send_and_wait
+
+preview_msg = f"""📘 Facebook Post Preview\nTitle: {post_title}\nCaption:\n---\n{generated_caption}\n---\nWord count: {word_count}\n\nReply: approve · skip · edit [your changes]"""
+
+# This automatically polls Telegram and returns when user replies
+result = send_and_wait(preview_msg, timeout_hours=24)
+
+if result["action"] == "approved":
+    pass  # proceed to publish
+elif result["action"] == "edited":
+    generated_caption = result["edit_text"]
+elif result["action"] in ("skipped", "timeout"):
+    exit(0)
 ```
-📘 Facebook Post Preview
 
-Title: {post_title}
-Caption:
----
-{generated_caption}
----
-Image: {image_url}
-Word count: {word_count}
-
-Reply: approve / skip / edit:[your changes]
-```
-
-Wait for approval (24h timeout).
+**IMPORTANT:** Always use `send_and_wait()` — never send and stop.
 
 ### Step 6 — Publish via Facebook Graph API
 ```python

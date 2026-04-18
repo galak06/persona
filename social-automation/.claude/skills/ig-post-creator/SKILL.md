@@ -215,26 +215,27 @@ if violations:
     # If still failing after 2 retries, flag in Telegram
 ```
 
-### Step 6 — Telegram Approval
+### Step 6 — Telegram Approval (auto-polling)
 
-Request user approval via Telegram:
+Send preview and automatically wait for reply using `send_and_wait()`:
 
+```python
+from notifier import send_and_wait
+
+preview_msg = f"""📸 Instagram Post Preview\nCaption:\n---\n{generated_caption}\n---\nHashtags: {hashtag_count} | Words: {word_count}\n\nReply: approve · skip · edit [your changes]"""
+
+# This automatically polls Telegram and returns when user replies
+result = send_and_wait(preview_msg, timeout_hours=24)
+
+if result["action"] == "approved":
+    pass  # proceed to publish
+elif result["action"] == "edited":
+    generated_caption = result["edit_text"]
+elif result["action"] in ("skipped", "timeout"):
+    exit(0)
 ```
-📸 Instagram Post Preview
 
-Title: {post_title}
-Caption:
----
-{generated_caption}
----
-Image: {image_url}
-Hashtags: {count}
-Word count: {word_count}
-
-Reel Script: {yes/no}
-
-Reply: approve / skip / edit:[your changes]
-```
+**IMPORTANT:** Always use `send_and_wait()` — never send and stop.
 
 ### Step 7 — Publish via Instagram Graph API
 

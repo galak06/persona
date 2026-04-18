@@ -192,7 +192,7 @@ Using all gathered data, generate:
 Send enriched brief to Telegram using notifier module:
 
 ```python
-from lib.notifier import send, request_approval
+from lib.notifier import send_and_wait
 
 brief_text = f"""
 📝 Content Brief: {topic}
@@ -224,19 +224,13 @@ Primary: {primary_keyword}
 Secondary: {secondary_keywords_list}
 Search Volume Signal: {volume_signal}
 
-Reply with:
-✅ approve — proceed with content brief
-⏭️ skip — move to next idea
-✏️ edit [notes] — request changes before approval
+Reply: approve · skip · edit [notes]
 """
 
-result = request_approval(
-    brief_text,
-    timeout_hours=24,
-    fallback_file=f".claude/state/pending_approval_{topic_slug}.txt"
-)
-
-approval_response = result.get("response")  # "approve", "skip", "edit"
+# send_and_wait polls Telegram automatically and returns when user replies
+result = send_and_wait(brief_text, timeout_hours=24)
+# result["action"]: "approved" | "skipped" | "edited" | "timeout"
+# result["edit_text"]: user's edit notes (if edited)
 approval_notes = result.get("notes", "")
 ```
 

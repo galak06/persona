@@ -35,11 +35,50 @@ def _save_history(history: list[dict]) -> None:
     HISTORY_FILE.write_text(json.dumps(history, indent=2))
 
 
+def _extract_content_signals(idea: dict) -> dict:
+    """
+    Extract content signals that indicate WHY a user approves/skips.
+    These matter more than category alone.
+    """
+    topic = (idea.get("topic", idea.get("Topic", "")) or "").lower()
+    keyword = (idea.get("keyword", idea.get("Target_Keyword", "")) or "").lower()
+    nalla = (idea.get("Nalla_Context", idea.get("nalla_context", "")) or "").lower()
+    combined = f"{topic} {keyword} {nalla}"
+
+    return {
+        # Content format signals
+        "has_comparison": any(w in combined for w in ["vs", "vs.", "comparison", "compare", "versus", "showdown"]),
+        "has_testing": any(w in combined for w in ["tested", "test", "30-day", "week", "trial", "experiment"]),
+        "has_product_review": any(w in combined for w in ["review", "best", "top", "rated", "picks"]),
+        "has_how_to": any(w in combined for w in ["how to", "guide", "step", "method", "tutorial"]),
+        "has_data_angle": any(w in combined for w in ["data", "numbers", "cost", "price", "spreadsheet", "tracked", "measured"]),
+        "has_list_format": any(w in combined for w in ["best", "top", "ranked", "list"]),
+
+        # Tone signals
+        "tone_practical": any(w in combined for w in ["tested", "tried", "used", "bought", "switched", "survival"]),
+        "tone_academic": any(w in combined for w in ["protocol", "decoder", "analysis", "study", "research", "AAFCO"]),
+        "tone_urgent": any(w in combined for w in ["season", "spring", "summer", "now", "this week", "today"]),
+        "tone_fun": any(w in combined for w in ["survival", "showdown", "battle", "vs", "explosion", "crazy"]),
+
+        # Revenue signals
+        "has_affiliate_potential": any(w in combined for w in [
+            "product", "buy", "collar", "tracker", "food", "tool", "brush",
+            "shampoo", "supplement", "harness", "bed", "camera", "treat",
+        ]),
+
+        # Story signals
+        "has_personal_story": any(w in combined for w in ["lost", "refused", "broke", "surprised", "discovered", "noticed"]),
+        "has_specific_nalla": "nalla" in combined and len(nalla) > 20,
+    }
+
+
 def record_decision(idea: dict, decision: str, notes: str = "") -> None:
     """
-    Record user's decision on an idea.
+    Record user's decision on an idea with content signals.
     decision: "approved" | "skipped" | "edited"
     """
+    signals = _extract_content_signals(idea)
+
     history = _load_history()
     history.append({
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -52,6 +91,7 @@ def record_decision(idea: dict, decision: str, notes: str = "") -> None:
         "nalla_context": idea.get("Nalla_Context", "")[:100],
         "seasonal": idea.get("seasonal", False),
         "evidence": idea.get("evidence", {}),
+        "content_signals": signals,
     })
     _save_history(history)
 
@@ -94,7 +134,44 @@ def analyze_preferences() -> dict:
     avg_approved_score = sum(approved_scores) / len(approved_scores) if approved_scores else 0
     avg_skipped_score = sum(skipped_scores) / len(skipped_scores) if skipped_scores else 0
 
-    # Keyword patterns — what words appear in approved vs skipped topics
+    # ── Content signal analysis (most important) ──
+    # Track which signals correlate with approval vs skip
+    all_signals = set()
+    signal_approved = Counter()
+    signal_skipped = Counter()
+
+    for h in approved:
+        signals = h.get("content_signals", {})
+        for sig, val in signals.items():
+            all_signals.add(sig)
+            if val:
+                signal_approved[sig] += 1
+
+    for h in skipped:
+        signals = h.get("content_signals", {})
+        for sig, val in signals.items():
+            all_signals.add(sig)
+            if val:
+                signal_skipped[sig] += 1
+
+    # Signals that predict approval
+    preferred_signals = []
+    avoided_signals = []
+    for sig in all_signals:
+        a = signal_approved.get(sig, 0)
+        s = signal_skipped.get(sig, 0)
+        total = a + s
+        if total > 0:
+            rate = a / total
+            if rate > 0.65 and a >= 1:
+                preferred_signals.append({"signal": sig, "approval_rate": round(rate, 2), "count": total})
+            elif rate < 0.35 and s >= 1:
+                avoided_signals.append({"signal": sig, "approval_rate": round(rate, 2), "count": total})
+
+    preferred_signals.sort(key=lambda x: x["approval_rate"], reverse=True)
+    avoided_signals.sort(key=lambda x: x["approval_rate"])
+
+    # Keyword patterns
     approved_words = Counter()
     skipped_words = Counter()
     for h in approved:
@@ -104,23 +181,19 @@ def analyze_preferences() -> dict:
         words = h.get("topic", "").lower().split()
         skipped_words.update(w for w in words if len(w) > 3)
 
-    # Words that appear more in approved than skipped
     preferred_words = []
     avoided_words = []
     for word in set(approved_words) | set(skipped_words):
         a_count = approved_words.get(word, 0)
         s_count = skipped_words.get(word, 0)
-        if a_count > s_count and a_count >= 2:
+        if a_count > s_count and a_count >= 1:
             preferred_words.append(word)
-        elif s_count > a_count and s_count >= 2:
+        elif s_count > a_count and s_count >= 1:
             avoided_words.append(word)
 
     # Seasonal preference
     seasonal_approved = sum(1 for h in approved if h.get("seasonal"))
     seasonal_total = sum(1 for h in history if h.get("seasonal"))
-
-    # Nalla context — does user prefer ideas with strong Nalla angles?
-    has_nalla = [h for h in approved if "nalla" in h.get("nalla_context", "").lower()]
 
     return {
         "status": "ready",
@@ -130,6 +203,14 @@ def analyze_preferences() -> dict:
         "edited": len(edited),
         "approval_rate": round(len(approved) / len(history), 2) if history else 0,
         "category_preference": category_preference,
+        "content_signals": {
+            "preferred": preferred_signals,
+            "avoided": avoided_signals,
+            "summary": {
+                "user_prefers": [s["signal"].replace("has_", "").replace("tone_", "") for s in preferred_signals],
+                "user_avoids": [s["signal"].replace("has_", "").replace("tone_", "") for s in avoided_signals],
+            },
+        },
         "score_analysis": {
             "avg_approved_score": round(avg_approved_score, 1),
             "avg_skipped_score": round(avg_skipped_score, 1),
@@ -141,9 +222,6 @@ def analyze_preferences() -> dict:
         },
         "seasonal_preference": {
             "seasonal_approval_rate": round(seasonal_approved / seasonal_total, 2) if seasonal_total else 0,
-        },
-        "nalla_preference": {
-            "nalla_in_approved_pct": round(len(has_nalla) / len(approved), 2) if approved else 0,
         },
     }
 
@@ -159,16 +237,35 @@ def get_scoring_adjustments() -> dict:
 
     adjustments = []
 
-    # Category boosts/penalties
+    # ── Content signal adjustments (primary — what actually matters) ──
+    content_signals = prefs.get("content_signals", {})
+
+    for sig in content_signals.get("preferred", []):
+        adjustments.append({
+            "type": "signal_boost",
+            "signal": sig["signal"],
+            "adjustment": +1,
+            "reason": f"User prefers {sig['signal'].replace('has_', '').replace('tone_', '')} ({int(sig['approval_rate']*100)}% approval rate)",
+        })
+
+    for sig in content_signals.get("avoided", []):
+        adjustments.append({
+            "type": "signal_penalty",
+            "signal": sig["signal"],
+            "adjustment": -1,
+            "reason": f"User avoids {sig['signal'].replace('has_', '').replace('tone_', '')} ({int(sig['approval_rate']*100)}% approval rate)",
+        })
+
+    # ── Category adjustments (secondary — less weight than signals) ──
     for cat, pref in prefs.get("category_preference", {}).items():
-        if pref["bias"] == "preferred":
+        if pref["bias"] == "preferred" and pref["approved"] >= 2:
             adjustments.append({
                 "type": "category_boost",
                 "category": cat,
                 "adjustment": +1,
                 "reason": f"User approves {cat} {int(pref['approval_rate']*100)}% of the time",
             })
-        elif pref["bias"] == "avoided":
+        elif pref["bias"] == "avoided" and pref["skipped"] >= 2:
             adjustments.append({
                 "type": "category_penalty",
                 "category": cat,
@@ -176,33 +273,32 @@ def get_scoring_adjustments() -> dict:
                 "reason": f"User skips {cat} {int((1-pref['approval_rate'])*100)}% of the time",
             })
 
-    # Score threshold
+    # ── Score threshold ──
     min_score = prefs.get("score_analysis", {}).get("min_viable_score", 5)
     if min_score > 5:
         adjustments.append({
             "type": "score_threshold",
             "min_score": min_score,
-            "reason": f"User typically approves ideas scoring {min_score}+ (avg approved: {prefs['score_analysis']['avg_approved_score']})",
+            "reason": f"User typically approves ideas scoring {min_score}+",
         })
 
-    # Preferred words boost
+    # ── Keyword patterns ──
     preferred = prefs.get("keyword_patterns", {}).get("preferred_words", [])
     if preferred:
         adjustments.append({
             "type": "keyword_boost",
             "words": preferred,
             "adjustment": +1,
-            "reason": f"User prefers topics containing: {', '.join(preferred[:5])}",
+            "reason": f"User prefers topics with: {', '.join(preferred[:5])}",
         })
 
-    # Avoided words penalty
     avoided = prefs.get("keyword_patterns", {}).get("avoided_words", [])
     if avoided:
         adjustments.append({
             "type": "keyword_penalty",
             "words": avoided,
             "adjustment": -1,
-            "reason": f"User tends to skip topics containing: {', '.join(avoided[:5])}",
+            "reason": f"User tends to skip topics with: {', '.join(avoided[:5])}",
         })
 
     return {
@@ -229,8 +325,21 @@ def apply_adjustments(idea_score: int, idea: dict) -> tuple[int, list[str]]:
     category = idea.get("category", idea.get("Category", "")).lower()
     topic = idea.get("topic", idea.get("Topic", "")).lower()
 
+    # Extract signals for this idea
+    idea_signals = _extract_content_signals(idea)
+
     for adj in adjustments:
-        if adj["type"] == "category_boost" and adj["category"].lower() == category:
+        if adj["type"] == "signal_boost":
+            if idea_signals.get(adj["signal"], False):
+                score += adj["adjustment"]
+                reasons.append(f"+{adj['adjustment']} {adj['reason']}")
+
+        elif adj["type"] == "signal_penalty":
+            if idea_signals.get(adj["signal"], False):
+                score += adj["adjustment"]
+                reasons.append(f"{adj['adjustment']} {adj['reason']}")
+
+        elif adj["type"] == "category_boost" and adj["category"].lower() == category:
             score += adj["adjustment"]
             reasons.append(f"+{adj['adjustment']} {adj['reason']}")
 

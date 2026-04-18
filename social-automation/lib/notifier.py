@@ -242,6 +242,96 @@ def _parse_reply(text: str, draft: str) -> dict:
     return {"action": "skipped", "comment": draft}
 
 
+def send_and_wait(
+    message: str,
+    timeout_hours: int = 24,
+    valid_responses: list[str] | None = None,
+) -> dict:
+    """
+    Generic send-and-wait: send a Telegram message and poll for a reply.
+    Works for any approval flow — content briefs, social posts, ideas, etc.
+
+    Returns:
+        {
+            "action": "approved" | "skipped" | "edited" | "timeout" | "pending",
+            "reply_text": str,   # raw reply from user
+            "edit_text": str,    # text after "edit:" prefix (if edited)
+        }
+
+    User replies:
+        yes / y / approve / ok / all  → approved
+        skip / s / no / n             → skipped
+        edit: <text>                  → edited with new text
+        1,2,3 / specific numbers     → approved (reply_text has the numbers)
+    """
+    cfg = _load_config()
+    token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+
+    if not token or not chat_id:
+        return {"action": "pending", "reply_text": "", "edit_text": ""}
+
+    # Snapshot offset before sending
+    try:
+        offset = _get_latest_offset(token)
+    except Exception:
+        return {"action": "pending", "reply_text": "", "edit_text": ""}
+
+    # Send the message
+    sent = send(message, silent=False)
+    if not sent:
+        return {"action": "pending", "reply_text": "", "edit_text": ""}
+
+    print(f"[notifier] Waiting for Telegram reply (timeout: {timeout_hours}h)...", flush=True)
+
+    # Poll for reply
+    deadline = time.time() + (timeout_hours * 3600)
+    poll_interval = 5
+
+    while time.time() < deadline:
+        updates = _get_updates(token, offset=offset, timeout=poll_interval)
+        for update in updates:
+            offset = update["update_id"] + 1
+            msg_data = update.get("message", {})
+            if str(msg_data.get("chat", {}).get("id", "")) != str(chat_id):
+                continue
+            text = msg_data.get("text", "").strip()
+            if not text:
+                continue
+
+            lower = text.lower().strip()
+
+            # Parse reply
+            if lower in ("yes", "y", "approve", "ok", "post", "post it", "all"):
+                send("✅ Approved — proceeding.", silent=True)
+                return {"action": "approved", "reply_text": text, "edit_text": ""}
+
+            if lower in ("skip", "s", "no", "n", "nope"):
+                send("⏭️ Skipped.", silent=True)
+                return {"action": "skipped", "reply_text": text, "edit_text": ""}
+
+            if lower.startswith("edit:") or lower.startswith("edit "):
+                edit_text = text[5:].strip()
+                send("✏️ Got your edit — adjusting.", silent=True)
+                return {"action": "edited", "reply_text": text, "edit_text": edit_text}
+
+            # Number selections like "1,2,4"
+            if all(c in "0123456789, " for c in lower) and any(c.isdigit() for c in lower):
+                send(f"✅ Selections received: {text}", silent=True)
+                return {"action": "approved", "reply_text": text, "edit_text": ""}
+
+            # Unknown — assume approve if short, skip if ambiguous
+            if len(text) < 10:
+                send(f"Treating '{text}' as approval.", silent=True)
+                return {"action": "approved", "reply_text": text, "edit_text": ""}
+            else:
+                send(f"Treating as edit note.", silent=True)
+                return {"action": "edited", "reply_text": text, "edit_text": text}
+
+    send(f"⏰ No reply after {timeout_hours}h — skipped.", silent=True)
+    return {"action": "timeout", "reply_text": "", "edit_text": ""}
+
+
 if __name__ == "__main__":
     # Quick test
     print("Sending test notification...")
