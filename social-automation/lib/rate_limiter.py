@@ -14,11 +14,12 @@ from pathlib import Path
 from typing import Literal
 
 Platform = Literal["facebook", "instagram"]
-ActionType = Literal["comment", "like", "group_visit", "ig_comment"]
+ActionType = Literal["comment", "like", "group_visit", "group_post", "ig_comment"]
 
 DAILY_LIMITS: dict[str, int] = {
     "facebook:comment": 5,
     "facebook:group_visit": 6,  # reduced from 10 — spread through day
+    "facebook:group_post": 3,   # share blog link to group — hard spam cap
     "instagram:like": 8,  # increased from 5 — likes are low-risk
     "instagram:ig_comment": 2,
 }
@@ -26,6 +27,7 @@ DAILY_LIMITS: dict[str, int] = {
 DELAY_RANGES: dict[str, tuple[int, int]] = {
     "facebook:comment": (30, 120),
     "facebook:group_visit": (45, 180),
+    "facebook:group_post": (60, 180),
     "instagram:like": (10, 45),
     "instagram:ig_comment": (120, 180),
 }

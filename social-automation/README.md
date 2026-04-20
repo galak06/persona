@@ -17,6 +17,7 @@ Playwright-based agents scan Facebook groups and Instagram hashtags for posts re
 | `fb-scanner` | Scans joined Facebook dog groups, scores posts by relevance, queues high-scoring ones | Daily 3:30 PM |
 | `ig-scanner` | Scans Instagram hashtags, likes qualifying posts, queues top candidates for comments | Daily 7:00 PM |
 | `comment-composer` | Drafts Nalla's Dad voice comments, validates tone, sends to Telegram for approval, posts | Daily 10:00 PM |
+| `reply-follower` | Revisits recent FB comments, scrapes replies, drafts conversational responses, Telegram-approves, posts as threaded replies | On demand (`scripts/reply_follower.py`) |
 | `activity-logger` | Logs every action (like, comment, join) to JSONL + Excel tracker | Called by all agents |
 
 ### Growth

@@ -61,6 +61,7 @@ Scan social platforms, score posts, queue comments, post approved ones.
 | `fb-scanner` | Visits joined FB dog groups, scores each post by relevance to the site's topics, queues high scorers for commenting | Daily 3:30 PM |
 | `ig-scanner` | Scans IG hashtags, likes qualifying posts (≤8/day), queues top candidates for comments (≤2/day) | Daily 7:00 PM |
 | `comment-composer` | Drafts Nalla's Dad-voice comments from the queue, validates against brand rules, sends to Telegram for approval, posts | Daily 10:00 PM |
+| `reply-follower` | Revisits recent FB comments, scrapes replies, drafts + approves + posts conversational responses (threaded). Drives 10-30x more profile visits than the original comment | On demand |
 | `fb-group-scout` | Searches FB for new dog-related groups (public + private), scores + shortlists for approval, sends join requests (≤3/week) | Monthly 1st |
 | `fb-group-publisher` | Pushes a WP blog post into eligible FB groups with per-category tailored text, respects group rules | On demand |
 
