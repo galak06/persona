@@ -1,0 +1,40 @@
+{
+  "_note": "IG carousel config for turkey-rice-stew. Bland-diet recipe — imagery skews clean, comforting, plate-in-bowl rather than styled pile.",
+  "seed_id": "turkey-rice-stew",
+  "aspect_ratio": "9:16",
+  "model": "nano_pro",
+  "slides": [
+    {
+      "key": "hero",
+      "prompt": "Cinematic food photography, overhead 45-degree angle of a shallow cream-colored ceramic dog bowl filled with turkey and rice stew: pale fluffy white rice mixed with browned turkey crumbles, visibly cooked diced carrots (bright orange pops), and bright green peas scattered through. Deep warm side-light from the right casting a long dramatic shadow of the bowl to the left on a weathered oak counter. Steam rising gently from the bowl, catching the light. Rustic kitchen background softly out of focus. Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Clean and comforting, not styled or fancy — this is a bland-diet recovery meal. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery.",
+      "overlay": {
+        "headline": "TURKEY & RICE\nSTEW",
+        "subcopy": "sensitive stomachs  \u2022  vet-bland diet  \u2022  30 min"
+      }
+    },
+    {
+      "key": "ingredients",
+      "prompt": "Cinematic overhead flat-lay food photography with dramatic side-light from the upper right casting long warm shadows across a weathered oak surface: a small pile of pink raw ground turkey on a square of parchment paper, a small cream ceramic bowl of dry uncooked white rice, a glass measuring cup of dark clear chicken broth, a single whole orange carrot (unpeeled), a small wooden dish of bright green frozen peas. Generous negative space between items. Warm tungsten-toned light, deep shadows. Absolutely no onion, no garlic, no seasoning anywhere. No text on anything, no writing, no watermarks, no logos, no jars with labels, no utensils, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "WHAT YOU NEED",
+        "subcopy": "5 items. No onion. No garlic."
+      }
+    },
+    {
+      "key": "process",
+      "prompt": "Cinematic close-up food photography at an eye-level 25-degree angle: a large non-stick sauté pan on a stovetop, ground turkey actively browning in crumbles (some pink still visible, some cooked through). A small mountain of bright white rice and diced orange carrot visible, ready to add. Steam rising from the pan catching the warm side-light from the right. Deep shadows to the left. Shallow depth of field — the pan edge sharp, the background softly blurred. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "BROWN. SIMMER. COOL.",
+        "subcopy": "Step 4 of 6"
+      }
+    },
+    {
+      "key": "final",
+      "prompt": "Cinematic overhead food photography at a slight angle of a single cream-colored ceramic dog bowl filled with finished turkey and rice stew, ready to serve. The stew is a comforting blend of fluffy white rice, browned turkey crumbles, bright orange diced carrots, and green peas. A serving spoon rests beside the bowl on a weathered oak counter (not inside the bowl). Warm side-light from the right catches the surface of the stew. Long dramatic shadow from the bowl stretching left. Tight crop, bowl fills about 70% of frame. Honest, comforting — not styled magazine food but real home cooking for a dog. No text, no labels, no watermarks, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "SAVE FOR SICK DAYS",
+        "subcopy": "Full recipe on dogfoodandfun.com"
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "_note": "IG carousel config for blueberry-yogurt-frozen-bites. Cool palette — blues, creamy whites, frost — contrasts with the warm-amber dog biscuit recipes.",
+  "seed_id": "blueberry-yogurt-frozen-bites",
+  "aspect_ratio": "9:16",
+  "model": "nano_pro",
+  "slides": [
+    {
+      "key": "hero",
+      "prompt": "Cinematic overhead food photography at a slight angle of a small pile of frozen blueberry-yogurt dog treats resting on a cold slate or pale stone board. The treats are pale cream-white yogurt with visible chunks of deep blue-purple blueberries embedded. A light dusting of frost and cold mist swirling around them, catching warm side-light from the right. One treat tipped off the edge. Cool blue-gray shadows to the left, warm amber highlights to the right creating contrast. Home-kitchen feel, rustic but clean. Shot on 50mm at f/2.8, shallow depth of field. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery, no packaging.",
+      "overlay": {
+        "headline": "BLUEBERRY & YOGURT\nFROZEN BITES",
+        "subcopy": "3 ingredients  \u2022  10-min prep  \u2022  summer"
+      }
+    },
+    {
+      "key": "ingredients",
+      "prompt": "Cinematic overhead flat-lay food photography with dramatic side-light from the upper right casting long warm shadows across a weathered oak surface: a small open unmarked glass jar of thick plain Greek yogurt (you can see the creamy white surface), a small cream ceramic bowl of fresh deep blue-purple blueberries (a few loose berries scattered on the wood nearby), and a small glass measuring cup with a shallow pool of water. Generous negative space between items. Warm tungsten-toned light contrasting with the cool blue-purple of the berries. Absolutely no text on anything, no writing, no watermarks, no logos, no jars with labels, no utensils, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "WHAT YOU NEED",
+        "subcopy": "3 items. That\u2019s it."
+      }
+    },
+    {
+      "key": "process",
+      "prompt": "Cinematic close-up food photography at an eye-level 30-degree angle: a silicone mini-muffin mold (pale sky-blue silicone) with several cavities already filled with a swirled cream-white yogurt and deep blue-purple blueberry mixture — you can see whole berries and crushed berry color marbling through. One cavity being filled mid-pour, a small stream of yogurt-blueberry mix actively falling from above. The mold rests on a weathered oak counter. Warm side-light from the right, cool blue-gray shadows to the left. Shallow depth of field — the mold sharp, the background softly blurred. Honest home-kitchen feel. No text, no labels, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "STIR. POUR. FREEZE.",
+        "subcopy": "Step 4 of 6"
+      }
+    },
+    {
+      "key": "final",
+      "prompt": "Cinematic close-up food photography at an overhead 45-degree angle of finished frozen blueberry-yogurt dog treats popped out of the mold and resting on a cold pale stone slab. The treats are perfect small rounds or domes, creamy white yogurt with visibly embedded deep blue-purple blueberry chunks. A light dusting of frost on the stone. One treat melting slightly with a small pool of blueberry-tinted liquid around it. Warm side-light from the right catching the glossy surface, cool blue-gray shadows to the left. Tight crop — 4 or 5 treats in sharp focus up front, more softly out of focus behind. Honest imperfect plating, home-kitchen feel. No text, no labels, no watermarks, no logos, no hands, no people, no dogs, no cutlery.",
+      "overlay": {
+        "headline": "SAVE FOR HEATWAVES",
+        "subcopy": "Full recipe on dogfoodandfun.com"
+      }
+    }
+  ]
+}

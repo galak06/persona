@@ -1,0 +1,40 @@
+{
+  "_note": "IG carousel config for pumpkin-oat-biscuits. Warmer amber palette than PB biscuits — pumpkin + cinnamon read more autumnal in the lighting.",
+  "seed_id": "pumpkin-oat-biscuits",
+  "aspect_ratio": "9:16",
+  "model": "nano_pro",
+  "slides": [
+    {
+      "key": "hero",
+      "prompt": "Cinematic food photography, slightly off-axis overhead angle of a generous pile of freshly-baked bone-shaped PUMPKIN OAT dog biscuits tumbling across a weathered oak cutting board. Biscuits are a rich amber-orange color from the pumpkin puree, with visibly oat-flecked tops. One biscuit tipped off the edge catching the light mid-fall. Deep warm autumn side-light from the right casting long dramatic shadows to the left. A cinnamon stick resting nearby, a scatter of loose oats glowing in the warm light. Dark rustic kitchen background (stone wall, earthenware jars softly out of focus). Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Home kitchen — not studio. Magazine-quality but honest and imperfect. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery, no spoons, no forks, no knives, no packaging.",
+      "overlay": {
+        "headline": "PUMPKIN & OAT\nDOG BISCUITS",
+        "subcopy": "30 min  \u2022  6 ingredients  \u2022  fiber-rich"
+      }
+    },
+    {
+      "key": "ingredients",
+      "prompt": "Cinematic overhead flat-lay food photography with dramatic side-light from the upper right casting long warm autumn shadows across a weathered oak surface: a small cream ceramic bowl of whole wheat flour with a little flour spilled onto the wood, a small wooden dish of rolled oats, a small open ceramic jar of bright amber-orange pumpkin puree with a spoon-scoop visible on top (no utensil beside it), a single whole brown egg resting in its shell, a small glass measuring cup with a shallow pool of dark bone broth, and a single whole cinnamon stick resting on the wood. Generous negative space between items. Warm tungsten-toned light, deep shadows. Absolutely no text on anything, no writing, no watermarks, no logos, no jars with labels, no utensils except the pumpkin scoop, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "WHAT YOU NEED",
+        "subcopy": "6 items. Pumpkin-powered."
+      }
+    },
+    {
+      "key": "process",
+      "prompt": "Cinematic close-up food photography at an eye-level 30-degree angle: a flour-dusted wooden rolling pin resting mid-roll across pale amber-orange pumpkin oat biscuit dough (visibly speckled with oats) on a rustic oak counter. A bone-shaped cookie cutter pressed into the dough in the foreground, and one freshly-cut bone shape lifted and set aside. A small puff of flour suspended in mid-air above the dough, catching warm amber side-light. Deep shadows to the left, glow from the right. Shallow depth of field — the cutter sharp, the rolling pin softly blurred. A single cinnamon stick rests on the counter nearby. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "MIX. ROLL. CUT. BAKE.",
+        "subcopy": "Step 4 of 8"
+      }
+    },
+    {
+      "key": "final",
+      "prompt": "Cinematic close-up food photography at an overhead 45-degree angle of freshly baked BONE-SHAPED pumpkin oat dog biscuits cooling on a black wire rack. Every biscuit is cut into the shape of a classic dog bone — two round lobes on each end connected by a narrower middle. Thin, flat biscuits (about 1/4 inch thick), NOT puffy, NOT round, NOT scones. Tops are deeply amber-golden-brown from the pumpkin, visibly flecked with oats, slight glossiness catching warm side-light from the right. The rack wires cast long dramatic parallel shadows across the weathered wooden counter below. Tight crop — 3 or 4 bone-shaped biscuits in sharp focus up front, more softly out of focus in the background. A few oat flakes scattered on the counter. One bone tilted up on its edge, catching the light. Honest imperfect plating, home kitchen feel, magazine-quality. No text, no labels, no watermarks, no logos, no hands, no people, no dogs, no cutlery.",
+      "overlay": {
+        "headline": "SAVE FOR FALL",
+        "subcopy": "Full recipe on dogfoodandfun.com"
+      }
+    }
+  ]
+}

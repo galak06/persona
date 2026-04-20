@@ -1,0 +1,207 @@
+{
+  "_schema_version": "1",
+  "_note": "Seed recipes are the ground truth. Ingredients and steps are FROZEN — the LLM is not allowed to change them. The LLM only writes the intro, Nalla's verdict, FAQ, meta description, image brief, and IG caption in voice. Every seed here should be a recipe that actually works when cooked.",
+  "seeds": [
+    {
+      "id": "pb-banana-biscuits",
+      "title": "Peanut Butter & Banana Dog Biscuits",
+      "topic_keywords": ["peanut butter", "banana", "biscuit", "crunchy treat", "training treat", "baked treat", "pb"],
+      "category": "treats-baked",
+      "prep_minutes": 10,
+      "cook_minutes": 25,
+      "yield_servings": "makes ~30 small biscuits (1-inch pieces)",
+      "tags": ["peanut-butter", "banana", "biscuits", "baked-treats"],
+      "ingredients": [
+        "1 cup (120g) whole wheat flour",
+        "1/4 cup (25g) rolled oats",
+        "1 ripe banana (~100g), mashed",
+        "1/3 cup (85g) natural peanut butter, xylitol-free",
+        "1 large egg",
+        "2-3 tbsp water, added 1 tbsp at a time if the dough is too dry to hold together"
+      ],
+      "steps": [
+        "Preheat oven to 350°F (175°C) and line a baking sheet with parchment paper.",
+        "In a large bowl, mash the banana thoroughly with a fork until mostly smooth.",
+        "Whisk the peanut butter and egg into the mashed banana until fully combined.",
+        "Stir in the flour and oats until a stiff dough forms. Add water 1 tbsp at a time only if the dough is too dry to hold together.",
+        "Turn the dough onto a lightly floured surface and roll to 1/4 inch (6 mm) thick.",
+        "Cut into 1-inch pieces with a knife or small cookie cutter and space them 1/2 inch apart on the baking sheet.",
+        "Bake for 20-25 minutes, until golden brown and firm to the touch.",
+        "Turn the oven off and leave the biscuits inside for 30 minutes to crisp fully, then cool completely on a wire rack before serving."
+      ],
+      "dog_safety_notes": "Peanut butter MUST be xylitol-free — check the label carefully. Unsalted or low-sodium peanut butter is safest. No sugar added.",
+      "storage": "Airtight container at room temperature for up to 1 week, or freeze for up to 3 months.",
+      "portion_guide": {
+        "small": "1-2 biscuits/day (dogs under 20 lb / 9 kg)",
+        "medium": "2-3 biscuits/day (dogs 20-50 lb / 9-23 kg)",
+        "large": "3-4 biscuits/day (dogs over 50 lb / 23 kg)"
+      },
+      "source_attribution": "Pattern consistent with standard dog biscuit recipes widely published by AKC, Rover, and Whole Dog Journal. Flour-to-wet ratio follows standard quick-bread biscuit baking; bake time verified against 350°F short-biscuit norms."
+    },
+    {
+      "id": "pumpkin-oat-biscuits",
+      "title": "Pumpkin & Oat Dog Biscuits",
+      "topic_keywords": ["pumpkin", "oat", "biscuit", "baked treat", "fall recipe", "fiber", "sensitive stomach"],
+      "category": "treats-baked",
+      "prep_minutes": 10,
+      "cook_minutes": 30,
+      "yield_servings": "makes ~24 medium biscuits (bone-shaped, ~1.5 inch)",
+      "tags": ["pumpkin", "oats", "biscuits", "fiber", "fall"],
+      "ingredients": [
+        "1 1/2 cups (180g) whole wheat flour",
+        "1/2 cup (50g) rolled oats",
+        "1/2 cup (120g) plain canned pumpkin puree (100% pumpkin, not pumpkin pie filling)",
+        "1 large egg",
+        "2 tbsp (30ml) unsalted chicken or bone broth, or water",
+        "1/4 tsp ground cinnamon"
+      ],
+      "steps": [
+        "Preheat oven to 350°F (175°C) and line a baking sheet with parchment paper.",
+        "In a large bowl, whisk together the flour, oats, and cinnamon.",
+        "In a separate bowl, whisk the pumpkin puree, egg, and broth until smooth.",
+        "Add the wet mixture to the dry ingredients and stir until a firm dough forms. If the dough is too dry to hold together, add water 1 tsp at a time.",
+        "Turn the dough onto a lightly floured surface and roll to 1/4 inch (6 mm) thick.",
+        "Cut into 1.5-inch bone or round shapes and place on the baking sheet with 1/2 inch between pieces.",
+        "Bake for 25-30 minutes, until the edges are lightly browned and the tops are dry to the touch.",
+        "Cool completely on a wire rack — they crisp as they cool."
+      ],
+      "dog_safety_notes": "Use plain canned pumpkin, NOT pumpkin pie filling (which contains sugar and nutmeg — nutmeg is toxic to dogs). Cinnamon in small amounts is safe; do not substitute nutmeg, allspice, or clove.",
+      "storage": "Airtight container at room temperature for 1 week, refrigerator for 2 weeks, or freezer for 3 months.",
+      "portion_guide": {
+        "small": "1 biscuit/day",
+        "medium": "1-2 biscuits/day",
+        "large": "2-3 biscuits/day"
+      },
+      "source_attribution": "Pumpkin + oat dog biscuit pattern is widely published across AKC, PetMD, and Rover content. Standard 3:1 flour:pumpkin ratio and 350°F/25-30 min bake is consistent across published tested recipes."
+    },
+    {
+      "id": "sweet-potato-chews",
+      "title": "Single-Ingredient Sweet Potato Chews",
+      "topic_keywords": ["sweet potato", "chew", "dehydrated", "jerky", "single-ingredient", "chewy treat", "long-lasting"],
+      "category": "treats-dehydrated",
+      "prep_minutes": 10,
+      "cook_minutes": 180,
+      "yield_servings": "makes ~20 chews from one large sweet potato",
+      "tags": ["sweet-potato", "single-ingredient", "chews", "dehydrated"],
+      "ingredients": [
+        "1 large sweet potato (~500g / 1 lb), washed and unpeeled"
+      ],
+      "steps": [
+        "Preheat oven to 250°F (120°C) and line a rimmed baking sheet with parchment paper.",
+        "Trim both ends off the sweet potato. Slice lengthwise into 1/4 inch (6 mm) thick strips using a sharp knife or mandoline. Thinner slices make crispier chews; thicker slices make chewier jerky-style chews.",
+        "Arrange the slices in a single layer on the parchment-lined baking sheet, not overlapping.",
+        "Bake for 2.5-3 hours, flipping each slice halfway through (at the 90-minute mark).",
+        "The chews are done when they feel leathery and firm with no soft centers. For crunchier chews, bake an additional 30 minutes.",
+        "Turn the oven off and leave the chews inside until the oven cools completely (about 1 hour) — this finishes the drying.",
+        "Transfer to a wire rack and let air-dry overnight at room temperature before storing."
+      ],
+      "dog_safety_notes": "Sweet potato skin is safe but can be tough — peel if your dog is a young puppy or has dental issues. Do NOT substitute regular white potatoes (solanine risk when undercooked). Never add salt, butter, or spices.",
+      "storage": "Airtight container at room temperature for 2-3 weeks (chews are low-moisture). Freeze for up to 6 months for longer storage.",
+      "portion_guide": {
+        "small": "1 small chew/day",
+        "medium": "1-2 chews/day",
+        "large": "2-3 chews/day"
+      },
+      "source_attribution": "Low-temperature oven dehydration of sweet potato is a widely-published single-ingredient dog chew pattern (AKC, PetMD, Dogster). 250°F/2.5-3 hr is the standard range for 1/4 inch slices."
+    },
+    {
+      "id": "turkey-rice-stew",
+      "title": "Turkey & Rice Stew for Sensitive Stomachs",
+      "topic_keywords": ["turkey", "rice", "stew", "sensitive stomach", "bland diet", "recovery", "upset stomach", "meal topper"],
+      "category": "main-dish",
+      "prep_minutes": 10,
+      "cook_minutes": 25,
+      "yield_servings": "makes ~4 cups (serves a 30-lb dog for 2 days as a topper)",
+      "tags": ["turkey", "rice", "sensitive-stomach", "bland", "recovery"],
+      "ingredients": [
+        "1 lb (450g) lean ground turkey (93% or leaner)",
+        "1 cup (185g) uncooked white rice",
+        "3 cups (720ml) unsalted chicken broth or water",
+        "1 medium carrot (~80g), finely diced",
+        "1/2 cup (75g) frozen peas"
+      ],
+      "steps": [
+        "In a large non-stick pan or Dutch oven over medium heat, break the ground turkey into small crumbles with a spoon and cook for 6-8 minutes, stirring often, until no pink remains.",
+        "Drain any fat from the pan.",
+        "Add the uncooked rice, broth, and diced carrot. Stir to combine.",
+        "Bring to a boil, then reduce heat to low and cover. Simmer for 18-20 minutes, until the rice is tender and has absorbed most of the liquid.",
+        "Stir in the frozen peas and cook uncovered for 2 more minutes, until the peas are heated through.",
+        "Remove from heat and let cool to room temperature before serving — never serve hot food to a dog."
+      ],
+      "dog_safety_notes": "Use lean ground turkey (93% or leaner) to keep fat low for sensitive stomachs. Never use seasoned/flavored ground turkey (garlic and onion powder are toxic). No added salt. Use unsalted broth only — regular chicken broth contains onion powder.",
+      "storage": "Refrigerate in an airtight container for up to 3 days. Freeze portioned in 1-cup containers for up to 2 months.",
+      "portion_guide": {
+        "small": "1/4 cup per meal (as topper) or 1/2 cup as a full bland-diet meal",
+        "medium": "1/2 cup per meal (topper) or 1 cup (bland diet)",
+        "large": "3/4-1 cup per meal (topper) or 1.5 cups (bland diet)"
+      },
+      "source_attribution": "Turkey + white rice is the veterinary-standard bland diet for dogs recovering from GI upset (widely recommended by AVMA, Merck Veterinary Manual). Proportions and cooking method match standard home-cooked dog bland-diet recipes."
+    },
+    {
+      "id": "blueberry-yogurt-frozen-bites",
+      "title": "Blueberry & Greek Yogurt Frozen Bites",
+      "topic_keywords": ["blueberry", "yogurt", "frozen", "summer treat", "frozen treat", "popsicle", "cooling"],
+      "category": "treats-frozen",
+      "prep_minutes": 10,
+      "cook_minutes": 0,
+      "yield_servings": "makes ~24 bite-sized frozen treats (using silicone mini-muffin mold or ice cube tray)",
+      "tags": ["blueberry", "yogurt", "frozen", "summer"],
+      "ingredients": [
+        "1 cup (240g) plain, unsweetened, full-fat Greek yogurt (xylitol-free)",
+        "1/2 cup (75g) fresh or frozen blueberries",
+        "1 tbsp (15ml) water, if using fresh berries and mixture is too thick"
+      ],
+      "steps": [
+        "If using fresh blueberries, roughly chop about half of them so they release their color. Leave the remaining whole for texture.",
+        "In a bowl, stir the yogurt and blueberries together until the berries are evenly distributed.",
+        "If the mixture is too thick to spoon easily, stir in water 1 tsp at a time.",
+        "Spoon into a silicone mini-muffin mold or ice cube tray, filling each cavity to the top.",
+        "Freeze uncovered for at least 4 hours, or until completely solid.",
+        "Pop the frozen bites out of the mold and transfer to a freezer-safe container or bag."
+      ],
+      "dog_safety_notes": "Yogurt MUST be plain and xylitol-free (vanilla, flavored, or 'light' yogurts often contain xylitol). Full-fat plain Greek yogurt has less lactose than regular yogurt and is easier on most dogs. Blueberries are safe; strawberries and raspberries are also safe substitutes. Never substitute grapes or raisins — they are toxic.",
+      "storage": "Freezer in an airtight container for up to 2 months. Serve frozen, outdoors or in a bowl (they drip as they thaw).",
+      "portion_guide": {
+        "small": "1 bite/day",
+        "medium": "1-2 bites/day",
+        "large": "2-3 bites/day"
+      },
+      "source_attribution": "Plain Greek yogurt + dog-safe berry frozen treats are widely published by AKC, Rover, and PetMD. Standard 2:1 yogurt-to-fruit ratio holds its shape after freezing."
+    },
+    {
+      "id": "chicken-bone-broth",
+      "title": "Unsalted Chicken Bone Broth for Dogs",
+      "topic_keywords": ["bone broth", "broth", "topper", "meal topper", "chicken broth", "gut health", "hydration", "senior dog"],
+      "category": "topper",
+      "prep_minutes": 10,
+      "cook_minutes": 720,
+      "yield_servings": "makes ~6 cups of broth",
+      "tags": ["bone-broth", "topper", "chicken", "hydration"],
+      "ingredients": [
+        "2 lb (900g) raw chicken bones (backs, necks, or a whole carcass from a roasted chicken with meat removed)",
+        "8 cups (2 liters) cold filtered water",
+        "2 tbsp (30ml) apple cider vinegar",
+        "1 medium carrot (~80g), roughly chopped",
+        "2 stalks celery (~100g), roughly chopped"
+      ],
+      "steps": [
+        "Place the chicken bones in a large stockpot or slow cooker.",
+        "Add the cold water, apple cider vinegar, carrot, and celery. The vinegar helps draw minerals out of the bones during the long simmer.",
+        "Let the mixture sit at room temperature for 30 minutes before starting to heat — this gives the vinegar time to start working.",
+        "Bring to a gentle boil over medium-high heat, then immediately reduce to the lowest simmer. You should see bubbles breaking the surface occasionally, not a rolling boil.",
+        "Cover partially (leave a small gap for steam) and simmer for 12 hours on the stovetop, or 12-24 hours on low in a slow cooker. Skim any foam off the top in the first hour.",
+        "Strain the broth through a fine-mesh sieve into a clean container, discarding the solids. IMPORTANT: do not feed the cooked bones to your dog — cooked bones splinter.",
+        "Refrigerate overnight. The next day, lift off and discard the solid fat layer that forms on top — this reduces the fat content significantly.",
+        "The finished broth should be clear golden and jiggly when cold (that's the collagen — it's the goal)."
+      ],
+      "dog_safety_notes": "NEVER add salt, onion, garlic, leek, chive, or any seasoning blend — most store-bought broths contain these and are not safe. Cooked bones from the finished broth must be discarded (splinter risk). Apple cider vinegar is safe in cooking quantities (it's diluted to nothing during the long simmer). Use raw bones, not cooked — cooked bones yield less collagen.",
+      "storage": "Refrigerate up to 5 days. Freeze in 1/2-cup portions (ice cube trays work well) for up to 6 months.",
+      "portion_guide": {
+        "small": "1-2 tbsp over food per meal",
+        "medium": "2-4 tbsp over food per meal",
+        "large": "1/4-1/2 cup over food per meal"
+      },
+      "source_attribution": "Dog-safe bone broth is a long-established topper pattern; 12+ hour low-temperature simmer with apple cider vinegar is the standard method published by Dogs Naturally, PetMD, and Whole Dog Journal. Method avoids all allium-family aromatics."
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "_note": "IG carousel config for pb-banana-biscuits. Each slide has a fully-detailed cinematic prompt for Nano Banana Pro + deterministic text overlay rendered on top via PIL.",
+  "seed_id": "pb-banana-biscuits",
+  "aspect_ratio": "9:16",
+  "model": "nano_pro",
+  "slides": [
+    {
+      "key": "hero",
+      "prompt": "Cinematic food photography, slightly off-axis overhead angle of a generous pile of freshly-baked bone-shaped peanut butter dog biscuits tumbling across a weathered oak cutting board. Single biscuit tipped off the edge catching the light mid-fall. Deep amber side-light from the right casting long dramatic shadows to the left. Rich golden-brown tops with visible cracks and texture. A few scattered oats glowing in the warm light. Dark negative space in the upper left. Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Home kitchen — not studio. Magazine-quality but honest and imperfect. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery, no spoons, no forks, no knives, no packaging.",
+      "overlay": {
+        "headline": "PEANUT BUTTER &\nBANANA DOG BISCUITS",
+        "subcopy": "25 min  \u2022  6 pantry ingredients  \u2022  xylitol-free"
+      }
+    },
+    {
+      "key": "ingredients",
+      "prompt": "Cinematic overhead flat-lay food photography with dramatic side-light from the upper right casting long warm shadows across a weathered oak surface: a small cream ceramic bowl of whole wheat flour with a little flour spilled onto the wood, a small wooden dish of rolled oats, one perfectly ripe banana with speckled peel, a plain unmarked glass jar of natural peanut butter — peanut butter glistening at the rim, unmarked metal lid off to one side, a single whole brown egg resting in its shell, a small glass measuring cup with a shallow pool of water. Generous negative space between items. Warm tungsten-toned light, deep shadows. Absolutely no text on anything, no writing, no watermarks, no logos, no jars with labels, no utensils, no cutlery, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "WHAT YOU NEED",
+        "subcopy": "6 items. All from the pantry."
+      }
+    },
+    {
+      "key": "process",
+      "prompt": "Cinematic close-up food photography at an eye-level 30-degree angle: a flour-dusted wooden rolling pin resting mid-roll across pale tan biscuit dough on a rustic oak counter. A bone-shaped cookie cutter pressed into the dough in the foreground, and one freshly-cut bone shape lifted and set aside. A small puff of flour suspended in mid-air above the dough, catching warm side-light. Deep shadows to the left, glow from the right. Shallow depth of field — the cutter sharp, the rolling pin softly blurred. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "MIX. ROLL. CUT. BAKE.",
+        "subcopy": "Step 4 of 8"
+      }
+    },
+    {
+      "key": "final",
+      "prompt": "Cinematic close-up food photography at an overhead 45-degree angle of freshly baked BONE-SHAPED peanut butter dog biscuits cooling on a black wire rack. Every biscuit is cut into the shape of a classic dog bone — two round lobes on each end connected by a narrower middle. Thin, flat biscuits (about 1/4 inch thick), NOT puffy, NOT round, NOT scones. Tops are deeply golden-brown with visibly crackled texture and a slight glossiness catching warm side-light from the right. The rack wires cast long dramatic parallel shadows across the weathered wooden counter below. Tight crop — 3 or 4 bone-shaped biscuits in sharp focus up front, more softly out of focus in the background. A few peanut-colored crumbs scattered on the counter. One bone tilted up on its edge, catching the light. Honest imperfect plating, home kitchen feel, magazine-quality. No text, no labels, no watermarks, no logos, no hands, no people, no dogs, no cutlery.",
+      "overlay": {
+        "headline": "SAVE FOR SUNDAY",
+        "subcopy": "Full recipe on dogfoodandfun.com"
+      }
+    }
+  ]
+}

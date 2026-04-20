@@ -27,7 +27,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from logger import enable_unbuffered, log_step
-from notifier import send, send_and_wait, skill_error, skill_finished, skill_started
+from notifier import (
+    send,
+    send_and_wait,
+    send_video,
+    skill_error,
+    skill_finished,
+    skill_started,
+)
 
 enable_unbuffered()
 
@@ -305,9 +312,135 @@ def stage_publish() -> bool:
     return True
 
 
+def stage_reel(seed_id: str) -> bool:
+    """Generate a 9:16 Reel from a carousel seed, approve via Telegram, publish.
+
+    Flow: load seed → generate_recipe (voice) → generate_carousel_slides →
+    compose_reel → sendVideo to Telegram → send_and_wait for approval →
+    publish_reel_to_instagram.
+    """
+    log_step("Reel Publisher", f"starting seed={seed_id}")
+    skill_started("reel-publisher", f"Building Reel for {seed_id}")
+
+    skill_path = PROJECT_ROOT / "recipe-publisher"
+    if not skill_path.exists():
+        skill_error("reel-publisher", f"recipe-publisher skill not found at {skill_path}")
+        return False
+    sys.path.insert(0, str(skill_path))
+
+    # Surface env vars from settings.local.json so the skill's modules see keys.
+    settings = load_json(PROJECT_ROOT / ".claude/settings.local.json", {})
+    for k, v in settings.get("env", {}).items():
+        os.environ.setdefault(k, v)
+
+    try:
+        from generators.carousel import generate_carousel_slides
+        from generators.music import get_music_for_reel
+        from generators.recipe import generate_recipe
+        from generators.reel import compose_reel
+        from generators.seeds import load_seeds
+        from publishers.instagram import publish_reel_to_instagram
+    except ImportError as e:
+        skill_error("reel-publisher", f"failed to import recipe-publisher: {e}")
+        return False
+
+    seed = next((s for s in load_seeds() if s.id == seed_id), None)
+    if seed is None:
+        skill_error("reel-publisher", f"seed {seed_id!r} not in seeds.json")
+        return False
+
+    log_step("Reel Publisher", f"generating recipe voice for {seed.title!r}")
+    try:
+        recipe = generate_recipe(seed.title)
+    except Exception as e:
+        skill_error("reel-publisher", f"recipe generation failed: {e}")
+        return False
+
+    log_step("Reel Publisher", "generating 4 carousel slides")
+    try:
+        slides = generate_carousel_slides(seed_id, recipe_title=recipe.title)
+    except Exception as e:
+        skill_error("reel-publisher", f"slide generation failed: {e}")
+        return False
+
+    video_dir = PROJECT_ROOT / ".claude/state/reels"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    stamp = int(time.time())
+
+    music_path = video_dir / f"{seed_id}-{stamp}.mp3"
+    log_step("Reel Publisher", "fetching music bed from Jamendo")
+    try:
+        track = get_music_for_reel(music_path)
+        log_step(
+            "Reel Publisher",
+            f"music: {track.name!r} by {track.artist} ({track.duration_s}s)",
+        )
+    except Exception as e:
+        skill_error("reel-publisher", f"music fetch failed: {e}")
+        return False
+
+    video_path = video_dir / f"{seed_id}-{stamp}.mp4"
+    log_step("Reel Publisher", f"composing reel → {video_path.name}")
+    try:
+        compose_reel(
+            [s.bytes_ or b"" for s in slides],
+            video_path,
+            audio_path=music_path,
+        )
+    except Exception as e:
+        skill_error("reel-publisher", f"reel composition failed: {e}")
+        return False
+
+    send_video(
+        video_path,
+        caption=f"🎬 <b>Reel preview: {recipe.title}</b>",
+    )
+
+    caption_preview = recipe.ig_caption
+    if len(caption_preview) > 400:
+        caption_preview = caption_preview[:400] + "…"
+    approval_msg = (
+        f"📸 <b>Reel ready — {recipe.title}</b>\n\n"
+        f"📝 Caption ({len(recipe.ig_caption)} chars):\n"
+        f"<i>{caption_preview}</i>\n\n"
+        f"Reply: <b>approve</b> · <b>skip</b>"
+    )
+    result = send_and_wait(approval_msg, timeout_hours=12)
+    if result["action"] != "approved":
+        skill_finished(
+            "reel-publisher", f"Not approved ({result['action']})", success=False
+        )
+        return False
+
+    log_step("Reel Publisher", "publishing to Instagram Reels")
+    try:
+        pub = publish_reel_to_instagram(recipe, video_path=video_path)
+    except Exception as e:
+        skill_error("reel-publisher", f"IG publish failed: {e}")
+        return False
+
+    timeline = load_json(TIMELINE_FILE, {})
+    timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat() + "Z"
+    save_json(TIMELINE_FILE, timeline)
+
+    summary = f"Reel: {pub.permalink or pub.media_id}"
+    send(f"✅ <b>Reel published</b>\n{summary}")
+    skill_finished("reel-publisher", summary)
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Content pipeline with Telegram approval")
-    parser.add_argument("--stage", required=True, choices=["ideate", "enrich", "write", "publish", "all"])
+    parser.add_argument(
+        "--stage",
+        required=True,
+        choices=["ideate", "enrich", "write", "publish", "reel", "all"],
+    )
+    parser.add_argument(
+        "--seed",
+        default=None,
+        help="Carousel seed id for --stage reel (e.g. pb-banana-biscuits)",
+    )
     args = parser.parse_args()
 
     if args.stage == "ideate":
@@ -316,6 +449,12 @@ def main() -> None:
         stage_enrich()
     elif args.stage == "publish":
         stage_publish()
+    elif args.stage == "reel":
+        if not args.seed:
+            print("--stage reel requires --seed <id>", flush=True)
+            sys.exit(2)
+        ok = stage_reel(args.seed)
+        sys.exit(0 if ok else 1)
     elif args.stage == "all":
         if stage_ideate():
             stage_enrich()

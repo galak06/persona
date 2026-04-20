@@ -1,0 +1,40 @@
+{
+  "_note": "IG carousel config for sweet-potato-chews. Single-ingredient recipe — the 'ingredients' slide is deliberately minimalist to reinforce that.",
+  "seed_id": "sweet-potato-chews",
+  "aspect_ratio": "9:16",
+  "model": "nano_pro",
+  "slides": [
+    {
+      "key": "hero",
+      "prompt": "Cinematic food photography, overhead 45-degree angle of a tumbling pile of amber-orange sweet potato chews (thin leathery jerky-style strips with visible dehydration wrinkles) stacked casually on a weathered oak cutting board. One chew tipped off the edge catching the light. Deep warm side-light from the right casting long dramatic shadows to the left. Rich translucent amber-orange color, some strips crispier darker, some softer lighter. Rustic kitchen background softly out of focus (stoneware jars, wooden shelves). Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Home kitchen — not studio. Magazine-quality but honest. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery, no packaging.",
+      "overlay": {
+        "headline": "SWEET POTATO\nCHEWS",
+        "subcopy": "1 ingredient  \u2022  0 filler  \u2022  3-hour bake"
+      }
+    },
+    {
+      "key": "ingredients",
+      "prompt": "Cinematic overhead close-up food photography, dramatic side-light from the upper right casting a long warm shadow across a weathered oak surface: a single perfect sweet potato (unpeeled, slightly muddy skin to feel real) resting in the center of an otherwise empty oak surface. Warm tungsten-toned light, deep shadow on the left side of the potato, glow on the right. Single-subject composition — the potato is the hero. No other ingredients in frame. No text, no labels, no watermarks, no logos, no utensils, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "ONE THING",
+        "subcopy": "Just a sweet potato."
+      }
+    },
+    {
+      "key": "process",
+      "prompt": "Cinematic close-up food photography at an eye-level 20-degree angle: raw sweet potato strips sliced 1/4 inch thick, arranged in a single layer on a parchment-paper-lined rimmed baking sheet. Strips are bright orange and fresh-looking. Warm side-light from the right, deep shadows to the left. The baking sheet rests on a weathered oak counter; a sharp chef's knife rests off to the side (not in foreground) on the same counter. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "SLICE. BAKE LOW. DRY.",
+        "subcopy": "Step 3 of 7"
+      }
+    },
+    {
+      "key": "final",
+      "prompt": "Cinematic close-up food photography at an overhead 45-degree angle of finished dehydrated sweet potato chews cooling on a black wire rack. Chews are amber-orange, visibly leathery with crispy edges, some translucent where thin. Warm side-light from the right catches the subtle glossiness of the surface. The rack wires cast long dramatic parallel shadows across the weathered wooden counter below. Tight crop — 4 or 5 chews in sharp focus up front, more softly out of focus in the background. One chew tilted up on its edge, catching the light. Honest imperfect plating, home kitchen feel, magazine-quality. No text, no labels, no watermarks, no logos, no hands, no people, no dogs, no cutlery.",
+      "overlay": {
+        "headline": "SAVE FOR HIKES",
+        "subcopy": "Full recipe on dogfoodandfun.com"
+      }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# State is per-machine, not committed
+state/last_run.json
+state/published_recipes.json
+
+# Audit artifacts may contain API responses / counts we don't want in git
+_audit/

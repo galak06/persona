@@ -49,17 +49,47 @@ Created by the login scripts above. Must exist before running any agent.
 | `.claude/state/instagram_session.json` | `scripts/ig_login.py` |
 | `.claude/state/telegram_config.json` | Manual setup |
 
-## Agents
+## Skills
+
+### Engagement (6)
+
+Scan social platforms, score posts, queue comments, post approved ones.
 
 | Skill | What it does | When |
 |-------|-------------|------|
-| `site-analyzer` | Crawl dogfoodandfun.com, build content cache | Run before scans |
-| `fb-scanner` | Scan joined FB groups for relevant posts to engage with | Daily 8:30 AM |
-| `ig-scanner` | Scan IG hashtags, queue posts to like/comment | Daily 2:30 PM |
-| `comment-composer` | Draft, validate, and post queued comments | Daily 9:00 PM |
-| `fb-group-scout` | Find and join new dog-related FB groups | 1st of month |
-| `fb-group-publisher` | Publish blog posts to eligible FB groups | On demand |
-| `activity-logger` | Log all actions to JSONL + Excel tracker | Called by agents |
+| `site-analyzer` | Crawls dogfoodandfun.com RSS + sitemap, caches recent posts so comments can reference live site content | Daily 3:00 PM Israel |
+| `fb-scanner` | Visits joined FB dog groups, scores each post by relevance to the site's topics, queues high scorers for commenting | Daily 3:30 PM |
+| `ig-scanner` | Scans IG hashtags, likes qualifying posts (≤8/day), queues top candidates for comments (≤2/day) | Daily 7:00 PM |
+| `comment-composer` | Drafts Nalla's Dad-voice comments from the queue, validates against brand rules, sends to Telegram for approval, posts | Daily 10:00 PM |
+| `fb-group-scout` | Searches FB for new dog-related groups (public + private), scores + shortlists for approval, sends join requests (≤3/week) | Monthly 1st |
+| `fb-group-publisher` | Pushes a WP blog post into eligible FB groups with per-category tailored text, respects group rules | On demand |
+
+### Content publishing (6)
+
+Ideate → enrich → write → post to FB + IG (feed or Reel).
+
+| Skill / stage | What it does | When |
+|---|---|---|
+| `content-ideator` | Generates 5–10 blog ideas from content gaps, trends, PAA, seasonal windows; appends to the Google Sheet | On demand |
+| `content-enricher` | Enriches the next approved idea with SEO + social + demand research, sends a brief to Telegram for approval | On demand |
+| `wp-post-creator` | Writes a full blog post in Nalla's Dad voice from the approved brief (data-driven, 5+ Nalla mentions), creates a WP draft | After brief approved |
+| `fb-post-creator` | Facebook page post from the published WP post (150–200w, no hashtags) via Graph API | After WP published |
+| `ig-post-creator` | Single IG feed post from the published WP post (caption + Pexels image + 6–8 hashtags) via Graph API | After WP published |
+| `content_pipeline.py --stage reel --seed <id>` | End-to-end IG Reel: AI-rendered 9:16 slides with conversion overlays, instrumental music bed, Telegram approval, Reels API publish | On demand |
+
+### Operations (3)
+
+Metrics, backups, and action logging.
+
+| Skill | What it does | When |
+|---|---|---|
+| `performance-tracker` | Pulls monthly engagement metrics from WP + FB + IG, ranks top content, writes a report with recommendations that feed back into ideator/enricher | Monthly 1st |
+| `sheet-backup` | Backs up Google Sheet tabs + local state files as JSON with 90-day retention | Weekly Sunday |
+| `activity-logger` | Logs every action (like, comment, join, post) to JSONL + updates the Excel tracker | Called by all skills |
+
+### Reel pipeline details
+
+The Reel stage is the newest capability — it stitches AI-generated 9:16 slides (with a corner follow badge on slide 1 and a full-width site CTA ribbon on slide 4) into an mp4 with crossfades, mixes a Jamendo instrumental bed, and publishes via the IG Graph Reels API after a Telegram preview + approval. Full flow: [`social-automation/README.md`](social-automation/README.md#ig-reel-pipeline-content_pipelinepy---stage-reel).
 
 ## Rate Limits
 

@@ -35,6 +35,38 @@ Playwright-based agents scan Facebook groups and Instagram hashtags for posts re
 | `wp-post-creator` | Creates WordPress draft posts in Nalla's Dad voice from approved briefs | On demand |
 | `fb-post-creator` | Publishes WordPress posts to Facebook page via Graph API | On demand |
 | `ig-post-creator` | Publishes WordPress posts to Instagram with caption + hashtags via Graph API | On demand |
+| `reel-publisher` | Generates a 9:16 IG Reel (AI slides + music bed), Telegram-approves, posts | On demand (`--stage reel --seed <id>`) |
+
+### IG Reel pipeline (`content_pipeline.py --stage reel`)
+
+End-to-end Reel publisher. One command goes from a seed id to a live IG Reel:
+
+```bash
+python scripts/content_pipeline.py --stage reel --seed pb-banana-biscuits
+```
+
+**Flow** (~3 min + the approval wait):
+
+1. **Voice** — `generators/recipe.py::generate_recipe` runs Gemini against `prompts/recipe_system.md` + `prompts/ig_caption.md` to produce a compliant caption (hook → 3 bullet facts → `Comment RECIPE` CTA → question → branded hashtags). `_validate()` hard-rejects non-compliant captions.
+2. **Slides** — `generators/carousel.py::generate_carousel_slides` renders 4 slides at 9:16 via Imagen / Nano Pro. Text overlays baked on with PIL. **Conversion hooks**: slide 1 gets an `@dogfoodandfun` follow badge in the corner; slide 4 gets a full-width `FULL RECIPE → DOGFOODANDFUN.COM` ribbon at the bottom.
+3. **Music** — `generators/music.py::get_music_for_reel` hits the Jamendo API for an instrumental track (default tags: `acoustic+happy+upbeat`), picks one at random from the top 5, downloads the mp3.
+4. **Compose** — `generators/reel.py::compose_reel` stitches slides into a 1080×1920 mp4 with 0.5s `xfade` crossfades, mixes the music bed (`apad`+`atrim` to video length), encodes H.264 yuv420p.
+5. **Telegram preview** — `sendVideo` lands the mp4 in your chat, followed by a caption + `approve`/`skip` prompt that polls up to 12h.
+6. **Publish** — `publishers/instagram.py::publish_reel_to_instagram` uploads the mp4 to WP media, creates a `media_type=REELS` container, polls status up to 5 min for Meta transcode, publishes, writes `last_ig_reel_post` to `.claude/state/publishing_timeline.json`.
+
+Any failure routes through `skill_error` → Telegram push, exits 1. No partial publish.
+
+**Required env** (in `.claude/settings.local.json` under `env`):
+
+| Var | Purpose |
+|---|---|
+| `VOICE_PROVIDER` | `gemini` (skip the Anthropic default when out of credits) |
+| `GEMINI_API_KEY` | voice + image generation |
+| `JAMENDO_CLIENT_ID` | music bed |
+| `IG_ACCOUNT_ID` / `FB_PAGE_TOKEN` | Reels publish |
+| `WP_URL` / `WP_USER` / `WP_APP_PASSWORD` | video hosting |
+
+**Available seeds:** `pb-banana-biscuits`, `pumpkin-oat-biscuits`, `blueberry-yogurt-frozen-bites`, `chicken-bone-broth`, `sweet-potato-chews`, `turkey-rice-stew`. All 9:16.
 
 ### Operations
 

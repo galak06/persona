@@ -64,6 +64,40 @@ def send(message: str, silent: bool = False) -> bool:
         return False
 
 
+def send_video(video_path: Path, caption: str = "", silent: bool = False) -> bool:
+    """Send an mp4 to Telegram via sendVideo. 50MB bot-API limit — Reels fit easily.
+
+    Caption supports HTML like `send()`. Returns True on success.
+    """
+    cfg = _load_config()
+    token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+    if not token or not chat_id:
+        print("[notifier] WARNING: Telegram credentials not configured — skipping video.")
+        return False
+    try:
+        with open(video_path, "rb") as f:
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendVideo",
+                data={
+                    "chat_id": chat_id,
+                    "caption": caption,
+                    "parse_mode": "HTML",
+                    "disable_notification": "true" if silent else "false",
+                    "supports_streaming": "true",
+                },
+                files={"video": f},
+                timeout=180,
+            )
+        if not resp.ok:
+            print(f"[notifier] Telegram sendVideo error: {resp.status_code} — {resp.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[notifier] Failed to send video: {e}")
+        return False
+
+
 def skill_started(skill_name: str, detail: str = "") -> None:
     """Notify that a skill just started."""
     ts = datetime.now(UTC).strftime("%H:%M UTC")
