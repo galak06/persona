@@ -1,0 +1,17 @@
+[
+  {
+    "_note": "Amazon affiliate product catalog. Each entry is referenced by [AFFILIATE:key] placeholders in WP drafts. Keys are lowercase, hyphenated. ASIN is the 10-char Amazon product id from the URL (amazon.com/dp/ASIN). Display is a human-readable fallback name.",
+    "key": "fi-collar",
+    "asin": "B0FH8HQS3V",
+    "display": "Fi Series 3+ Smart Dog Collar (12-month membership)",
+    "category": "gps-tracker",
+    "notes": "Fi's newest 2025 tracker — AI behavior detection, nationwide LTE, GPS + health monitoring. Main product of /dog-gps-tracker-comparison/."
+  },
+  {
+    "key": "apple-airtag",
+    "asin": "B0933BVK6T",
+    "display": "Apple AirTag (4-pack)",
+    "category": "gps-tracker",
+    "notes": "Bluetooth item finder — comparison target in /dog-gps-tracker-comparison/. Not a true GPS; short range; cheap."
+  }
+]

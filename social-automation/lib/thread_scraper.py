@@ -62,16 +62,34 @@ def _expand_see_more(page) -> int:
     )
 
 
+def _needle_in_dom(page, needle: str) -> bool:
+    return page.evaluate(
+        """(needle) => {
+        const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+        const articles = document.querySelectorAll('[role="article"]');
+        for (const el of articles) {
+            if (norm(el.textContent).indexOf(needle) !== -1) return true;
+        }
+        return false;
+    }""",
+        needle,
+    )
+
+
 def find_replies_to_my_comment(page, my_comment_text: str) -> list[ScrapedReply]:
     """Open the already-loaded post page, locate our comment, return replies under it."""
-    # Expand truncated text + hidden reply threads twice — one pass often
-    # reveals new "See more" links that only appear after the first expansion.
-    for _ in range(2):
-        expanded = _expand_see_more(page)
-        if expanded:
-            import time as _t
-            _t.sleep(1.2)
     prefix = my_comment_text[:_MATCH_PREFIX_LEN]
+    needle = prefix.strip().lower()
+    # FB sorts comments by "Most relevant" and paginates. Older, low-engagement
+    # comments sit below the initial batch, so expand + scroll in a loop until
+    # our comment surfaces or we give up.
+    for _ in range(8):
+        _expand_see_more(page)
+        time.sleep(1.2)
+        if _needle_in_dom(page, needle):
+            break
+        page.evaluate("window.scrollBy(0, window.innerHeight)")
+        time.sleep(0.8)
     result = page.evaluate(
         """(prefix) => {
         // Walk every candidate comment element, score by text-prefix match.

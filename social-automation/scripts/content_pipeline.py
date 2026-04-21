@@ -312,26 +312,71 @@ def stage_publish() -> bool:
     return True
 
 
-def stage_reel(seed_id: str) -> bool:
-    """Generate a 9:16 Reel from a carousel seed, approve via Telegram, publish.
-
-    Flow: load seed → generate_recipe (voice) → generate_carousel_slides →
-    compose_reel → sendVideo to Telegram → send_and_wait for approval →
-    publish_reel_to_instagram.
-    """
-    log_step("Reel Publisher", f"starting seed={seed_id}")
-    skill_started("reel-publisher", f"Building Reel for {seed_id}")
-
+def _bootstrap_recipe_publisher() -> bool:
+    """Add recipe-publisher to sys.path + load settings env. Returns True on success."""
     skill_path = PROJECT_ROOT / "recipe-publisher"
     if not skill_path.exists():
-        skill_error("reel-publisher", f"recipe-publisher skill not found at {skill_path}")
         return False
-    sys.path.insert(0, str(skill_path))
-
-    # Surface env vars from settings.local.json so the skill's modules see keys.
+    if str(skill_path) not in sys.path:
+        sys.path.insert(0, str(skill_path))
     settings = load_json(PROJECT_ROOT / ".claude/settings.local.json", {})
     for k, v in settings.get("env", {}).items():
         os.environ.setdefault(k, v)
+    return True
+
+
+def _load_carousel_json(seed_id: str) -> dict | None:
+    """Return raw JSON of seeds/carousels/{seed_id}.json, or None if missing."""
+    path = (
+        PROJECT_ROOT / "recipe-publisher" / "seeds" / "carousels" / f"{seed_id}.json"
+    )
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())
+
+
+def _product_seed_recipe(carousel_json: dict):
+    """Build a minimal Recipe stub from a product-campaign carousel seed.
+
+    Product seeds carry their `ig_caption` + `title` inline (they don't need
+    LLM voice generation). Everything else is stubbed to safe defaults so the
+    downstream publishers / composers accept the object.
+    """
+    from generators.recipe import Recipe  # late import, recipe-publisher on path
+
+    title = carousel_json.get("title") or carousel_json["seed_id"].replace("-", " ").title()
+    caption = carousel_json["ig_caption"]
+    slug = carousel_json["seed_id"]
+
+    return Recipe(
+        title=title,
+        slug=slug,
+        meta_description=(title + " — comparison and pick on dogfoodandfun.com."),
+        body_markdown="(product campaign — body lives on the site)",
+        ingredients=["n/a"],
+        steps=["n/a", "n/a", "n/a"],
+        prep_minutes=0,
+        cook_minutes=0,
+        yield_servings="n/a",
+        tags=["campaign"],
+        image_brief="(not used for campaigns)",
+        ig_caption=caption,
+        seed_id=slug,
+    )
+
+
+def _prepare_reel(seed_id: str, skill_label: str = "reel-publisher"):
+    """Voice → slides → music → compose. Returns (recipe, video_path) or None on error.
+
+    Two paths:
+      1. Recipe seeds (seed exists in seeds.json) → generate_recipe runs the
+         usual LLM voice pipeline.
+      2. Product seeds (carousel JSON has top-level "ig_caption") → skip
+         generate_recipe, build a minimal Recipe stub from the inline caption.
+    """
+    if not _bootstrap_recipe_publisher():
+        skill_error(skill_label, "recipe-publisher skill not found")
+        return None
 
     try:
         from generators.carousel import generate_carousel_slides
@@ -339,48 +384,61 @@ def stage_reel(seed_id: str) -> bool:
         from generators.recipe import generate_recipe
         from generators.reel import compose_reel
         from generators.seeds import load_seeds
-        from publishers.instagram import publish_reel_to_instagram
     except ImportError as e:
-        skill_error("reel-publisher", f"failed to import recipe-publisher: {e}")
-        return False
+        skill_error(skill_label, f"failed to import recipe-publisher: {e}")
+        return None
 
-    seed = next((s for s in load_seeds() if s.id == seed_id), None)
-    if seed is None:
-        skill_error("reel-publisher", f"seed {seed_id!r} not in seeds.json")
-        return False
+    carousel = _load_carousel_json(seed_id)
+    if carousel is None:
+        skill_error(skill_label, f"no carousel config for seed {seed_id!r}")
+        return None
 
-    log_step("Reel Publisher", f"generating recipe voice for {seed.title!r}")
-    try:
-        recipe = generate_recipe(seed.title)
-    except Exception as e:
-        skill_error("reel-publisher", f"recipe generation failed: {e}")
-        return False
+    if carousel.get("ig_caption"):
+        # Product seed — caption is inline, skip voice generation
+        log_step(skill_label, f"product seed {seed_id} — using inline caption")
+        try:
+            recipe = _product_seed_recipe(carousel)
+        except Exception as e:
+            skill_error(skill_label, f"failed to build product recipe stub: {e}")
+            return None
+    else:
+        # Recipe seed — needs LLM voice generation
+        seed = next((s for s in load_seeds() if s.id == seed_id), None)
+        if seed is None:
+            skill_error(skill_label, f"seed {seed_id!r} not in seeds.json")
+            return None
+        log_step(skill_label, f"generating recipe voice for {seed.title!r}")
+        try:
+            recipe = generate_recipe(seed.title)
+        except Exception as e:
+            skill_error(skill_label, f"recipe generation failed: {e}")
+            return None
 
-    log_step("Reel Publisher", "generating 4 carousel slides")
+    log_step(skill_label, "generating 4 carousel slides")
     try:
         slides = generate_carousel_slides(seed_id, recipe_title=recipe.title)
     except Exception as e:
-        skill_error("reel-publisher", f"slide generation failed: {e}")
-        return False
+        skill_error(skill_label, f"slide generation failed: {e}")
+        return None
 
     video_dir = PROJECT_ROOT / ".claude/state/reels"
     video_dir.mkdir(parents=True, exist_ok=True)
     stamp = int(time.time())
 
     music_path = video_dir / f"{seed_id}-{stamp}.mp3"
-    log_step("Reel Publisher", "fetching music bed from Jamendo")
+    log_step(skill_label, "fetching music bed from Jamendo")
     try:
         track = get_music_for_reel(music_path)
         log_step(
-            "Reel Publisher",
+            skill_label,
             f"music: {track.name!r} by {track.artist} ({track.duration_s}s)",
         )
     except Exception as e:
-        skill_error("reel-publisher", f"music fetch failed: {e}")
-        return False
+        skill_error(skill_label, f"music fetch failed: {e}")
+        return None
 
     video_path = video_dir / f"{seed_id}-{stamp}.mp4"
-    log_step("Reel Publisher", f"composing reel → {video_path.name}")
+    log_step(skill_label, f"composing reel → {video_path.name}")
     try:
         compose_reel(
             [s.bytes_ or b"" for s in slides],
@@ -388,13 +446,25 @@ def stage_reel(seed_id: str) -> bool:
             audio_path=music_path,
         )
     except Exception as e:
-        skill_error("reel-publisher", f"reel composition failed: {e}")
-        return False
+        skill_error(skill_label, f"reel composition failed: {e}")
+        return None
 
-    send_video(
-        video_path,
-        caption=f"🎬 <b>Reel preview: {recipe.title}</b>",
-    )
+    return recipe, video_path
+
+
+def stage_reel(seed_id: str) -> bool:
+    """Generate a 9:16 Reel from a carousel seed, approve via Telegram, publish to IG."""
+    log_step("Reel Publisher", f"starting seed={seed_id}")
+    skill_started("reel-publisher", f"Building Reel for {seed_id}")
+
+    prep = _prepare_reel(seed_id, skill_label="reel-publisher")
+    if prep is None:
+        return False
+    recipe, video_path = prep
+
+    from publishers.instagram import publish_reel_to_instagram
+
+    send_video(video_path, caption=f"🎬 <b>Reel preview: {recipe.title}</b>")
 
     caption_preview = recipe.ig_caption
     if len(caption_preview) > 400:
@@ -429,17 +499,206 @@ def stage_reel(seed_id: str) -> bool:
     return True
 
 
+def _compose_fb_description(
+    ig_caption: str,
+    product_display: str,
+    affiliate_url: str,
+    wp_url: str | None,
+) -> str:
+    """Build an FB Reel description in Nalla's Dad voice.
+
+    Rules we honor:
+      - Start from the already-validated IG caption so the hook + Nalla
+        mention + question pattern carry over verbatim
+      - Frame each URL in a conversational "we did X" sentence — no clinical
+        "Product:" or "Link:" prefixes (those read as salesy and break the
+        tone our site holds)
+      - WP link is optional; skip the phrase entirely if no URL given
+    """
+    parts = [ig_caption.rstrip()]
+    if wp_url:
+        parts.append(
+            f"The full write-up with exact amounts and what actually "
+            f"worked for Nalla is here: {wp_url}"
+        )
+    parts.append(
+        f"The {product_display} we used for this one: {affiliate_url}"
+    )
+    return "\n\n".join(parts)
+
+
+def stage_campaign(
+    product_key: str,
+    reel_seed: str,
+    wp_url: str | None = None,
+    campaign_id: str | None = None,
+) -> bool:
+    """Campaign = one Reel published to BOTH IG and FB with affiliate-aware description.
+
+    Product is looked up in data/affiliate_products.json. Affiliate URL is
+    built with AMAZON_ASSOCIATES_TAG + ascsubtag=campaign_id. IG caption stays
+    brand-safe (no raw URL — drives via bio). FB description includes the URL
+    directly (FB allows clickable links in Reel descriptions).
+    """
+    log_step("Campaign", f"product={product_key} seed={reel_seed}")
+    skill_started("campaign", f"Campaign: {product_key}")
+
+    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+    import affiliate_resolver as ar
+
+    tag = os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
+    if not tag:
+        settings = load_json(PROJECT_ROOT / ".claude/settings.local.json", {})
+        tag = settings.get("env", {}).get("AMAZON_ASSOCIATES_TAG", "").strip()
+        if tag:
+            os.environ["AMAZON_ASSOCIATES_TAG"] = tag
+    if not tag:
+        skill_error("campaign", "AMAZON_ASSOCIATES_TAG not set")
+        return False
+
+    try:
+        product = ar.lookup(product_key)
+    except ar.AffiliateResolverError as e:
+        skill_error("campaign", str(e))
+        return False
+
+    if not campaign_id:
+        campaign_id = f"{date.today().isoformat()[:7]}-{product_key}"
+    affiliate_url = ar.build_affiliate_url(product.asin, tag, campaign_id=campaign_id)
+
+    preview = (
+        f"🎬 <b>Campaign: {product.display}</b>\n\n"
+        f"Product: {product.display} ({product.asin})\n"
+        f"Reel seed: <code>{reel_seed}</code>\n"
+        f"WP post: {wp_url or '(none provided)'}\n"
+        f"Affiliate URL: {affiliate_url}\n"
+        f"Campaign ID: {campaign_id}\n\n"
+        f"Will compose a Reel and publish to both IG and FB.\n\n"
+        f"Reply: <b>approve</b> · <b>skip</b>"
+    )
+    kickoff = send_and_wait(preview, timeout_hours=12)
+    if kickoff["action"] != "approved":
+        skill_finished("campaign", f"Kickoff {kickoff['action']}", success=False)
+        return False
+
+    prep = _prepare_reel(reel_seed, skill_label="campaign")
+    if prep is None:
+        return False
+    recipe, video_path = prep
+
+    # FB description stays in Nalla's Dad voice — URLs framed as "we used X"
+    # not clinical "Product: URL". IG caption is already brand-validated; we
+    # only add the product + site links in conversational phrasing.
+    fb_description = _compose_fb_description(
+        recipe.ig_caption, product.display, affiliate_url, wp_url
+    )
+
+    send_video(
+        video_path,
+        caption=f"🎬 <b>Campaign Reel preview: {recipe.title}</b>",
+    )
+    reel_approval = send_and_wait(
+        f"📸 <b>Campaign Reel ready — {product.display}</b>\n\n"
+        f"IG caption: <i>{recipe.ig_caption[:250]}…</i>\n\n"
+        f"FB description adds affiliate URL.\n\n"
+        f"Reply: <b>approve</b> · <b>skip</b>",
+        timeout_hours=12,
+    )
+    if reel_approval["action"] != "approved":
+        skill_finished(
+            "campaign", f"Reel {reel_approval['action']}", success=False
+        )
+        return False
+
+    # Publish to IG
+    from publishers.instagram import publish_reel_to_instagram
+    log_step("Campaign", "publishing to Instagram Reels")
+    try:
+        ig_pub = publish_reel_to_instagram(recipe, video_path=video_path)
+    except Exception as e:
+        skill_error("campaign", f"IG publish failed: {e}")
+        return False
+
+    # Publish to FB with affiliate-aware description
+    from publishers.facebook import publish_reel_to_facebook
+    log_step("Campaign", "publishing to Facebook Reels")
+    try:
+        fb_pub = publish_reel_to_facebook(
+            recipe, video_path=video_path, description=fb_description
+        )
+    except Exception as e:
+        # IG already succeeded — don't treat FB failure as full campaign failure.
+        send(f"⚠️ Campaign: IG published, FB failed: {e}")
+        fb_pub = None
+
+    # Persist campaign state
+    campaigns_file = PROJECT_ROOT / "data" / "campaigns.json"
+    campaigns = load_json(campaigns_file, [])
+    if not isinstance(campaigns, list):
+        campaigns = []
+    campaigns.append(
+        {
+            "campaign_id": campaign_id,
+            "product": {"key": product.key, "asin": product.asin, "display": product.display},
+            "affiliate_url": affiliate_url,
+            "reel_seed": reel_seed,
+            "wp_url": wp_url,
+            "ig_permalink": ig_pub.permalink,
+            "ig_media_id": ig_pub.media_id,
+            "fb_permalink": fb_pub.permalink if fb_pub else None,
+            "fb_post_id": fb_pub.post_id if fb_pub else None,
+            "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+    )
+    save_json(campaigns_file, campaigns)
+
+    timeline = load_json(TIMELINE_FILE, {})
+    now = datetime.now(timezone.utc).isoformat() + "Z"
+    timeline["last_ig_reel_post"] = now
+    if fb_pub:
+        timeline["last_fb_reel_post"] = now
+    save_json(TIMELINE_FILE, timeline)
+
+    summary_parts = [f"IG: {ig_pub.permalink or ig_pub.media_id}"]
+    if fb_pub:
+        summary_parts.append(f"FB: {fb_pub.permalink or fb_pub.post_id or fb_pub.video_id}")
+    summary = " | ".join(summary_parts)
+    send(f"✅ <b>Campaign live — {product.display}</b>\n{summary}")
+    skill_finished("campaign", summary)
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Content pipeline with Telegram approval")
     parser.add_argument(
         "--stage",
         required=True,
-        choices=["ideate", "enrich", "write", "publish", "reel", "all"],
+        choices=["ideate", "enrich", "write", "publish", "reel", "campaign", "all"],
     )
     parser.add_argument(
         "--seed",
         default=None,
-        help="Carousel seed id for --stage reel (e.g. pb-banana-biscuits)",
+        help="Carousel seed id for --stage reel or --reel-seed for --stage campaign",
+    )
+    parser.add_argument(
+        "--product",
+        default=None,
+        help="Affiliate product key from data/affiliate_products.json (for --stage campaign)",
+    )
+    parser.add_argument(
+        "--reel-seed",
+        default=None,
+        help="Carousel seed id for --stage campaign (defaults to --seed if given)",
+    )
+    parser.add_argument(
+        "--wp-url",
+        default=None,
+        help="Optional WP post URL to include in FB description (for --stage campaign)",
+    )
+    parser.add_argument(
+        "--campaign-id",
+        default=None,
+        help="Override campaign id (default: YYYY-MM-{product_key})",
     )
     args = parser.parse_args()
 
@@ -454,6 +713,24 @@ def main() -> None:
             print("--stage reel requires --seed <id>", flush=True)
             sys.exit(2)
         ok = stage_reel(args.seed)
+        sys.exit(0 if ok else 1)
+    elif args.stage == "campaign":
+        if not args.product:
+            print("--stage campaign requires --product <key>", flush=True)
+            sys.exit(2)
+        reel_seed = args.reel_seed or args.seed
+        if not reel_seed:
+            print(
+                "--stage campaign requires --reel-seed <id> (or --seed as shorthand)",
+                flush=True,
+            )
+            sys.exit(2)
+        ok = stage_campaign(
+            product_key=args.product,
+            reel_seed=reel_seed,
+            wp_url=args.wp_url,
+            campaign_id=args.campaign_id,
+        )
         sys.exit(0 if ok else 1)
     elif args.stage == "all":
         if stage_ideate():
