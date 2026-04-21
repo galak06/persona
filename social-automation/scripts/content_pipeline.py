@@ -240,7 +240,7 @@ def stage_publish() -> bool:
         if fb_resp.status_code == 200:
             fb_id = fb_resp.json().get("id", "")
             published.append(f"FB: {fb_id}")
-            timeline["last_fb_page_post"] = datetime.now(timezone.utc).isoformat() + "Z"
+            timeline["last_fb_page_post"] = datetime.now(timezone.utc).isoformat()
             print(f"    FB published: {fb_id}", flush=True)
         else:
             err = fb_resp.json().get("error", {}).get("message", "unknown")
@@ -275,7 +275,7 @@ def stage_publish() -> bool:
                 if pub.status_code == 200:
                     ig_id = pub.json()["id"]
                     published.append(f"IG: {ig_id}")
-                    timeline["last_ig_feed_post"] = datetime.now(timezone.utc).isoformat() + "Z"
+                    timeline["last_ig_feed_post"] = datetime.now(timezone.utc).isoformat()
                     print(f"    IG published: {ig_id}", flush=True)
                 else:
                     err = pub.json().get("error", {}).get("message", "unknown")
@@ -298,7 +298,7 @@ def stage_publish() -> bool:
     with open(PROJECT_ROOT / "logs/engagement_log.jsonl", "a") as f:
         for entry in published:
             f.write(json.dumps({
-                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "platform": "facebook" if "FB" in entry else "instagram",
                 "action": "page_post" if "FB" in entry else "feed_post",
                 "source_post": post_url,
@@ -490,7 +490,7 @@ def stage_reel(seed_id: str) -> bool:
         return False
 
     timeline = load_json(TIMELINE_FILE, {})
-    timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat() + "Z"
+    timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat()
     save_json(TIMELINE_FILE, timeline)
 
     summary = f"Reel: {pub.permalink or pub.media_id}"
@@ -527,11 +527,45 @@ def _compose_fb_description(
     return "\n\n".join(parts)
 
 
+def _hours_since_last_reel() -> float | None:
+    """Return hours since the most recent IG-or-FB Reel publish, or None if never."""
+    timeline = load_json(TIMELINE_FILE, {})
+    stamps = [
+        timeline.get("last_ig_reel_post"),
+        timeline.get("last_fb_reel_post"),
+    ]
+    stamps = [s for s in stamps if s]
+    if not stamps:
+        return None
+    parsed: list[datetime] = []
+    for s in stamps:
+        # Historical writes produced "+00:00Z" (redundant Z on top of offset).
+        # Strip trailing Z unconditionally, then parse.
+        cleaned = s.rstrip("Z")
+        try:
+            parsed.append(datetime.fromisoformat(cleaned))
+        except ValueError:
+            # Fall back: maybe the Z WAS the tz (naive + Z shape)
+            try:
+                parsed.append(datetime.fromisoformat(s.replace("Z", "+00:00")))
+            except ValueError:
+                continue
+    if not parsed:
+        return None
+    newest = max(parsed)
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - newest
+    return delta.total_seconds() / 3600.0
+
+
 def stage_campaign(
     product_key: str,
     reel_seed: str,
     wp_url: str | None = None,
     campaign_id: str | None = None,
+    min_gap_hours: float = 72.0,
+    force: bool = False,
 ) -> bool:
     """Campaign = one Reel published to BOTH IG and FB with affiliate-aware description.
 
@@ -539,9 +573,25 @@ def stage_campaign(
     built with AMAZON_ASSOCIATES_TAG + ascsubtag=campaign_id. IG caption stays
     brand-safe (no raw URL — drives via bio). FB description includes the URL
     directly (FB allows clickable links in Reel descriptions).
+
+    `min_gap_hours` enforces spacing between promotional Reels — running two
+    back-to-back teaches IG+FB's algorithms your account is "promotional" and
+    hurts reach on both. Default 72h (3 days). Pass `force=True` to bypass.
     """
     log_step("Campaign", f"product={product_key} seed={reel_seed}")
     skill_started("campaign", f"Campaign: {product_key}")
+
+    if min_gap_hours > 0 and not force:
+        elapsed = _hours_since_last_reel()
+        if elapsed is not None and elapsed < min_gap_hours:
+            remaining = min_gap_hours - elapsed
+            msg = (
+                f"last Reel was {elapsed:.1f}h ago — below the "
+                f"{min_gap_hours:.0f}h minimum gap. Wait {remaining:.1f}h "
+                f"or pass --force to override."
+            )
+            skill_error("campaign", msg)
+            return False
 
     sys.path.insert(0, str(PROJECT_ROOT / "lib"))
     import affiliate_resolver as ar
@@ -653,7 +703,7 @@ def stage_campaign(
     save_json(campaigns_file, campaigns)
 
     timeline = load_json(TIMELINE_FILE, {})
-    now = datetime.now(timezone.utc).isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat()
     timeline["last_ig_reel_post"] = now
     if fb_pub:
         timeline["last_fb_reel_post"] = now
@@ -700,6 +750,17 @@ def main() -> None:
         default=None,
         help="Override campaign id (default: YYYY-MM-{product_key})",
     )
+    parser.add_argument(
+        "--min-gap-hours",
+        type=float,
+        default=72.0,
+        help="Refuse to launch if a Reel was published more recently than this (default 72h = 3 days). Set 0 to disable.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Bypass --min-gap-hours guard (use sparingly — back-to-back promotional Reels hurt reach on both platforms).",
+    )
     args = parser.parse_args()
 
     if args.stage == "ideate":
@@ -730,6 +791,8 @@ def main() -> None:
             reel_seed=reel_seed,
             wp_url=args.wp_url,
             campaign_id=args.campaign_id,
+            min_gap_hours=args.min_gap_hours,
+            force=args.force,
         )
         sys.exit(0 if ok else 1)
     elif args.stage == "all":
