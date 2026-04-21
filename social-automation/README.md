@@ -67,7 +67,60 @@ Any failure routes through `skill_error` → Telegram push, exits 1. No partial 
 | `IG_ACCOUNT_ID` / `FB_PAGE_TOKEN` | Reels publish |
 | `WP_URL` / `WP_USER` / `WP_APP_PASSWORD` | video hosting |
 
-**Available seeds:** `pb-banana-biscuits`, `pumpkin-oat-biscuits`, `blueberry-yogurt-frozen-bites`, `chicken-bone-broth`, `sweet-potato-chews`, `turkey-rice-stew`. All 9:16.
+**Available recipe seeds:** `pb-banana-biscuits`, `pumpkin-oat-biscuits`, `blueberry-yogurt-frozen-bites`, `chicken-bone-broth`, `sweet-potato-chews`, `turkey-rice-stew`. All 9:16.
+
+**Product seeds** (used by `--stage campaign`): carry inline `ig_caption` + `title` in the carousel JSON so pre-written emotional copy bypasses LLM voice generation. Example: `fi-collar-gps-safety`.
+
+### Affiliate campaign pipeline (`--stage campaign`)
+
+A coordinated Amazon-affiliate push across WordPress, IG Reels, and FB Reels with per-campaign attribution.
+
+```bash
+python scripts/content_pipeline.py --stage campaign \
+    --product fi-collar \
+    --reel-seed fi-collar-gps-safety \
+    --wp-url https://dogfoodandfun.com/dog-gps-tracker-comparison/
+```
+
+**Flow:**
+
+1. **Product lookup** — key → ASIN via `data/affiliate_products.json`
+2. **Affiliate URL build** — `https://www.amazon.com/dp/{ASIN}?tag={AMAZON_ASSOCIATES_TAG}&ascsubtag={campaign_id}` (subtag enables per-campaign revenue reporting in Associates dashboard)
+3. **Gap guard** — refuses to launch if a Reel published <72h ago (default; override with `--force` or `--min-gap-hours 0`)
+4. **Telegram kickoff approval** — preview of product + Reel seed + affiliate URL
+5. **Reel prep** — same voice → slides → music → compose path as `--stage reel`; product seeds use inline captions (no LLM voice call)
+6. **Telegram Reel preview approval**
+7. **IG publish** via `publish_reel_to_instagram` (container → poll → publish)
+8. **FB publish** via `publish_reel_to_facebook` (3-phase `video_reels` upload: start → transfer → finish+publish)
+9. **Persist** — `data/campaigns.json` array entry with `campaign_id`, product, affiliate_url, both permalinks, start timestamp
+
+**Related files:**
+
+- `lib/affiliate_resolver.py` — `[AFFILIATE:key]` → Amazon URL. Refuses to resolve HTML missing a disclosure block (FTC requirement).
+- `recipe-publisher/publishers/facebook.py::publish_reel_to_facebook` — FB Reels 3-phase upload
+- `data/affiliate_products.json` — ASIN catalog (add new products here before referencing in WP posts)
+- `data/campaigns.json` — state of record for all campaigns, past and present
+
+**Required additional env:**
+
+| Var | Purpose |
+|---|---|
+| `AMAZON_ASSOCIATES_TAG` | e.g. `dogfoodfun01-20`. Signup: https://affiliate-program.amazon.com |
+
+### FB Groups management
+
+Group-level tooling that sits under `fb-group-publisher`:
+
+| Script | Purpose |
+|---|---|
+| `fb_notification_scan.py` | Scans FB notifications for newly-approved group memberships, populates `data/groups_tracker.json`. Scheduled Sunday 9:00. |
+| `fb_group_enrich.py` | Per-group name / privacy / member-count scraper. Run after notification scan to fill in metadata. |
+| `fb_groups_posting_scan.py` | Classifies each tracked group's `posting_mode`: `direct` (immediate post) / `admin_approval` (mod queue) / `admins_only` (blocked). Publishers skip non-`direct` groups. |
+| `fb_group_post.py` | Posts a WP blog link to eligible groups. `--no-comment` skips the fragile auto-comment step; `--caption-override` bypasses the per-group template for custom captions. Respects `facebook:group_post` rate cap (3/day). |
+| `fb_group_note.py` | CLI for manual status/mode/note updates: `--mode blocked` / `--status pending_approval` / `--note "..."` / `--list` to dump all tracker state. |
+| `fb_pending_posts_check.py` | Revisits pending-approval posts, detects when they clear, prints + Telegram-pushes a "⏰ ADD FIRST COMMENT NOW" reminder with the permalink. |
+
+**Tracker schema** (`data/groups_tracker.json`): array of entries with `group_name`, `group_url`, `status`, `posting_mode`, `member_count`, `privacy`, `last_post_at`, `last_post_status`, `last_post_caption`, `notes` (timestamped list).
 
 ### Operations
 
