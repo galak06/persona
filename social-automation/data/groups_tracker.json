@@ -127,11 +127,19 @@
     "source_notification": "UnreadWelcome to Running Dogs New! Now you can post and connect with other members.5d",
     "privacy": "public",
     "member_count": "9.7K",
-    "posting_mode": "direct",
+    "posting_mode": "blocked",
     "notes": [
       {
         "at": "2026-04-20T16:47:30.226994Z",
         "text": "Auto-classified direct"
+      },
+      {
+        "at": "2026-04-21T06:52:03.011985Z",
+        "text": "Off-topic for GPS/safety content despite the name \u2014 skip for non-recipe campaigns."
+      },
+      {
+        "at": "2026-04-21T06:52:59.148839Z",
+        "text": "HUNTING dogs group \u2014 not running/recreational. Off-brand for Nalla's Dad (recipes, nutrition, active-dog gear). Skip for all campaigns."
       }
     ],
     "last_post_status": "posted",

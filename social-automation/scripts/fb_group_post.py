@@ -247,6 +247,10 @@ def main() -> None:
         action="store_true",
         help="skip the first-comment URL step (the auto-comment step is fragile — use when you'll add the URL manually)",
     )
+    parser.add_argument(
+        "--caption-override",
+        help="Use this exact caption for every eligible group instead of the per-group template. Passed through voice validation.",
+    )
     args = parser.parse_args()
 
     skill_started("fb-group-post", f"sharing {args.title[:40]}")
@@ -286,7 +290,7 @@ def main() -> None:
                 print(f"  ⏹  daily cap reached ({_MAX_GROUP_POSTS_PER_DAY})", flush=True)
                 break
 
-            caption = draft_caption(group, args.title, args.url)
+            caption = args.caption_override or draft_caption(group, args.title, args.url)
             if not caption:
                 print(f"  ⏭  {group['group_name']} — no matching template (running-only?)", flush=True)
                 continue

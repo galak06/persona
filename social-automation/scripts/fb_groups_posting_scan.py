@@ -135,6 +135,20 @@ def main() -> None:
                 mode = result["posting_mode"]
                 hint = result.get("approval_hint")
                 hint_str = f" (hint: {hint!r})" if hint else ""
+                # Respect human-set flags — `blocked` and `links_blocked` are
+                # semantic tags (off-brand, spam-flagged) that a capability
+                # scan can't re-derive. Never overwrite them.
+                current = group.get("posting_mode")
+                if current in {"blocked", "links_blocked"}:
+                    print(
+                        f"    → {mode}{hint_str} "
+                        f"(keeping manual {current!r}, would have set {mode!r})",
+                        flush=True,
+                    )
+                    group.setdefault("notes", []).append(
+                        {"at": now, "text": f"Auto-scan saw {mode}; kept manual {current}."}
+                    )
+                    continue
                 print(f"    → {mode}{hint_str}", flush=True)
                 # Backfill new fields if missing.
                 group.setdefault("notes", [])
