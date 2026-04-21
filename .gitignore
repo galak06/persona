@@ -37,3 +37,6 @@ social-automation/recipe-publisher/pytest-cache-files-*/
 *.mp3
 *.aiff
 *.wav
+
+# Campaign work-directories (per-campaign scratch space — keep local)
+campaigns/
