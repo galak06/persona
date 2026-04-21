@@ -60,7 +60,10 @@ def test_recent_posted_fb_comments_accepts_z_suffix() -> None:
     assert len(recent) == 1
 
 
-def test_draft_reply_is_voice_valid() -> None:
+def test_draft_reply_is_voice_valid(monkeypatch) -> None:
+    # Force the fallback template path so the test is deterministic
+    # (no network, no GEMINI_API_KEY dependency).
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     from comment_generator import validate_voice
 
     text = reply_follower.draft_reply(
@@ -73,7 +76,8 @@ def test_draft_reply_is_voice_valid() -> None:
     assert text.rstrip().endswith("?"), "reply should end with a question"
 
 
-def test_draft_reply_handles_empty_author() -> None:
+def test_draft_reply_handles_empty_author(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     text = reply_follower.draft_reply(their_text="?", their_author="")
     assert "there" in text or text
     assert len(text) > 20

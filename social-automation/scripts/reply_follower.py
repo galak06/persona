@@ -36,6 +36,7 @@ from comment_generator import validate_voice
 from logger import enable_unbuffered, log_step
 from notifier import request_approval, skill_error, skill_finished, skill_started
 from rate_limiter import can_act, record_action
+from reply_drafter import draft_reply as draft_reply_contextual
 from thread_scraper import (
     ScrapedReply,
     find_replies_to_my_comment,
@@ -92,22 +93,21 @@ def recent_posted_fb_comments(queue: list[dict], days: int) -> list[dict]:
     return out
 
 
-def draft_reply(their_text: str, their_author: str) -> str:
-    """Short, warm, question-acknowledging response.
+def draft_reply(
+    their_text: str,
+    their_author: str,
+    our_original_comment: str = "",
+) -> str:
+    """Context-aware reply draft — delegates to lib/reply_drafter.
 
-    Replies are different from first-touch comments — shorter, more
-    conversational, no pitch. Just acknowledge their point and add one small
-    specific detail if natural.
+    Two-arg call still works for legacy callers (tests, manual invocations)
+    — we just lose the "what did WE say originally" context, so the reply is
+    more generic. Prefer passing `our_original_comment` when you have it.
     """
-    their = (their_text or "").strip()[:240]
-    author_hint = their_author.split()[0] if their_author else "there"
-    # Keep it tight — 1-2 sentences, end with a light question or "hope that helps"
-    # closer. The voice validator will reject anything off-brand.
-    return (
-        f"Good question, {author_hint} — we hit that same spot with Nalla early on. "
-        f"If it helps, the thing that moved the needle for us was being stubbornly "
-        f"consistent for about two weeks before switching anything else. "
-        f"What are you seeing in the first few days?"
+    return draft_reply_contextual(
+        our_comment=our_original_comment or "(no original comment context)",
+        their_reply=(their_text or "")[:600],
+        their_author=their_author or "",
     )
 
 
@@ -142,7 +142,7 @@ def process_post(page, item: dict, tracker: dict, dry_run: bool) -> tuple[int, i
             print("    FB comment limit reached for today — stopping.", flush=True)
             break
 
-        draft = draft_reply(reply.text, reply.author)
+        draft = draft_reply(reply.text, reply.author, our_original_comment=my_text)
         valid, violations = validate_voice(draft)
         if not valid:
             print(f"    ⚠️  voice fail ({violations}), skipping {reply.author}", flush=True)

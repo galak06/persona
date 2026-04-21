@@ -32,6 +32,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 from comment_generator import generate_comment, validate_voice
 from logger import enable_unbuffered, log_step
 from notifier import skill_error, skill_finished, skill_started
+from reply_drafter import draft_comment as draft_comment_contextual
 
 enable_unbuffered()
 
@@ -73,15 +74,25 @@ def main() -> None:
             group_name=item.get("group_name") or item.get("hashtag", ""),
         )
         if result.get("method") == "needs_generation":
-            print("    needs LLM drafting — skipping (manual /comment-composer)", flush=True)
-            skipped_llm += 1
-            continue
-
-        draft = result.get("comment", "")
-        if not draft:
-            print("    empty template result — skipping", flush=True)
-            skipped_llm += 1
-            continue
+            # Template didn't match — try Gemini with site + post context before
+            # giving up. The drafter returns "" on any failure (missing key,
+            # gemini error, voice-validation fail) and we fall through to skip.
+            print("    no template match — trying Gemini draft with site context", flush=True)
+            draft = draft_comment_contextual(
+                post_text=post_text,
+                category=category,
+                group_or_hashtag=item.get("group_name") or item.get("hashtag", ""),
+            )
+            if not draft:
+                print("    Gemini draft unavailable — skipping (manual /comment-composer)", flush=True)
+                skipped_llm += 1
+                continue
+        else:
+            draft = result.get("comment", "")
+            if not draft:
+                print("    empty template result — skipping", flush=True)
+                skipped_llm += 1
+                continue
 
         valid, violations = validate_voice(draft)
         if not valid:
