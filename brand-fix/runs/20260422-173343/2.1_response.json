@@ -1,0 +1,243 @@
+{
+  "id": 3228,
+  "date": "2026-03-14T08:05:52",
+  "date_gmt": "2026-03-14T08:05:52",
+  "guid": {
+    "rendered": "https://dogfoodandfun.com/affiliate-disclosure/",
+    "raw": "https://dogfoodandfun.com/affiliate-disclosure/"
+  },
+  "modified": "2026-04-22T17:33:44",
+  "modified_gmt": "2026-04-22T17:33:44",
+  "password": "",
+  "slug": "affiliate-disclosure",
+  "status": "publish",
+  "type": "page",
+  "link": "https://dogfoodandfun.com/affiliate-disclosure/",
+  "title": {
+    "raw": "Affiliate Disclosure",
+    "rendered": "Affiliate Disclosure"
+  },
+  "content": {
+    "raw": "<h2>Who We Are</h2>\n<p>Dog Food &amp; Fun is a personal blog run by Nalla's Dad — an engineer and dog owner sharing honest reviews, training tips, and nutrition research for fellow dog parents. This site is independently operated and not owned by any pet food company or brand.</p>\n\n<h2>Amazon Associates Disclosure</h2>\n<p>Dog Food &amp; Fun (<a href=\"https://dogfoodandfun.com\">dogfoodandfun.com</a>) is a participant in the <strong>Amazon Services LLC Associates Program</strong>, an affiliate advertising program designed to provide a means for sites to earn advertising fees by advertising and linking to <strong>Amazon.com</strong>.</p>\n\n<p>This means that when you click on certain product links on this site and make a purchase on Amazon, we may earn a small commission at <strong>no additional cost to you</strong>. The price you pay remains exactly the same whether you use our affiliate link or go directly to Amazon.</p>\n\n<h2>How We Choose Products</h2>\n<p>We only recommend products that we have:</p>\n<ul>\n<li>Personally used and tested with our dog Nalla, or</li>\n<li>Thoroughly researched based on ingredient quality, safety standards, and real user reviews</li>\n</ul>\n<p>Our affiliate relationships do <strong>not</strong> influence our editorial content. We will never recommend a product solely because it pays a higher commission. If we think a product isn't worth your money, we'll say so — even if it means leaving money on the table.</p>\n\n<p>The process we use to evaluate every product is published on our <a href=\"https://dogfoodandfun.com/methodology/\">Methodology page</a> — no black boxes, no proprietary scores, just the same criteria applied to every review.</p>\n\n<h2>Identifying Affiliate Links</h2>\n<p>Posts that contain affiliate links include an <strong>Affiliate Disclosure</strong> notice near the top of the article. Individual affiliate links are also marked with the <code>rel=\"sponsored\"</code> attribute in accordance with search engine guidelines.</p>\n\n<h2>FTC Compliance</h2>\n<p>This disclosure is provided in accordance with the <strong>Federal Trade Commission's 16 CFR, Part 255</strong>: \"Guides Concerning the Use of Endorsements and Testimonials in Advertising.\" We believe in full transparency with our readers.</p>\n\n<h2>Questions?</h2>\n<p>If you have any questions about our affiliate relationships or this disclosure, email <a href=\"mailto:info@dogfoodandfun.com\">info@dogfoodandfun.com</a> or reach out via our <a href=\"https://dogfoodandfun.com/contact/\">Contact page</a>.</p>\n\n<p><em>Last updated: April 2026</em></p>",
+    "rendered": "<h2>Who We Are</h2>\n<p>Dog Food &amp; Fun is a personal blog run by Nalla&#8217;s Dad — an engineer and dog owner sharing honest reviews, training tips, and nutrition research for fellow dog parents. This site is independently operated and not owned by any pet food company or brand.</p>\n<h2>Amazon Associates Disclosure</h2>\n<p>Dog Food &amp; Fun (<a href=\"https://dogfoodandfun.com\">dogfoodandfun.com</a>) is a participant in the <strong>Amazon Services LLC Associates Program</strong>, an affiliate advertising program designed to provide a means for sites to earn advertising fees by advertising and linking to <strong>Amazon.com</strong>.</p>\n<p>This means that when you click on certain product links on this site and make a purchase on Amazon, we may earn a small commission at <strong>no additional cost to you</strong>. The price you pay remains exactly the same whether you use our affiliate link or go directly to Amazon.</p>\n<h2>How We Choose Products</h2>\n<p>We only recommend products that we have:</p>\n<ul>\n<li>Personally used and tested with our dog Nalla, or</li>\n<li>Thoroughly researched based on ingredient quality, safety standards, and real user reviews</li>\n</ul>\n<p>Our affiliate relationships do <strong>not</strong> influence our editorial content. We will never recommend a product solely because it pays a higher commission. If we think a product isn&#8217;t worth your money, we&#8217;ll say so — even if it means leaving money on the table.</p>\n<p>The process we use to evaluate every product is published on our <a href=\"https://dogfoodandfun.com/methodology/\">Methodology page</a> — no black boxes, no proprietary scores, just the same criteria applied to every review.</p>\n<h2>Identifying Affiliate Links</h2>\n<p>Posts that contain affiliate links include an <strong>Affiliate Disclosure</strong> notice near the top of the article. Individual affiliate links are also marked with the <code>rel=\"sponsored\"</code> attribute in accordance with search engine guidelines.</p>\n<h2>FTC Compliance</h2>\n<p>This disclosure is provided in accordance with the <strong>Federal Trade Commission&#8217;s 16 CFR, Part 255</strong>: &#8220;Guides Concerning the Use of Endorsements and Testimonials in Advertising.&#8221; We believe in full transparency with our readers.</p>\n<h2>Questions?</h2>\n<p>If you have any questions about our affiliate relationships or this disclosure, email <a href=\"mailto:info@dogfoodandfun.com\">info@dogfoodandfun.com</a> or reach out via our <a href=\"https://dogfoodandfun.com/contact/\">Contact page</a>.</p>\n<p><em>Last updated: April 2026</em></p>\n",
+    "protected": false,
+    "block_version": 0
+  },
+  "excerpt": {
+    "raw": "",
+    "rendered": "<p>Who We Are Dog Food &amp; Fun is a personal blog run by Nalla&#8217;s Dad — an engineer and dog [&hellip;]</p>\n",
+    "protected": false
+  },
+  "author": 4,
+  "featured_media": 0,
+  "parent": 0,
+  "menu_order": 0,
+  "comment_status": "closed",
+  "ping_status": "closed",
+  "template": "",
+  "meta": {
+    "site-sidebar-layout": "default",
+    "site-content-layout": "",
+    "ast-site-content-layout": "default",
+    "site-content-style": "default",
+    "site-sidebar-style": "default",
+    "ast-global-header-display": "",
+    "ast-banner-title-visibility": "",
+    "ast-main-header-display": "",
+    "ast-hfb-above-header-display": "",
+    "ast-hfb-below-header-display": "",
+    "ast-hfb-mobile-header-display": "",
+    "site-post-title": "",
+    "ast-breadcrumbs-content": "",
+    "ast-featured-img": "",
+    "footer-sml-layout": "",
+    "ast-disable-related-posts": "",
+    "theme-transparent-header-meta": "",
+    "adv-header-id-meta": "",
+    "stick-header-meta": "",
+    "header-above-stick-meta": "",
+    "header-main-stick-meta": "",
+    "header-below-stick-meta": "",
+    "astra-migrate-meta-layouts": "default",
+    "ast-page-background-enabled": "default",
+    "ast-page-background-meta": {
+      "desktop": {
+        "background-color": "var(--ast-global-color-5)",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      },
+      "tablet": {
+        "background-color": "",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      },
+      "mobile": {
+        "background-color": "",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      }
+    },
+    "ast-content-background-meta": {
+      "desktop": {
+        "background-color": "var(--ast-global-color-4)",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      },
+      "tablet": {
+        "background-color": "var(--ast-global-color-4)",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      },
+      "mobile": {
+        "background-color": "var(--ast-global-color-4)",
+        "background-image": "",
+        "background-repeat": "repeat",
+        "background-position": "center center",
+        "background-size": "auto",
+        "background-attachment": "scroll",
+        "background-type": "",
+        "background-media": "",
+        "overlay-type": "",
+        "overlay-color": "",
+        "overlay-opacity": "",
+        "overlay-gradient": ""
+      }
+    },
+    "footnotes": "",
+    "_elementor_edit_mode": "",
+    "_elementor_template_type": "",
+    "_elementor_data": "",
+    "_elementor_page_settings": null
+  },
+  "permalink_template": "https://dogfoodandfun.com/%pagename%/",
+  "generated_slug": "affiliate-disclosure",
+  "class_list": [
+    "post-3228",
+    "page",
+    "type-page",
+    "status-publish",
+    "hentry"
+  ],
+  "_links": {
+    "self": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228",
+        "targetHints": {
+          "allow": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        }
+      }
+    ],
+    "collection": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages"
+      }
+    ],
+    "about": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/types/page"
+      }
+    ],
+    "author": [
+      {
+        "embeddable": true,
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/users/4"
+      }
+    ],
+    "replies": [
+      {
+        "embeddable": true,
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/comments?post=3228"
+      }
+    ],
+    "version-history": [
+      {
+        "count": 2,
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228/revisions"
+      }
+    ],
+    "predecessor-version": [
+      {
+        "id": 3627,
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228/revisions/3627"
+      }
+    ],
+    "wp:attachment": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/media?parent=3228"
+      }
+    ],
+    "wp:action-publish": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228"
+      }
+    ],
+    "wp:action-unfiltered-html": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228"
+      }
+    ],
+    "wp:action-assign-author": [
+      {
+        "href": "https://dogfoodandfun.com/wp-json/wp/v2/pages/3228"
+      }
+    ],
+    "curies": [
+      {
+        "name": "wp",
+        "href": "https://api.w.org/{rel}",
+        "templated": true
+      }
+    ]
+  }
+}

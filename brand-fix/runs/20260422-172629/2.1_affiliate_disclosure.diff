@@ -1,0 +1,16 @@
+--- live:3228
++++ patch:affiliate_disclosure_3228.html
+@@ -15,4 +15,6 @@
+ <p>Our affiliate relationships do <strong>not</strong> influence our editorial content. We will never recommend a product solely because it pays a higher commission. If we think a product isn't worth your money, we'll say so — even if it means leaving money on the table.</p>
+ 
++<p>The process we use to evaluate every product is published on our <a href="https://dogfoodandfun.com/methodology/">Methodology page</a> — no black boxes, no proprietary scores, just the same criteria applied to every review.</p>
++
+ <h2>Identifying Affiliate Links</h2>
+ <p>Posts that contain affiliate links include an <strong>Affiliate Disclosure</strong> notice near the top of the article. Individual affiliate links are also marked with the <code>rel="sponsored"</code> attribute in accordance with search engine guidelines.</p>
+@@ -22,5 +24,5 @@
+ 
+ <h2>Questions?</h2>
+-<p>If you have any questions about our affiliate relationships or this disclosure, feel free to reach out via our <a href="https://dogfoodandfun.com/contact/">Contact page</a>.</p>
++<p>If you have any questions about our affiliate relationships or this disclosure, email <a href="mailto:info@dogfoodandfun.com">info@dogfoodandfun.com</a> or reach out via our <a href="https://dogfoodandfun.com/contact/">Contact page</a>.</p>
+ 
+ <p><em>Last updated: April 2026</em></p>

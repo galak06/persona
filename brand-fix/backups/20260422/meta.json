@@ -1,0 +1,23 @@
+{
+  "fb_page": {
+    "status": 200,
+    "body": {
+      "id": "949003594968019",
+      "name": "Dog Food and Fun",
+      "about": "Hi, I'm Nalla's Dad! 👋 Engineer who reads dog food labels so you don't have to.\n    Honest, data-driven reviews — no hype, no fillers. 🐕\n    https://dogfoodandfun.com",
+      "link": "https://www.facebook.com/949003594968019",
+      "fan_count": 2,
+      "followers_count": 2
+    }
+  },
+  "ig_account": {
+    "status": 200,
+    "body": {
+      "id": "17841480087869644",
+      "username": "dogfoodandfun",
+      "name": "dogfoodandfun",
+      "biography": "🏃‍♂️ Nalla’s Dad  🐕 Adventures with my Dog  🥩 Real food tips & gear reviews 👇 Read the blog → dogfoodandfun.com",
+      "followers_count": 6
+    }
+  }
+}
