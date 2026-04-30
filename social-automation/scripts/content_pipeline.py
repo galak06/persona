@@ -42,6 +42,7 @@ ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 WP_POSTS_CACHE = PROJECT_ROOT / ".claude/state/wp_posts_cache.json"
 TIMELINE_FILE = PROJECT_ROOT / ".claude/state/publishing_timeline.json"
 LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
+CAMPAIGNS_ROOT = PROJECT_ROOT.parent / "campaigns"
 
 
 def load_json(path: Path, default=None):
@@ -380,7 +381,6 @@ def _prepare_reel(seed_id: str, skill_label: str = "reel-publisher"):
 
     try:
         from generators.carousel import generate_carousel_slides
-        from generators.music import get_music_for_reel
         from generators.recipe import generate_recipe
         from generators.reel import compose_reel
         from generators.seeds import load_seeds
@@ -425,25 +425,17 @@ def _prepare_reel(seed_id: str, skill_label: str = "reel-publisher"):
     video_dir.mkdir(parents=True, exist_ok=True)
     stamp = int(time.time())
 
-    music_path = video_dir / f"{seed_id}-{stamp}.mp3"
-    log_step(skill_label, "fetching music bed from Jamendo")
-    try:
-        track = get_music_for_reel(music_path)
-        log_step(
-            skill_label,
-            f"music: {track.name!r} by {track.artist} ({track.duration_s}s)",
-        )
-    except Exception as e:
-        skill_error(skill_label, f"music fetch failed: {e}")
-        return None
-
+    # Music intentionally disabled — Jamendo's free catalog wasn't a fit. Reels
+    # publish with a silent stereo AAC track (compose_reel adds it when
+    # audio_path is None) so Meta accepts the upload. Re-wire here when the
+    # next music provider is picked.
     video_path = video_dir / f"{seed_id}-{stamp}.mp4"
-    log_step(skill_label, f"composing reel → {video_path.name}")
+    log_step(skill_label, f"composing reel (silent) → {video_path.name}")
     try:
         compose_reel(
             [s.bytes_ or b"" for s in slides],
             video_path,
-            audio_path=music_path,
+            audio_path=None,
         )
     except Exception as e:
         skill_error(skill_label, f"reel composition failed: {e}")
@@ -496,6 +488,250 @@ def stage_reel(seed_id: str) -> bool:
     summary = f"Reel: {pub.permalink or pub.media_id}"
     send(f"✅ <b>Reel published</b>\n{summary}")
     skill_finished("reel-publisher", summary)
+    return True
+
+
+def _campaign_dir(seed_id: str) -> Path:
+    return CAMPAIGNS_ROOT / seed_id
+
+
+def _save_campaign_metadata(
+    seed_id: str,
+    recipe,
+    source_path: Path,
+    wp_url: str | None = None,
+    fb_caption: str | None = None,
+) -> None:
+    cdir = _campaign_dir(seed_id)
+    cdir.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "seed_id": seed_id,
+        "title": recipe.title,
+        "slug": recipe.slug,
+        "ig_caption": recipe.ig_caption,
+        "fb_caption": fb_caption,
+        "source_video": source_path.name,
+        "wp_url": wp_url,
+        "prepared_at": datetime.now(timezone.utc).isoformat(),
+    }
+    (cdir / "metadata.json").write_text(json.dumps(meta, indent=2))
+
+
+def _mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
+    """Replace the video's audio track with `audio_path`. Trims audio to video
+    length and fades out the last 1.5s so longer tracks don't end abruptly."""
+    import subprocess
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nokey=1:noprint_wrappers=1", str(video_path)],
+        check=True, capture_output=True, text=True,
+    )
+    duration = float(probe.stdout.strip())
+    fade_dur = 1.5
+    fade_start = max(0.0, duration - fade_dur)
+
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", str(video_path),
+        "-i", str(audio_path),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-af", f"afade=t=out:st={fade_start:.2f}:d={fade_dur}",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    subprocess.run(cmd, check=True, capture_output=True)
+
+
+def _build_recipe_from_metadata(meta: dict):
+    """Rehydrate a Recipe stub from a saved metadata.json so publish doesn't re-run prepare."""
+    from generators.recipe import Recipe  # late import; recipe-publisher on path
+
+    return Recipe(
+        title=meta["title"],
+        slug=meta["slug"],
+        meta_description=meta["title"],
+        body_markdown="(campaign reel)",
+        ingredients=["n/a"],
+        steps=["n/a", "n/a", "n/a"],
+        prep_minutes=0,
+        cook_minutes=0,
+        yield_servings="n/a",
+        tags=["campaign", "reel"],
+        image_brief="(not used)",
+        ig_caption=meta["ig_caption"],
+        seed_id=meta["seed_id"],
+    )
+
+
+def stage_reel_prepare(seed_id: str) -> bool:
+    """Build a silent reel into campaigns/{seed_id}/source.mp4 and stop.
+
+    User can then drop audio.mp3 (mux on publish) or final.mp4 (used as-is)
+    before running --stage reel-publish.
+    """
+    log_step("Reel Prepare", f"starting seed={seed_id}")
+    skill_started("reel-prepare", f"Building silent reel for {seed_id}")
+
+    prep = _prepare_reel(seed_id, skill_label="reel-prepare")
+    if prep is None:
+        return False
+    recipe, video_path = prep
+
+    cdir = _campaign_dir(seed_id)
+    cdir.mkdir(parents=True, exist_ok=True)
+    source_path = cdir / "source.mp4"
+    source_path.write_bytes(video_path.read_bytes())
+    carousel = _load_carousel_json(seed_id) or {}
+    _save_campaign_metadata(
+        seed_id,
+        recipe,
+        source_path,
+        wp_url=carousel.get("wp_url"),
+        fb_caption=carousel.get("fb_caption"),
+    )
+
+    msg = (
+        f"✅ Silent reel ready: {source_path}\n\n"
+        f"Edit options before publish:\n"
+        f"  • Drop audio at:  {cdir}/audio.mp3   (will mux on publish)\n"
+        f"  • OR full edit:   {cdir}/final.mp4   (used as-is, wins over audio.mp3)\n\n"
+        f"Then run:\n"
+        f"  python scripts/content_pipeline.py --stage reel-publish --seed {seed_id}"
+    )
+    print(msg, flush=True)
+    skill_finished(
+        "reel-prepare",
+        f"Silent reel at {cdir.name}/source.mp4 — drop audio.mp3 or final.mp4",
+    )
+    return True
+
+
+def stage_reel_publish(
+    seed_id: str, platforms: str = "both", wp_url: str | None = None
+) -> bool:
+    """Pick best video from campaigns/{seed_id}/ and publish to IG and/or FB
+    with Telegram approval.
+
+    `platforms`: "both" (default) | "ig" | "fb".
+    `wp_url`: optional — appended to the FB description as "Full guide: <url>"
+        so FB viewers (no link-in-bio) have a path to the WP page. Ignored for IG
+        (IG suppresses caption URLs).
+    Resolution order for video: final.mp4 > mux(source.mp4, audio.mp3) > source.mp4.
+    """
+    do_ig = platforms in ("both", "ig")
+    do_fb = platforms in ("both", "fb")
+    if not (do_ig or do_fb):
+        skill_error("reel-publish", f"invalid --platforms: {platforms!r}")
+        return False
+    log_step("Reel Publish", f"starting seed={seed_id}")
+    skill_started("reel-publish", f"Publishing reel for {seed_id}")
+
+    cdir = _campaign_dir(seed_id)
+    meta_path = cdir / "metadata.json"
+    if not meta_path.exists():
+        skill_error(
+            "reel-publish",
+            f"no metadata.json in {cdir} — run --stage reel-prepare first",
+        )
+        return False
+
+    meta = json.loads(meta_path.read_text())
+    source_path = cdir / "source.mp4"
+    audio_path = cdir / "audio.mp3"
+    final_path = cdir / "final.mp4"
+
+    if final_path.exists():
+        upload_path = final_path
+        log_step("reel-publish", f"using final.mp4 ({final_path.stat().st_size // 1024} KB)")
+    elif audio_path.exists() and source_path.exists():
+        upload_path = cdir / "muxed.mp4"
+        log_step("reel-publish", "muxing source.mp4 + audio.mp3")
+        try:
+            _mux_audio(source_path, audio_path, upload_path)
+        except Exception as e:
+            skill_error("reel-publish", f"audio mux failed: {e}")
+            return False
+    elif source_path.exists():
+        upload_path = source_path
+        log_step("reel-publish", "no audio.mp3 or final.mp4 — uploading silent source.mp4")
+    else:
+        skill_error("reel-publish", f"no video file in {cdir}")
+        return False
+
+    if not _bootstrap_recipe_publisher():
+        skill_error("reel-publish", "recipe-publisher skill not found")
+        return False
+
+    recipe = _build_recipe_from_metadata(meta)
+
+    send_video(upload_path, caption=f"🎬 <b>Reel preview: {recipe.title}</b>")
+    cap = recipe.ig_caption[:400] + ("…" if len(recipe.ig_caption) > 400 else "")
+    plat_label = {"both": "IG + FB", "ig": "IG", "fb": "FB"}[platforms]
+    approval_msg = (
+        f"📸 <b>Reel ready — {recipe.title}</b>\n\n"
+        f"🎯 Targets: {plat_label}\n"
+        f"📝 Caption ({len(recipe.ig_caption)} chars):\n"
+        f"<i>{cap}</i>\n\n"
+        f"Reply: <b>approve</b> · <b>skip</b>"
+    )
+    result = send_and_wait(approval_msg, timeout_hours=12)
+    if result["action"] != "approved":
+        skill_finished(
+            "reel-publish", f"Not approved ({result['action']})", success=False
+        )
+        return False
+
+    timeline = load_json(TIMELINE_FILE, {})
+    summary_parts: list[str] = []
+    ig_pub = fb_pub = None
+
+    if do_ig:
+        from publishers.instagram import publish_reel_to_instagram
+        log_step("Reel Publish", "publishing to Instagram Reels")
+        try:
+            ig_pub = publish_reel_to_instagram(recipe, video_path=upload_path)
+            timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat()
+            summary_parts.append(f"IG: {ig_pub.permalink or ig_pub.media_id}")
+        except Exception as e:
+            skill_error("reel-publish", f"IG publish failed: {e}")
+            if not do_fb:
+                return False
+            send(f"⚠️ IG publish failed: {e} — continuing to FB")
+
+    if do_fb:
+        from publishers.facebook import publish_reel_to_facebook
+        log_step("Reel Publish", "publishing to Facebook Reels")
+        effective_wp_url = wp_url or meta.get("wp_url")
+        # Prefer explicit fb_caption (FB-tailored copy with URL inline);
+        # otherwise fall back to ig_caption + auto-appended Full-guide URL.
+        if meta.get("fb_caption"):
+            fb_description = meta["fb_caption"]
+        else:
+            fb_description = recipe.ig_caption.rstrip()
+            if effective_wp_url:
+                fb_description += f"\n\nFull guide: {effective_wp_url}"
+        try:
+            fb_pub = publish_reel_to_facebook(
+                recipe, video_path=upload_path, description=fb_description
+            )
+            timeline["last_fb_reel_post"] = datetime.now(timezone.utc).isoformat()
+            summary_parts.append(f"FB: {fb_pub.permalink or fb_pub.post_id or fb_pub.video_id}")
+        except Exception as e:
+            if ig_pub:
+                send(f"⚠️ Reel: IG published, FB failed: {e}")
+            else:
+                skill_error("reel-publish", f"FB publish failed: {e}")
+                return False
+
+    save_json(TIMELINE_FILE, timeline)
+    summary = " | ".join(summary_parts) if summary_parts else "(nothing published)"
+    send(f"✅ <b>Reel published</b>\n{summary}")
+    skill_finished("reel-publish", summary)
     return True
 
 
@@ -723,7 +959,11 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         required=True,
-        choices=["ideate", "enrich", "write", "publish", "reel", "campaign", "all"],
+        choices=[
+            "ideate", "enrich", "write", "publish",
+            "reel", "reel-prepare", "reel-publish",
+            "campaign", "all",
+        ],
     )
     parser.add_argument(
         "--seed",
@@ -743,7 +983,13 @@ def main() -> None:
     parser.add_argument(
         "--wp-url",
         default=None,
-        help="Optional WP post URL to include in FB description (for --stage campaign)",
+        help="WP post URL to include in FB description (for --stage campaign or --stage reel-publish; overrides seed.wp_url)",
+    )
+    parser.add_argument(
+        "--platforms",
+        default="both",
+        choices=["both", "ig", "fb"],
+        help="For --stage reel-publish: target platforms (default: both)",
     )
     parser.add_argument(
         "--campaign-id",
@@ -775,6 +1021,20 @@ def main() -> None:
             sys.exit(2)
         ok = stage_reel(args.seed)
         sys.exit(0 if ok else 1)
+    elif args.stage == "reel-prepare":
+        if not args.seed:
+            print("--stage reel-prepare requires --seed <id>", flush=True)
+            sys.exit(2)
+        sys.exit(0 if stage_reel_prepare(args.seed) else 1)
+    elif args.stage == "reel-publish":
+        if not args.seed:
+            print("--stage reel-publish requires --seed <id>", flush=True)
+            sys.exit(2)
+        sys.exit(
+            0 if stage_reel_publish(
+                args.seed, platforms=args.platforms, wp_url=args.wp_url
+            ) else 1
+        )
     elif args.stage == "campaign":
         if not args.product:
             print("--stage campaign requires --product <key>", flush=True)

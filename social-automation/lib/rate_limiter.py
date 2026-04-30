@@ -7,21 +7,35 @@ Persists state to .claude/state/rate_limit_tracker.json
 from __future__ import annotations
 
 import json
+import os
 import random
 import time
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
-Platform = Literal["facebook", "instagram"]
-ActionType = Literal["comment", "like", "group_visit", "group_post", "ig_comment"]
+Platform = Literal["facebook", "instagram", "wordpress"]
+ActionType = Literal[
+    "comment", "like", "group_visit", "group_post", "ig_comment", "own_reply",
+]
 
+# wordpress:comment counts only *outbound* replies we post to moderated
+# visitor comments on dogfoodandfun.com. Approving/trashing a visitor comment
+# (site-owner moderation) is not rate-limited — those are our own admin
+# actions on our own site, not engagement toward a third party.
 DAILY_LIMITS: dict[str, int] = {
     "facebook:comment": 5,
     "facebook:group_visit": 6,  # reduced from 10 — spread through day
     "facebook:group_post": 3,   # share blog link to group — hard spam cap
     "instagram:like": 8,  # increased from 5 — likes are low-risk
     "instagram:ig_comment": 2,
+    # Replies to comments on OUR OWN IG media. Separate bucket from ig_comment
+    # (which guards outbound comments on third-party posts — the real spam
+    # risk). Conversation on your own post is expected engagement; we cap at
+    # 15/day to stay well under IG's per-user API ceilings while letting every
+    # recipe post have a real thread.
+    "instagram:own_reply": 15,
+    "wordpress:comment": 20,
 }
 
 DELAY_RANGES: dict[str, tuple[int, int]] = {
@@ -30,6 +44,8 @@ DELAY_RANGES: dict[str, tuple[int, int]] = {
     "facebook:group_post": (60, 180),
     "instagram:like": (10, 45),
     "instagram:ig_comment": (120, 180),
+    "instagram:own_reply": (30, 90),
+    "wordpress:comment": (15, 45),
 }
 
 # Resolve against the actual project root regardless of cwd or caller location
@@ -38,16 +54,30 @@ STATE_FILE = _PROJECT_ROOT / ".claude" / "state" / "rate_limit_tracker.json"
 
 
 def _load_state() -> dict:
-    if STATE_FILE.exists():
+    # Tolerate empty/corrupt files: a torn read (caught mid-rewrite by an older
+    # non-atomic writer, or an interrupted launchd run) must not crash a script
+    # that has already posted to the API. Worst case we lose today's counts —
+    # better than aborting after a successful reply.
+    if not STATE_FILE.exists():
+        return {}
+    try:
         with STATE_FILE.open() as f:
             return json.load(f)
-    return {}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def _save_state(state: dict) -> None:
+    # Atomic write: serialize fully into a temp file in the same directory, then
+    # os.replace() onto the target. POSIX guarantees rename is atomic, so a
+    # concurrent reader (e.g. the comment-approver launchd job overlapping with
+    # ig-own-comments' Telegram-approval wait) sees either the old contents or
+    # the new contents — never a half-written or empty file.
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with STATE_FILE.open("w") as f:
+    tmp = STATE_FILE.with_suffix(STATE_FILE.suffix + f".tmp.{os.getpid()}")
+    with tmp.open("w") as f:
         json.dump(state, f, indent=2)
+    os.replace(tmp, STATE_FILE)
 
 
 def _today_key() -> str:

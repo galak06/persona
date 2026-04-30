@@ -8,33 +8,69 @@
       "key": "hero",
       "prompt": "Cinematic food photography, eye-level slight-angle shot of a tall clear mason jar filled with golden-amber chicken bone broth, visibly gelatinous with small bits of collagen swirling at the surface, gently steaming. The jar sits on a weathered oak counter. Deep warm side-light from the right casting a long dramatic shadow of the jar to the left. A small rustic ladle rests beside the jar. Rustic kitchen background softly out of focus (stoneware, wooden shelves). Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Home kitchen — not studio. Honest and golden, the steam is the hero. No text, no labels, no watermarks, no logos, no people, no dogs, no brand marks on the jar.",
       "overlay": {
-        "headline": "CHICKEN BONE BROTH",
-        "subcopy": "topper  \u2022  12-hour simmer  \u2022  gut-friendly"
+        "headline": "SHE WOULDN'T\nEAT HER FOOD",
+        "subcopy": "Same dinner for 4 years."
+      }
+    },
+    {
+      "key": "pivot",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, eye-level slight angle of a fully-loaded cream-colored ceramic dog bowl filled with dry kibble, clearly untouched, with a few specks of dust caught in warm amber side-light from the right. The bowl rests on a weathered oak floor. Long shadow stretching left. Mood: rejection, concern. Generous negative space at the top for headline overlay. No text, no labels, no logos, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "I SWITCHED\n3 BRANDS.",
+        "subcopy": "She still wouldn't eat."
       }
     },
     {
       "key": "ingredients",
       "prompt": "Cinematic overhead flat-lay food photography with dramatic side-light from the upper right casting long warm shadows across a weathered oak surface: a pile of raw chicken bones (backs and necks) on parchment paper, a glass jar of clear cool water, a small unmarked glass bottle of apple cider vinegar, a single whole orange carrot (unpeeled) and two celery stalks lying side by side. Generous negative space between items. Warm tungsten-toned light, deep shadows. Absolutely no onion, no garlic, no salt, no seasoning. No text on anything, no writing, no watermarks, no logos, no jars with labels, no utensils, no hands, no people, no dogs.",
       "overlay": {
-        "headline": "WHAT YOU NEED",
-        "subcopy": "5 items. No salt. No onion."
+        "headline": "STORE TOPPERS:\n$8 A WEEK",
+        "subcopy": "Half preservatives."
       }
     },
     {
       "key": "process",
       "prompt": "Cinematic close-up food photography at an eye-level 25-degree angle: a large cast-iron stockpot on a stovetop, lid partially ajar, golden-amber broth visibly simmering inside with chicken bones and chopped vegetables (carrot, celery) breaking the surface. Steam rising dramatically, catching warm side-light from the right. Deep shadows to the left. Shallow depth of field — the pot rim sharp, the stovetop background softly blurred. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
       "overlay": {
-        "headline": "SIMMER. STRAIN. COOL.",
-        "subcopy": "Step 5 of 8"
+        "headline": "12-HOUR SIMMER.\n5 INGREDIENTS.",
+        "subcopy": "She finished the bowl."
+      }
+    },
+    {
+      "key": "simmer",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, eye-level slight angle of a heavy cast-iron stockpot lid lifted slightly to reveal billowing steam rising from golden-amber broth visible inside, warm tungsten kitchen light from the right catching the steam. Long shadows on a weathered oak counter. Mood: patient long simmer. Tight crop, generous negative space at the top for headline overlay. Shot on 50mm at f/2.8, shallow depth of field. No text, no labels, no logos, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "12 HOURS.\nLOW SIMMER.",
+        "subcopy": "Never boil."
+      }
+    },
+    {
+      "key": "proof",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, eye-level slight angle of three clear glass mason jars filled with golden-amber gelatinous bone broth, lined up on a frosted freezer shelf. Cold blue-white overhead light contrasting with the warm amber liquid. Visible collagen swirls and slight frost on the glass. Tight crop, generous negative space at the top for headline. No text, no labels, no logos on the jars, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "FREEZES\n90 DAYS.",
+        "subcopy": "Pour over any meal."
+      }
+    },
+    {
+      "key": "served",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, of a stream of golden-amber bone broth being poured from a small clear glass mason jar onto a cream ceramic dog bowl filled with dry kibble. The pour stream is sharp, glistening with collagen swirls. Warm side-light from the right, deep shadow stretching left across a weathered oak counter. Tight crop, generous negative space at the top for headline. No text, no labels, no logos on the jar, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "1 LADLE\nOVER KIBBLE.",
+        "subcopy": "Watch her eat."
       }
     },
     {
       "key": "final",
       "prompt": "Cinematic overhead food photography at a slight angle of a stream of finished golden-amber bone broth being poured from a glass measuring cup into a cream-colored ceramic dog bowl containing dry kibble. The broth catches warm side-light from the right, the pour stream sharp and glistening. Visible collagen swirls in the broth. The bowl rests on a weathered oak counter, long dramatic shadow stretching left. Tight crop — bowl and pour stream fill about 70% of frame. Honest, comforting — this is a real meal-topper moment. No text, no labels, no watermarks, no logos, no hands, no people, no dogs.",
       "overlay": {
-        "headline": "SAVE FOR MEALS",
-        "subcopy": "Full recipe on dogfoodandfun.com"
+        "headline": "SAVE BEFORE\nSHE GOES PICKY",
+        "subcopy": "Tap bio → exact amounts."
       }
     }
-  ]
+  ],
+  "title": "When Nalla Stopped Eating Her Dinner",
+  "wp_url": "https://dogfoodandfun.com/chicken-bone-broth-for-dogs",
+  "ig_caption": "Nalla turned her nose up at her dinner. Same food she'd eaten for 4 years.\n\nI tried mixing in store-bought toppers ($8 a week, half preservatives). Switched brands. Nothing worked.\n\nThen I made bone broth from scratch:\n\n🍗 4 chicken backs (or 1 carcass)\n🥕 2 carrots — no onion, no garlic\n🌿 1 sprig parsley\n🍶 1 tbsp apple cider vinegar (pulls minerals from the bones)\n💧 Water to cover\n\n12-hour low simmer → strain → cool → fridge. She inhaled the bowl. Freezes 90 days.\n\nI keep one in the freezer at all times now.\n\nSave this 🔖 — picky days come with no warning.\n\nFull recipe + amounts: link in bio\n\n👉 What's your go-to when your dog stops eating?\n\n#pickyeater #bonebroth #dognutrition #petparent #nallasdad #dogfoodandfun",
+  "fb_caption": "Nalla turned her nose up at her dinner. Same food she'd eaten for 4 years.\n\nI tried store-bought toppers ($8 a week, half preservatives). Switched brands. Nothing worked.\n\nThen I made bone broth from scratch:\n\n• 4 chicken backs (or 1 carcass)\n• 2 carrots — no onion, no garlic\n• 1 sprig parsley\n• 1 tbsp apple cider vinegar (pulls minerals from the bones)\n• Water to cover\n\n12-hour low simmer → strain → cool → fridge. She inhaled the bowl. Freezes 90 days.\n\nI keep one in the freezer at all times now.\n\nFull recipe + exact amounts → https://dogfoodandfun.com/chicken-bone-broth-for-dogs\n\nWhat's your go-to when your dog stops eating?"
 }

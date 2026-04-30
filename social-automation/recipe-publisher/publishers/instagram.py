@@ -43,10 +43,147 @@ class IGPublishResult:
     media_id: str
     permalink: str | None
     warnings: list[str] = field(default_factory=list)
+    # Populated by publish_carousel_to_instagram so downstream publishers
+    # (e.g. Pinterest) can reuse the already-uploaded slide URLs.
+    image_urls: list[str] = field(default_factory=list)
+    # Populated by post_first_comment_to_instagram when the CTA comment succeeds.
+    first_comment_id: str | None = None
 
 
 class InstagramError(RuntimeError):
     pass
+
+
+def list_recent_user_media(
+    *,
+    limit: int = 10,
+) -> list[dict]:
+    """Fetch the IG account's most recent media. Source of truth for media IDs.
+
+    Returns [{id, caption, timestamp, media_type, permalink}, ...]. Used by the
+    own-post comment scanner instead of reading recipe_publisher state, since
+    that state has occasionally drifted from what's actually live on Meta.
+    """
+    ig_user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ.get("IG_USER_ID") or ""
+    token = (
+        os.environ.get("FB_PAGE_TOKEN")
+        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
+        or ""
+    )
+    if not ig_user_id:
+        raise InstagramError("IG_ACCOUNT_ID / IG_USER_ID not set")
+    if not token:
+        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
+        resp = client.get(
+            f"/{ig_user_id}/media",
+            params={
+                "fields": "id,caption,timestamp,media_type,permalink",
+                "limit": limit,
+                "access_token": token,
+            },
+        )
+        if resp.status_code >= 400:
+            raise InstagramError(
+                f"list_recent_user_media failed: {resp.status_code} {resp.text[:300]}"
+            )
+        return resp.json().get("data", [])
+
+
+def list_media_comments(
+    media_id: str,
+    *,
+    limit: int = 50,
+) -> list[dict]:
+    """Fetch top-level comments on our own media via Graph API.
+
+    Returns a list of {id, text, username, timestamp} dicts (keys missing from
+    hidden or deleted comments are omitted). Used by the own-post comment
+    scanner to find visitor comments that need a Nalla's Dad reply.
+
+    Token scope: needs instagram_manage_comments. Same FB_PAGE_TOKEN as the
+    publish path. Only returns top-level comments — threaded replies live at
+    /{comment_id}/replies and aren't handled here yet.
+    """
+    token = (
+        os.environ.get("FB_PAGE_TOKEN")
+        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
+        or ""
+    )
+    if not token:
+        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
+        resp = client.get(
+            f"/{media_id}/comments",
+            params={
+                "fields": "id,text,username,timestamp,hidden",
+                "limit": limit,
+                "access_token": token,
+            },
+        )
+        if resp.status_code >= 400:
+            raise InstagramError(
+                f"list_media_comments failed: {resp.status_code} {resp.text[:300]}"
+            )
+        return resp.json().get("data", [])
+
+
+def reply_to_instagram_comment(comment_id: str, message: str) -> str:
+    """Post a threaded reply (from the business account) to a visitor comment.
+
+    Uses POST /{ig-comment-id}/replies — the IG-specific endpoint for threading
+    a reply under an existing comment. Reserved for comments on OUR OWN media;
+    do not call on third-party posts (that's a separate flow and would be
+    outbound comment-spam risk).
+    """
+    token = (
+        os.environ.get("FB_PAGE_TOKEN")
+        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
+        or ""
+    )
+    if not token:
+        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
+        resp = client.post(
+            f"/{comment_id}/replies",
+            params={"message": message, "access_token": token},
+        )
+        if resp.status_code >= 400:
+            raise InstagramError(
+                f"reply_to_instagram_comment failed: {resp.status_code} {resp.text[:300]}"
+            )
+        return resp.json()["id"]
+
+
+def post_first_comment_to_instagram(media_id: str, message: str) -> str:
+    """Post a comment from the brand account on our own media_id.
+
+    Used right after a carousel publishes to drop a CTA comment that nudges
+    followers toward the keyword-gated DM or a cheap reply. Returns the new
+    comment's id. Raises InstagramError on failure so the caller can decide
+    whether to downgrade to a warning (a missing first-comment shouldn't
+    fail the whole run).
+
+    Token scope: needs instagram_manage_comments. Our FB_PAGE_TOKEN already
+    has it since it's the same token used to publish media.
+    """
+    token = (
+        os.environ.get("FB_PAGE_TOKEN")
+        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
+        or ""
+    )
+    if not token:
+        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
+        resp = client.post(
+            f"/{media_id}/comments",
+            params={"message": message, "access_token": token},
+        )
+        if resp.status_code >= 400:
+            raise InstagramError(
+                f"first-comment POST failed: {resp.status_code} {resp.text[:300]}"
+            )
+        return resp.json()["id"]
 
 
 def publish_to_instagram(recipe: Recipe, *, image_url: str) -> IGPublishResult:
@@ -155,7 +292,12 @@ def publish_carousel_to_instagram(
         media_id = pub_resp.json()["id"]
         permalink = _fetch_permalink(client, media_id, token, warnings)
 
-    return IGPublishResult(media_id=media_id, permalink=permalink, warnings=warnings)
+    return IGPublishResult(
+        media_id=media_id,
+        permalink=permalink,
+        warnings=warnings,
+        image_urls=image_urls,
+    )
 
 
 def publish_reel_to_instagram(

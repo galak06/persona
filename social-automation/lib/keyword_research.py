@@ -59,24 +59,60 @@ def _is_cache_fresh(entry: dict, max_age_hours: int = 72) -> bool:
 # ── Google Trends ─────────────────────────────────────────────────────────
 
 
-def get_google_trends(keyword: str, geo: str = "US") -> dict:
+def get_google_trends(keyword: str, geo: str = "US", cache_only: bool = False) -> dict:
     """
     Get Google Trends interest for a keyword in a specific country.
     Returns: {"interest": 0-100, "trend": "rising"|"stable"|"declining", "related_queries": [...]}
+
+    cache_only=True: never call Google, just read cache. Returns {"trend":"no_cached_data"}
+    if not cached. Use this in fast-path skills; rely on a separate slow refresher
+    (scripts/refresh_trends_only.py) to populate the cache via cron.
     """
     cache = _load_cache()
     key = _cache_key("trends", f"{keyword}_{geo}")
     if key in cache and _is_cache_fresh(cache[key]):
         return cache[key]["data"]
+    if cache_only:
+        return {"interest": 0, "trend": "no_cached_data", "geo": geo,
+                "_note": "Run scripts/refresh_trends_only.py to populate."}
 
     try:
         from pytrends.request import TrendReq
 
-        pytrends = TrendReq(hl="en-US", tz=360)
-        pytrends.build_payload([keyword], timeframe="today 3-m", geo=geo)
-        time.sleep(2)  # rate limit
+        # pytrends + urllib3 2.x: passing `retries` to TrendReq blows up because
+        # pytrends still uses the removed `method_whitelist` kwarg internally.
+        # Handle retries manually with a 429-aware backoff loop instead.
+        pytrends = TrendReq(
+            hl="en-US",
+            tz=360,
+            timeout=(10, 25),
+            requests_args={
+                "headers": {
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+                    )
+                }
+            },
+        )
 
-        interest = pytrends.interest_over_time()
+        last_error = None
+        interest = None
+        for attempt in range(4):
+            try:
+                pytrends.build_payload([keyword], timeframe="today 3-m", geo=geo)
+                time.sleep(3 + attempt * 2)
+                interest = pytrends.interest_over_time()
+                break
+            except Exception as e:
+                last_error = e
+                msg = str(e)
+                if "429" in msg or "TooManyRequests" in msg:
+                    time.sleep(10 + attempt * 10)
+                    continue
+                raise
+        if interest is None:
+            raise last_error or RuntimeError("pytrends returned no data after retries")
         if interest.empty:
             return {"interest": 0, "trend": "unknown", "related_queries": []}
 
@@ -118,6 +154,43 @@ def get_google_trends(keyword: str, geo: str = "US") -> dict:
         return {"interest": 0, "trend": "error", "error": str(e)[:100]}
 
 
+def get_google_trends_north_america(keyword: str, cache_only: bool = False) -> dict:
+    """
+    Pull Google Trends for both US and CA — site's target market.
+    Combines into a single rollup with per-geo breakdown.
+    Best-effort: pytrends frequently 429s on unauthenticated calls.
+
+    cache_only=True: read both geos from cache, never call Google.
+    """
+    us = get_google_trends(keyword, geo="US", cache_only=cache_only)
+    if not cache_only:
+        time.sleep(60)  # diagnostic-confirmed: ~3-5 calls/min triggers Google's anti-abuse layer
+    ca = get_google_trends(keyword, geo="CA", cache_only=cache_only)
+
+    interests = [v for v in (us.get("interest", 0), ca.get("interest", 0)) if isinstance(v, (int, float))]
+    avg = round(sum(interests) / len(interests)) if interests else 0
+
+    trends = [us.get("trend"), ca.get("trend")]
+    if "rising" in trends:
+        rollup = "rising"
+    elif "stable" in trends:
+        rollup = "stable"
+    elif "declining" in trends:
+        rollup = "declining"
+    else:
+        rollup = "unavailable"
+
+    related = list({*us.get("related_queries", []), *ca.get("related_queries", [])})
+
+    return {
+        "rollup_interest": avg,
+        "rollup_trend": rollup,
+        "us": us,
+        "ca": ca,
+        "related_queries_combined": related[:10],
+    }
+
+
 # ── Instagram Hashtag Research ────────────────────────────────────────────
 
 
@@ -140,9 +213,9 @@ def get_instagram_hashtag_data(hashtag: str) -> dict:
     try:
         # Search for hashtag ID
         resp = requests.get(
-            f"https://graph.facebook.com/v19.0/ig_hashtag_search",
+            "https://graph.facebook.com/v23.0/ig_hashtag_search",
             params={"user_id": ig_account_id, "q": hashtag, "access_token": fb_token},
-            timeout=10,
+            timeout=30,
         )
         if not resp.ok:
             return {"error": f"Hashtag search failed: {resp.status_code}"}
@@ -153,15 +226,17 @@ def get_instagram_hashtag_data(hashtag: str) -> dict:
 
         hashtag_id = data[0]["id"]
 
-        # Get top media for the hashtag
+        # Get top media for the hashtag — `limit` is required, otherwise Graph returns
+        # error code 1 ("reduce the amount of data you're asking for")
         media_resp = requests.get(
-            f"https://graph.facebook.com/v19.0/{hashtag_id}/top_media",
+            f"https://graph.facebook.com/v23.0/{hashtag_id}/top_media",
             params={
                 "user_id": ig_account_id,
-                "fields": "like_count,comments_count,caption",
+                "fields": "like_count,comments_count",
+                "limit": 25,
                 "access_token": fb_token,
             },
-            timeout=10,
+            timeout=30,
         )
 
         if media_resp.ok:
@@ -212,13 +287,13 @@ def get_facebook_topic_performance(topic_keywords: list[str]) -> dict:
 
     try:
         resp = requests.get(
-            f"https://graph.facebook.com/v19.0/{fb_page_id}/posts",
+            f"https://graph.facebook.com/v23.0/{fb_page_id}/posts",
             params={
                 "fields": "message,shares,reactions.summary(true),comments.summary(true),created_time",
                 "limit": 25,
                 "access_token": fb_token,
             },
-            timeout=10,
+            timeout=30,
         )
         if not resp.ok:
             return {"error": f"FB API failed: {resp.status_code}"}
@@ -263,6 +338,10 @@ def get_amazon_product_demand(keyword: str) -> dict:
     """
     Check Amazon for product demand signal using search results count.
     Returns: {"result_count": int, "top_products": [...], "demand_signal": str}
+
+    DEPRECATED: Google blocks unauthenticated SERP scraping — this returns
+    "low" / 1 mention regardless of true demand. Replace with Keepa API or
+    PA-API for real Amazon demand signal. Flagged unreliable in output.
     """
     cache = _load_cache()
     key = _cache_key("amazon", keyword)
@@ -275,7 +354,7 @@ def get_amazon_product_demand(keyword: str) -> dict:
             "https://www.google.com/search",
             params={"q": f"amazon.com {keyword} dog", "num": 5},
             headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10,
+            timeout=30,
         )
         # Count Amazon results as demand proxy
         amazon_mentions = resp.text.lower().count("amazon.com")
@@ -291,6 +370,7 @@ def get_amazon_product_demand(keyword: str) -> dict:
             "amazon_mentions_in_serp": amazon_mentions,
             "demand_signal": signal,
             "keyword": keyword,
+            "_unreliable": "Google SERP scrape is blocked; signal is not trustworthy. Replace with Keepa API.",
         }
 
         cache[key] = {"data": result, "cached_at": datetime.now(timezone.utc).isoformat()}

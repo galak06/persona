@@ -72,9 +72,14 @@ VOICE_TOOL = {
                     },
                 },
                 "description": (
-                    "2-4 FAQ pairs. Questions an actual owner would ask — substitutions, "
-                    "storage edge cases, portion size for specific dog sizes. Avoid "
-                    "medical framing."
+                    "2-4 FAQ pairs optimized for Google 'People Also Ask' / "
+                    "featured-snippet capture. Prefer full natural-language question "
+                    "phrasings a dog owner would type: 'Can dogs eat sweet potato?', "
+                    "'How much pumpkin is safe for a medium dog?', 'Is peanut butter "
+                    "safe for puppies?'. Each answer should open with a direct "
+                    "40-60 word response (the snippet-friendly lead) before adding "
+                    "any nuance. Cover substitutions, storage, and portion size for "
+                    "specific dog sizes. Avoid medical framing."
                 ),
             },
             "meta_description": {
@@ -180,8 +185,11 @@ def assemble_body_markdown(
 ) -> str:
     """Stitch seed sections + voice fields into the final body_markdown."""
     s = seed_to_body_sections(seed)
+    # H3 headers (not bold text) give Google a clear question anchor to pull into
+    # 'People Also Ask' and featured-snippet results. Pairs with the FAQPage
+    # JSON-LD emitted by the WordPress publisher.
     faq_md = "\n\n".join(
-        f"**{p['question']}**\n\n{p['answer']}" for p in voice["faq"]
+        f"### {p['question']}\n\n{p['answer']}" for p in voice["faq"]
     )
     return (
         f"{voice['intro']}\n\n"

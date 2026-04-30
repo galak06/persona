@@ -5,7 +5,7 @@ Brand persona: **Nalla's Dad** - authentic, value-first dog owner who shares rea
 
 ## How It Works
 
-Playwright-based agents scan Facebook groups and Instagram hashtags for posts relevant to dog food, GPS trackers, health, and training. High-scoring posts are queued for engagement. Comments are drafted in Nalla's Dad voice, validated against brand rules, sent to Telegram for approval, then posted automatically. All actions are rate-limited and logged.
+Playwright-based agents scan Facebook groups and Instagram hashtags for posts relevant to dog food, GPS trackers, health, and training. High-scoring posts are queued for engagement. A sibling REST-based agent pulls held visitor comments from dogfoodandfun.com for moderation. Comments and replies are drafted in Nalla's Dad voice, validated against brand rules, sent to Telegram for approval, then posted automatically. All actions are rate-limited and logged.
 
 ## Skills
 
@@ -16,6 +16,7 @@ Playwright-based agents scan Facebook groups and Instagram hashtags for posts re
 | `site-analyzer` | Crawls dogfoodandfun.com RSS feed, caches recent posts and keywords for comment context | Daily 3:00 PM |
 | `fb-scanner` | Scans joined Facebook dog groups, scores posts by relevance, queues high-scoring ones | Daily 3:30 PM |
 | `ig-scanner` | Scans Instagram hashtags, likes qualifying posts, queues top candidates for comments | Daily 7:00 PM |
+| `wp-comment-handler` | Moderates held comments on dogfoodandfun.com — auto-trashes obvious spam, queues the rest for Telegram approval, approves + replies in one shot | Daily 9:00 PM |
 | `comment-composer` | Drafts Nalla's Dad voice comments, validates tone, sends to Telegram for approval, posts | Daily 10:00 PM |
 | `reply-follower` | Revisits recent FB comments, scrapes replies, drafts conversational responses, Telegram-approves, posts as threaded replies | On demand (`scripts/reply_follower.py`) |
 | `activity-logger` | Logs every action (like, comment, join) to JSONL + Excel tracker | Called by all agents |
@@ -135,8 +136,10 @@ Group-level tooling that sits under `fb-group-publisher`:
 scripts/
   fb_scan.py            Playwright script - Facebook group scanner
   ig_scan.py            Playwright script - Instagram hashtag scanner
+  wp_scan.py            httpx script - WordPress comment moderation scanner
   fb_group_scout.py     Playwright script - Facebook group finder
-  comment_poster.py     Playwright script - posts approved comments
+  comment_approver.py   Independent approver - Telegram approval flow
+  comment_poster.py     Playwright + httpx - posts approved FB/IG comments and WP replies
   run_with_watchdog.py  Wrapper - detects stuck processes, alerts via Telegram
   status.py             Dashboard - schedule, rate limits, queue, errors
 
@@ -162,6 +165,7 @@ logs/                   Engagement log, error log, audit trail
 | Facebook | Join requests | 3/week |
 | Instagram | Likes | 8 |
 | Instagram | Comments | 2 |
+| WordPress | Replies posted | 20 |
 
 Random delays between all actions (30-180s) to reduce bot detection risk.
 
@@ -171,7 +175,10 @@ All comments go through Telegram before posting. Mandatory approval for:
 - First comment in any new group
 - Any comment containing a URL
 - All Instagram comments
+- All WordPress replies (they land on our own site under the Nalla's Dad byline)
 - Borderline relevance scores (0.70-0.80)
+
+WordPress moderation only: obvious spam (3+ links, known spam keywords, suspicious author TLDs) is auto-trashed before it ever hits the approval queue — moving to WP trash, not permanent delete, so false positives are recoverable from the admin UI.
 
 ## Setup
 
@@ -204,7 +211,9 @@ launchctl list | grep dogfoodandfun
 python scripts/status.py                                          # dashboard
 python scripts/run_with_watchdog.py scripts/fb_scan.py --timeout 180   # fb scanner
 python scripts/run_with_watchdog.py scripts/ig_scan.py --timeout 180   # ig scanner
-python scripts/comment_poster.py                                  # post comments
+python scripts/wp_scan.py                                         # moderate site comments
+python scripts/comment_approver.py                                # route queued items to Telegram
+python scripts/comment_poster.py                                  # post approved FB/IG comments + WP replies
 ```
 
 ## CI/CD

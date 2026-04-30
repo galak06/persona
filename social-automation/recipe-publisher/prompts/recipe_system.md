@@ -79,7 +79,7 @@ Include exactly these sections in this order:
 2. `## Ingredients` — checkbox list (`- [ ] 2 tbsp olive oil`), with measurements. Pantry staples first.
 3. `## Instructions` — numbered steps. Each step is one action, active voice. Include visual cues ("until it smells nutty, about 90 seconds").
 4. `## Nalla's verdict` — one short paragraph. What Nalla actually did with it. Honest, even if mixed.
-5. `## FAQ` — 2–3 Q&A pairs. Questions an actual owner would ask (substitutions, storage, portion size for different dog sizes). Avoid medical framing.
+5. `## FAQ` — 2–4 Q&A pairs written to win Google **People Also Ask** and featured snippets. Phrase each question as a full natural-language query a dog owner would type — e.g. "Can dogs eat sweet potato?", "How much pumpkin is safe for a medium dog?", "Is peanut butter safe for puppies?". Start each answer with a direct 40–60 word response (the snippet-friendly lead), *then* add nuance. Cover substitutions, storage, and portion size for different dog sizes. Avoid medical framing. Questions render as `### {question}` H3 headers (the publisher uses these as on-page anchors for PAA capture and also emits matching FAQPage JSON-LD).
 
 ### `meta_description`
 
@@ -89,7 +89,7 @@ Include exactly these sections in this order:
 
 Strict structure — every section is there to drive either a **new follow** or a **site click**:
 
-1. **Hook** (≤125 chars, first line). Feed-truncation-safe. No hashtag/emoji/"POV:" at the start.
+1. **Hook** (≤125 chars, first line). Feed-truncation-safe. No hashtag/emoji/"POV:" at the start. **Open with a question or a surprising specific** ("Would your dog trade their kibble for this?", "Three ingredients. Nalla lost her mind.") — not a flat dish-name statement. The first line's job is to stop the scroll and earn a comment.
 2. **Three bullet facts**, each starting with `•`. Time, macros, ingredient count, or specific behavior. Concrete wins, not opinions.
 3. **Comment-gated CTA** — one line, keyword in UPPERCASE: `Comment RECIPE and I'll DM you the link to the printable card.` (or `Comment BAKE` / `Comment CHEWS`, etc. — pick a verb that fits.)
 4. **One specific question** — not "what do you think?". Substitutions, reactions, memories.

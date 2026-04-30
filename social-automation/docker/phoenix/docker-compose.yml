@@ -1,0 +1,25 @@
+# Phoenix self-hosted — local LLM/LangGraph trace collector.
+#
+# Start:    docker compose -f docker/phoenix/docker-compose.yml up -d
+# Stop:     docker compose -f docker/phoenix/docker-compose.yml down
+# UI:       http://localhost:6006
+# OTel in:  http://localhost:6006/v1/traces  (HTTP/OTLP)
+#
+# Persistence: SQLite + parquet under the named volume `phoenix_data`.
+# To wipe trace history: docker compose -f docker/phoenix/docker-compose.yml down -v
+
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    restart: unless-stopped
+    ports:
+      - "6006:6006"   # Web UI + OTel HTTP ingest
+      - "4317:4317"   # OTel gRPC ingest (optional)
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+    volumes:
+      - phoenix_data:/mnt/data
+
+volumes:
+  phoenix_data:

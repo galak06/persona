@@ -8,33 +8,53 @@
       "key": "hero",
       "prompt": "Cinematic food photography, overhead 45-degree angle of a tumbling pile of amber-orange sweet potato chews (thin leathery jerky-style strips with visible dehydration wrinkles) stacked casually on a weathered oak cutting board. One chew tipped off the edge catching the light. Deep warm side-light from the right casting long dramatic shadows to the left. Rich translucent amber-orange color, some strips crispier darker, some softer lighter. Rustic kitchen background softly out of focus (stoneware jars, wooden shelves). Shot on 50mm at f/2.8, warm tungsten highlights, shallow depth of field. Home kitchen — not studio. Magazine-quality but honest. No text, no labels, no watermarks, no logos, no people, no dogs, no cutlery, no packaging.",
       "overlay": {
-        "headline": "SWEET POTATO\nCHEWS",
-        "subcopy": "1 ingredient  \u2022  0 filler  \u2022  3-hour bake"
+        "headline": "$80/MONTH ON\nRAWHIDE",
+        "subcopy": "and they lasted 2 days."
+      }
+    },
+    {
+      "key": "pivot",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, of a single broken bone fragment resting on a clean white veterinary-style towel on a weathered oak counter. Warm amber side-light from the right, deep shadow to the left. Mood: somber, costly mistake. Generous negative space at the top for headline overlay. No text, no labels, no logos, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "$400 VET BILL.",
+        "subcopy": "A marrow bone split her tooth."
       }
     },
     {
       "key": "ingredients",
       "prompt": "Cinematic overhead close-up food photography, dramatic side-light from the upper right casting a long warm shadow across a weathered oak surface: a single perfect sweet potato (unpeeled, slightly muddy skin to feel real) resting in the center of an otherwise empty oak surface. Warm tungsten-toned light, deep shadow on the left side of the potato, glow on the right. Single-subject composition — the potato is the hero. No other ingredients in frame. No text, no labels, no watermarks, no logos, no utensils, no hands, no people, no dogs.",
       "overlay": {
-        "headline": "ONE THING",
-        "subcopy": "Just a sweet potato."
+        "headline": "$20 BULLY STICK.\nGONE IN 1 HOUR.",
+        "subcopy": "Sweet potato: $2."
       }
     },
     {
       "key": "process",
       "prompt": "Cinematic close-up food photography at an eye-level 20-degree angle: raw sweet potato strips sliced 1/4 inch thick, arranged in a single layer on a parchment-paper-lined rimmed baking sheet. Strips are bright orange and fresh-looking. Warm side-light from the right, deep shadows to the left. The baking sheet rests on a weathered oak counter; a sharp chef's knife rests off to the side (not in foreground) on the same counter. Honest home-kitchen feel, no studio gloss. No text, no labels, no logos, no hands, no people, no dogs.",
       "overlay": {
-        "headline": "SLICE. BAKE LOW. DRY.",
-        "subcopy": "Step 3 of 7"
+        "headline": "1 INGREDIENT.\n3-HOUR BAKE.",
+        "subcopy": "Slice. Bake low. Dry."
+      }
+    },
+    {
+      "key": "proof",
+      "prompt": "Cinematic close-up photography, 9:16 portrait, eye-level slight angle of a clear glass jar full of dehydrated amber-orange sweet-potato chews on a weathered oak counter, two simple round plain silver coins resting beside it (no markings on either side). Warm amber side-light from the right. Tight crop, generous negative space at the top for headline. No readable text on the coins, no logos, no labels, no captions overlaid, no hands, no people, no dogs.",
+      "overlay": {
+        "headline": "12 CHEWS\nFOR $2.",
+        "subcopy": "$0.17 each."
       }
     },
     {
       "key": "final",
       "prompt": "Cinematic close-up food photography at an overhead 45-degree angle of finished dehydrated sweet potato chews cooling on a black wire rack. Chews are amber-orange, visibly leathery with crispy edges, some translucent where thin. Warm side-light from the right catches the subtle glossiness of the surface. The rack wires cast long dramatic parallel shadows across the weathered wooden counter below. Tight crop — 4 or 5 chews in sharp focus up front, more softly out of focus in the background. One chew tilted up on its edge, catching the light. Honest imperfect plating, home kitchen feel, magazine-quality. No text, no labels, no watermarks, no logos, no hands, no people, no dogs, no cutlery.",
       "overlay": {
-        "headline": "SAVE FOR HIKES",
-        "subcopy": "Full recipe on dogfoodandfun.com"
+        "headline": "SAVE → BAKE\nTHIS SUNDAY",
+        "subcopy": "Tap bio → cost breakdown."
       }
     }
-  ]
+  ],
+  "title": "$80/Month on Rawhide. Then I Tried This.",
+  "wp_url": "https://dogfoodandfun.com/sweet-potato-chews-for-dogs",
+  "ig_caption": "$80 a month on rawhide alternatives. Bully sticks ($20 each, gone in an hour). A marrow bone split her tooth — vet bill: $400.\n\nThen I tried this. One ingredient. $2 worth of sweet potato.\n\n🍠 1 large sweet potato\n🔪 Slice 1/4-inch thick\n🔥 Bake 250°F for 3 hours, flip halfway\n\nThat's it. They come out chewy-tough — perfect for power chewers without the rawhide controversy or the dental risk.\n\nNalla works on one for an hour. I make a batch every Sunday for the week.\n\nMath: $2 sweet potato = ~12 chews. That's $0.17 per chew vs $20.\n\nSave this 🔖 → your wallet will thank you.\n\nFull recipe + amounts: link in bio\n\n👉 What's your power-chewer's favorite?\n\n#dogchew #rawhidealternative #sweetpotato #healthydog #nallasdad #dogfoodandfun",
+  "fb_caption": "$80 a month on rawhide alternatives. Bully sticks ($20 each, gone in an hour). A marrow bone split Nalla's tooth — vet bill: $400.\n\nThen I tried this. One ingredient. $2 worth of sweet potato.\n\n• 1 large sweet potato\n• Slice 1/4-inch thick\n• Bake 250°F for 3 hours, flip halfway\n\nThat's it. They come out chewy-tough — perfect for power chewers without the rawhide controversy or the dental risk.\n\nNalla works on one for an hour. I make a batch every Sunday for the week.\n\nMath: $2 sweet potato = ~12 chews. That's $0.17 per chew vs $20.\n\nFull recipe + exact amounts → https://dogfoodandfun.com/sweet-potato-chews-for-dogs\n\nWhat's your power-chewer's favorite?"
 }

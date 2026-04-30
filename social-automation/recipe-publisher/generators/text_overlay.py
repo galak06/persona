@@ -17,12 +17,13 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 _DEFAULT_HEADLINE_FONT = os.getenv(
     "OVERLAY_HEADLINE_FONT",
-    "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Black.ttf",
 )
 _DEFAULT_SUBCOPY_FONT = os.getenv(
     "OVERLAY_SUBCOPY_FONT",
     "/System/Library/Fonts/Helvetica.ttc",
 )
+_SUBCOPY_FONT_INDEX = int(os.getenv("OVERLAY_SUBCOPY_FONT_INDEX", "1"))  # 1 = Helvetica Bold
 
 _CREAM = (245, 239, 229)  # #f5efe5
 
@@ -51,29 +52,30 @@ def apply_overlay(
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = img.size
 
-    # Bottom darkness gradient — transparent at band_top_pct, ramping to ~78% black at the bottom.
+    # Bottom darkness gradient — stronger now: transparent at band_top_pct,
+    # ramping to ~88% black at the bottom so headline punches against any image.
     gradient = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     gdraw = ImageDraw.Draw(gradient)
     band_top = int(h * band_top_pct)
     for y in range(band_top, h):
         t = (y - band_top) / max(1, h - band_top)
-        alpha = int(200 * (t ** 1.3))
+        alpha = int(225 * (t ** 1.2))
         gdraw.rectangle([0, y, w, y + 1], fill=(0, 0, 0, alpha))
 
-    # Font sizes scale off the shorter dimension so they don't balloon on portrait.
-    # Bumped for mobile legibility: these slides are often viewed at ~400px wide.
+    # Mobile-optimized sizes. Reels are watched at ~400-600px wide; the
+    # headline must be readable in 1.5s and survive aggressive compression.
     ref = min(w, h)
-    head_size = int(ref * 0.082)
-    sub_size = int(ref * 0.038)
+    head_size = int(ref * 0.10)   # ~108px on 1080-wide
+    sub_size = int(ref * 0.052)   # ~56px on 1080-wide
     head_font = ImageFont.truetype(_DEFAULT_HEADLINE_FONT, head_size)
-    sub_font = ImageFont.truetype(_DEFAULT_SUBCOPY_FONT, sub_size, index=0)
+    sub_font = ImageFont.truetype(_DEFAULT_SUBCOPY_FONT, sub_size, index=_SUBCOPY_FONT_INDEX)
 
     lines = spec.headline.split("\n")
-    line_spacing = int(head_size * 1.08)
+    line_spacing = int(head_size * 1.06)
     total_head_h = line_spacing * len(lines)
     head_y = int(h * headline_y_pct) - total_head_h // 2
 
-    # Render soft shadow behind headline for legibility on any background.
+    # Soft drop shadow underneath the stroked text for extra punch on any background.
     shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
     sdraw = ImageDraw.Draw(shadow)
     for i, line in enumerate(lines):
@@ -81,24 +83,34 @@ def apply_overlay(
         line_w = bbox[2] - bbox[0]
         x = (w - line_w) // 2
         y = head_y + i * line_spacing
-        sdraw.text((x + 2, y + 3), line, font=head_font, fill=(0, 0, 0, 140))
+        sdraw.text((x + 3, y + 4), line, font=head_font, fill=(0, 0, 0, 180))
     shadow = shadow.filter(ImageFilter.GaussianBlur(radius=6))
 
     out = Image.alpha_composite(img, shadow)
     out = Image.alpha_composite(out, gradient)
     draw = ImageDraw.Draw(out)
 
+    # Headline with stroked outline — guarantees legibility on busy food shots.
+    head_stroke = max(3, head_size // 22)
     for i, line in enumerate(lines):
         bbox = draw.textbbox((0, 0), line, font=head_font)
         line_w = bbox[2] - bbox[0]
         x = (w - line_w) // 2
         y = head_y + i * line_spacing
-        draw.text((x, y), line, font=head_font, fill=_CREAM + (255,))
+        draw.text(
+            (x, y), line, font=head_font, fill=_CREAM + (255,),
+            stroke_width=head_stroke, stroke_fill=(0, 0, 0, 255),
+        )
 
-    sub_y = head_y + total_head_h + int(head_size * 0.4)
+    sub_y = head_y + total_head_h + int(head_size * 0.35)
+    sub_stroke = max(2, sub_size // 28)
     sb = draw.textbbox((0, 0), spec.subcopy, font=sub_font)
     sw = sb[2] - sb[0]
-    draw.text(((w - sw) // 2, sub_y), spec.subcopy, font=sub_font, fill=_CREAM + (230,))
+    draw.text(
+        ((w - sw) // 2, sub_y), spec.subcopy, font=sub_font,
+        fill=_CREAM + (245,),
+        stroke_width=sub_stroke, stroke_fill=(0, 0, 0, 220),
+    )
 
     buf = io.BytesIO()
     out.convert("RGB").save(buf, "JPEG", quality=output_quality)

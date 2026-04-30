@@ -14,6 +14,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -117,11 +118,16 @@ def publish_to_wordpress(
 
 
 def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
-    """Prepend a hero image, convert markdown to HTML, append Recipe JSON-LD.
+    """Prepend a hero image, convert markdown to HTML, append JSON-LD schemas.
 
     The hero image is inlined in post_content so it renders on the post page
     regardless of theme/Elementor-plugin behavior. featured_media + FIFU handle
     thumbnail display on category/archive pages separately.
+
+    Two JSON-LD blocks are appended: `Recipe` (rich-result card with
+    time/image/yield) and — when the recipe carries Q&A pairs — `FAQPage`
+    (pairs with the H3 question headers in the body to win 'People Also Ask'
+    and featured-snippet real estate).
     """
     hero = (
         f'<figure class="wp-block-image size-full">'
@@ -132,9 +138,19 @@ def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
         recipe.body_markdown,
         extensions=["extra", "sane_lists", "smarty"],
     )
-    schema = _recipe_jsonld(recipe)
-    schema_block = f'<script type="application/ld+json">{json.dumps(schema, ensure_ascii=False)}</script>'
-    return f"{hero}\n\n{html}\n\n{schema_block}\n"
+    schema_blocks = [_jsonld_block(_recipe_jsonld(recipe, image_url=image_url))]
+    faq_schema = _faq_jsonld(recipe)
+    if faq_schema is not None:
+        schema_blocks.append(_jsonld_block(faq_schema))
+    return f"{hero}\n\n{html}\n\n" + "\n\n".join(schema_blocks) + "\n"
+
+
+def _jsonld_block(schema: dict) -> str:
+    return (
+        f'<script type="application/ld+json">'
+        f'{json.dumps(schema, ensure_ascii=False)}'
+        f'</script>'
+    )
 
 
 def _escape_attr(s: str) -> str:
@@ -146,12 +162,17 @@ def _escape_attr(s: str) -> str:
     )
 
 
-def _recipe_jsonld(recipe: Recipe) -> dict:
-    return {
+def _recipe_jsonld(recipe: Recipe, *, image_url: str | None = None) -> dict:
+    # Google's Recipe rich-result eligibility requires `image` — without it the
+    # post doesn't render ratings/time/thumbnail in SERPs. `datePublished` is
+    # recommended and lets freshness surface correctly.
+    schema: dict = {
         "@context": "https://schema.org",
         "@type": "Recipe",
         "name": recipe.title,
         "description": recipe.meta_description,
+        "recipeCategory": "Dog treat",
+        "recipeCuisine": "Dog food",
         "recipeIngredient": recipe.ingredients,
         "recipeInstructions": [
             {"@type": "HowToStep", "position": i + 1, "text": step}
@@ -162,8 +183,42 @@ def _recipe_jsonld(recipe: Recipe) -> dict:
         "totalTime": f"PT{recipe.prep_minutes + recipe.cook_minutes}M",
         "recipeYield": recipe.yield_servings,
         "keywords": ", ".join(recipe.tags),
+        "datePublished": datetime.now(timezone.utc).date().isoformat(),
         "author": {"@type": "Person", "name": "Nalla's Dad"},
-        "publisher": {"@type": "Organization", "name": "Dog Food & Fun"},
+        "publisher": {
+            "@type": "Organization",
+            "name": "Dog Food & Fun",
+            "url": "https://dogfoodandfun.com",
+        },
+    }
+    if image_url:
+        schema["image"] = [image_url]
+    return schema
+
+
+def _faq_jsonld(recipe: Recipe) -> dict | None:
+    """Emit FAQPage schema from recipe.faq. Returns None if there are no pairs.
+
+    Pairs with the `### {question}` H3 headers in the rendered body so Google
+    has both structured data and on-page anchors to lift into 'People Also Ask'.
+    """
+    pairs = [
+        p for p in (recipe.faq or [])
+        if isinstance(p, dict) and p.get("question") and p.get("answer")
+    ]
+    if not pairs:
+        return None
+    return {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": p["question"],
+                "acceptedAnswer": {"@type": "Answer", "text": p["answer"]},
+            }
+            for p in pairs
+        ],
     }
 
 

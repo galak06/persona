@@ -153,3 +153,46 @@ def test_token_expired_attempts_refresh(
 
     assert result.media_id == "media_2"
     assert any("refreshed" in w for w in result.warnings)
+
+
+@respx.mock
+def test_list_media_comments_returns_data() -> None:
+    base = "https://graph.facebook.com/v23.0"
+    respx.get(f"{base}/media_X/comments").respond(
+        200,
+        json={
+            "data": [
+                {"id": "c1", "text": "yum!", "username": "alice", "timestamp": "2026-01-01T00:00:00+0000"},
+                {"id": "c2", "text": "my dog loves these", "username": "bob", "timestamp": "2026-01-02T00:00:00+0000"},
+            ]
+        },
+    )
+    out = instagram.list_media_comments("media_X")
+    assert [c["id"] for c in out] == ["c1", "c2"]
+    assert out[1]["username"] == "bob"
+
+
+@respx.mock
+def test_list_media_comments_propagates_error() -> None:
+    base = "https://graph.facebook.com/v23.0"
+    respx.get(f"{base}/media_X/comments").respond(403, text="forbidden")
+    with pytest.raises(instagram.InstagramError, match="list_media_comments failed"):
+        instagram.list_media_comments("media_X")
+
+
+@respx.mock
+def test_reply_to_instagram_comment_posts_message() -> None:
+    base = "https://graph.facebook.com/v23.0"
+    route = respx.post(f"{base}/c1/replies").respond(200, json={"id": "reply_99"})
+    rid = instagram.reply_to_instagram_comment("c1", "thanks for the kind words!")
+    assert rid == "reply_99"
+    call = route.calls.last
+    assert "message=thanks" in str(call.request.url)
+
+
+@respx.mock
+def test_reply_to_instagram_comment_raises_on_error() -> None:
+    base = "https://graph.facebook.com/v23.0"
+    respx.post(f"{base}/c1/replies").respond(500, text="oops")
+    with pytest.raises(instagram.InstagramError, match="reply_to_instagram_comment failed"):
+        instagram.reply_to_instagram_comment("c1", "hi")

@@ -258,6 +258,98 @@ def request_approval(
     return {"action": "timeout", "comment": draft_comment}
 
 
+def send_approval_request(
+    platform: str,
+    group_or_hashtag: str,
+    post_preview: str,
+    draft_comment: str,
+    relevance_score: float,
+    timeout_hours: int = 12,
+) -> dict:
+    """Send the Telegram approval message and return a poll cursor.
+
+    Used by comment-composer-graph's interrupt() flow: the runner sends the
+    message here, then either polls in the same run (short window) or
+    persists the offset and resumes the paused graph thread on a later run.
+
+    Returns:
+        {"sent": True,  "offset": int, "chat_id": str}     — message delivered
+        {"sent": False, "reason": "no_credentials"|"send_failed"|"updates_failed"}
+    """
+    cfg = _load_config()
+    token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+    if not token or not chat_id:
+        return {"sent": False, "reason": "no_credentials"}
+    try:
+        offset = _get_latest_offset(token)
+    except Exception:
+        return {"sent": False, "reason": "updates_failed"}
+
+    score_pct = int(relevance_score * 100)
+    icon = "📘" if platform == "facebook" else "📸"
+    msg = (
+        f"{icon} <b>Comment approval needed</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Platform:</b> {platform.capitalize()}\n"
+        f"<b>Group/Tag:</b> {group_or_hashtag}\n"
+        f"<b>Score:</b> {score_pct}%\n"
+        f"<b>Post:</b> <i>{post_preview[:200]}...</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Proposed comment:</b>\n"
+        f"<blockquote>{draft_comment}</blockquote>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Reply: <b>yes</b> · <b>skip</b> · <b>edit: your new text</b>\n"
+        f"⏳ Open up to {timeout_hours}h"
+    )
+    if not send(msg, silent=False):
+        return {"sent": False, "reason": "send_failed"}
+    return {"sent": True, "offset": offset, "chat_id": str(chat_id)}
+
+
+def poll_for_reply(offset: int, draft_comment: str, max_seconds: int = 180) -> dict | None:
+    """Poll Telegram for a reply newer than `offset`. Return parsed action or None.
+
+    Distinct from `request_approval` because it does NOT send a message — caller
+    already sent one and just wants to harvest the user's reply (possibly minutes
+    or hours later, possibly across runs).
+
+    Returns:
+        {"action": "approved"|"skipped"|"edited", "comment": str, "new_offset": int}
+        or None if no relevant reply arrived within max_seconds.
+    """
+    cfg = _load_config()
+    token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+    if not token or not chat_id:
+        return None
+
+    deadline = time.time() + max_seconds
+    poll_interval = 5
+    cur_offset = offset
+    while time.time() < deadline:
+        # Long-poll up to poll_interval seconds OR remaining budget, whichever is smaller.
+        wait = min(poll_interval, max(1, int(deadline - time.time())))
+        updates = _get_updates(token, offset=cur_offset, timeout=wait)
+        for update in updates:
+            cur_offset = update["update_id"] + 1
+            msg_data = update.get("message", {})
+            if str(msg_data.get("chat", {}).get("id", "")) != str(chat_id):
+                continue
+            text = (msg_data.get("text") or "").strip()
+            if not text:
+                continue
+            result = _parse_reply(text, draft_comment)
+            ack = {
+                "approved": "✅ Approved — posting.",
+                "skipped":  "⏭️ Skipped.",
+                "edited":   "✅ Edited — posting your version.",
+            }.get(result["action"], "Got it.")
+            send(ack, silent=True)
+            return {**result, "new_offset": cur_offset}
+    return None
+
+
 def _parse_reply(text: str, draft: str) -> dict:
     """Parse user's Telegram reply into an action dict."""
     lower = text.lower().strip()

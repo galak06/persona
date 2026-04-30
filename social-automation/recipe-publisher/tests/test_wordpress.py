@@ -53,6 +53,23 @@ def recipe() -> Recipe:
             "What's your dog's highest-value treat? Drop it below 👇\n\n"
             "#doglife #dogrecipes #trainingtreats #nallasdad #dogfoodandfun #homemadedogtreats #dogsofinsta #dogfood"
         ),
+        faq=[
+            {
+                "question": "Can dogs eat beef liver?",
+                "answer": (
+                    "Yes — beef liver is safe for dogs in small amounts and is one "
+                    "of the most nutrient-dense training treats you can use. Keep "
+                    "portions under 10% of daily calories to avoid vitamin A overload."
+                ),
+            },
+            {
+                "question": "How should I store homemade liver treats?",
+                "answer": (
+                    "Store cooled treats in an airtight jar in the fridge for up to "
+                    "one week, or freeze in a zip bag for three months."
+                ),
+            },
+        ],
     )
 
 
@@ -135,9 +152,76 @@ def test_post_create_failure_raises(recipe: Recipe, image: GeneratedImage) -> No
 
 
 def test_recipe_jsonld_shape(recipe: Recipe) -> None:
-    schema = wordpress._recipe_jsonld(recipe)
+    schema = wordpress._recipe_jsonld(
+        recipe, image_url="https://example.test/liver.png"
+    )
     assert schema["@type"] == "Recipe"
     assert schema["prepTime"] == "PT10M"
     assert schema["totalTime"] == "PT25M"
     assert len(schema["recipeInstructions"]) == len(recipe.steps)
     assert schema["recipeInstructions"][0]["position"] == 1
+    # Rich-result eligibility: image + datePublished must be present.
+    assert schema["image"] == ["https://example.test/liver.png"]
+    assert "datePublished" in schema and len(schema["datePublished"]) == 10
+    assert schema["publisher"]["url"] == "https://dogfoodandfun.com"
+
+
+def test_faq_jsonld_shape(recipe: Recipe) -> None:
+    schema = wordpress._faq_jsonld(recipe)
+    assert schema is not None
+    assert schema["@type"] == "FAQPage"
+    assert len(schema["mainEntity"]) == 2
+    first = schema["mainEntity"][0]
+    assert first["@type"] == "Question"
+    assert first["name"] == "Can dogs eat beef liver?"
+    assert first["acceptedAnswer"]["@type"] == "Answer"
+    assert "beef liver is safe" in first["acceptedAnswer"]["text"]
+
+
+def test_faq_jsonld_empty_returns_none(recipe: Recipe) -> None:
+    recipe.faq = []
+    assert wordpress._faq_jsonld(recipe) is None
+
+
+@respx.mock
+def test_publish_embeds_both_jsonld_blocks(
+    recipe: Recipe, image: GeneratedImage
+) -> None:
+    captured: dict = {}
+
+    def _capture_post(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = request.content
+        return httpx.Response(
+            201,
+            json={"id": 2233, "link": "https://example.test/x/"},
+        )
+
+    respx.post("https://example.test/wp-json/wp/v2/media").respond(
+        201,
+        json={"id": 1, "source_url": "https://example.test/wp-content/uploads/x.png"},
+    )
+    respx.get("https://example.test/wp-json/wp/v2/categories").respond(
+        200, json=[{"id": 42}]
+    )
+    respx.get("https://example.test/wp-json/wp/v2/tags").respond(200, json=[])
+    respx.post("https://example.test/wp-json/wp/v2/tags").respond(
+        201, json={"id": 1}
+    )
+    respx.post("https://example.test/wp-json/wp/v2/posts").mock(side_effect=_capture_post)
+    respx.post("https://example.test/wp-json/surerank/v1/post/settings").respond(
+        200, json={"success": True}
+    )
+    respx.post("https://example.test/wp-json/wp/v2/media/1").respond(200, json={})
+
+    wordpress.publish_to_wordpress(recipe, image)
+
+    # The JSON-LD is embedded inside the WP post_content, which itself is
+    # JSON-encoded when sent to the REST API — so the payload is double-encoded
+    # and quote characters are escaped. Assert on substrings that survive both
+    # layers of encoding: the schema type names, the JSON-LD script tag count,
+    # and the question text.
+    body = captured["payload"].decode("utf-8")
+    assert body.count("application/ld+json") == 2
+    assert '\\"Recipe\\"' in body
+    assert '\\"FAQPage\\"' in body
+    assert "Can dogs eat beef liver?" in body

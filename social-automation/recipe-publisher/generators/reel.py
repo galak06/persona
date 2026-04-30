@@ -36,15 +36,16 @@ def compose_reel(
     slide_bytes: list[bytes],
     output_path: Path,
     *,
-    slide_duration_s: float = 6.0,
-    transition_duration_s: float = 0.5,
+    slide_duration_s: float = 4.0,
+    transition_duration_s: float = 0.4,
     audio_path: Path | None = None,
 ) -> Path:
     """Compose slide bytes into a 9:16 Reel mp4 and return the output path.
 
     Total duration: n * slide_duration_s - (n - 1) * transition_duration_s.
-    With 4 slides at 6s each and 0.5s crossfades that is 22.5s — inside IG's
-    3s-to-90s Reel window.
+    With 8 slides at 4.0s each and 0.4s crossfades that is 29.2s — matches
+    the typical ~30s Gemini/Suno music track length so the song plays fully
+    instead of being trimmed mid-verse.
     """
     if not slide_bytes:
         raise ValueError("need at least one slide")
@@ -148,8 +149,13 @@ def _run_ffmpeg(
         ]
     audio_idx = n
 
+    # setparams stamps bt709 onto each input stream so the color tags survive
+    # the xfade composition; the -color_* encoder flags alone don't propagate
+    # through filter_complex.
     filter_parts = [
-        f"[{i}:v]setsar=1,format=yuv420p[v{i}]" for i in range(n)
+        f"[{i}:v]setsar=1,format=yuv420p,"
+        f"setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709[v{i}]"
+        for i in range(n)
     ]
     # Pad audio with silence if shorter, trim if longer — so the output
     # always matches the composed video length regardless of narration runtime.
@@ -182,6 +188,12 @@ def _run_ffmpeg(
         "-preset", "medium",
         "-crf", "22",
         "-pix_fmt", "yuv420p",
+        # bt709 color tags so QuickTime/Preview/Meta accept the file without
+        # complaint. Without these, color_*=unknown and macOS players refuse
+        # silently. IG/FB also prefer files with explicit color metadata.
+        "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+        "-colorspace", "bt709",
         "-r", str(_FPS),
         "-c:a", "aac",
         "-b:a", "128k",

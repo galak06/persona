@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .recipe_from_seed import assemble_body_markdown, generate_from_seed
 from .recipe_from_seed_gemini import generate_from_seed_gemini
@@ -40,6 +40,10 @@ class Recipe:
     image_brief: str
     ig_caption: str
     seed_id: str = ""  # set by generate_recipe() — used to look up carousel config
+    # PAA-style Q&A pairs. Kept as a structured field (not only inside
+    # body_markdown) so the WordPress publisher can emit FAQPage JSON-LD
+    # alongside the Recipe schema without re-parsing rendered HTML.
+    faq: list[dict] = field(default_factory=list)
 
 
 def _slugify(text: str) -> str:
@@ -97,6 +101,7 @@ def generate_recipe(topic: str, *, client: object | None = None) -> Recipe:
         image_brief=voice["image_brief"],
         ig_caption=voice["ig_caption"],
         seed_id=seed.id,
+        faq=[dict(p) for p in (voice.get("faq") or [])],
     )
     _validate(recipe)
     return recipe

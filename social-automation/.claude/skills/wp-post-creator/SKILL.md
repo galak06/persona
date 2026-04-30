@@ -103,6 +103,10 @@ Using the brief + content_rules.json, generate the full post.
    ```
 
 10. **Related Reading** — 3-6 internal links to existing posts (from site_content_cache.json)
+    - **Cluster linking is mandatory.** Before drafting, look up this brief's keyword in `data/keyword_clusters.json`:
+      - If this post is a **spoke**: include a link to the cluster's **pillar** in the body (natural placement, not just Related Reading) AND in Related Reading. If the pillar is `PILLAR_GAP` (not yet published), tag the post in `wp_posts_cache.json` so it can be back-linked once the pillar publishes.
+      - If this post is a **pillar**: link to 2-3 of the highest-priority published spokes in this cluster. The pillar acts as the cluster's hub.
+      - If the keyword isn't in any cluster yet: flag in the Telegram review message — the user should run `keyword-cluster-mapper` so future spokes can find this post.
 
 11. **"Our Pick"** — Recommendation if applicable
 
@@ -123,6 +127,69 @@ Using the brief + content_rules.json, generate the full post.
 - Slug: kebab-case, keyword-rich
 - Heading hierarchy: H1 → H2 → H3 (never skip levels)
 - Image alt text: descriptive, include primary keyword
+
+**AEO / LLMO Requirements (be cited by ChatGPT, Perplexity, Google AI Overviews):**
+
+The goal: when an LLM is answering a user's question about dog food / GPS trackers / training, dogfoodandfun.com should be one of the sources it pulls from. LLMs cite content that is **factually dense, cleanly attributed, and reusable out of context**.
+
+1. **Quotable stat blocks** — Every major H2 section needs at least one standalone factual claim formatted as a bolded lead sentence followed by source/context:
+
+   > **The average GPS tracker for dogs costs $79 with a $5–10/month subscription.** Based on 2026 retail pricing across Fi, Tractive, and Whistle in the US market.
+
+   These are the sentences LLMs lift verbatim. Make them reusable.
+
+2. **Standalone factual sentences** — Every claim must work out of context. Avoid pronouns ("it", "this", "they") in topic sentences. Bad: "It costs about $80." Good: "The Fi Series 3 collar costs $99 retail as of 2026."
+
+3. **Source attribution inline** — When citing data, name the source in the same sentence: "according to AAFCO 2025 standards", "per Fi's published battery specs", "based on a 2025 Veterinary Medicine analysis of 1,200 dogs". LLMs preferentially cite content with explicit sources.
+
+4. **Author authority block** — Every post ends with a `<div class="author-bio">` containing:
+
+   > **About the Author:** Nalla's Dad is a software engineer and dog owner based in Tel Aviv. This guide reflects 4+ years of testing products with Nalla, a fluffy shepherd mix, and analyzing pricing/spec data from major US/CA dog brands. All product testing is hands-on; affiliate links are disclosed at the top of every post.
+
+5. **Schema.org markup expansion** beyond `FAQPage`:
+   - `HowTo` schema for any step-by-step section (recipes, training protocols, gear setup)
+   - `Product` schema for every row in the comparison table — include `brand`, `offers.price`, `offers.priceCurrency: "USD"`, `aggregateRating` if you have a rating
+   - `Review` schema for any "Our Pick" or opinion section, with `reviewRating` and `author`
+   - All schema as JSON-LD inside `<script type="application/ld+json">`
+
+6. **`llms.txt` prerequisite** — Site root must have `https://dogfoodandfun.com/llms.txt` summarizing the site for LLM crawlers (separate one-time setup). If missing, this skill should flag it in the Telegram review message: "⚠️ llms.txt not found on site root — set up before next post for AEO."
+
+### Step 2.5: Auto-External Citations Pass (NEW)
+
+After generating the post body but **before** HTML formatting, do a citation pass. This is the AEO multiplier: LLMs and Google AI Overviews preferentially cite content that *itself* cites authoritative sources.
+
+**Goal:** every factual claim that names a number, regulation, brand spec, or scientific finding gets an inline `<a>` link to a primary source.
+
+**Workflow:**
+
+1. **Load the whitelist** — read `data/citation_sources.json` to know which domains are allowed. Never link to spammy or competitor blogs; only authoritative primaries (FDA, AAFCO, AKC, peer-reviewed journals, brand-official spec pages).
+
+2. **Scan the draft for citation candidates.** A claim qualifies if it:
+   - Cites a regulation or standard (AAFCO, FDA, FCC, AVMA)
+   - Names a brand specification (battery life, weight, accuracy)
+   - References a study, percentage, or population statistic
+   - Makes a nutritional claim ("X% protein", "Y mg/kg")
+   - Mentions a scientific concept (taurine deficiency, hip dysplasia genetics)
+
+3. **For each candidate**, attempt to find a whitelisted source URL:
+   - For regulation claims → official `.gov` or organization page (e.g. AAFCO Methods)
+   - For brand specs → the manufacturer's own product page (`fi.com/series-3`)
+   - For scientific claims → peer-reviewed journal or `.edu` page
+   - For breed/health claims → AKC, AVMA, or VCA
+
+4. **Insert the link inline** in the existing claim sentence. Anchor text should be specific (not "click here"). Examples:
+
+   ✅ *"AAFCO 2025 standards require [a minimum of 18% crude protein for adult dogs](https://www.aafco.org/...)."*
+   ✅ *"The Fi Series 3 collar [delivers up to 3 months of battery life](https://fi.com/pages/series-3-specs) on a single charge."*
+   ❌ *"Some sources say protein is important. Click here to learn more."*
+
+5. **Limits:** 5–12 external citations per post. Too few = weak authority signal. Too many = link soup that hurts UX.
+
+6. **If no whitelisted source exists** for a claim, leave the claim unlinked rather than inventing a URL or linking to an unvetted domain. Hallucinated citations are worse than no citations.
+
+7. **Log inserted citations** to the Telegram review message so the user can spot-check before publish.
+
+**Output:** the post body now contains 5–12 inline `<a href>` links to primary sources, each in the same sentence as its supporting claim.
 
 ### Step 3: Format as WordPress HTML
 
@@ -269,6 +336,21 @@ This skill completes after creating the draft. The user reviews and publishes ma
 
 When the user publishes, they update the sheet Status to "wp_published"—this triggers downstream social-post-creator skills.
 
+## Daily Cadence
+
+This skill runs **manually on demand**, but a daily nudge is wired up via launchd:
+
+- **`launchd/com.dogfoodandfun.daily-wp-draft.plist`** — fires `scripts/daily_wp_draft.py` every morning at 8:00 Israel time
+- **`scripts/daily_wp_draft.py`** — picks the highest-scored `approved` brief from `.claude/state/enrichment_cache.json` and sends a Telegram nudge: "📝 Daily WP Draft Ready: [topic]. Run wp-post-creator to draft."
+- **The script does NOT auto-publish.** Drafting still happens by the user invoking `wp-post-creator` inside Claude Code — this preserves the human-in-loop quality gate while giving daily cadence.
+- If the queue is empty, the nudge says to run `content-enricher` (and `content-ideator` if the sheet is also low).
+
+To install the launchd job:
+```bash
+cp launchd/com.dogfoodandfun.daily-wp-draft.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.dogfoodandfun.daily-wp-draft.plist
+```
+
 ## Credential Config
 
 The skill expects `.claude/state/social_api_config.json`:
@@ -324,7 +406,7 @@ From `.claude/state/enrichment_cache.json`:
   "title": "Engineer's Data-Driven Guide: Dog Food",
   "topic": "dog food nutrition",
   "status": "approved",
-  "nalla_context": "Nalla is a 3-year-old Labrador who switches between kibble brands monthly",
+  "nalla_context": "Nalla is a fluffy shepherd mix who switches between kibble brands monthly",
   "keywords": ["dog food", "nutrition", "kibble"],
   "focus_areas": ["cost vs. quality", "ingredient sourcing", "vet opinions"],
   "target_audience": "dog owners who want to understand food labels"

@@ -1,0 +1,15 @@
+{
+  "_note": "Pet content brands / influencer pages in US/Canada. Their names are used as FB group-search queries to find groups where they are active or mentioned. Set active=false to temporarily disable without removing. Edit freely — this is the source of truth for competitor_signals.",
+  "competitors": [
+    { "name": "Dog Food Advisor",                 "fb_query": "Dog Food Advisor",                 "niche": "reviews",    "active": true },
+    { "name": "Dogster",                          "fb_query": "Dogster",                          "niche": "content",    "active": true },
+    { "name": "The Dogington Post",               "fb_query": "Dogington Post",                   "niche": "content",    "active": true },
+    { "name": "K9 of Mine",                       "fb_query": "K9 of Mine",                       "niche": "reviews",    "active": true },
+    { "name": "BarkPost",                         "fb_query": "BarkPost",                         "niche": "content",    "active": true },
+    { "name": "Pupford",                          "fb_query": "Pupford",                          "niche": "training",   "active": true },
+    { "name": "Cesar Millan",                     "fb_query": "Cesar Millan",                     "niche": "influencer", "active": true },
+    { "name": "Zak George",                       "fb_query": "Zak George",                       "niche": "influencer", "active": true },
+    { "name": "American Kennel Club",             "fb_query": "American Kennel Club",             "niche": "content",    "active": false },
+    { "name": "The Natural Dog Company",          "fb_query": "Natural Dog Company",              "niche": "content",    "active": true }
+  ]
+}

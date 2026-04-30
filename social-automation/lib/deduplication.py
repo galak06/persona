@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
-Platform = Literal["facebook", "instagram"]
+Platform = Literal["facebook", "instagram", "wordpress"]
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CACHE_FILE = _PROJECT_ROOT / ".claude" / "state" / "dedup_cache.json"

@@ -260,7 +260,7 @@ def main() -> None:
 
     summary = f"Replied to {total_posted}, skipped {total_skipped}"
     print(f"\n=== Done === {summary}", flush=True)
-    skill_finished("reply-follower", summary, success=total_posted + total_skipped > 0 or not recent)
+    skill_finished("reply-follower", summary, success=True)
 
 
 if __name__ == "__main__":

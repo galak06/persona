@@ -17,10 +17,11 @@ Generate high-quality blog post ideas for DogFoodAndFun.com that match the engin
 
 ### Site Profile
 - **URL**: dogfoodandfun.com
-- **Persona**: Nalla's Dad (software engineer + dog owner, based in Israel)
-- **Dog**: Nalla (Golden Retriever mix)
+- **Persona**: Nalla's Dad (software engineer + dog owner, based in Tel Aviv)
+- **Dog**: Nalla (fluffy shepherd mix, ~25-50lbs)
 - **Voice**: Data-driven, personal, engineer's perspective on dog care
 - **Positioning**: Unique angle combining technical analysis with real-world dog ownership
+- **Target audience**: Dog owners in **USA + Canada** (primary monetization market — affiliate revenue depends on US-available brands, USD pricing, US/CA shipping)
 
 ### Content Categories
 1. **Grooming** — Bath, nails, ears, coat care, brushing
@@ -34,6 +35,16 @@ Generate high-quality blog post ideas for DogFoodAndFun.com that match the engin
 - **Columns**: Category | Topic | Target_Keyword | Nalla_Context | Post_Goal | Status | Input
 
 ## Workflow
+
+### Step 0: Load Keyword Clusters (NEW)
+
+Before anything else, load `data/keyword_clusters.json`:
+
+- **If file exists and `last_updated` is within 30 days:** use it. Identify cluster pillar gaps — these are the highest-priority writing targets.
+- **If file is missing OR `last_updated` is older than 30 days:** STOP. Tell the user: *"Run `keyword-cluster-mapper` first — clusters are missing or stale. Without them, new ideas form islands instead of topical networks."* Do not proceed with idea generation until clusters are fresh.
+- **If file is brand-new (just created with empty clusters):** treat all categories as pillar-gap; prioritize broad pillar ideas in this batch.
+
+Cluster awareness ensures every new idea lands in a defined topical network, with a clear pillar relationship.
 
 ### Step 1: Load Existing Data
 Load these assets to understand current coverage:
@@ -61,6 +72,11 @@ Load these assets to understand current coverage:
    - Brands reviewed previously
    - Niche definition and scope
    - Seasonal considerations
+
+5. **`data/keyword_clusters.json`** (already loaded in Step 0)
+   - Existing clusters with pillar status per cluster
+   - Pillar gaps (clusters without a published pillar)
+   - Spoke counts (clusters that need more spokes vs. saturated ones)
 
 ### Step 2: Identify Content Gaps
 
@@ -117,24 +133,44 @@ Execute research across multiple sources:
 
 #### Instagram Trends
 - Search hashtags relevant to each gap category (#homemadedogfood, #dognutrition, #canicross, #dogtraining, #doglove, etc.)
+- **Filter to US/CA-located accounts** (location tags, USD pricing in captions, English-language)
 - Identify posts with 1000+ likes or 100+ comments
 - Note recurring pain points and questions in comments
 - Document which content types get highest engagement (video, carousel, educational)
 
 #### Facebook Group Discussions
-- Search major dog owner groups for recent discussions
+- Search major dog owner groups for recent discussions — **US/Canada-based groups only**
 - Look for recurring questions without good answers
 - Note emotional triggers and common problems
 - These indicate real search intent and content demand
 
 #### Google "People Also Ask" (PAA)
-- For each target keyword category, perform Google search
+- For each target keyword category, perform Google search **with `gl=us` and `gl=ca`** (not localized to IL — audience is US/CA, not Israel)
 - Extract all PAA questions that appear
 - These map directly to:
   - FAQ sections in posts
   - Standalone follow-up post ideas
   - Subheadings and content structure
 - Example: search "homemade dog food" reveals "Is homemade dog food cheaper than kibble?" → potential post
+
+#### Buyer-Intent Keywords (Commercial Search)
+
+The site monetizes via affiliate links — every batch must surface keywords with **purchase intent**, not just informational queries:
+
+| Pattern | Example | Why it converts |
+|---|---|---|
+| `best [X]` | "best GPS tracker for dogs 2026" | Comparison-shopper at decision stage |
+| `[X] vs [Y]` | "Fi vs Tractive" | Picking between two products |
+| `[X] review` | "Ollie dog food review" | Validating before purchase |
+| `[X] price` / `[X] cost` / `is [X] worth it` | "is Fi collar worth it" | Cost justification |
+| `where to buy [X]` | "where to buy Nom Nom" | Late-funnel |
+| `[X] for [breed/use-case]` | "GPS tracker for shepherd mix" | Niche fit |
+
+**US/CA-only signals to require:**
+- USD pricing in any cost analysis
+- US/CA-available brands (skip EU-only products)
+- Reference US frameworks (AAFCO, FDA, FCC) — not EU/UK regulations
+- Note seasonal timing in US climate zones (e.g. tick season starts March in southern US, May in northern US)
 
 #### Seasonal & Timely Topics
 - **Current date context** (April 2026):
@@ -211,18 +247,32 @@ For each identified opportunity, create a complete idea matching the Google Shee
    - Relevant to core audience (dog owners)
    - Completable in 1-2 weeks
 
+8. **Buyer-intent slot (HARD requirement)** — Every batch of 5+ ideas MUST include:
+   - At least **2 ideas with explicit buyer-intent keywords** (best/review/vs/price/worth it)
+   - At least **1 product comparison** covering 3+ products with US/CA pricing
+   - These convert affiliate clicks; informational-only batches starve revenue.
+
 #### Idea Prioritization Scoring
 
-Score each idea on these dimensions (max 10/10):
+Score each idea on these dimensions (max 15/15):
 
 ```
+Fills cluster pillar gap (priority #1):    +3 points  ← NEW
+Buyer-intent keyword (commercial search):  +2 points
 Content Gap (no existing coverage):        +3 points
 Trending on social (high engagement):      +2 points
 PAA question (proven search intent):       +2 points
 Seasonal relevance (timely/upcoming):      +1 point
 Competitor gap (they miss the angle):      +1 point
 Existing Nalla experience (can speak to):  +1 point
+Orphan-spoke penalty (no pillar exists):   -2 points  ← NEW
 ```
+
+**Pillar-gap bonus (+3) triggers when** the idea would become the published pillar for a cluster that currently has `pillar_gap: true` in `keyword_clusters.json`. Pillar posts unlock all their spokes — write them first.
+
+**Orphan-spoke penalty (-2) triggers when** the idea is a narrow spoke (specific brand review, breed-specific guide) and its parent cluster has no published pillar AND no idea in this batch is creating that pillar. Exception: if the spoke is being added to a batch that also creates the pillar, no penalty applies.
+
+**Buyer-intent keywords trigger when** the target keyword contains: "best", "review", "vs", "price", "cost", "worth it", "where to buy", "[brand] alternative", or "[product] for [breed/use-case]". These convert affiliate clicks at 5-10× the rate of informational queries — score them aggressively.
 
 Examples:
 
