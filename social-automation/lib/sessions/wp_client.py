@@ -7,8 +7,8 @@ Replaces 4 inline implementations across:
     - scripts/content_pipeline.py:147-152 (used `requests`, not `httpx`!)
 
 Standardizes the env-var contract on `WP_URL` / `WP_USER` /
-`WP_APP_PASSWORD`. The recipe-publisher's `WP_BASE_URL` /
-`WP_APP_PASSWORD_USER` aliases will be removed in Stage 4 (drift fixes).
+`WP_APP_PASSWORD`. The legacy `WP_BASE_URL` / `WP_APP_PASSWORD_USER`
+aliases were removed in Stage 4.
 
 Returns an `httpx.Client` configured with:
     - `base_url` from `WP_URL` (trailing slash stripped)

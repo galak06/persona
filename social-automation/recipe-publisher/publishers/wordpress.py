@@ -14,12 +14,11 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 import markdown as md
-
 from generators.image import GeneratedImage
 from generators.recipe import Recipe
 
@@ -39,10 +38,11 @@ class WordPressError(RuntimeError):
 
 
 def _client() -> httpx.Client:
-    # Accept both the recipe-publisher original names and the social-automation
-    # project convention (WP_URL/WP_USER). Project convention takes precedence.
-    base = (os.environ.get("WP_URL") or os.environ["WP_BASE_URL"]).rstrip("/")
-    user = os.environ.get("WP_USER") or os.environ["WP_APP_PASSWORD_USER"]
+    # Standardized on the social-automation project convention.
+    # Legacy WP_BASE_URL / WP_APP_PASSWORD_USER aliases were removed in
+    # Stage 4 — set WP_URL / WP_USER / WP_APP_PASSWORD instead.
+    base = os.environ["WP_URL"].rstrip("/")
+    user = os.environ["WP_USER"]
     pw = os.environ["WP_APP_PASSWORD"]
     return httpx.Client(
         base_url=base,
@@ -96,9 +96,7 @@ def publish_to_wordpress(
         }
         resp = client.post("/wp-json/wp/v2/posts", json=post_payload)
         if resp.status_code >= 400:
-            raise WordPressError(
-                f"post create failed: {resp.status_code} {resp.text}"
-            )
+            raise WordPressError(f"post create failed: {resp.status_code} {resp.text}")
         post = resp.json()
         post_id = int(post["id"])
         permalink = post["link"]
@@ -132,7 +130,7 @@ def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
     hero = (
         f'<figure class="wp-block-image size-full">'
         f'<img src="{image_url}" alt="{_escape_attr(alt_text)}" />'
-        f'</figure>'
+        f"</figure>"
     )
     html = md.markdown(
         recipe.body_markdown,
@@ -146,20 +144,11 @@ def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
 
 
 def _jsonld_block(schema: dict) -> str:
-    return (
-        f'<script type="application/ld+json">'
-        f'{json.dumps(schema, ensure_ascii=False)}'
-        f'</script>'
-    )
+    return f'<script type="application/ld+json">{json.dumps(schema, ensure_ascii=False)}</script>'
 
 
 def _escape_attr(s: str) -> str:
-    return (
-        s.replace("&", "&amp;")
-         .replace('"', "&quot;")
-         .replace("<", "&lt;")
-         .replace(">", "&gt;")
-    )
+    return s.replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _recipe_jsonld(recipe: Recipe, *, image_url: str | None = None) -> dict:
@@ -183,7 +172,7 @@ def _recipe_jsonld(recipe: Recipe, *, image_url: str | None = None) -> dict:
         "totalTime": f"PT{recipe.prep_minutes + recipe.cook_minutes}M",
         "recipeYield": recipe.yield_servings,
         "keywords": ", ".join(recipe.tags),
-        "datePublished": datetime.now(timezone.utc).date().isoformat(),
+        "datePublished": datetime.now(UTC).date().isoformat(),
         "author": {"@type": "Person", "name": "Nalla's Dad"},
         "publisher": {
             "@type": "Organization",
@@ -203,7 +192,8 @@ def _faq_jsonld(recipe: Recipe) -> dict | None:
     has both structured data and on-page anchors to lift into 'People Also Ask'.
     """
     pairs = [
-        p for p in (recipe.faq or [])
+        p
+        for p in (recipe.faq or [])
         if isinstance(p, dict) and p.get("question") and p.get("answer")
     ]
     if not pairs:
@@ -222,9 +212,7 @@ def _faq_jsonld(recipe: Recipe) -> dict | None:
     }
 
 
-def _upload_media(
-    client: httpx.Client, image: GeneratedImage, recipe: Recipe
-) -> tuple[int, str]:
+def _upload_media(client: httpx.Client, image: GeneratedImage, recipe: Recipe) -> tuple[int, str]:
     # Prefer in-memory bytes if generator already fetched them; else GET the URL.
     if image.bytes_:
         content = image.bytes_
@@ -274,9 +262,7 @@ def upload_image_to_media_library(
             },
         )
         if resp.status_code >= 400:
-            raise WordPressError(
-                f"media upload failed: {resp.status_code} {resp.text[:300]}"
-            )
+            raise WordPressError(f"media upload failed: {resp.status_code} {resp.text[:300]}")
         data = resp.json()
         media_id = int(data["id"])
         src = data["source_url"]
@@ -311,9 +297,7 @@ def upload_video_to_media_library(
             },
         )
         if resp.status_code >= 400:
-            raise WordPressError(
-                f"video upload failed: {resp.status_code} {resp.text[:300]}"
-            )
+            raise WordPressError(f"video upload failed: {resp.status_code} {resp.text[:300]}")
         body = resp.json()
     return int(body["id"]), body["source_url"]
 
@@ -368,16 +352,11 @@ def _set_surerank_meta(
     )
     if r.status_code >= 400:
         warnings.append(
-            f"SureRank meta set failed for post_id={post_id}: "
-            f"{r.status_code} {r.text[:200]}"
+            f"SureRank meta set failed for post_id={post_id}: {r.status_code} {r.text[:200]}"
         )
 
 
-def _set_image_alt(
-    client: httpx.Client, media_id: int, alt: str, warnings: list[str]
-) -> None:
+def _set_image_alt(client: httpx.Client, media_id: int, alt: str, warnings: list[str]) -> None:
     r = client.post(f"/wp-json/wp/v2/media/{media_id}", json={"alt_text": alt})
     if r.status_code >= 400:
-        warnings.append(
-            f"failed to set alt_text on media_id={media_id}: {r.status_code}"
-        )
+        warnings.append(f"failed to set alt_text on media_id={media_id}: {r.status_code}")

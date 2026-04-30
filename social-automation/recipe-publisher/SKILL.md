@@ -24,8 +24,8 @@ outputs:
   - state/published_recipes.json appended (dedup cache)
   - Report at /mnt/dogfoodandfun/recipe-publisher-report-YYYY-MM-DD.md (always)
 secrets_required:
-  - WP_BASE_URL
-  - WP_APP_PASSWORD_USER
+  - WP_URL
+  - WP_USER
   - WP_APP_PASSWORD
   - IG_USER_ID
   - IG_GRAPH_ACCESS_TOKEN
@@ -76,8 +76,8 @@ All failures write to `last_run.json` with `status: "failed"` + `error` and writ
 Read from environment at startup. The skill assumes Claude CLI (or launchd via `run_with_watchdog.py`) has injected them from project secrets — no `.env` parsing inside the skill itself.
 
 ```
-WP_BASE_URL=https://dogfoodandfun.com
-WP_APP_PASSWORD_USER=<wp username>
+WP_URL=https://dogfoodandfun.com
+WP_USER=<wp username>
 WP_APP_PASSWORD=<24-char app password>
 IG_USER_ID=<numeric ig business account id>
 IG_GRAPH_ACCESS_TOKEN=<long-lived page token>

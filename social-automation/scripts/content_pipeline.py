@@ -234,13 +234,13 @@ def stage_publish() -> bool:
         log_step("Publishing to Facebook")
         if img_url:
             fb_resp = requests.post(
-                f"https://graph.facebook.com/v19.0/{fb_page_id}/photos",
+                f"https://graph.facebook.com/v23.0/{fb_page_id}/photos",
                 data={"url": img_url, "message": fb_caption, "access_token": fb_token},
                 timeout=30,
             )
         else:
             fb_resp = requests.post(
-                f"https://graph.facebook.com/v19.0/{fb_page_id}/feed",
+                f"https://graph.facebook.com/v23.0/{fb_page_id}/feed",
                 data={"message": fb_caption, "link": post_url, "access_token": fb_token},
                 timeout=30,
             )
@@ -266,7 +266,7 @@ def stage_publish() -> bool:
         else:
             # Step 1: Create container
             container = requests.post(
-                f"https://graph.facebook.com/v19.0/{ig_account_id}/media",
+                f"https://graph.facebook.com/v23.0/{ig_account_id}/media",
                 data={"image_url": img_url, "caption": ig_caption, "access_token": fb_token},
                 timeout=30,
             )
@@ -276,7 +276,7 @@ def stage_publish() -> bool:
 
                 # Step 2: Publish
                 pub = requests.post(
-                    f"https://graph.facebook.com/v19.0/{ig_account_id}/media_publish",
+                    f"https://graph.facebook.com/v23.0/{ig_account_id}/media_publish",
                     data={"creation_id": container_id, "access_token": fb_token},
                     timeout=30,
                 )

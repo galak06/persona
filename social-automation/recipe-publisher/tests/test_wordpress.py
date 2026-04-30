@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import os
-
 import httpx
 import pytest
 import respx
-
 from generators.image import GeneratedImage
 from generators.recipe import Recipe
 from publishers import wordpress
@@ -15,12 +12,10 @@ from publishers import wordpress
 
 @pytest.fixture(autouse=True)
 def wp_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    # WP_URL is the preferred project convention and takes precedence over
-    # WP_BASE_URL in publishers.wordpress._client(). Set both for safety.
+    # Standardized env-var contract — WP_URL / WP_USER / WP_APP_PASSWORD only.
+    # The legacy WP_BASE_URL / WP_APP_PASSWORD_USER aliases were removed in Stage 4.
     monkeypatch.setenv("WP_URL", "https://example.test")
-    monkeypatch.setenv("WP_BASE_URL", "https://example.test")
     monkeypatch.setenv("WP_USER", "nallasdad")
-    monkeypatch.setenv("WP_APP_PASSWORD_USER", "nallasdad")
     monkeypatch.setenv("WP_APP_PASSWORD", "abcd efgh ijkl mnop qrst uvwx")
 
 
@@ -152,9 +147,7 @@ def test_post_create_failure_raises(recipe: Recipe, image: GeneratedImage) -> No
 
 
 def test_recipe_jsonld_shape(recipe: Recipe) -> None:
-    schema = wordpress._recipe_jsonld(
-        recipe, image_url="https://example.test/liver.png"
-    )
+    schema = wordpress._recipe_jsonld(recipe, image_url="https://example.test/liver.png")
     assert schema["@type"] == "Recipe"
     assert schema["prepTime"] == "PT10M"
     assert schema["totalTime"] == "PT25M"
@@ -184,9 +177,7 @@ def test_faq_jsonld_empty_returns_none(recipe: Recipe) -> None:
 
 
 @respx.mock
-def test_publish_embeds_both_jsonld_blocks(
-    recipe: Recipe, image: GeneratedImage
-) -> None:
+def test_publish_embeds_both_jsonld_blocks(recipe: Recipe, image: GeneratedImage) -> None:
     captured: dict = {}
 
     def _capture_post(request: httpx.Request) -> httpx.Response:
@@ -200,13 +191,9 @@ def test_publish_embeds_both_jsonld_blocks(
         201,
         json={"id": 1, "source_url": "https://example.test/wp-content/uploads/x.png"},
     )
-    respx.get("https://example.test/wp-json/wp/v2/categories").respond(
-        200, json=[{"id": 42}]
-    )
+    respx.get("https://example.test/wp-json/wp/v2/categories").respond(200, json=[{"id": 42}])
     respx.get("https://example.test/wp-json/wp/v2/tags").respond(200, json=[])
-    respx.post("https://example.test/wp-json/wp/v2/tags").respond(
-        201, json={"id": 1}
-    )
+    respx.post("https://example.test/wp-json/wp/v2/tags").respond(201, json={"id": 1})
     respx.post("https://example.test/wp-json/wp/v2/posts").mock(side_effect=_capture_post)
     respx.post("https://example.test/wp-json/surerank/v1/post/settings").respond(
         200, json={"success": True}

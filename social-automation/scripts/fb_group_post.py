@@ -29,7 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 from comment_generator import validate_voice
 from logger import enable_unbuffered, log_step
 from notifier import request_approval, skill_finished, skill_started
-from rate_limiter import record_action
+from rate_limiter import can_act, record_action
 
 enable_unbuffered()
 
@@ -37,8 +37,9 @@ SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
 TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
-# Daily cap on group posts — conservative to avoid spam flags.
-_MAX_GROUP_POSTS_PER_DAY = 3
+# Daily cap on group posts is enforced via lib.rate_limiter.can_act —
+# the actual cap value lives in lib/rate_limiter.py:DAILY_LIMITS["facebook:group_post"].
+# Don't redefine the cap here; the rate_limiter is the single source of truth.
 
 _RECIPE_KEYS = ("recipe", "homemade", "food", "treat", "pup", "nutrition")
 _RUNNING_KEYS = ("running", "canicross", "trail", "gps", "tracker", "walk")
@@ -286,8 +287,8 @@ def main() -> None:
     posted = skipped = 0
     with _browser_session() as page:
         for group in joined:
-            if posted >= _MAX_GROUP_POSTS_PER_DAY:
-                print(f"  ⏹  daily cap reached ({_MAX_GROUP_POSTS_PER_DAY})", flush=True)
+            if not can_act("facebook", "group_post"):
+                print("  ⏹  daily cap reached (rate_limiter)", flush=True)
                 break
 
             caption = args.caption_override or draft_caption(group, args.title, args.url)

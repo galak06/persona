@@ -23,8 +23,8 @@ Injected from project secrets — skill does not read `.env` itself.
 
 | Var | Purpose |
 |---|---|
-| `WP_URL` (or `WP_BASE_URL`) | e.g. `https://dogfoodandfun.com` — project convention takes precedence |
-| `WP_USER` (or `WP_APP_PASSWORD_USER`) | WP username with Application Password |
+| `WP_URL` | e.g. `https://dogfoodandfun.com` |
+| `WP_USER` | WP username with Application Password |
 | `WP_APP_PASSWORD` | the 24-char app password (keep spaces) |
 | `IG_ACCOUNT_ID` (or `IG_USER_ID`) | numeric IG Business account ID |
 | `FB_PAGE_TOKEN` (or `IG_GRAPH_ACCESS_TOKEN`) | long-lived Page token — IG uses the same FB token |

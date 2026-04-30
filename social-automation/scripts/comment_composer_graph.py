@@ -41,6 +41,7 @@ load_local_env()
 from langgraph.types import Command
 
 from comment_graph import Context, build_graph
+from lib.engagement import posted_targets
 from notifier import (
     poll_for_reply,
     send_approval_request,
@@ -62,17 +63,11 @@ APPROVAL_POLL_SECONDS_FRESH = 180
 APPROVAL_POLL_SECONDS_RESUME = 5
 
 
-def _engagement_history() -> set[str]:
-    seen: set[str] = set()
-    if not LOG_FILE.exists():
-        return seen
-    with LOG_FILE.open() as f:
-        for line in f:
-            try:
-                seen.add(json.loads(line)["target_name"])
-            except Exception:
-                continue
-    return seen
+# Engagement history reconstruction now lives in lib.engagement.posted_targets,
+# which applies the canonical filter `actions={"comment", "like"}` (drift fix:
+# this script previously counted any logged action — including group_post —
+# which silently suppressed approval prompts for first conversational comments
+# to publishing-only groups).
 
 
 def _open_browsers(ctx: Context) -> None:
@@ -216,7 +211,7 @@ def main() -> None:
         print("no pending items")
         return
 
-    ctx = Context(previously_posted=_engagement_history(), dry_run=args.dry_run)
+    ctx = Context(previously_posted=posted_targets(), dry_run=args.dry_run)
     if not args.dry_run:
         _open_browsers(ctx)
 
