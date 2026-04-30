@@ -46,6 +46,11 @@ ignore = [
 "scripts/fb_notification_scan.py" = ["RUF059"]  # unused unpacked var — Stage E
 "scripts/ig_own_comments.py"     = ["RUF059"]   # unused unpacked var — Stage C
 
+# ShutdownRequested is intentionally not an "Error" — it's a control-flow
+# signal (subclass of SocialAutomationError), and the conventional name
+# "*Requested" reads more naturally than "*RequestedError".
+"lib/runtime/shutdown.py"        = ["N818"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["lib"]
 
