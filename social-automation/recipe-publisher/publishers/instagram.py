@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
-
 from generators.image import GeneratedImage
 from generators.recipe import Recipe
+
 from publishers.wordpress import (
     upload_image_to_media_library,
     upload_video_to_media_library,
@@ -54,6 +54,33 @@ class InstagramError(RuntimeError):
     pass
 
 
+def _get_ig_token() -> str:
+    """Resolve the IG Graph API token, preferring FB_PAGE_TOKEN with
+    IG_GRAPH_ACCESS_TOKEN as legacy fallback. Single source of truth for
+    this module — was duplicated 7 times across the public functions.
+
+    Raises:
+        InstagramError: If neither env var is set.
+    """
+    token = os.environ.get("FB_PAGE_TOKEN") or os.environ.get("IG_GRAPH_ACCESS_TOKEN") or ""
+    if not token:
+        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    return token
+
+
+def _get_ig_account_id() -> str:
+    """Resolve the IG Business account ID, preferring IG_ACCOUNT_ID with
+    IG_USER_ID as legacy fallback.
+
+    Raises:
+        InstagramError: If neither env var is set.
+    """
+    user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ.get("IG_USER_ID") or ""
+    if not user_id:
+        raise InstagramError("IG_ACCOUNT_ID / IG_USER_ID not set")
+    return user_id
+
+
 def list_recent_user_media(
     *,
     limit: int = 10,
@@ -64,16 +91,8 @@ def list_recent_user_media(
     own-post comment scanner instead of reading recipe_publisher state, since
     that state has occasionally drifted from what's actually live on Meta.
     """
-    ig_user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ.get("IG_USER_ID") or ""
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not ig_user_id:
-        raise InstagramError("IG_ACCOUNT_ID / IG_USER_ID not set")
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    ig_user_id = _get_ig_account_id()
+    token = _get_ig_token()
     with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
         resp = client.get(
             f"/{ig_user_id}/media",
@@ -105,13 +124,7 @@ def list_media_comments(
     publish path. Only returns top-level comments — threaded replies live at
     /{comment_id}/replies and aren't handled here yet.
     """
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    token = _get_ig_token()
     with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
         resp = client.get(
             f"/{media_id}/comments",
@@ -136,13 +149,7 @@ def reply_to_instagram_comment(comment_id: str, message: str) -> str:
     do not call on third-party posts (that's a separate flow and would be
     outbound comment-spam risk).
     """
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    token = _get_ig_token()
     with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
         resp = client.post(
             f"/{comment_id}/replies",
@@ -167,22 +174,14 @@ def post_first_comment_to_instagram(media_id: str, message: str) -> str:
     Token scope: needs instagram_manage_comments. Our FB_PAGE_TOKEN already
     has it since it's the same token used to publish media.
     """
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    token = _get_ig_token()
     with httpx.Client(timeout=30.0, base_url=_GRAPH_BASE) as client:
         resp = client.post(
             f"/{media_id}/comments",
             params={"message": message, "access_token": token},
         )
         if resp.status_code >= 400:
-            raise InstagramError(
-                f"first-comment POST failed: {resp.status_code} {resp.text[:300]}"
-            )
+            raise InstagramError(f"first-comment POST failed: {resp.status_code} {resp.text[:300]}")
         return resp.json()["id"]
 
 
@@ -190,14 +189,8 @@ def publish_to_instagram(recipe: Recipe, *, image_url: str) -> IGPublishResult:
     # Accept both the recipe-publisher original names and the social-automation
     # project convention (IG_ACCOUNT_ID + FB_PAGE_TOKEN per CLAUDE.md — IG uses
     # the same Page token as Facebook). Project convention takes precedence.
-    ig_user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ["IG_USER_ID"]
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    ig_user_id = _get_ig_account_id()
+    token = _get_ig_token()
     warnings: list[str] = []
 
     with httpx.Client(timeout=60.0, base_url=_GRAPH_BASE) as client:
@@ -227,14 +220,8 @@ def publish_carousel_to_instagram(
     if len(slides) < 2 or len(slides) > 10:
         raise InstagramError(f"carousel requires 2-10 slides, got {len(slides)}")
 
-    ig_user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ["IG_USER_ID"]
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    ig_user_id = _get_ig_account_id()
+    token = _get_ig_token()
 
     warnings: list[str] = []
 
@@ -313,14 +300,8 @@ def publish_reel_to_instagram(
     if not video_path.exists():
         raise InstagramError(f"video file not found: {video_path}")
 
-    ig_user_id = os.environ.get("IG_ACCOUNT_ID") or os.environ["IG_USER_ID"]
-    token = (
-        os.environ.get("FB_PAGE_TOKEN")
-        or os.environ.get("IG_GRAPH_ACCESS_TOKEN")
-        or ""
-    )
-    if not token:
-        raise InstagramError("FB_PAGE_TOKEN / IG_GRAPH_ACCESS_TOKEN not set")
+    ig_user_id = _get_ig_account_id()
+    token = _get_ig_token()
 
     warnings: list[str] = []
 
@@ -425,9 +406,7 @@ def _wait_for_container(
     )
 
 
-def _publish_container(
-    client: httpx.Client, ig_user_id: str, container_id: str, token: str
-) -> str:
+def _publish_container(client: httpx.Client, ig_user_id: str, container_id: str, token: str) -> str:
     resp = client.post(
         f"/{ig_user_id}/media_publish",
         params={"creation_id": container_id, "access_token": token},
@@ -460,9 +439,7 @@ def _refresh_token(current: str, warnings: list[str]) -> str:
     app_id = os.getenv("FB_APP_ID")
     app_secret = os.getenv("FB_APP_SECRET")
     if not app_id or not app_secret:
-        raise InstagramError(
-            "IG token expired and FB_APP_ID/FB_APP_SECRET not set for refresh"
-        )
+        raise InstagramError("IG token expired and FB_APP_ID/FB_APP_SECRET not set for refresh")
     with httpx.Client(timeout=30.0) as client:
         r = client.get(
             f"{_GRAPH_BASE}/oauth/access_token",
