@@ -33,15 +33,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from local_env import load_local_env  # noqa: E402
+from local_env import load_local_env
 
 # Load env early so PHOENIX_ENABLED etc. are visible before tracing setup.
 load_local_env()
 
-from notifier import poll_for_reply, send_approval_request, skill_finished, skill_started  # noqa: E402
+from langgraph.types import Command
 
-from comment_graph import Context, build_graph  # noqa: E402
-from langgraph.types import Command  # noqa: E402
+from comment_graph import Context, build_graph
+from notifier import (
+    poll_for_reply,
+    send_approval_request,
+    skill_finished,
+    skill_started,
+)
 
 QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
@@ -88,7 +93,7 @@ def _summarize_delta(delta: dict | None) -> str:
     parts = []
     if "decision" in delta:
         parts.append(f"decision={delta['decision']}")
-    if "draft" in delta and delta["draft"]:
+    if delta.get("draft"):
         parts.append(f"draft={len(delta['draft'])}c")
     if "violations" in delta:
         v = delta["violations"]
@@ -161,7 +166,9 @@ def _stream_graph(graph, stream_input, cfg) -> tuple[dict, dict | None]:
     """
     final_state: dict = {}
     interrupt_payload: dict | None = None
-    for event in graph.stream(stream_input, config=cfg, stream_mode=["updates", "values"], subgraphs=True):
+    for event in graph.stream(
+        stream_input, config=cfg, stream_mode=["updates", "values"], subgraphs=True
+    ):
         # subgraphs=True yields (ns, mode, payload). ns=() at parent level.
         ns, mode, payload = event
         prefix = f"[{ns[-1].split(':')[0]}] " if ns else ""
@@ -196,8 +203,9 @@ def _apply_decision(item: dict, result: dict) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dry-run", action="store_true",
-                    help="log decisions, skip approval+post+queue write")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="log decisions, skip approval+post+queue write"
+    )
     args = ap.parse_args()
 
     _setup_phoenix_tracing()
@@ -218,10 +226,12 @@ def main() -> None:
     # SQLite so a crash mid-batch resumes from the last completed node on next run.
     if args.dry_run:
         from langgraph.checkpoint.memory import MemorySaver
+
         cp_ctx = nullcontext(MemorySaver())
     else:
         CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
         from langgraph.checkpoint.sqlite import SqliteSaver
+
         cp_ctx = SqliteSaver.from_conn_string(str(CHECKPOINT_DB))
 
     counts: dict[str, int] = {}
@@ -235,7 +245,9 @@ def main() -> None:
         if not args.dry_run and pending_approvals:
             for thread_id, rec in list(pending_approvals.items()):
                 cfg = {"configurable": {"context": ctx, "thread_id": thread_id}}
-                reply = poll_for_reply(rec["offset"], rec["draft"], max_seconds=APPROVAL_POLL_SECONDS_RESUME)
+                reply = poll_for_reply(
+                    rec["offset"], rec["draft"], max_seconds=APPROVAL_POLL_SECONDS_RESUME
+                )
                 if not reply:
                     print(f"  [{thread_id}] no reply yet — staying paused")
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
@@ -273,12 +285,17 @@ def main() -> None:
                     relevance_score=interrupt_payload["relevance_score"],
                 )
                 if not send_result.get("sent"):
-                    print(f"  [{thread_id}] approval send failed ({send_result.get('reason')}) — keeping pending")
+                    print(
+                        f"  [{thread_id}] approval send failed ({send_result.get('reason')}) — keeping pending"
+                    )
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
                     continue
 
-                reply = poll_for_reply(send_result["offset"], interrupt_payload["draft_comment"],
-                                       max_seconds=APPROVAL_POLL_SECONDS_FRESH)
+                reply = poll_for_reply(
+                    send_result["offset"],
+                    interrupt_payload["draft_comment"],
+                    max_seconds=APPROVAL_POLL_SECONDS_FRESH,
+                )
                 if reply:
                     final_state, _ = _stream_graph(graph, Command(resume=reply), cfg)
                 else:
@@ -290,7 +307,9 @@ def main() -> None:
                     }
                     if not args.dry_run:
                         _save_pending_approvals(pending_approvals)
-                    print(f"  [{thread_id}] no reply within {APPROVAL_POLL_SECONDS_FRESH}s — paused for next run")
+                    print(
+                        f"  [{thread_id}] no reply within {APPROVAL_POLL_SECONDS_FRESH}s — paused for next run"
+                    )
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
                     continue
 

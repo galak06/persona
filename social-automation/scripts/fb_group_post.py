@@ -28,8 +28,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from comment_generator import validate_voice
 from logger import enable_unbuffered, log_step
-from notifier import request_approval, skill_error, skill_finished, skill_started
-from rate_limiter import can_act, record_action
+from notifier import request_approval, skill_finished, skill_started
+from rate_limiter import record_action
 
 enable_unbuffered()
 
@@ -292,7 +292,9 @@ def main() -> None:
 
             caption = args.caption_override or draft_caption(group, args.title, args.url)
             if not caption:
-                print(f"  ⏭  {group['group_name']} — no matching template (running-only?)", flush=True)
+                print(
+                    f"  ⏭  {group['group_name']} — no matching template (running-only?)", flush=True
+                )
                 continue
 
             valid, violations = validate_voice(caption)

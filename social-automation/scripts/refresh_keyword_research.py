@@ -9,6 +9,7 @@ Pulls:
 Reads ideas from backups/ideas_2026-04-28.json and prints a per-idea summary
 of real-world signal. Writes cache for downstream skill use.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,11 +20,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
-from local_env import load_local_env  # noqa: E402
+from local_env import load_local_env
 
 load_local_env()
 
-from keyword_research import (  # noqa: E402
+from keyword_research import (
     get_facebook_topic_performance,
     get_google_trends_north_america,
     get_instagram_hashtag_data,
@@ -49,7 +50,22 @@ def pick_hashtag(category: str, keyword: str) -> str:
 
 def keyword_to_topic_words(keyword: str) -> list[str]:
     """Extract meaningful words for FB topic-perf grep."""
-    stop = {"for", "the", "a", "an", "of", "and", "to", "in", "on", "with", "vs", "best", "2026", "guide"}
+    stop = {
+        "for",
+        "the",
+        "a",
+        "an",
+        "of",
+        "and",
+        "to",
+        "in",
+        "on",
+        "with",
+        "vs",
+        "best",
+        "2026",
+        "guide",
+    }
     return [w for w in keyword.lower().split() if w not in stop and len(w) > 2]
 
 
@@ -72,31 +88,39 @@ def main() -> int:
         # IG hashtag — works
         h = pick_hashtag(cat, kw)
         ig = get_instagram_hashtag_data(h)
-        print(f"    IG #{h}: avg_likes={ig.get('avg_likes', 'ERR')} signal={ig.get('engagement_signal', 'ERR')}")
+        print(
+            f"    IG #{h}: avg_likes={ig.get('avg_likes', 'ERR')} signal={ig.get('engagement_signal', 'ERR')}"
+        )
 
         # FB topic perf — works (sparse data)
         topic_words = keyword_to_topic_words(kw)
         fb = get_facebook_topic_performance(topic_words[:3])
-        print(f"    FB topic ({topic_words[:3]}): matching_posts={fb.get('matching_posts', 0)} avg_eng={fb.get('avg_engagement', 0)}")
+        print(
+            f"    FB topic ({topic_words[:3]}): matching_posts={fb.get('matching_posts', 0)} avg_eng={fb.get('avg_engagement', 0)}"
+        )
 
         # Trends — read cache only (slow refresher populates it via cron)
         trends = get_google_trends_north_america(kw, cache_only=True)
         cache_state = trends["us"].get("trend") if trends["us"] else "no_data"
         if cache_state == "no_cached_data":
-            print(f"    Trends NA: cache miss — run scripts/refresh_trends_only.py")
+            print("    Trends NA: cache miss — run scripts/refresh_trends_only.py")
         else:
-            print(f"    Trends NA: interest={trends['rollup_interest']} trend={trends['rollup_trend']}")
+            print(
+                f"    Trends NA: interest={trends['rollup_interest']} trend={trends['rollup_trend']}"
+            )
 
-        out["ideas"].append({
-            "id": idea_id,
-            "topic": idea["Topic"],
-            "keyword": kw,
-            "category": cat,
-            "ig_hashtag_used": h,
-            "instagram": ig,
-            "facebook_topic_perf": fb,
-            "google_trends_na": trends,
-        })
+        out["ideas"].append(
+            {
+                "id": idea_id,
+                "topic": idea["Topic"],
+                "keyword": kw,
+                "category": cat,
+                "ig_hashtag_used": h,
+                "instagram": ig,
+                "facebook_topic_perf": fb,
+                "google_trends_na": trends,
+            }
+        )
 
         time.sleep(3)  # polite delay between idea iterations
 

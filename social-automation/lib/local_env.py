@@ -16,9 +16,7 @@ import json
 import os
 from pathlib import Path
 
-_SETTINGS_FILE = (
-    Path(__file__).resolve().parent.parent / ".claude" / "settings.local.json"
-)
+_SETTINGS_FILE = Path(__file__).resolve().parent.parent / ".claude" / "settings.local.json"
 
 
 def load_local_env(*, settings_file: Path | None = None) -> int:

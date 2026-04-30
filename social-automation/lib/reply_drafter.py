@@ -42,9 +42,7 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SITE_CACHE = _PROJECT_ROOT / "data" / "site_content_cache.json"
 _GEMINI_MODEL = os.getenv("GEMINI_REPLY_MODEL", "gemini-2.5-flash")
-_GEMINI_ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-)
+_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _MAX_SITE_POSTS = 8  # trim site cache before sending to Gemini
 
 
@@ -85,9 +83,7 @@ def _relevant_posts(needle: str, all_posts: list[SitePost], limit: int = 3) -> l
     words = {w for w in needle_lower.split() if len(w) > 3}
     scored: list[tuple[int, SitePost]] = []
     for p in all_posts:
-        hay = " ".join(
-            [p.title, p.excerpt, " ".join(p.categories), " ".join(p.tags)]
-        ).lower()
+        hay = " ".join([p.title, p.excerpt, " ".join(p.categories), " ".join(p.tags)]).lower()
         score = sum(1 for w in words if w in hay)
         if score:
             scored.append((score, p))
@@ -242,9 +238,7 @@ Output ONLY the comment text. No preamble, no quotes."""
         valid, violations = validate_voice(text)
         if valid:
             return text
-        logger.info(
-            "gemini comment failed voice validation %s — falling back", violations
-        )
+        logger.info("gemini comment failed voice validation %s — falling back", violations)
     return ""  # let caller decide (template or skip)
 
 
@@ -253,7 +247,7 @@ def _strip_meta_chrome(text: str) -> str:
     text = text.strip()
     for pref in ("Reply:", "Comment:", "Response:", "Here's the reply:", "Here is the reply:"):
         if text.lower().startswith(pref.lower()):
-            text = text[len(pref):].lstrip()
+            text = text[len(pref) :].lstrip()
     # Strip wrapping quotes if present
     if len(text) >= 2 and text[0] in '"“”' and text[-1] in '"“”':
         text = text[1:-1].strip()

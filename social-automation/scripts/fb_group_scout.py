@@ -151,9 +151,7 @@ def run_scout(
     )
     if budget <= 0 and not dry_run:
         reason = (
-            "Weekly limit reached"
-            if weekly <= 0
-            else "Daily limit reached — try again tomorrow"
+            "Weekly limit reached" if weekly <= 0 else "Daily limit reached — try again tomorrow"
         )
         print(f"ABORT: {reason}.")
         skill_skipped("fb-group-scout", reason)

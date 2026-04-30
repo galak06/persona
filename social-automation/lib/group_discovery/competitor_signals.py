@@ -43,9 +43,7 @@ def _normalize(s: str) -> str:
     return " ".join(s.lower().split())
 
 
-def count_mentions(
-    group_text: str, competitors: list[dict] | None = None
-) -> tuple[int, list[str]]:
+def count_mentions(group_text: str, competitors: list[dict] | None = None) -> tuple[int, list[str]]:
     """Count distinct competitor names appearing in group text.
 
     Returns (count, matched_names). Uses substring match on normalized text.
@@ -59,18 +57,14 @@ def count_mentions(
         needle_name = _normalize(name) if name else ""
         needle_query = _normalize(query) if query else ""
         hit = False
-        if needle_name and needle_name in text:
-            hit = True
-        elif needle_query and needle_query in text:
+        if (needle_name and needle_name in text) or (needle_query and needle_query in text):
             hit = True
         if hit:
             matched.append(name or query)
     return len(matched), matched
 
 
-def annotate_with_mentions(
-    candidates: list[dict], competitors: list[dict] | None = None
-) -> None:
+def annotate_with_mentions(candidates: list[dict], competitors: list[dict] | None = None) -> None:
     """In-place: add competitor_mentions + competitor_names to each candidate."""
     competitors = competitors if competitors is not None else load_competitors()
     for g in candidates:

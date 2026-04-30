@@ -3,3 +3,14 @@ ruff>=0.4.0
 pytest>=8.0.0
 pytest-cov>=5.0.0
 mypy>=1.10.0
+
+# Stage 0 — production scaffolding
+structlog>=24.1.0
+python-json-logger>=2.0.7
+pre-commit>=3.7.0
+
+# Type stubs (for strict mypy on new lib/ modules)
+types-requests>=2.31.0
+
+# HTTP mocking — used by tests/test_wp_comments.py (was missing, broke CI)
+respx>=0.21.0

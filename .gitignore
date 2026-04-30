@@ -25,6 +25,7 @@ CLAUDE.md
 # Generated runtime files
 social-automation/data/site_content_cache.json
 social-automation/logs/
+social-automation/backups/
 social-automation/config.json
 
 # Recipe-publisher runtime + local artifacts
@@ -40,3 +41,9 @@ social-automation/recipe-publisher/pytest-cache-files-*/
 
 # Campaign work-directories (per-campaign scratch space — keep local)
 campaigns/
+
+# Test artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml

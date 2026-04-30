@@ -45,12 +45,27 @@ def test_comment_returns_empty_string_without_gemini() -> None:
 
 def test_relevant_posts_ranks_by_keyword_overlap() -> None:
     posts = [
-        rd.SitePost(title="Spring Shedding Survival Guide", url="a", excerpt="",
-                    categories=["Grooming"], tags=["shedding", "deshedding"]),
-        rd.SitePost(title="Peanut Butter Banana Biscuits", url="b", excerpt="",
-                    categories=["Food"], tags=["recipes", "treats"]),
-        rd.SitePost(title="GPS Tracker Comparison", url="c", excerpt="",
-                    categories=["Gear"], tags=["gps", "tracker"]),
+        rd.SitePost(
+            title="Spring Shedding Survival Guide",
+            url="a",
+            excerpt="",
+            categories=["Grooming"],
+            tags=["shedding", "deshedding"],
+        ),
+        rd.SitePost(
+            title="Peanut Butter Banana Biscuits",
+            url="b",
+            excerpt="",
+            categories=["Food"],
+            tags=["recipes", "treats"],
+        ),
+        rd.SitePost(
+            title="GPS Tracker Comparison",
+            url="c",
+            excerpt="",
+            categories=["Gear"],
+            tags=["gps", "tracker"],
+        ),
     ]
     hits = rd._relevant_posts("Nalla has been shedding like crazy all spring", posts, limit=2)
     assert hits
@@ -59,8 +74,9 @@ def test_relevant_posts_ranks_by_keyword_overlap() -> None:
 
 def test_relevant_posts_returns_empty_when_nothing_matches() -> None:
     posts = [
-        rd.SitePost(title="GPS Tracker Comparison", url="c", excerpt="",
-                    categories=["Gear"], tags=["gps"]),
+        rd.SitePost(
+            title="GPS Tracker Comparison", url="c", excerpt="", categories=["Gear"], tags=["gps"]
+        ),
     ]
     assert rd._relevant_posts("completely unrelated topic xyzzy", posts) == []
 

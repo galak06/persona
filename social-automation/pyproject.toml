@@ -36,6 +36,16 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011", "SIM300"]  # allow assert True in tests
 
+# Legacy-debt ignores — remove when the file is migrated in later stages.
+# Each ignore is intentional, not a blanket exemption. New code MUST NOT
+# add to this list; instead, fix the issue.
+"lib/idea_learner.py"            = ["SIM102"]   # nested-if; refactor in Stage G
+"lib/keyword_research.py"        = ["F841"]     # unused `categories` — Stage G
+"scripts/content_pipeline.py"    = ["SIM102"]   # nested-if; gets split per-stage in Stage F/G
+"scripts/fb_group_post.py"       = ["N801"]     # _browser_session rename — Stage E
+"scripts/fb_notification_scan.py" = ["RUF059"]  # unused unpacked var — Stage E
+"scripts/ig_own_comments.py"     = ["RUF059"]   # unused unpacked var — Stage C
+
 [tool.ruff.lint.isort]
 known-first-party = ["lib"]
 
@@ -46,7 +56,68 @@ addopts = "-v --tb=short -q"
 
 [tool.mypy]
 python_version = "3.11"
-warn_return_any = false
 warn_unused_configs = true
 ignore_missing_imports = true
 check_untyped_defs = true
+
+# Strict mode for new production-grade modules. Legacy modules opt in
+# file-by-file as they migrate (Stage 1+). Never relax these globally;
+# instead, add a per-module override below.
+[[tool.mypy.overrides]]
+module = [
+    "lib.errors.*",
+    "lib.observability.*",
+    "lib.runtime.*",
+]
+strict = true
+disallow_any_explicit = true
+disallow_any_generics = true
+warn_return_any = true
+warn_unreachable = true
+
+# Legacy modules: keep loose until migrated. Remove from this list when
+# the module is brought up to strict-clean.
+[[tool.mypy.overrides]]
+module = [
+    "lib.affiliate_resolver",
+    "lib.comment_generator",
+    "lib.deduplication",
+    "lib.idea_learner",
+    "lib.keyword_research",
+    "lib.local_env",
+    "lib.logger",
+    "lib.monthly_cleanup",
+    "lib.notifier",
+    "lib.rate_limiter",
+    "lib.reply_drafter",
+    "lib.thread_scraper",
+    "lib.comment_graph",
+    "lib.group_discovery.*",
+]
+ignore_errors = true
+
+[tool.coverage.run]
+source = ["lib"]
+branch = true
+omit = [
+    "lib/__pycache__/*",
+    "tests/*",
+    # Legacy modules with 0% test coverage. Each is on a stage's
+    # to-do list — remove from this list when tests are added.
+    # New modules MUST NOT be added here; ship with tests.
+    "lib/comment_graph.py",            # Stage 9 — superseded by lib/graphs/comment/
+    "lib/group_discovery/*",           # Stage E — fb-group-scout migration
+    "lib/idea_learner.py",             # Stage G — content-track migration
+    "lib/keyword_research.py",         # Stage G — content-track migration
+    "lib/local_env.py",                # trivial; tested via integration use
+    "lib/monthly_cleanup.py",          # Stage F — linear-graph migration
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+show_missing = true

@@ -16,7 +16,12 @@ from typing import Literal
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 ActionType = Literal[
-    "comment", "like", "group_visit", "group_post", "ig_comment", "own_reply",
+    "comment",
+    "like",
+    "group_visit",
+    "group_post",
+    "ig_comment",
+    "own_reply",
 ]
 
 # wordpress:comment counts only *outbound* replies we post to moderated
@@ -26,7 +31,7 @@ ActionType = Literal[
 DAILY_LIMITS: dict[str, int] = {
     "facebook:comment": 5,
     "facebook:group_visit": 6,  # reduced from 10 — spread through day
-    "facebook:group_post": 3,   # share blog link to group — hard spam cap
+    "facebook:group_post": 3,  # share blog link to group — hard spam cap
     "instagram:like": 8,  # increased from 5 — likes are low-risk
     "instagram:ig_comment": 2,
     # Replies to comments on OUR OWN IG media. Separate bucket from ig_comment

@@ -38,7 +38,6 @@ from notifier import request_approval, skill_error, skill_finished, skill_starte
 from rate_limiter import can_act, record_action
 from reply_drafter import draft_reply as draft_reply_contextual
 from thread_scraper import (
-    ScrapedReply,
     find_replies_to_my_comment,
     post_threaded_reply_fb,
 )

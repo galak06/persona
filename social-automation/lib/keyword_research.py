@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +49,7 @@ def _is_cache_fresh(entry: dict, max_age_hours: int = 72) -> bool:
     if not cached_at:
         return False
     try:
-        age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached_at)).total_seconds()
+        age = (datetime.now(UTC) - datetime.fromisoformat(cached_at)).total_seconds()
         return age < max_age_hours * 3600
     except Exception:
         return False
@@ -73,8 +72,12 @@ def get_google_trends(keyword: str, geo: str = "US", cache_only: bool = False) -
     if key in cache and _is_cache_fresh(cache[key]):
         return cache[key]["data"]
     if cache_only:
-        return {"interest": 0, "trend": "no_cached_data", "geo": geo,
-                "_note": "Run scripts/refresh_trends_only.py to populate."}
+        return {
+            "interest": 0,
+            "trend": "no_cached_data",
+            "geo": geo,
+            "_note": "Run scripts/refresh_trends_only.py to populate.",
+        }
 
     try:
         from pytrends.request import TrendReq
@@ -144,7 +147,7 @@ def get_google_trends(keyword: str, geo: str = "US", cache_only: bool = False) -
             "geo": geo,
         }
 
-        cache[key] = {"data": result, "cached_at": datetime.now(timezone.utc).isoformat()}
+        cache[key] = {"data": result, "cached_at": datetime.now(UTC).isoformat()}
         _save_cache(cache)
         return result
 
@@ -167,7 +170,9 @@ def get_google_trends_north_america(keyword: str, cache_only: bool = False) -> d
         time.sleep(60)  # diagnostic-confirmed: ~3-5 calls/min triggers Google's anti-abuse layer
     ca = get_google_trends(keyword, geo="CA", cache_only=cache_only)
 
-    interests = [v for v in (us.get("interest", 0), ca.get("interest", 0)) if isinstance(v, (int, float))]
+    interests = [
+        v for v in (us.get("interest", 0), ca.get("interest", 0)) if isinstance(v, (int, float))
+    ]
     avg = round(sum(interests) / len(interests)) if interests else 0
 
     trends = [us.get("trend"), ca.get("trend")]
@@ -263,7 +268,7 @@ def get_instagram_hashtag_data(hashtag: str) -> dict:
         else:
             result = {"error": f"Media fetch failed: {media_resp.status_code}"}
 
-        cache[key] = {"data": result, "cached_at": datetime.now(timezone.utc).isoformat()}
+        cache[key] = {"data": result, "cached_at": datetime.now(UTC).isoformat()}
         _save_cache(cache)
         return result
 
@@ -306,13 +311,15 @@ def get_facebook_topic_performance(topic_keywords: list[str]) -> dict:
                 reactions = post.get("reactions", {}).get("summary", {}).get("total_count", 0)
                 comments = post.get("comments", {}).get("summary", {}).get("total_count", 0)
                 shares = post.get("shares", {}).get("count", 0)
-                matching.append({
-                    "message": msg[:80],
-                    "reactions": reactions,
-                    "comments": comments,
-                    "shares": shares,
-                    "engagement": reactions + comments + shares,
-                })
+                matching.append(
+                    {
+                        "message": msg[:80],
+                        "reactions": reactions,
+                        "comments": comments,
+                        "shares": shares,
+                        "engagement": reactions + comments + shares,
+                    }
+                )
 
         if not matching:
             return {"matching_posts": 0, "note": "No posts match these keywords yet"}
@@ -373,7 +380,7 @@ def get_amazon_product_demand(keyword: str) -> dict:
             "_unreliable": "Google SERP scrape is blocked; signal is not trustworthy. Replace with Keepa API.",
         }
 
-        cache[key] = {"data": result, "cached_at": datetime.now(timezone.utc).isoformat()}
+        cache[key] = {"data": result, "cached_at": datetime.now(UTC).isoformat()}
         _save_cache(cache)
         return result
 
@@ -413,27 +420,97 @@ def _matches_site_category(keyword: str, category: str, config: dict) -> dict:
     # These cover common search terms that map to each category
     extended_keywords = {
         "grooming": [
-            "bath", "nails", "ears", "coat", "brush", "groom", "clean",
-            "shedding", "shed", "fur", "deshedding", "shampoo", "wash",
-            "matting", "trim", "haircut", "pedicure",
+            "bath",
+            "nails",
+            "ears",
+            "coat",
+            "brush",
+            "groom",
+            "clean",
+            "shedding",
+            "shed",
+            "fur",
+            "deshedding",
+            "shampoo",
+            "wash",
+            "matting",
+            "trim",
+            "haircut",
+            "pedicure",
         ],
         "food_and_diet": [
-            "kibble", "homemade", "recipe", "nutrition", "ingredient", "raw",
-            "diet", "protein", "grain", "pumpkin", "food", "feeding", "meal",
-            "AAFCO", "label", "allergy", "allergies", "supplement", "vitamin",
-            "omega", "probiotic", "treat", "freeze dried", "fresh", "cost",
-            "itching", "itch", "skin", "digestive", "gut",
+            "kibble",
+            "homemade",
+            "recipe",
+            "nutrition",
+            "ingredient",
+            "raw",
+            "diet",
+            "protein",
+            "grain",
+            "pumpkin",
+            "food",
+            "feeding",
+            "meal",
+            "AAFCO",
+            "label",
+            "allergy",
+            "allergies",
+            "supplement",
+            "vitamin",
+            "omega",
+            "probiotic",
+            "treat",
+            "freeze dried",
+            "fresh",
+            "cost",
+            "itching",
+            "itch",
+            "skin",
+            "digestive",
+            "gut",
         ],
         "lifestyle_and_gear": [
-            "leash", "collar", "toy", "bed", "GPS", "tracker", "vest", "gear",
-            "harness", "crate", "travel", "car", "camera", "monitor",
-            "cooling", "jacket", "backpack", "bowl", "feeder",
+            "leash",
+            "collar",
+            "toy",
+            "bed",
+            "GPS",
+            "tracker",
+            "vest",
+            "gear",
+            "harness",
+            "crate",
+            "travel",
+            "car",
+            "camera",
+            "monitor",
+            "cooling",
+            "jacket",
+            "backpack",
+            "bowl",
+            "feeder",
         ],
         "training": [
-            "recall", "command", "trick", "behavior", "reactivity", "threshold",
-            "marker", "obedience", "puppy", "socialization", "anxiety",
-            "separation", "counter surfing", "leash pulling", "barking",
-            "aggression", "fear", "desensitization", "protocol",
+            "recall",
+            "command",
+            "trick",
+            "behavior",
+            "reactivity",
+            "threshold",
+            "marker",
+            "obedience",
+            "puppy",
+            "socialization",
+            "anxiety",
+            "separation",
+            "counter surfing",
+            "leash pulling",
+            "barking",
+            "aggression",
+            "fear",
+            "desensitization",
+            "protocol",
         ],
     }
 
@@ -463,19 +540,49 @@ def _matches_site_voice(keyword: str, config: dict) -> dict:
 
     # Keywords that EXPLICITLY signal data/engineer framing
     explicit_angles = [
-        "comparison", "vs", "review", "best", "guide", "cost",
-        "analysis", "test", "data", "how to", "protocol", "method",
-        "budget", "worth it", "pros cons", "breakdown", "tracker",
+        "comparison",
+        "vs",
+        "review",
+        "best",
+        "guide",
+        "cost",
+        "analysis",
+        "test",
+        "data",
+        "how to",
+        "protocol",
+        "method",
+        "budget",
+        "worth it",
+        "pros cons",
+        "breakdown",
+        "tracker",
     ]
     explicit_matches = [a for a in explicit_angles if a in keyword_lower]
 
     # Keywords that can be FRAMED as data-driven with the right title
     # e.g., "dog shedding" → "Engineer's Shedding Data: What 30 Days of Brushing Revealed"
     frameable_topics = [
-        "dog", "pet", "food", "training", "gear", "health",
-        "allergy", "shedding", "grooming", "diet", "raw",
-        "kibble", "collar", "leash", "reactivity", "recall",
-        "supplement", "recipe", "ingredient", "label",
+        "dog",
+        "pet",
+        "food",
+        "training",
+        "gear",
+        "health",
+        "allergy",
+        "shedding",
+        "grooming",
+        "diet",
+        "raw",
+        "kibble",
+        "collar",
+        "leash",
+        "reactivity",
+        "recall",
+        "supplement",
+        "recipe",
+        "ingredient",
+        "label",
     ]
     topic_matches = [t for t in frameable_topics if t in keyword_lower]
 
@@ -601,7 +708,7 @@ def score_keyword(
 
     # If it doesn't fit category or audience, flag it
     if not cat_match["matches"]:
-        results["validation"]["warning"] = f"Keyword doesn't match any site category keywords"
+        results["validation"]["warning"] = "Keyword doesn't match any site category keywords"
     if not usa_match["usa_canada_relevant"]:
         results["validation"]["warning"] = "Keyword may not target USA/Canada audience"
     if not voice_match["fits_voice"]:
@@ -688,7 +795,9 @@ def score_keyword(
         elif voice_match.get("framing_suggestions"):
             reason = f"Can be framed as: {voice_match['framing_suggestions'][0]}"
         else:
-            reason = f"Topic matches: {voice_match.get('topic_matches', [])[:3]} — engineer voice fits"
+            reason = (
+                f"Topic matches: {voice_match.get('topic_matches', [])[:3]} — engineer voice fits"
+            )
         results["evidence"]["competitor_gap"] = {"points": 1, "reason": reason}
     else:
         results["evidence"]["competitor_gap"] = {
@@ -704,7 +813,7 @@ def score_keyword(
         results["evidence"]["nalla_experience"] = {"points": 0}
 
     results["score"] = min(score, 10)
-    results["scored_at"] = datetime.now(timezone.utc).isoformat()
+    results["scored_at"] = datetime.now(UTC).isoformat()
 
     return results
 

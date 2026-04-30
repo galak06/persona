@@ -30,7 +30,7 @@ def print_candidate(i: int, g: dict) -> None:
         f"{g['post_frequency'] or 'activity unknown'}"
     )
     print(f"      URL: {g['url']}")
-    print(f"      Found via [{g.get('found_via_channel', '?')}]: \"{g['found_via_query']}\"")
+    print(f'      Found via [{g.get("found_via_channel", "?")}]: "{g["found_via_query"]}"')
     if g.get("competitor_names"):
         print(f"      Mentions: {', '.join(g['competitor_names'])}")
     if g["description"]:

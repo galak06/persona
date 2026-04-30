@@ -164,21 +164,31 @@ def render_slide(i: int, spec: dict) -> Image.Image:
 
 def encode_clip(png: Path, out: Path) -> None:
     fade_out_start = SLIDE_SEC - FADE_SEC
-    vf = (
-        f"fade=t=in:st=0:d={FADE_SEC},"
-        f"fade=t=out:st={fade_out_start}:d={FADE_SEC}"
-    )
+    vf = f"fade=t=in:st=0:d={FADE_SEC},fade=t=out:st={fade_out_start}:d={FADE_SEC}"
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-loop", "1", "-t", str(SLIDE_SEC),
-            "-i", str(png),
-            "-vf", vf,
-            "-r", "30",
-            "-pix_fmt", "yuv420p",
-            "-c:v", "libx264",
-            "-preset", "slow",
-            "-crf", "20",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-loop",
+            "1",
+            "-t",
+            str(SLIDE_SEC),
+            "-i",
+            str(png),
+            "-vf",
+            vf,
+            "-r",
+            "30",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "slow",
+            "-crf",
+            "20",
             str(out),
         ],
         check=True,
@@ -190,11 +200,20 @@ def concat_clips(clips: list[Path], target: Path, tmp: Path) -> None:
     listing.write_text("\n".join(f"file '{c}'" for c in clips))
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
-            "-f", "concat", "-safe", "0",
-            "-i", str(listing),
-            "-c", "copy",
-            "-movflags", "+faststart",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(listing),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
             str(target),
         ],
         check=True,

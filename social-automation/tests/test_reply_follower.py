@@ -90,6 +90,4 @@ def test_load_save_json_roundtrip(tmp_path: Path) -> None:
 
 
 def test_load_json_returns_default_when_missing(tmp_path: Path) -> None:
-    assert reply_follower.load_json(tmp_path / "nope.json", {"default": True}) == {
-        "default": True
-    }
+    assert reply_follower.load_json(tmp_path / "nope.json", {"default": True}) == {"default": True}

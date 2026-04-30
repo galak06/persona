@@ -24,7 +24,7 @@ import argparse
 import json
 import sys
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -147,7 +147,8 @@ def main() -> None:
 
     tracker = json.loads(TRACKER_FILE.read_text())
     pool = [
-        e for e in tracker
+        e
+        for e in tracker
         if e.get("last_post_status") == "pending_approval"
         and (not args.only or args.only in e.get("group_url", ""))
     ]
@@ -207,9 +208,7 @@ def main() -> None:
             + "\n".join(reminders)[:2000]
         )
 
-    summary = (
-        f"posted={posted} still_pending={still} stale={stale} no_caption={no_cap}"
-    )
+    summary = f"posted={posted} still_pending={still} stale={stale} no_caption={no_cap}"
     print(f"\n=== Done === {summary}", flush=True)
     skill_finished("fb-pending-posts-check", summary)
 

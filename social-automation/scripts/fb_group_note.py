@@ -74,8 +74,12 @@ def main() -> None:
     parser.add_argument("--id", help="group id (digits from the URL)")
     parser.add_argument("--mode", choices=sorted(_VALID_MODES), help="set posting mode")
     parser.add_argument("--note", help="append a timestamped note")
-    parser.add_argument("--status", help="set last_post_status (e.g. pending_approval / posted / rejected)")
-    parser.add_argument("--caption", help="store the caption text posted to this group (used by pending-check)")
+    parser.add_argument(
+        "--status", help="set last_post_status (e.g. pending_approval / posted / rejected)"
+    )
+    parser.add_argument(
+        "--caption", help="store the caption text posted to this group (used by pending-check)"
+    )
     parser.add_argument("--list", action="store_true", help="print current state of every group")
     args = parser.parse_args()
 

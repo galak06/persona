@@ -11,6 +11,7 @@ so other skills can read trend data without ever hitting Google.
 
 Runs daily ~4am Israel time via launchd (com.dogfoodandfun.refresh-trends).
 """
+
 from __future__ import annotations
 
 import json
@@ -21,11 +22,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
-from local_env import load_local_env  # noqa: E402
+from local_env import load_local_env
 
 load_local_env()
 
-from keyword_research import get_google_trends  # noqa: E402
+from keyword_research import get_google_trends
 
 
 def find_latest_ideas_file() -> Path | None:
@@ -44,7 +45,9 @@ def main() -> int:
     ideas = json.loads(ideas_path.read_text())
     keywords = sorted({i["Target_Keyword"] for i in ideas if i.get("Target_Keyword")})
 
-    print(f"Refreshing trends for {len(keywords)} unique keywords × 2 geos = {len(keywords) * 2} calls")
+    print(
+        f"Refreshing trends for {len(keywords)} unique keywords × 2 geos = {len(keywords) * 2} calls"
+    )
     print(f"Estimated runtime: ~{len(keywords) * 2 * 60 / 60:.0f} minutes (60s between calls)")
 
     success_count = 0
@@ -52,7 +55,7 @@ def main() -> int:
 
     for i, kw in enumerate(keywords):
         for geo in ("US", "CA"):
-            print(f"\n[{i+1}/{len(keywords)}] {geo}: {kw}")
+            print(f"\n[{i + 1}/{len(keywords)}] {geo}: {kw}")
             t0 = time.time()
             data = get_google_trends(kw, geo=geo)
             elapsed = time.time() - t0

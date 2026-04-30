@@ -15,11 +15,12 @@ Score deltas applied on top of prior cluster-aware scores:
 - Google Trends US/CA: rising=+1, stable=0, declining=-1, no_data=0
 - Tier 1 research:     deltas already computed by background agent
 """
+
 from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,11 +64,20 @@ def ig_signal_for(idea_id: int, ig_data: dict) -> dict:
             ig = entry.get("instagram", {})
             sig = ig.get("engagement_signal", "")
             if sig == "high":
-                return {"delta": 1, "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (high)"}
+                return {
+                    "delta": 1,
+                    "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (high)",
+                }
             if sig == "low":
-                return {"delta": -1, "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (low)"}
+                return {
+                    "delta": -1,
+                    "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (low)",
+                }
             if sig == "medium":
-                return {"delta": 0, "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (medium)"}
+                return {
+                    "delta": 0,
+                    "reason": f"IG #{entry['ig_hashtag_used']} = {ig.get('avg_likes')} avg likes (medium)",
+                }
             return {"delta": 0, "reason": f"IG signal unavailable: {ig.get('error', 'unknown')}"}
     return {"delta": 0, "reason": "no IG data"}
 
@@ -101,17 +111,19 @@ def main() -> int:
 
         new_score = prior_score + t1["delta"] + ig_sig["delta"] + tr["delta"]
 
-        rescored.append({
-            **idea,
-            "score": new_score,
-            "score_v3_breakdown": {
-                "prior_v2_score": prior_score,
-                "tier1_research_delta": t1,
-                "ig_engagement_delta": ig_sig,
-                "trends_delta": tr,
-                "new_score": new_score,
-            },
-        })
+        rescored.append(
+            {
+                **idea,
+                "score": new_score,
+                "score_v3_breakdown": {
+                    "prior_v2_score": prior_score,
+                    "tier1_research_delta": t1,
+                    "ig_engagement_delta": ig_sig,
+                    "trends_delta": tr,
+                    "new_score": new_score,
+                },
+            }
+        )
 
     # Sort by new score desc
     rescored.sort(key=lambda x: x["score"], reverse=True)
@@ -121,7 +133,7 @@ def main() -> int:
 
     output = {
         "_schema": "ideas_with_real_signals_v3",
-        "_generated_at": datetime.now(timezone.utc).isoformat(),
+        "_generated_at": datetime.now(UTC).isoformat(),
         "_inputs": {
             "prior_ideas": str(PRIOR_IDEAS.relative_to(ROOT)),
             "tier1_deltas": str(TIER1_DELTAS.relative_to(ROOT)),
@@ -138,21 +150,28 @@ def main() -> int:
     # Update ideation_history.json with a new run entry
     hist = load_json(HISTORY, {"schema_version": 1, "runs": []})
     hist["last_run"] = output["_generated_at"]
-    hist["runs"].append({
-        "run_id": "2026-04-28-v3-real-signals-fold-in",
-        "timestamp": output["_generated_at"],
-        "trigger": "user-invoked: incorporate IG + trends real data",
-        "ideas_generated": len(rescored),
-        "research_grounded": True,
-        "approval_status": "pending",
-        "scoring_system": "v3 (cluster-aware + tier1 + IG + trends)",
-        "ideas": [
-            {"id": i["id"], "topic": i["Topic"][:60], "category": i["Category"],
-             "cluster_id": i.get("cluster_id"), "score": i["score"]}
-            for i in rescored
-        ],
-        "output_file": str(OUT_PATH.relative_to(ROOT)),
-    })
+    hist["runs"].append(
+        {
+            "run_id": "2026-04-28-v3-real-signals-fold-in",
+            "timestamp": output["_generated_at"],
+            "trigger": "user-invoked: incorporate IG + trends real data",
+            "ideas_generated": len(rescored),
+            "research_grounded": True,
+            "approval_status": "pending",
+            "scoring_system": "v3 (cluster-aware + tier1 + IG + trends)",
+            "ideas": [
+                {
+                    "id": i["id"],
+                    "topic": i["Topic"][:60],
+                    "category": i["Category"],
+                    "cluster_id": i.get("cluster_id"),
+                    "score": i["score"],
+                }
+                for i in rescored
+            ],
+            "output_file": str(OUT_PATH.relative_to(ROOT)),
+        }
+    )
     HISTORY.write_text(json.dumps(hist, indent=2))
     print(f"Updated → {HISTORY}")
 
@@ -160,7 +179,9 @@ def main() -> int:
     print("\n=== Final ranking ===")
     for i in rescored:
         b = i["score_v3_breakdown"]
-        print(f"  [{i['id']}] score={i['score']:>2}  (was {b['prior_v2_score']}) — {i['Topic'][:60]}")
+        print(
+            f"  [{i['id']}] score={i['score']:>2}  (was {b['prior_v2_score']}) — {i['Topic'][:60]}"
+        )
         deltas = []
         if b["tier1_research_delta"]["delta"]:
             deltas.append(f"tier1 {b['tier1_research_delta']['delta']:+d}")

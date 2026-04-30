@@ -42,9 +42,7 @@ def test_resolves_known_placeholder(catalog) -> None:
 
 
 def test_resolves_multiple_and_mixed_case(catalog) -> None:
-    html = _body(
-        "Best: [AFFILIATE:Nom-Nom-Fresh] · Runner up: [AFFILIATE:fi-collar]"
-    )
+    html = _body("Best: [AFFILIATE:Nom-Nom-Fresh] · Runner up: [AFFILIATE:fi-collar]")
     out = ar.resolve_html(html, associates_tag="x-20", catalog=catalog)
     assert out.count("tag=x-20") == 2
     assert "B07XQXZXJR" in out and "B0B3Y9N1Z7" in out
@@ -93,9 +91,7 @@ def test_build_url_shape() -> None:
     assert ar.build_affiliate_url("B07XQXZXJR", "nallasdad-20") == (
         "https://www.amazon.com/dp/B07XQXZXJR?tag=nallasdad-20"
     )
-    assert ar.build_affiliate_url("ASIN", "t", campaign_id="c1").endswith(
-        "ascsubtag=c1"
-    )
+    assert ar.build_affiliate_url("ASIN", "t", campaign_id="c1").endswith("ascsubtag=c1")
 
 
 def test_lookup_unknown_key_raises(catalog) -> None:

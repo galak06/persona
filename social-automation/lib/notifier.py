@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import os
 import time
-from datetime import datetime, timezone
-UTC = timezone.utc
+from datetime import UTC, datetime
+
+UTC = UTC
 from pathlib import Path
 
 import requests
@@ -342,8 +343,8 @@ def poll_for_reply(offset: int, draft_comment: str, max_seconds: int = 180) -> d
             result = _parse_reply(text, draft_comment)
             ack = {
                 "approved": "✅ Approved — posting.",
-                "skipped":  "⏭️ Skipped.",
-                "edited":   "✅ Edited — posting your version.",
+                "skipped": "⏭️ Skipped.",
+                "edited": "✅ Edited — posting your version.",
             }.get(result["action"], "Got it.")
             send(ack, silent=True)
             return {**result, "new_offset": cur_offset}
@@ -451,7 +452,7 @@ def send_and_wait(
                 send(f"Treating '{text}' as approval.", silent=True)
                 return {"action": "approved", "reply_text": text, "edit_text": ""}
             else:
-                send(f"Treating as edit note.", silent=True)
+                send("Treating as edit note.", silent=True)
                 return {"action": "edited", "reply_text": text, "edit_text": text}
 
     send(f"⏰ No reply after {timeout_hours}h — skipped.", silent=True)

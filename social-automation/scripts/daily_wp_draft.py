@@ -20,19 +20,19 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-UTC = timezone.utc
+UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from logger import enable_unbuffered, log_step  # noqa: E402
+from logger import enable_unbuffered, log_step
 
 enable_unbuffered()
 
-from notifier import send as send_telegram  # noqa: E402
+from notifier import send as send_telegram
 
 ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 DAILY_MARKER = PROJECT_ROOT / ".claude/state/daily_wp_draft_marker.json"

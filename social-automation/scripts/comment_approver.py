@@ -19,10 +19,10 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 
-UTC = timezone.utc
+UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
@@ -83,11 +83,7 @@ def run() -> None:
     still_pending = 0
 
     for item in pending:
-        group = (
-            item.get("group_name")
-            or item.get("hashtag")
-            or item.get("parent_post_title", "")
-        )
+        group = item.get("group_name") or item.get("hashtag") or item.get("parent_post_title", "")
         is_new = group not in previously_posted
         needs_approval = (
             item.get("requires_approval", False)

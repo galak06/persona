@@ -19,8 +19,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-import wp_scan  # noqa: E402  (sys.path must be set first)
-from comment_poster import post_comment_wp  # noqa: E402
+import wp_scan
+from comment_poster import post_comment_wp
 
 
 class TestIsObviousSpam:
@@ -60,9 +60,7 @@ class TestIsObviousSpam:
 
     def test_normal_tld_not_flagged(self):
         body = "Nice recipe, thanks!"
-        assert wp_scan.is_obvious_spam(
-            body, author_url="https://mydogblog.com"
-        ) == (False, "")
+        assert wp_scan.is_obvious_spam(body, author_url="https://mydogblog.com") == (False, "")
 
 
 class TestIsSelfPingback:
@@ -133,12 +131,10 @@ def wp_env(monkeypatch):
 class TestPostCommentWp:
     @respx.mock
     def test_happy_path_approves_then_replies(self, wp_env):
-        approve_route = respx.post(
-            "https://example.test/wp-json/wp/v2/comments/42"
-        ).mock(return_value=Response(200, json={"id": 42, "status": "approved"}))
-        reply_route = respx.post(
-            "https://example.test/wp-json/wp/v2/comments"
-        ).mock(
+        approve_route = respx.post("https://example.test/wp-json/wp/v2/comments/42").mock(
+            return_value=Response(200, json={"id": 42, "status": "approved"})
+        )
+        reply_route = respx.post("https://example.test/wp-json/wp/v2/comments").mock(
             return_value=Response(
                 201,
                 json={
@@ -165,9 +161,9 @@ class TestPostCommentWp:
         respx.post("https://example.test/wp-json/wp/v2/comments/42").mock(
             return_value=Response(403, text="forbidden")
         )
-        reply_route = respx.post(
-            "https://example.test/wp-json/wp/v2/comments"
-        ).mock(return_value=Response(201, json={"id": 77, "link": ""}))
+        reply_route = respx.post("https://example.test/wp-json/wp/v2/comments").mock(
+            return_value=Response(201, json={"id": 77, "link": ""})
+        )
 
         ok, detail = post_comment_wp("42", 100, "hi")
 

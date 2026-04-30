@@ -1,0 +1,37 @@
+# Pre-commit hooks — fast, staged-files only.
+# Install once: pre-commit install (writes .git/hooks/pre-commit)
+# Bypass for emergencies: git commit --no-verify (sparingly!)
+#
+# Mirrors the CI gate so problems are caught before push, not in PR review.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^social-automation/(lib|scripts|tests)/.*\.py$
+      - id: ruff-format
+        files: ^social-automation/(lib|scripts|tests)/.*\.py$
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        files: ^social-automation/lib/(errors|observability|runtime)/.*\.py$
+        args: [--config-file=social-automation/pyproject.toml]
+        additional_dependencies:
+          - structlog>=24.1.0
+          - python-json-logger>=2.0.7
+          - types-requests>=2.31.0
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: detect-private-key

@@ -15,9 +15,9 @@ import json
 import re
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
-UTC = timezone.utc
+UTC = UTC
 from pathlib import Path
 
 # Ensure lib is importable

@@ -35,7 +35,7 @@ import httpx
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from logger import enable_unbuffered, log_progress, log_step
+from logger import enable_unbuffered, log_progress
 
 enable_unbuffered()
 
@@ -55,9 +55,19 @@ MAX_COMMENT_AGE_DAYS = 30
 # Heuristic spam signals. Intentionally conservative so we never auto-trash a
 # genuine question — borderline cases go through Telegram approval instead.
 _SPAM_KEYWORDS = (
-    "viagra", "cialis", "casino", "poker", "bitcoin", "crypto wallet",
-    "forex", "payday loan", "seo services", "buy followers",
-    "cheap essay", "write my essay", "escort",
+    "viagra",
+    "cialis",
+    "casino",
+    "poker",
+    "bitcoin",
+    "crypto wallet",
+    "forex",
+    "payday loan",
+    "seo services",
+    "buy followers",
+    "cheap essay",
+    "write my essay",
+    "escort",
 )
 _LINK_RE = re.compile(r"https?://", re.IGNORECASE)
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
@@ -112,9 +122,11 @@ def is_self_pingback(comment: dict, wp_base: str) -> bool:
         return False
     author_url = (comment.get("author_url") or "").lower().rstrip("/")
     base = wp_base.lower().rstrip("/")
+
     # Strip scheme for a tolerant compare (http/https/www variants).
     def _host(u: str) -> str:
         return re.sub(r"^https?://(www\.)?", "", u).split("/")[0]
+
     return _host(author_url) == _host(base)
 
 
@@ -181,8 +193,7 @@ def fetch_pending_comments(client: httpx.Client) -> list[dict]:
                 break  # past last page
             if r.status_code >= 400:
                 raise RuntimeError(
-                    f"WP comments fetch failed ({comment_type}): "
-                    f"{r.status_code} {r.text[:200]}"
+                    f"WP comments fetch failed ({comment_type}): {r.status_code} {r.text[:200]}"
                 )
             batch = r.json()
             if not batch:
@@ -218,7 +229,7 @@ def trash_comment(client: httpx.Client, comment_id: int) -> bool:
 
 
 def run(dry_run: bool = False) -> None:
-    print(f"=== WordPress Comment Scan ===\n", flush=True)
+    print("=== WordPress Comment Scan ===\n", flush=True)
     print_status()
 
     # Re-run guard — match fb_scan / ig_scan style.
@@ -268,7 +279,7 @@ def run(dry_run: bool = False) -> None:
                 log_progress(idx, len(comments), f"{ctype} #{comment_id} by {author[:40]}")
 
                 if is_duplicate("wordpress", comment_id):
-                    print(f"    skip: already processed", flush=True)
+                    print("    skip: already processed", flush=True)
                     skipped_dup += 1
                     continue
 
@@ -281,8 +292,11 @@ def run(dry_run: bool = False) -> None:
                         ok = trash_comment(client, int(comment_id))
                         if ok:
                             mark_engaged(
-                                "wordpress", comment_id, "trash",
-                                "self-pingback", status="spam",
+                                "wordpress",
+                                comment_id,
+                                "trash",
+                                "self-pingback",
+                                status="spam",
                             )
                             trashed += 1
                         else:
@@ -294,8 +308,7 @@ def run(dry_run: bool = False) -> None:
                 # Surface it here and leave it pending in WP admin.
                 if ctype in ("pingback", "trackback"):
                     print(
-                        f"    EXTERNAL {ctype}: {author_url[:80]} "
-                        f"— left pending for manual review",
+                        f"    EXTERNAL {ctype}: {author_url[:80]} — left pending for manual review",
                         flush=True,
                     )
                     external_pings += 1
@@ -334,8 +347,8 @@ def run(dry_run: bool = False) -> None:
                 candidate = {
                     "platform": "wordpress",
                     "post_url": post_url,
-                    "post_id": comment_id,         # dedup key = comment id
-                    "parent_post_id": post_id,      # WP post the comment lives on
+                    "post_id": comment_id,  # dedup key = comment id
+                    "parent_post_id": post_id,  # WP post the comment lives on
                     "parent_post_title": post_title,
                     "post_text": body[:600],
                     "author": author,

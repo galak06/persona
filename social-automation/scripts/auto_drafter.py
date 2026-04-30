@@ -41,7 +41,9 @@ QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Auto-draft pending queue items via templates")
-    parser.add_argument("--dry-run", action="store_true", help="print what would be drafted, save nothing")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print what would be drafted, save nothing"
+    )
     args = parser.parse_args()
 
     skill_started("auto-drafter", "drafting template-matchable queue items")
@@ -50,11 +52,7 @@ def main() -> None:
         skill_error("auto-drafter", "comment_queue.json missing")
         return
     queue = json.loads(QUEUE_FILE.read_text())
-    needs_draft = [
-        i
-        for i in queue
-        if i.get("status") == "pending" and not i.get("draft_comment")
-    ]
+    needs_draft = [i for i in queue if i.get("status") == "pending" and not i.get("draft_comment")]
     if not needs_draft:
         print("no pending items without drafts — nothing to do", flush=True)
         skill_finished("auto-drafter", "queue already drafted")
@@ -84,7 +82,9 @@ def main() -> None:
                 group_or_hashtag=item.get("group_name") or item.get("hashtag", ""),
             )
             if not draft:
-                print("    Gemini draft unavailable — skipping (manual /comment-composer)", flush=True)
+                print(
+                    "    Gemini draft unavailable — skipping (manual /comment-composer)", flush=True
+                )
                 skipped_llm += 1
                 continue
         else:

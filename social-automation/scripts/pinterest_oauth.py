@@ -8,6 +8,7 @@ access + refresh tokens, and writes them back into the same settings file.
 Run once:
     python social-automation/scripts/pinterest_oauth.py
 """
+
 from __future__ import annotations
 
 import base64
@@ -48,7 +49,7 @@ received: dict[str, str | None] = {}
 
 
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802 — stdlib API
+    def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path != "/callback":
             self.send_response(404)

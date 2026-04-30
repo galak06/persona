@@ -29,13 +29,20 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
 from local_env import load_local_env
-from logger import enable_unbuffered, log_progress, log_step
+from logger import enable_unbuffered, log_progress
 
 # Bridge .claude/settings.local.json secrets into os.environ. Required for
 # launchd cron — no Claude harness here to inject them. Safe no-op when env
 # vars are already set (manual runs win).
 load_local_env()
 enable_unbuffered()
+
+from publishers.instagram import (
+    InstagramError,
+    list_media_comments,
+    list_recent_user_media,
+    reply_to_instagram_comment,
+)
 
 from notifier import (
     request_approval,
@@ -46,12 +53,6 @@ from notifier import (
 )
 from rate_limiter import DELAY_RANGES, can_act, record_action
 from reply_drafter import draft_reply
-from publishers.instagram import (
-    InstagramError,
-    list_media_comments,
-    list_recent_user_media,
-    reply_to_instagram_comment,
-)
 
 SEEN_FILE = PROJECT_ROOT / ".claude" / "state" / "own_post_comments_seen.json"
 LOCK_FILE = PROJECT_ROOT / ".claude" / "state" / "ig_own_comments.lock"
@@ -117,11 +118,13 @@ def _recent_media() -> list[dict]:
         if ts < cutoff:
             continue
         caption = (m.get("caption") or "").strip().replace("\n", " ")
-        out.append({
-            "ig_media_id": m["id"],
-            "title": caption[:60] or m["id"],
-            "published_at": ts_str,
-        })
+        out.append(
+            {
+                "ig_media_id": m["id"],
+                "title": caption[:60] or m["id"],
+                "published_at": ts_str,
+            }
+        )
     return out
 
 
@@ -278,7 +281,8 @@ def _run_locked(*, dry_run: bool, limit: int) -> int:
             continue
 
         new_comments = [
-            c for c in comments
+            c
+            for c in comments
             if c.get("id")
             and c["id"] not in seen
             and (c.get("username") or "").lower() != self_handle
@@ -345,17 +349,20 @@ def _run_locked(*, dry_run: bool, limit: int) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ig-own-comments")
     parser.add_argument(
-        "--dry-run", action="store_true",
+        "--dry-run",
+        action="store_true",
         help="scan + draft only; no Telegram, no API reply",
     )
     parser.add_argument(
-        "--limit", type=int, default=10,
+        "--limit",
+        type=int,
+        default=10,
         help="max new comments to process this run (default 10)",
     )
     args = parser.parse_args(argv)
     try:
         return run(dry_run=args.dry_run, limit=args.limit)
-    except Exception as exc:  # noqa: BLE001 — top-level boundary
+    except Exception as exc:
         skill_error("ig-own-comments", str(exc))
         raise
 

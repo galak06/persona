@@ -20,7 +20,7 @@ import json
 import os
 import sys
 import time
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -67,12 +67,15 @@ def stage_ideate() -> bool:
     # Check if we already have approved un-enriched ideas
     cache = load_json(ENRICHMENT_CACHE, [])
     pending_enrichment = [
-        c for c in cache
+        c
+        for c in cache
         if c.get("approval_status") == "approved"
         and not c.get("content_brief", {}).get("suggested_title")
     ]
     if pending_enrichment:
-        send(f"⏭️ content-ideator skipped — {len(pending_enrichment)} approved ideas waiting for enrichment")
+        send(
+            f"⏭️ content-ideator skipped — {len(pending_enrichment)} approved ideas waiting for enrichment"
+        )
         return True
 
     # Notify that ideation needs Claude Code to run interactively
@@ -100,8 +103,12 @@ def stage_enrich() -> bool:
     log_step("Content Enricher", "starting")
 
     cache = load_json(ENRICHMENT_CACHE, [])
-    pending = [c for c in cache if c.get("approval_status") == "approved"
-               and not c.get("content_brief", {}).get("suggested_title")]
+    pending = [
+        c
+        for c in cache
+        if c.get("approval_status") == "approved"
+        and not c.get("content_brief", {}).get("suggested_title")
+    ]
 
     if not pending:
         send("⏭️ content-enricher skipped — no approved ideas to enrich")
@@ -241,7 +248,7 @@ def stage_publish() -> bool:
         if fb_resp.status_code == 200:
             fb_id = fb_resp.json().get("id", "")
             published.append(f"FB: {fb_id}")
-            timeline["last_fb_page_post"] = datetime.now(timezone.utc).isoformat()
+            timeline["last_fb_page_post"] = datetime.now(UTC).isoformat()
             print(f"    FB published: {fb_id}", flush=True)
         else:
             err = fb_resp.json().get("error", {}).get("message", "unknown")
@@ -276,7 +283,7 @@ def stage_publish() -> bool:
                 if pub.status_code == 200:
                     ig_id = pub.json()["id"]
                     published.append(f"IG: {ig_id}")
-                    timeline["last_ig_feed_post"] = datetime.now(timezone.utc).isoformat()
+                    timeline["last_ig_feed_post"] = datetime.now(UTC).isoformat()
                     print(f"    IG published: {ig_id}", flush=True)
                 else:
                     err = pub.json().get("error", {}).get("message", "unknown")
@@ -298,14 +305,19 @@ def stage_publish() -> bool:
     # Log
     with open(PROJECT_ROOT / "logs/engagement_log.jsonl", "a") as f:
         for entry in published:
-            f.write(json.dumps({
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "platform": "facebook" if "FB" in entry else "instagram",
-                "action": "page_post" if "FB" in entry else "feed_post",
-                "source_post": post_url,
-                "result": entry,
-                "status": "SUCCESS" if "FAILED" not in entry else "FAILED",
-            }) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "platform": "facebook" if "FB" in entry else "instagram",
+                        "action": "page_post" if "FB" in entry else "feed_post",
+                        "source_post": post_url,
+                        "result": entry,
+                        "status": "SUCCESS" if "FAILED" not in entry else "FAILED",
+                    }
+                )
+                + "\n"
+            )
 
     summary = " | ".join(published)
     send(f"✅ <b>Social publishing done</b>\n{summary}")
@@ -328,9 +340,7 @@ def _bootstrap_recipe_publisher() -> bool:
 
 def _load_carousel_json(seed_id: str) -> dict | None:
     """Return raw JSON of seeds/carousels/{seed_id}.json, or None if missing."""
-    path = (
-        PROJECT_ROOT / "recipe-publisher" / "seeds" / "carousels" / f"{seed_id}.json"
-    )
+    path = PROJECT_ROOT / "recipe-publisher" / "seeds" / "carousels" / f"{seed_id}.json"
     if not path.exists():
         return None
     return json.loads(path.read_text())
@@ -469,9 +479,7 @@ def stage_reel(seed_id: str) -> bool:
     )
     result = send_and_wait(approval_msg, timeout_hours=12)
     if result["action"] != "approved":
-        skill_finished(
-            "reel-publisher", f"Not approved ({result['action']})", success=False
-        )
+        skill_finished("reel-publisher", f"Not approved ({result['action']})", success=False)
         return False
 
     log_step("Reel Publisher", "publishing to Instagram Reels")
@@ -482,7 +490,7 @@ def stage_reel(seed_id: str) -> bool:
         return False
 
     timeline = load_json(TIMELINE_FILE, {})
-    timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat()
+    timeline["last_ig_reel_post"] = datetime.now(UTC).isoformat()
     save_json(TIMELINE_FILE, timeline)
 
     summary = f"Reel: {pub.permalink or pub.media_id}"
@@ -512,7 +520,7 @@ def _save_campaign_metadata(
         "fb_caption": fb_caption,
         "source_video": source_path.name,
         "wp_url": wp_url,
-        "prepared_at": datetime.now(timezone.utc).isoformat(),
+        "prepared_at": datetime.now(UTC).isoformat(),
     }
     (cdir / "metadata.json").write_text(json.dumps(meta, indent=2))
 
@@ -523,25 +531,49 @@ def _mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
     import subprocess
 
     probe = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=nokey=1:noprint_wrappers=1", str(video_path)],
-        check=True, capture_output=True, text=True,
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(video_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
     )
     duration = float(probe.stdout.strip())
     fade_dur = 1.5
     fade_start = max(0.0, duration - fade_dur)
 
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", str(video_path),
-        "-i", str(audio_path),
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-c:v", "copy",
-        "-c:a", "aac", "-b:a", "192k",
-        "-af", f"afade=t=out:st={fade_start:.2f}:d={fade_dur}",
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video_path),
+        "-i",
+        str(audio_path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-af",
+        f"afade=t=out:st={fade_start:.2f}:d={fade_dur}",
         "-shortest",
-        "-movflags", "+faststart",
+        "-movflags",
+        "+faststart",
         str(out_path),
     ]
     subprocess.run(cmd, check=True, capture_output=True)
@@ -611,9 +643,7 @@ def stage_reel_prepare(seed_id: str) -> bool:
     return True
 
 
-def stage_reel_publish(
-    seed_id: str, platforms: str = "both", wp_url: str | None = None
-) -> bool:
+def stage_reel_publish(seed_id: str, platforms: str = "both", wp_url: str | None = None) -> bool:
     """Pick best video from campaigns/{seed_id}/ and publish to IG and/or FB
     with Telegram approval.
 
@@ -681,9 +711,7 @@ def stage_reel_publish(
     )
     result = send_and_wait(approval_msg, timeout_hours=12)
     if result["action"] != "approved":
-        skill_finished(
-            "reel-publish", f"Not approved ({result['action']})", success=False
-        )
+        skill_finished("reel-publish", f"Not approved ({result['action']})", success=False)
         return False
 
     timeline = load_json(TIMELINE_FILE, {})
@@ -692,10 +720,11 @@ def stage_reel_publish(
 
     if do_ig:
         from publishers.instagram import publish_reel_to_instagram
+
         log_step("Reel Publish", "publishing to Instagram Reels")
         try:
             ig_pub = publish_reel_to_instagram(recipe, video_path=upload_path)
-            timeline["last_ig_reel_post"] = datetime.now(timezone.utc).isoformat()
+            timeline["last_ig_reel_post"] = datetime.now(UTC).isoformat()
             summary_parts.append(f"IG: {ig_pub.permalink or ig_pub.media_id}")
         except Exception as e:
             skill_error("reel-publish", f"IG publish failed: {e}")
@@ -705,6 +734,7 @@ def stage_reel_publish(
 
     if do_fb:
         from publishers.facebook import publish_reel_to_facebook
+
         log_step("Reel Publish", "publishing to Facebook Reels")
         effective_wp_url = wp_url or meta.get("wp_url")
         # Prefer explicit fb_caption (FB-tailored copy with URL inline);
@@ -719,7 +749,7 @@ def stage_reel_publish(
             fb_pub = publish_reel_to_facebook(
                 recipe, video_path=upload_path, description=fb_description
             )
-            timeline["last_fb_reel_post"] = datetime.now(timezone.utc).isoformat()
+            timeline["last_fb_reel_post"] = datetime.now(UTC).isoformat()
             summary_parts.append(f"FB: {fb_pub.permalink or fb_pub.post_id or fb_pub.video_id}")
         except Exception as e:
             if ig_pub:
@@ -757,9 +787,7 @@ def _compose_fb_description(
             f"The full write-up with exact amounts and what actually "
             f"worked for Nalla is here: {wp_url}"
         )
-    parts.append(
-        f"The {product_display} we used for this one: {affiliate_url}"
-    )
+    parts.append(f"The {product_display} we used for this one: {affiliate_url}")
     return "\n\n".join(parts)
 
 
@@ -790,8 +818,8 @@ def _hours_since_last_reel() -> float | None:
         return None
     newest = max(parsed)
     if newest.tzinfo is None:
-        newest = newest.replace(tzinfo=timezone.utc)
-    delta = datetime.now(timezone.utc) - newest
+        newest = newest.replace(tzinfo=UTC)
+    delta = datetime.now(UTC) - newest
     return delta.total_seconds() / 3600.0
 
 
@@ -891,13 +919,12 @@ def stage_campaign(
         timeout_hours=12,
     )
     if reel_approval["action"] != "approved":
-        skill_finished(
-            "campaign", f"Reel {reel_approval['action']}", success=False
-        )
+        skill_finished("campaign", f"Reel {reel_approval['action']}", success=False)
         return False
 
     # Publish to IG
     from publishers.instagram import publish_reel_to_instagram
+
     log_step("Campaign", "publishing to Instagram Reels")
     try:
         ig_pub = publish_reel_to_instagram(recipe, video_path=video_path)
@@ -907,11 +934,10 @@ def stage_campaign(
 
     # Publish to FB with affiliate-aware description
     from publishers.facebook import publish_reel_to_facebook
+
     log_step("Campaign", "publishing to Facebook Reels")
     try:
-        fb_pub = publish_reel_to_facebook(
-            recipe, video_path=video_path, description=fb_description
-        )
+        fb_pub = publish_reel_to_facebook(recipe, video_path=video_path, description=fb_description)
     except Exception as e:
         # IG already succeeded — don't treat FB failure as full campaign failure.
         send(f"⚠️ Campaign: IG published, FB failed: {e}")
@@ -933,13 +959,13 @@ def stage_campaign(
             "ig_media_id": ig_pub.media_id,
             "fb_permalink": fb_pub.permalink if fb_pub else None,
             "fb_post_id": fb_pub.post_id if fb_pub else None,
-            "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "started_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
     )
     save_json(campaigns_file, campaigns)
 
     timeline = load_json(TIMELINE_FILE, {})
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     timeline["last_ig_reel_post"] = now
     if fb_pub:
         timeline["last_fb_reel_post"] = now
@@ -960,9 +986,15 @@ def main() -> None:
         "--stage",
         required=True,
         choices=[
-            "ideate", "enrich", "write", "publish",
-            "reel", "reel-prepare", "reel-publish",
-            "campaign", "all",
+            "ideate",
+            "enrich",
+            "write",
+            "publish",
+            "reel",
+            "reel-prepare",
+            "reel-publish",
+            "campaign",
+            "all",
         ],
     )
     parser.add_argument(
@@ -1031,9 +1063,7 @@ def main() -> None:
             print("--stage reel-publish requires --seed <id>", flush=True)
             sys.exit(2)
         sys.exit(
-            0 if stage_reel_publish(
-                args.seed, platforms=args.platforms, wp_url=args.wp_url
-            ) else 1
+            0 if stage_reel_publish(args.seed, platforms=args.platforms, wp_url=args.wp_url) else 1
         )
     elif args.stage == "campaign":
         if not args.product:

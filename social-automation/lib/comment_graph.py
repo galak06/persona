@@ -20,29 +20,34 @@ from typing import Any, Literal, TypedDict
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from comment_generator import (  # noqa: E402
+from langgraph.graph import END, StateGraph
+from langgraph.types import interrupt
+
+from comment_generator import (
     build_claude_prompt,
     draft_comment_from_template,
     validate_voice,
 )
-from deduplication import is_duplicate, mark_engaged  # noqa: E402
-from rate_limiter import can_act, record_action, wait_random_delay  # noqa: E402
-
-from comment_poster import (  # noqa: E402
+from comment_poster import (
     log_engagement,
     post_comment_fb,
     post_comment_ig,
     post_comment_wp,
 )
-
-from langgraph.graph import END, StateGraph  # noqa: E402
-from langgraph.types import interrupt  # noqa: E402
+from deduplication import is_duplicate, mark_engaged
+from rate_limiter import can_act, record_action, wait_random_delay
 
 MAX_RETRIES = 2
 
 Decision = Literal[
-    "posted", "skipped_duplicate", "rate_limited", "validation_failed",
-    "user_skipped", "approval_pending", "post_failed", "no_draft",
+    "posted",
+    "skipped_duplicate",
+    "rate_limited",
+    "validation_failed",
+    "user_skipped",
+    "approval_pending",
+    "post_failed",
+    "no_draft",
 ]
 
 
@@ -59,6 +64,7 @@ class State(TypedDict, total=False):
 @dataclass
 class Context:
     """Carried via RunnableConfig.configurable — not part of checkpointed state."""
+
     fb_page: Any | None = None
     ig_page: Any | None = None
     previously_posted: set[str] = field(default_factory=set)
@@ -86,7 +92,8 @@ def n_draft(state: State, config) -> dict:
     if draft:
         return {"draft": draft}
     prompt = build_claude_prompt(
-        item["post_text"], item["category"],
+        item["post_text"],
+        item["category"],
         item.get("group_name") or item.get("hashtag", ""),
     )
     return {"draft": _claude_draft(prompt)}
@@ -103,10 +110,14 @@ def n_validate(state: State, config) -> dict:
 def n_regenerate(state: State, config) -> dict:
     item = state["queue_item"]
     feedback = "\n".join(f"- {v}" for v in state["violations"])
-    prompt = build_claude_prompt(
-        item["post_text"], item["category"],
-        item.get("group_name") or item.get("hashtag", ""),
-    ) + f"\n\n## Previous attempt failed validation\nFix:\n{feedback}\n\nRewrite."
+    prompt = (
+        build_claude_prompt(
+            item["post_text"],
+            item["category"],
+            item.get("group_name") or item.get("hashtag", ""),
+        )
+        + f"\n\n## Previous attempt failed validation\nFix:\n{feedback}\n\nRewrite."
+    )
     return {"draft": _claude_draft(prompt), "retries": state["retries"] + 1}
 
 
@@ -135,14 +146,16 @@ def n_await_approval(state: State, config) -> dict:
     if ctx.dry_run:
         return {}
     item = state["queue_item"]
-    user_reply = interrupt({
-        "type": "approval_request",
-        "platform": item["platform"],
-        "group_or_hashtag": item.get("group_name") or item.get("hashtag", ""),
-        "post_preview": item["post_text"][:200],
-        "draft_comment": state.get("draft", ""),
-        "relevance_score": item.get("relevance_score", 0.0),
-    })
+    user_reply = interrupt(
+        {
+            "type": "approval_request",
+            "platform": item["platform"],
+            "group_or_hashtag": item.get("group_name") or item.get("hashtag", ""),
+            "post_preview": item["post_text"][:200],
+            "draft_comment": state.get("draft", ""),
+            "relevance_score": item.get("relevance_score", 0.0),
+        }
+    )
     # Only reached after Command(resume=user_reply).
     action = (user_reply or {}).get("action", "skipped")
     if action in ("approved", "edited"):
@@ -210,8 +223,10 @@ def r_after_approval(state: State) -> str:
 
 def _exit_if_decision_else(next_node: str):
     """Subgraphs that may set state['decision'] use this at their exit boundary."""
+
     def _route(state: State) -> str:
         return END if state.get("decision") else next_node
+
     return _route
 
 
@@ -231,11 +246,15 @@ def build_draft_subgraph():
     g.set_entry_point("preflight")
     g.add_conditional_edges("preflight", r_after_preflight, {END: END, "draft": "draft"})
     g.add_edge("draft", "validate")
-    g.add_conditional_edges("validate", r_after_validate, {
-        "decide_approval": END,                 # success: leave subgraph
-        "regenerate": "regenerate",
-        "validation_failed": "validation_failed",
-    })
+    g.add_conditional_edges(
+        "validate",
+        r_after_validate,
+        {
+            "decide_approval": END,  # success: leave subgraph
+            "regenerate": "regenerate",
+            "validation_failed": "validation_failed",
+        },
+    )
     g.add_edge("regenerate", "validate")
     g.add_edge("validation_failed", END)
     return g.compile()
@@ -253,10 +272,14 @@ def build_approval_subgraph():
     g.add_node("decide_approval", n_decide_approval)
     g.add_node("await_approval", n_await_approval)
     g.set_entry_point("decide_approval")
-    g.add_conditional_edges("decide_approval", r_after_decide, {
-        "await_approval": "await_approval",
-        "post": END,                            # auto-approved: leave subgraph
-    })
+    g.add_conditional_edges(
+        "decide_approval",
+        r_after_decide,
+        {
+            "await_approval": "await_approval",
+            "post": END,  # auto-approved: leave subgraph
+        },
+    )
     g.add_conditional_edges("await_approval", r_after_approval, {END: END, "post": END})
     return g.compile()
 
@@ -286,10 +309,16 @@ def build_graph(checkpointer=None):
     g.add_node("post_phase", build_post_subgraph())
 
     g.set_entry_point("draft_phase")
-    g.add_conditional_edges("draft_phase", _exit_if_decision_else("approval_phase"),
-                            {END: END, "approval_phase": "approval_phase"})
-    g.add_conditional_edges("approval_phase", _exit_if_decision_else("post_phase"),
-                            {END: END, "post_phase": "post_phase"})
+    g.add_conditional_edges(
+        "draft_phase",
+        _exit_if_decision_else("approval_phase"),
+        {END: END, "approval_phase": "approval_phase"},
+    )
+    g.add_conditional_edges(
+        "approval_phase",
+        _exit_if_decision_else("post_phase"),
+        {END: END, "post_phase": "post_phase"},
+    )
     g.add_edge("post_phase", END)
     return g.compile(checkpointer=checkpointer)
 
