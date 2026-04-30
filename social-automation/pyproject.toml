@@ -73,6 +73,9 @@ module = [
     "lib.errors.*",
     "lib.observability.*",
     "lib.runtime.*",
+    "lib.io.*",
+    "lib.scheduling.*",
+    "lib.engagement.*",
 ]
 strict = true
 disallow_any_explicit = true
