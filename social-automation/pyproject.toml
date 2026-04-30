@@ -76,6 +76,7 @@ module = [
     "lib.io.*",
     "lib.scheduling.*",
     "lib.engagement.*",
+    "lib.sessions.*",
 ]
 strict = true
 disallow_any_explicit = true
