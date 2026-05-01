@@ -12,17 +12,14 @@ If no seed matches, raise NoSeedMatchError — we do not invent recipes.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 
-from .recipe_from_seed import assemble_body_markdown, generate_from_seed
-from .recipe_from_seed_gemini import generate_from_seed_gemini
+from .drafter import Drafter, get_drafter
+from .recipe_from_seed import assemble_body_markdown
 from .seeds import NoSeedMatchError, match_seed
 
 logger = logging.getLogger(__name__)
-
-_MODEL = os.getenv("RECIPE_MODEL", "claude-sonnet-4-6")
 
 
 @dataclass
@@ -51,20 +48,14 @@ def _slugify(text: str) -> str:
     return re.sub(r"[\s_-]+", "-", s)[:80]
 
 
-def _auto_voice_provider() -> str:
-    """Default provider: Gemini if its key is set and Anthropic is not."""
-    if os.getenv("GEMINI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"):
-        return "gemini"
-    if os.getenv("ANTHROPIC_API_KEY"):
-        return "anthropic"
-    return "gemini"
-
-
-def generate_recipe(topic: str, *, client: object | None = None) -> Recipe:
+def generate_recipe(topic: str, *, drafter: Drafter | None = None) -> Recipe:
     """Match topic to a seed and produce a voice-wrapped recipe. Raises if no seed fits.
 
-    Voice provider is selected by `VOICE_PROVIDER` env: `gemini` (default when
-    GEMINI_API_KEY is set and Anthropic is not) or `anthropic`.
+    Args:
+        topic: The recipe topic.
+        drafter: Optional override for the voice drafter. None auto-selects via
+            `VOICE_PROVIDER` env var (defaults: Gemini if its key is set and
+            Anthropic is not, else Anthropic). Tests inject a mock here.
     """
     seed = match_seed(topic)
     if seed is None:
@@ -75,15 +66,8 @@ def generate_recipe(topic: str, *, client: object | None = None) -> Recipe:
 
     logger.info("topic=%r matched seed=%s", topic, seed.id)
 
-    provider = (os.getenv("VOICE_PROVIDER") or _auto_voice_provider()).lower()
-    if provider == "gemini":
-        voice = generate_from_seed_gemini(topic, seed)
-    elif provider == "anthropic":
-        from anthropic import Anthropic
-        anthropic_client = client or Anthropic()
-        voice = generate_from_seed(topic, seed, client=anthropic_client, model=_MODEL)
-    else:
-        raise ValueError(f"unknown VOICE_PROVIDER={provider!r}")
+    voice_drafter = drafter or get_drafter()
+    voice = voice_drafter.draft_voice(topic, seed)
     body = assemble_body_markdown(voice, seed)
     title = (voice.get("title") or seed.title).strip()
 
@@ -110,28 +94,58 @@ def generate_recipe(topic: str, *, client: object | None = None) -> Recipe:
 # Dog-toxic ingredients — any substring match in an ingredient line is a hard reject.
 # Sources: ASPCA Toxic and Non-Toxic Food List + VCA Hospitals dog-safety guides.
 _TOXIC_INGREDIENTS = (
-    "xylitol", "chocolate", "cocoa", "cacao",
-    "onion", "garlic", "chive", "leek", "shallot", "scallion",
-    "grape", "raisin", "currant",
+    "xylitol",
+    "chocolate",
+    "cocoa",
+    "cacao",
+    "onion",
+    "garlic",
+    "chive",
+    "leek",
+    "shallot",
+    "scallion",
+    "grape",
+    "raisin",
+    "currant",
     "macadamia",
-    "alcohol", "wine", "beer", "liquor", "rum", "vodka",
-    "caffeine", "coffee", "espresso",
+    "alcohol",
+    "wine",
+    "beer",
+    "liquor",
+    "rum",
+    "vodka",
+    "caffeine",
+    "coffee",
+    "espresso",
     "nutmeg",
-    "raw yeast", "raw dough",
-    "avocado pit", "avocado skin",
-    "cherry pit", "apple seed",
+    "raw yeast",
+    "raw dough",
+    "avocado pit",
+    "avocado skin",
+    "cherry pit",
+    "apple seed",
     "raw salmon",
     "cooked bone",
 )
 
 # Vague quantities/times that make a recipe unreproducible.
 _VAGUE_QUANTITY = (
-    "to taste", "a handful", "a little", "a bit", "as needed",
-    "enough to coat", "enough to cover", "some ",
+    "to taste",
+    "a handful",
+    "a little",
+    "a bit",
+    "as needed",
+    "enough to coat",
+    "enough to cover",
+    "some ",
 )
 _VAGUE_TIME = (
-    "until done", "for a while", "some time", "a few minutes",
-    "cook it", "bake it",
+    "until done",
+    "for a while",
+    "some time",
+    "a few minutes",
+    "cook it",
+    "bake it",
 )
 
 _NUMBER_RE = re.compile(r"\d")
@@ -139,9 +153,7 @@ _NUMBER_RE = re.compile(r"\d")
 
 def _validate(recipe: Recipe) -> None:
     if not 120 <= len(recipe.meta_description) <= 165:
-        raise ValueError(
-            f"meta_description length={len(recipe.meta_description)} outside 120-165"
-        )
+        raise ValueError(f"meta_description length={len(recipe.meta_description)} outside 120-165")
     if len(recipe.ig_caption) < 80:
         raise ValueError(f"ig_caption too short: {len(recipe.ig_caption)} chars")
     hook = recipe.ig_caption[:125]
@@ -211,10 +223,24 @@ def _validate(recipe: Recipe) -> None:
         has_visual_cue = any(
             kw in low
             for kw in (
-                "until", "fork-tender", "golden", "smooth", "cool",
-                "combined", "firm", "clean", "springs back", "fragrant",
-                "heat", "bubble", "reduce", "simmer", "no pink",
-                "toothpick", "browned", "tender",
+                "until",
+                "fork-tender",
+                "golden",
+                "smooth",
+                "cool",
+                "combined",
+                "firm",
+                "clean",
+                "springs back",
+                "fragrant",
+                "heat",
+                "bubble",
+                "reduce",
+                "simmer",
+                "no pink",
+                "toothpick",
+                "browned",
+                "tender",
             )
         )
         # Word-boundary match so "cookie", "cooker", "uncooked" don't trigger,
@@ -228,6 +254,4 @@ def _validate(recipe: Recipe) -> None:
             )
         )
         if is_action and not (has_time or has_temp or has_visual_cue):
-            raise ValueError(
-                f"action step {i} missing time/temp/doneness cue: {step!r}"
-            )
+            raise ValueError(f"action step {i} missing time/temp/doneness cue: {step!r}")
