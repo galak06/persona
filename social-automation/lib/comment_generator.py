@@ -10,6 +10,13 @@ import json
 import re
 from pathlib import Path
 
+from draft_history import (
+    filter_unused,
+    record_draft,
+    was_post_commented,
+    was_text_recently_used,
+)
+
 DATA_DIR = Path(__file__).parent.parent / "data"
 TEMPLATES_FILE = DATA_DIR / "post_templates.json"
 BRAND_VOICE_FILE = DATA_DIR / "brand_voice_guide.md"
@@ -261,7 +268,10 @@ def draft_comment_from_template(
     post_author: str = "",
 ) -> str | None:
     """
-    Draft a comment using a category template. Falls back to None if no template exists.
+    Draft a comment using a category template. Falls back to None if no template
+    is available OR every template was already used in the last 30 days
+    (forces caller to use Claude generation for variation).
+
     category: "gps" | "food" | "health" | "training"
     """
     templates = load_templates()
@@ -269,11 +279,21 @@ def draft_comment_from_template(
     if not category_templates:
         return None
 
+    # Drop templates whose normalized text has been posted in the last 30 days.
+    # This is the primary defense against the recurring duplicate-text bug.
+    fresh = filter_unused(category_templates)
+    if not fresh:
+        return None  # all templates used recently — caller falls through to Claude
+
     import random
+    template = random.choice(fresh)
 
-    template = random.choice(category_templates)
+    # Record the selection up-front. Whether the caller posts the draft or
+    # rejects it on voice-validation, the same template should not come up
+    # again in the next 30 days — otherwise repeated calls in one run keep
+    # picking the same template until it happens to validate.
+    record_draft(template, platform="facebook", post_id="", target="template_selection")
 
-    # Simple token replacement
     comment = template
     comment = comment.replace("{author}", post_author.split()[0] if post_author else "you")
     return comment
@@ -316,17 +336,36 @@ def generate_comment(
     category: str,
     group_name: str = "",
     post_author: str = "",
+    *,
+    platform: str = "facebook",
+    post_id: str = "",
 ) -> dict:
     """
     Main entry point. Returns:
     {
-        "comment": str,
+        "comment": str | None,
         "valid": bool,
         "violations": list[str],
-        "method": "template" | "generated",
+        "method": "template" | "generated" | "skipped",
         "score_check": bool,
+        "skip_reason": str (only when method == "skipped"),
     }
+
+    When platform+post_id are provided, refuses to draft if the bot has already
+    engaged with this post (returns method="skipped").
     """
+    # Pre-flight: refuse to draft a duplicate engagement on the same post.
+    if post_id and platform in ("facebook", "instagram", "wordpress"):
+        if was_post_commented(platform, post_id):
+            return {
+                "comment": None,
+                "valid": False,
+                "violations": [],
+                "method": "skipped",
+                "score_check": False,
+                "skip_reason": f"post_id {post_id} on {platform} already engaged",
+            }
+
     # Try template first
     draft = draft_comment_from_template(category, post_text, post_author)
     method = "template"
@@ -345,6 +384,9 @@ def generate_comment(
         }
 
     is_valid, violations = validate_voice(draft)
+    # Note: draft_comment_from_template already recorded this template as
+    # used. We don't double-record here. If is_valid is True, the post-side
+    # mark_engaged() in comment_poster.py provides per-post dedupe.
     return {
         "comment": draft,
         "valid": is_valid,

@@ -91,7 +91,7 @@ def send_join_requests(page, approved: list[dict], known: set[str]) -> int:
             if result.startswith("clicked"):
                 status = "join_requested" if group["privacy"] == "private" else "joined"
                 log_join_request(group, status)
-                append_to_tracker(group)
+                append_to_tracker(group, status)
                 sent += 1
                 known.add(group["url"].lower())
                 label = (

@@ -13,6 +13,7 @@ LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
 PENDING_FILE = PROJECT_ROOT / ".claude/state/pending_groups.json"
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 TRACKER_FILE = PROJECT_ROOT.parent.parent / "facebook_groups_tracker.xlsx"
+JSON_TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
 ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
 
 
@@ -138,10 +139,70 @@ def remove_from_pending(joined_urls: list[str]) -> None:
     save_pending(pending)
 
 
-def append_to_tracker(group: dict) -> None:
-    """Append a new row to facebook_groups_tracker.xlsx."""
+def _now_iso_z() -> str:
+    """UTC now in ISO 8601 with trailing Z, matching fb_notification_scan format."""
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _upsert_json_tracker(group: dict, status: str) -> str:
+    """Upsert into data/groups_tracker.json. status is 'joined' or 'join_requested'.
+
+    Public groups (status='joined') get joined_at=now so warmup gates can tick.
+    Private groups (status='join_requested') get no joined_at — fb_notification_scan
+    will fill it when the admin approves. Idempotent: never overwrites an existing
+    joined_at on re-runs.
+
+    Returns: 'added', 'updated', or 'unchanged'.
+    """
+    JSON_TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tracker: list[dict] = []
+    if JSON_TRACKER_FILE.exists():
+        try:
+            tracker = json.loads(JSON_TRACKER_FILE.read_text())
+        except json.JSONDecodeError:
+            tracker = []
+
+    url = group["url"]
+    now = _now_iso_z()
+
+    for existing in tracker:
+        if existing.get("group_url") == url:
+            # Only escalate to joined; never downgrade or overwrite joined_at.
+            if status == "joined" and existing.get("status") != "joined":
+                existing["status"] = "joined"
+                existing.setdefault("joined_at", now)
+                JSON_TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+                return "updated"
+            return "unchanged"
+
+    entry: dict = {
+        "group_name": group["name"],
+        "group_url": url,
+        "status": status,
+        "rules": "unknown",
+        "last_post_at": None,
+        "source_notification": f"fb_group_scout ({group.get('privacy', 'unknown')})",
+        "privacy": group.get("privacy", "unknown"),
+        "member_count": group.get("member_count"),
+    }
+    if status == "joined":
+        entry["joined_at"] = now
+    tracker.append(entry)
+    JSON_TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+    return "added"
+
+
+def append_to_tracker(group: dict, status: str = "join_requested") -> None:
+    """Record a join action.
+
+    Writes the canonical JSON tracker (data/groups_tracker.json) — the source
+    used by fb_group_post + warmup gates. Also best-effort updates the legacy
+    xlsx tracker if present.
+    """
+    action = _upsert_json_tracker(group, status)
+    print(f"  [tracker] {action}: {group['name']} (status={status})")
+
     if not TRACKER_FILE.exists():
-        print(f"  [tracker] Tracker file not found at {TRACKER_FILE} — skipping xlsx update.")
         return
     try:
         import openpyxl
@@ -155,10 +216,9 @@ def append_to_tracker(group: dict) -> None:
         ws.cell(last_row, 4, group["member_count"])
         ws.cell(last_row, 5, group["score"])
         ws.cell(last_row, 6, date.today().isoformat())
-        ws.cell(last_row, 7, "join_requested")
+        ws.cell(last_row, 7, status)
         ws.cell(last_row, 8, group["found_via_query"])
         wb.save(str(TRACKER_FILE))
-        print(f"  [tracker] Added row: {group['name']}")
     except Exception as e:
         print(f"  [tracker] WARNING: Could not update xlsx: {e}")
 
