@@ -29,7 +29,7 @@ from logger import enable_unbuffered, log_progress, log_step
 
 enable_unbuffered()
 
-from deduplication import mark_engaged
+from deduplication import is_duplicate, mark_engaged
 from notifier import (
     skill_error,
     skill_finished,
@@ -301,10 +301,30 @@ def run() -> None:
 
     # Load queue
     queue = load_json(QUEUE_FILE, [])
-    approved = [q for q in queue if q.get("status") == "approved" and q.get("draft_comment")]
+    approved_raw = [q for q in queue if q.get("status") == "approved" and q.get("draft_comment")]
+
+    # Hard guard: drop items whose post_id is already in dedup_cache (was
+    # successfully engaged-with on a prior run). Mutates queue so duplicates
+    # don't sit pending forever.
+    approved = []
+    seen_post_ids: set[tuple[str, str]] = set()  # (platform, post_id) within this run
+    for item in approved_raw:
+        plat = item.get("platform")
+        pid = item.get("post_id") or ""
+        if plat in ("facebook", "instagram", "wordpress") and pid and is_duplicate(plat, pid):
+            item["status"] = "already_engaged"
+            item["_blocked_reason"] = "post_id present in dedup_cache before posting"
+            continue
+        if (plat, pid) in seen_post_ids:
+            item["status"] = "duplicate_in_run"
+            item["_blocked_reason"] = "another queue item with same post_id approved in same run"
+            continue
+        seen_post_ids.add((plat, pid))
+        approved.append(item)
+    save_json(QUEUE_FILE, queue)
 
     print_status()
-    print(f"\nApproved (ready to post): {len(approved)}", flush=True)
+    print(f"\nApproved (ready to post): {len(approved)} ({len(approved_raw) - len(approved)} pre-blocked as duplicate)", flush=True)
 
     if not approved:
         print("Nothing to do — no approved comments in queue.", flush=True)
@@ -426,6 +446,7 @@ def run() -> None:
                         if not ok:
                             print("    Comment box not found", flush=True)
                             item["status"] = "COMMENT_BOX_NOT_FOUND"
+                            mark_engaged("facebook", item["post_id"], "comment", group, status="failed")
                             failed += 1
                             continue
 
@@ -450,6 +471,7 @@ def run() -> None:
                         log_error(f"COMMENT_POST_FAILED: {group} — {e}")
                         item["status"] = "POST_FAILED"
                         item["error"] = str(e)[:200]
+                        mark_engaged("facebook", item["post_id"], "comment", group, status="failed")
                         failed += 1
 
             fb_ctx.storage_state(path=str(SESSION_FILE))
@@ -487,6 +509,7 @@ def run() -> None:
                         if not ok:
                             print("    Comment box not found", flush=True)
                             item["status"] = "COMMENT_BOX_NOT_FOUND"
+                            mark_engaged("instagram", item["post_id"], "comment", hashtag, status="failed")
                             failed += 1
                             continue
 
@@ -511,6 +534,7 @@ def run() -> None:
                         log_error(f"IG_COMMENT_FAILED: #{hashtag} — {e}")
                         item["status"] = "POST_FAILED"
                         item["error"] = str(e)[:200]
+                        mark_engaged("instagram", item["post_id"], "comment", hashtag, status="failed")
                         failed += 1
 
             ig_ctx.storage_state(path=str(IG_SESSION_FILE))

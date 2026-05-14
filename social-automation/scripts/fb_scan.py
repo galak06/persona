@@ -27,6 +27,7 @@ enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate
+from group_warmup import COMMENT_WARMUP_HOURS, hours_until_warm, is_group_warm
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
 
@@ -474,6 +475,16 @@ def run_scan() -> None:
             if not can_act("facebook", "group_visit"):
                 print(f"\nRate limit hit — stopping after {groups_scanned} groups.", flush=True)
                 break
+
+            # 48h warmup gate — newly joined groups need to age before we comment
+            if not is_group_warm(group["url"], COMMENT_WARMUP_HOURS):
+                remaining = hours_until_warm(group["url"], COMMENT_WARMUP_HOURS)
+                print(
+                    f"  Skipping {group['name']} — in {COMMENT_WARMUP_HOURS}h warmup "
+                    f"({remaining:.1f}h remaining)",
+                    flush=True,
+                )
+                continue
 
             log_progress(group_idx, len(groups), f"Scanning: {group['name']}")
             print(f"    URL: {group['url']}", flush=True)

@@ -49,8 +49,8 @@ from group_discovery.state import (
 )
 from notifier import skill_finished, skill_skipped, skill_started
 
-JOIN_LIMIT_PER_WEEK = 6
-JOIN_LIMIT_PER_DAY = 2  # forces 6/week to spread across ≥ 3 days
+JOIN_LIMIT_PER_WEEK = 15
+JOIN_LIMIT_PER_DAY = 5  # ~5x prior cap, still ~5x under FB's ~25/day ceiling
 MIN_SCORE = 40
 
 SEARCH_QUERIES = [

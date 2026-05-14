@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from comment_generator import validate_voice
+from group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
 from logger import enable_unbuffered, log_step
 from notifier import request_approval, skill_finished, skill_started
 from rate_limiter import can_act, record_action
@@ -54,7 +55,7 @@ def classify(group_name: str) -> str:
     return "general"
 
 
-def draft_for_recipe(title: str) -> str:
+def draft_for_recipe(title: str, url: str) -> str:
     body = (
         f"Made a batch of {title} with Nalla this weekend and they were gone "
         f"by Monday — she's been demanding them every morning since. "
@@ -62,37 +63,39 @@ def draft_for_recipe(title: str) -> str:
         f"have one of the ingredients on hand."
     )
     closer = "\n\nWhat's your dog's most-requested homemade treat?"
-    return body + "\n\nLink in first comment 👇" + closer
+    return body + f"\n\nFull recipe: {url}" + closer
 
 
-def draft_for_running(title: str) -> str:
+def draft_for_running(title: str, url: str) -> str:
     body = (
         f"Been testing homemade training treats for trail runs with Nalla — "
         f"{title} held up best so far. Calorie-dense, three ingredients, "
         f"doesn't crumble in a ziplock for a 60-minute run."
     )
     closer = "\n\nWhat do you pocket for your dog on long runs?"
-    return body + "\n\nLink in first comment 👇" + closer
+    return body + f"\n\nFull recipe: {url}" + closer
 
 
-def draft_for_general(title: str) -> str:
+def draft_for_general(title: str, url: str) -> str:
     body = (
         f"Sharing a quick one from our kitchen — {title}. "
-        f"Easy, pantry-friendly, and Nalla actually works for them. "
-        f"Posted the full breakdown on our site."
+        f"Easy, pantry-friendly, and Nalla actually works for them."
     )
     closer = "\n\nWhat's your go-to treat when you're out of the store-bought ones?"
-    return body + "\n\nLink in first comment 👇" + closer
+    return body + f"\n\nFull breakdown: {url}" + closer
 
 
 def draft_caption(group: dict, title: str, url: str) -> str:
-    """Always returns a 'link in first comment' caption — URL lands as comment."""
+    """Caption with the URL inline in the body. The 'link in first comment' pattern
+    is a FB Page-only tactic (algorithmically rewarded for our own posts) — for
+    group posts the link belongs in the body, where members actually see it.
+    """
     category = classify(group["group_name"])
     if category == "recipe":
-        return draft_for_recipe(title)
+        return draft_for_recipe(title, url)
     if category == "running":
-        return draft_for_running(title)
-    return draft_for_general(title)
+        return draft_for_running(title, url)
+    return draft_for_general(title, url)
 
 
 def _is_big_group(group: dict) -> bool:
@@ -263,11 +266,25 @@ def main() -> None:
     # (admins_only/blocked would just waste a Telegram approval cycle).
     direct = [g for g in joined if g.get("posting_mode") == "direct"]
 
-    # Skip groups we already posted to in the last hour — avoids duplicating
-    # the post across back-to-back runs on the same day.
-    cutoff = datetime.now(UTC) - timedelta(hours=1)
-    fresh = []
+    # 72h warmup gate — newly joined groups need to age before we drop a link
+    warm = []
     for g in direct:
+        if is_group_warm(g["group_url"], LINK_POST_WARMUP_HOURS):
+            warm.append(g)
+        else:
+            remaining = hours_until_warm(g["group_url"], LINK_POST_WARMUP_HOURS)
+            print(
+                f"  ⏭  {g['group_name'][:45]} — in {LINK_POST_WARMUP_HOURS}h warmup "
+                f"({remaining:.1f}h remaining)",
+                flush=True,
+            )
+
+    # Skip groups we already posted to in the last 24 hours — avoids duplicate
+    # posts when the cron retries the same campaign within the day (1h was
+    # too narrow; an interrupted run + restart could re-post the same group).
+    cutoff = datetime.now(UTC) - timedelta(hours=24)
+    fresh = []
+    for g in warm:
         last = g.get("last_post_at")
         if last:
             try:
@@ -304,10 +321,14 @@ def main() -> None:
                 skipped += 1
                 continue
 
-            # Auto-comment step is fragile — it sometimes targets the wrong
-            # composer and creates a junk duplicate post. Honor --no-comment
-            # so caller can paste the URL manually on each landed post.
-            link_for_comment = None if args.no_comment else args.url
+            # The URL is now baked inline into the post body — see
+            # draft_for_recipe / draft_for_running / draft_for_general. The
+            # legacy "link in first comment" pattern is a FB Page-only tactic
+            # (algorithmically rewarded for our own page posts) and doesn't
+            # translate to group posts where members read the body inline.
+            # Always pass None here so open_composer_and_post skips the
+            # fragile first-comment step.
+            link_for_comment = None
 
             log_step(f"  → {group['group_name']} (~{group.get('member_count') or '?'})")
 
