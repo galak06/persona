@@ -47,3 +47,11 @@ campaigns/
 .coverage.*
 htmlcov/
 coverage.xml
+
+# Stray AI-generated images at repo root
+Gemini_Generated_Image_*.png
+Gemini_Generated_Image_*.jpg
+Gemini_Generated_Image_*.jpeg
+
+# Throwaway dedup probes (leading underscore = scratch)
+social-automation/scripts/_dedup_*
