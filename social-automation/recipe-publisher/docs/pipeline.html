@@ -50,12 +50,18 @@
   <p>
     Turns a single seed (a structured recipe brief) into a published recipe across
     WordPress, Instagram (carousel), Facebook, and Pinterest — Nalla's Dad voice,
-    Telegram approval gates between stages, fully idempotent.
+    one operator gate (audio + verify) between offline prep and the daily
+    publish cron, idempotent on retry.
   </p>
   <p>
-    Entry points: <code>recipe_publisher.py</code> (full pipeline) and
-    <code>scripts/content_pipeline.py --stage {reel,campaign}</code> (specialized variants).
-    The <code>ideator/</code> module generates new seeds upstream.
+    Entry points (two-phase, seed-driven):
+    <code>prepare.py --seed &lt;id&gt;</code> builds all artifacts into
+    <code>campaigns/prepared/&lt;id&gt;/</code>;
+    <code>scripts/publish_prepared.py</code> (daily 14:00 cron) drains the
+    queue once status flips to <code>verified</code>.
+    Adjacent: <code>recipe_publisher.py</code> (legacy topic-based, free-text)
+    and <code>scripts/content_pipeline.py --stage {reel,campaign,ideate,publish}</code>.
+    <code>ideator/</code> generates new seeds upstream.
   </p>
 </section>
 
@@ -82,9 +88,22 @@
 │   ├── instagram.py        # Graph API container → poll → publish
 │   ├── facebook.py         # Page post + Reels 3-phase upload
 │   └── pinterest.py        # OAuth + pin board
-├── prepare.py              # builds artifacts without publishing (dry-run shapes)
-├── recipe_publisher.py     # main entrypoint (weekly cadence)
-└── state/                  # last_run, published_recipes, ideas_queue, timeline
+├── prepare.py              # build artifacts → ../../campaigns/prepared/{seed}/
+├── recipe_publisher.py     # legacy: free-text --topic entry, no prepare step
+└── state/                  # ideas_queue, ideator_history, last_prepare,
+                            # last_publish_prepared, last_run, published_recipes
+
+# At the project root (sibling of social-automation/):
+campaigns/
+├── prepared/{seed}/         # awaiting_audio → audio_ready → verified → published
+│   ├── metadata.json        # wp_draft_id, slug, captions, tags
+│   ├── featured.jpg         # WP hero
+│   ├── slides/slide_N.jpg   # IG carousel slides
+│   ├── recipe_body.html     # final WP body (preview)
+│   ├── ig_caption.txt / fb_caption.txt
+│   ├── audio.mp3            # operator-supplied (Suno etc.), NOT pipeline-generated
+│   └── status.json          # state machine
+└── published/{seed}/        # moved here after publish_prepared.py succeeds
 </code></pre>
 
   <h3>Key collaborators outside the folder</h3>
@@ -104,76 +123,80 @@
 <section>
   <h2>3. Flow — worked example</h2>
   <p class="muted">
-    Seed: <code>berry-yogurt-swirl-frozen-pupsicles</code> (new this week).
-    Command: <code>python recipe_publisher.py --topic berry-yogurt-swirl-frozen-pupsicles --no-dry-run</code>
+    Seed: <code>berry-yogurt-swirl-frozen-pupsicles</code>.
+    Two phases: <strong>prepare</strong> (offline build) → <strong>verify</strong> (operator gate) → <strong>publish</strong> (cron).
   </p>
 
   <div class="flow">
-    <div class="step">1. Load</div>
+    <div class="step">1. Prepare</div>
     <div>
-      <code>load_config()</code> hydrates env from <code>.claude/settings.local.json</code>;
-      <code>load_state()</code> reads <code>state/published_recipes.json</code> to dedup.
+      <code>python prepare.py --seed berry-yogurt-swirl-frozen-pupsicles</code>.
+      Resolves seed from <code>seeds.json</code> + carousel spec from
+      <code>seeds/carousels/{slug}.json</code>.
     </div>
 
-    <div class="step">2. Resolve seed</div>
-    <div>
-      <code>seeds.json</code> → <code>{slug, title, ingredients, prep_minutes, ...}</code>.
-      Paired carousel spec loaded from <code>seeds/carousels/berry-yogurt-swirl-frozen-pupsicles.json</code>.
-    </div>
-
-    <div class="step">3. Draft</div>
+    <div class="step">2. Draft</div>
     <div>
       <code>generators/recipe.py</code> calls the active Drafter
       (Gemini if <code>VOICE_PROVIDER=gemini</code>, else Anthropic).
-      Produces recipe body + IG caption. <code>_validate()</code> hard-rejects
-      missing CTA / bullets / branded hashtag.
+      Produces recipe body + IG/FB captions. <code>_validate()</code>
+      hard-rejects missing CTA / bullets / branded hashtag.
     </div>
 
-    <div class="step">4. Images</div>
+    <div class="step">3. Images</div>
     <div>
-      <code>generators/carousel.py</code> renders 4 slides via Imagen/Nano Pro.
+      <code>generators/carousel.py</code> renders 4 slides via Imagen / Nano Pro.
       Slide 1 stamped with <code>@dogfoodandfun</code> follow badge;
       slide 4 stamped with <em>FULL RECIPE → DOGFOODANDFUN.COM</em> ribbon.
+      Featured.jpg written for WP hero.
     </div>
 
-    <div class="step">5. Approve</div>
+    <div class="step">4. WP draft</div>
     <div>
-      Telegram preview (markdown body + 4 slides) <span class="arrow">→</span>
-      <code>approve</code> / <code>skip</code> via inline buttons.
-      Polls up to 12h, then aborts.
+      <code>publishers/wordpress.py</code> uploads featured image,
+      sets <code>fifu_image_url</code> + <code>fifu_image_alt</code> meta,
+      creates a <em>draft</em> post with clean HTML
+      (Elementor edit meta stripped). <code>wp_draft_id</code> persisted in
+      <code>metadata.json</code>.
     </div>
 
-    <div class="step">6. WordPress</div>
+    <div class="step">5. Persist</div>
     <div>
-      <code>publishers/wordpress.py</code>: upload hero to media, set
-      <code>fifu_image_url</code> + <code>fifu_image_alt</code> meta,
-      strip Elementor edit meta so the clean HTML wins, publish post.
+      All artifacts land in <code>campaigns/prepared/&lt;seed&gt;/</code>.
+      <code>status.json</code> = <code>awaiting_audio</code>.
     </div>
 
-    <div class="step">7. Instagram</div>
+    <div class="step">6. Audio</div>
     <div>
-      <code>publishers/instagram.py::publish_carousel</code>: upload each slide,
-      create <code>media_type=CAROUSEL</code> children, parent container,
-      poll status ≤ 5 min, publish.
+      <span class="pill todo">manual</span> Operator generates the music bed
+      in Suno (or similar), drops <code>audio.mp3</code> into the prepared
+      folder. Pipeline does <strong>not</strong> author music or lyrics for
+      recipes — Jamendo is reel-only. Status flips to <code>audio_ready</code>.
     </div>
 
-    <div class="step">8. Facebook</div>
+    <div class="step">7. Verify</div>
     <div>
-      <code>publishers/facebook.py</code>: page post with WP permalink inline
-      (link in body, never "link in first comment" — that's page-algo-only).
+      <code>python scripts/publish_prepared.py --seed &lt;id&gt; --verify</code>
+      sends a Telegram preview (body + slides + captions + audio).
+      On approve, status flips to <code>verified</code>.
     </div>
 
-    <div class="step">9. Pinterest</div>
+    <div class="step">8. Publish</div>
     <div>
-      <code>publishers/pinterest.py</code>: pin slide 1 to the recipe board with
-      WP permalink as destination. <span class="pill todo">blocked: Trial-tier API</span>
+      Daily 14:00 cron <code>publish_prepared.py</code> picks the next
+      <code>verified</code> campaign and runs publishers in order:
+      <em>WP draft → publish</em> → IG carousel (container → poll ≤ 5min → publish)
+      → FB page post (permalink inline, never "link in first comment")
+      → Pinterest pin board <span class="pill todo">blocked: Trial-tier API</span>.
+      Idempotent on crash via per-step <code>status.json</code>.
     </div>
 
-    <div class="step">10. Persist</div>
+    <div class="step">9. Archive</div>
     <div>
-      Append entry to <code>state/published_recipes.json</code>,
-      update <code>state/publishing_timeline.json</code>, write daily report to
-      <code>/mnt/dogfoodandfun/recipe-publisher-report-YYYY-MM-DD.md</code>.
+      Folder moves to <code>campaigns/published/&lt;seed&gt;/</code>.
+      <code>publishing_timeline.json</code> updated with platform permalinks
+      + pin IDs. Daily report written under
+      <code>/mnt/dogfoodandfun/</code>.
     </div>
   </div>
 </section>
