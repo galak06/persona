@@ -30,6 +30,7 @@ social-automation/config.json
 
 # Recipe-publisher runtime + local artifacts
 social-automation/recipe-publisher/state/
+social-automation/recipe-publisher/seeds/
 social-automation/recipe-publisher/_audit/
 social-automation/recipe-publisher/pytest-cache-files-*/
 
@@ -59,3 +60,4 @@ social-automation/scripts/_dedup_*
 # Recipe-seed ideator (local-only iteration; weekly recipe-ideator cron
 # invokes `python -m ideator` from this directory)
 social-automation/recipe-publisher/ideator/
+social-automation/recipe-publisher/seeds/seeds.json

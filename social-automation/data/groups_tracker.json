@@ -5,7 +5,7 @@
     "status": "joined",
     "joined_at": "2026-04-20T15:55:09.353345Z",
     "rules": "unknown",
-    "last_post_at": "2026-04-20T17:11:39.736094Z",
+    "last_post_at": "2026-05-09T08:00:37.681278Z",
     "source_notification": "UnreadThe admins approved your request to post and comment in Homemade Pet Treats And Other Pet Items To Make / Sell.4d",
     "privacy": "public",
     "member_count": "89.6K",
@@ -20,7 +20,8 @@
         "text": "Earlier broken-script run left a stray comment (deleted). Tracker reset \u2014 no actual post landed."
       }
     ],
-    "last_post_status": "not_posted_yet"
+    "last_post_status": "posted",
+    "last_post_caption": "Made a batch of Berry & Yogurt Swirl Frozen Pupsicles with Nalla this weekend and they were gone by Monday \u2014 she's been demanding them every morning since. Full recipe with exact amounts, bake time, and swaps if you don't have one of the ingredients on hand.\n\nLink in first comment \ud83d\udc47\n\nWhat's your dog's most-requested homemade treat?"
   },
   {
     "group_name": "Forever Healthy Dogs: Whole-Food Nutrition & Wellness",
@@ -28,7 +29,7 @@
     "status": "joined",
     "joined_at": "2026-04-20T15:55:09.353345Z",
     "rules": "unknown",
-    "last_post_at": null,
+    "last_post_at": "2026-05-09T08:04:19.056560Z",
     "source_notification": "UnreadThe admins approved your request to post and comment in Forever Healthy Dogs: Whole-Food Nutrition & Wellness.1d",
     "privacy": "public",
     "member_count": "41.0K",
@@ -39,7 +40,8 @@
         "text": "Auto-classified direct"
       }
     ],
-    "last_post_status": null
+    "last_post_status": "posted",
+    "last_post_caption": "Made a batch of Berry & Yogurt Swirl Frozen Pupsicles with Nalla this weekend and they were gone by Monday \u2014 she's been demanding them every morning since. Full recipe with exact amounts, bake time, and swaps if you don't have one of the ingredients on hand.\n\nLink in first comment \ud83d\udc47\n\nWhat's your dog's most-requested homemade treat?"
   },
   {
     "group_name": "Homemade Dog Food ~The Nourished Pup ~ The Nourished Human",
@@ -104,7 +106,7 @@
     "status": "joined",
     "joined_at": "2026-04-20T15:55:09.353345Z",
     "rules": "unknown",
-    "last_post_at": "2026-04-20T16:59:47.235689Z",
+    "last_post_at": "2026-05-09T08:15:44.333050Z",
     "source_notification": "UnreadWelcome to World of Dog Food! Now you can post and connect with other members.5d",
     "privacy": "public",
     "member_count": "6.3K",
@@ -115,7 +117,8 @@
         "text": "Auto-classified direct"
       }
     ],
-    "last_post_status": null
+    "last_post_status": "posted",
+    "last_post_caption": "Made a batch of Berry & Yogurt Swirl Frozen Pupsicles with Nalla this weekend and they were gone by Monday \u2014 she's been demanding them every morning since. Full recipe with exact amounts, bake time, and swaps if you don't have one of the ingredients on hand.\n\nLink in first comment \ud83d\udc47\n\nWhat's your dog's most-requested homemade treat?"
   },
   {
     "group_name": "Running Dogs New",
@@ -172,5 +175,58 @@
     "rules": "unknown",
     "last_post_at": null,
     "source_notification": "Welcome to Hiking With Dogs! Now you can post and connect with other members.22h"
+  },
+  {
+    "group_name": "Raw Feeding 101 - Learn To Feed Raw",
+    "group_url": "https://www.facebook.com/groups/rawfeeding101learntofeedraw/",
+    "status": "join_requested",
+    "rules": "unknown",
+    "last_post_at": null,
+    "source_notification": "fb_group_scout (private)",
+    "privacy": "private",
+    "member_count": 87000
+  },
+  {
+    "group_name": "Homemade Healthy Dog Food and Treats - Homemade Treatments",
+    "group_url": "https://www.facebook.com/groups/390033337791423/",
+    "status": "join_requested",
+    "rules": "unknown",
+    "last_post_at": null,
+    "source_notification": "fb_group_scout (private)",
+    "privacy": "private",
+    "member_count": 56000
+  },
+  {
+    "group_name": "Dog Cancer, Nutrition, & Behavior Support Group",
+    "group_url": "https://www.facebook.com/groups/dogcancerfoundation/",
+    "status": "joined",
+    "rules": "unknown",
+    "last_post_at": null,
+    "source_notification": "fb_group_scout (public)",
+    "privacy": "public",
+    "member_count": 9900,
+    "joined_at": "2026-05-06T14:02:57.062855Z"
+  },
+  {
+    "group_name": "Raw Feeding UK",
+    "group_url": "https://www.facebook.com/groups/1034682417023888/",
+    "status": "joined",
+    "rules": "unknown",
+    "last_post_at": null,
+    "source_notification": "fb_group_scout (public)",
+    "privacy": "public",
+    "member_count": 8900,
+    "joined_at": "2026-05-06T14:04:16.356556Z"
+  },
+  {
+    "group_name": "Cesar Millan: Better Human Better Dog",
+    "group_url": "https://www.facebook.com/groups/643806534401286/",
+    "status": "joined",
+    "rules": "unknown",
+    "last_post_at": null,
+    "source_notification": "fb_group_scout (public)",
+    "privacy": "public",
+    "member_count": 8300,
+    "joined_at": "2026-05-06T14:06:56.377123Z"
   }
 ]
