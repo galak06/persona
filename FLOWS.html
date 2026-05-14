@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dogfoodandfun — project flows</title>
+<style>
+  :root { --fg:#1c1c1c; --muted:#666; --bg:#fafaf7; --card:#fff;
+          --accent:#c2410c; --rule:#e6e2d8; --code:#f3f0e8; --ok:#15803d; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         color:var(--fg); background:var(--bg); }
+  header { padding:36px 40px 20px; border-bottom:1px solid var(--rule); background:var(--card); }
+  header h1 { margin:0 0 4px; font-size:26px; }
+  header p { margin:0; color:var(--muted); font-size:14px; }
+  main { max-width:1040px; margin:0 auto; padding:32px 40px 80px; }
+  section { background:var(--card); border:1px solid var(--rule); border-radius:6px;
+            padding:24px 28px; margin-bottom:20px; }
+  h2 { margin:0 0 14px; font-size:18px; color:var(--accent); }
+  h3 { margin:18px 0 8px; font-size:15px; }
+  code, pre { font-family:"SF Mono",Menlo,Consolas,monospace; font-size:13px; }
+  pre { background:var(--code); padding:14px 16px; border-radius:4px; overflow-x:auto; margin:8px 0; }
+  code { background:var(--code); padding:1px 5px; border-radius:3px; }
+  pre code { background:none; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 4px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--rule); font-size:14px; vertical-align:top; }
+  th { background:#f5f2ea; font-weight:600; }
+  ul, ol { margin:6px 0 4px; padding-left:22px; }
+  li { margin:4px 0; }
+  .flow { display:grid; grid-template-columns:130px 1fr; gap:14px 18px; }
+  .flow .step { font-weight:600; color:var(--accent); }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px;
+          background:#eef3ee; color:var(--ok); margin-left:6px; }
+  .pill.todo { background:#fef3c7; color:#92400e; }
+  .pill.blocked { background:#fee2e2; color:#991b1b; }
+  .pill.idea { background:#e0e7ff; color:#3730a3; }
+  .muted { color:var(--muted); }
+  .arrow { color:var(--accent); font-weight:700; }
+  a { color:var(--accent); }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px) { .grid-2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>dogfoodandfun — project flows</h1>
+  <p>End-to-end map of the WordPress site, content engines, and social-automation skills. Internal doc.</p>
+</header>
+
+<main>
+
+<section>
+  <h2>1. Project at a glance</h2>
+  <table>
+    <tr><th>Site</th><td><a href="https://dogfoodandfun.com">dogfoodandfun.com</a> — WordPress on Hostinger, Astra theme + Elementor</td></tr>
+    <tr><th>Brand persona</th><td><strong>Nalla's Dad</strong> — software engineer + dog owner. Authentic, value-first, data-driven. Never medical/sales.</td></tr>
+    <tr><th>Dog</th><td>Nalla — fluffy shepherd mix, ~25-50 lb, Tel Aviv-based</td></tr>
+    <tr><th>Niche</th><td>dog food reviews, GPS trackers, running with dogs, gear comparisons</td></tr>
+    <tr><th>Target market</th><td>USA + Canada (EN-NA), all timing in EST</td></tr>
+    <tr><th>Revenue model</th><td>Amazon Associates (tag <code>dogfoodfun01-20</code>), per-campaign <code>ascsubtag</code> attribution</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>2. Repo layout</h2>
+<pre><code>dogfoodandfun/
+├── social-automation/      # the brain — 15+ skills, schedulers, publishers
+│   ├── .claude/skills/     # skill definitions invoked by Claude Code
+│   ├── lib/                # io, scheduling, engagement, policy, sessions
+│   ├── recipe-publisher/   # recipe content engine (see docs/pipeline.html)
+│   ├── scripts/            # scanner + publisher entry points
+│   ├── launchd/            # macOS schedulers (plist files)
+│   ├── data/               # competitors, groups_tracker, recipe_products
+│   └── tests/              # respx-mocked, hermetic
+├── campaigns/              # per-seed prepared/ and published/ artifacts
+│   ├── prepared/&lt;seed&gt;/   # awaiting_audio → audio_ready → verified → published
+│   └── published/&lt;seed&gt;/   # archived after cron drainer succeeds
+├── brand-fix/              # one-shot compliance patches (FTC disclosures, etc.)
+├── dogfoodandfun/          # WordPress backups + REST tooling
+└── BRAND_FIX_PLAN.md       # source-of-truth for compliance work
+</code></pre>
+  <p class="muted">
+    Recipe pipeline detail: <a href="social-automation/recipe-publisher/docs/pipeline.html">recipe-publisher/docs/pipeline.html</a>.
+  </p>
+</section>
+
+<section>
+  <h2>3. Flows</h2>
+
+  <h3>3.1 Engagement loop — daily scan + comment</h3>
+  <p class="muted">The legacy outbound engagement pipeline. Scans social platforms, scores posts, drafts comments in Nalla's Dad voice, gates on Telegram, posts.</p>
+  <div class="flow">
+    <div class="step">site-analyzer</div>
+    <div>Crawls dogfoodandfun.com RSS + sitemap → <code>data/site_content_cache.json</code>. Comments reference current site content. <span class="pill todo">stale: last run 2026-04-28</span></div>
+    <div class="step">fb-scanner</div>
+    <div>Playwright-driven scan of joined dog groups. Scores by relevance (food/GPS/running/training). High-score posts (≥0.75) queued to <code>comment_queue.json</code>.</div>
+    <div class="step">ig-scanner</div>
+    <div>Hashtag scan. Likes qualifying posts; queues top candidates for comments. Caps: 8 likes/d, 2 comments/d.</div>
+    <div class="step">auto-drafter</div>
+    <div>Reads <code>comment_queue.json</code>, drafts Nalla's-Dad-voice replies, validates against blocked-terms list, writes <code>recent_drafts.jsonl</code>.</div>
+    <div class="step">comment-approver</div>
+    <div>Hourly Telegram batch: surfaces drafts for approve/skip. Safe drafts can auto-approve.</div>
+    <div class="step">comment-poster</div>
+    <div>Posts approved comments via Playwright (FB) or Graph API (IG). Logs to <code>engagement_log.jsonl</code>. <span class="pill todo">last successful post 2026-05-06</span></div>
+    <div class="step">reply-follower</div>
+    <div>Twice-daily revisits — scrapes new replies on posted comments, drafts conversational responses, Telegram-gates, posts threaded replies.</div>
+  </div>
+
+  <h3>3.2 Content publishing — blog post → social</h3>
+  <p class="muted">Cold-start content engine. Idea → SEO/social brief → WP draft → FB page → IG feed → FB groups.</p>
+  <div class="flow">
+    <div class="step">content-ideator</div>
+    <div>Sunday weekly run. Reads content gaps, trends, PAA, seasonal hooks → 8-10 new ideas appended to Google Sheet <code>posts</code> tab.</div>
+    <div class="step">content-enricher</div>
+    <div>For each <code>publish</code>-status idea: SEO research + competitor look-up + Nalla angle → enriched brief → Telegram approval gate.</div>
+    <div class="step">wp-post-creator</div>
+    <div>Generates full 2,500-3,500-word post (Nalla's Dad voice, FAQ, comparison table, FTC disclosure, FIFU featured image) → WP draft via REST API.</div>
+    <div class="step">fb-post-creator</div>
+    <div>After WP published: 150-200w FB page caption, no hashtags, posted via Graph API. Target 8-10am EST.</div>
+    <div class="step">ig-post-creator</div>
+    <div>Same source → IG caption (80-150w, 6-8 hashtags, "link in bio"), Pexels image fetched, Graph API container→publish. Target 6-8pm EST, ≥4h after FB.</div>
+    <div class="step">fb-group-publisher</div>
+    <div>≥3h after page post: shares permalink across eligible groups (rules-checked per group). Link inline in body — never "link in first comment" (Page-algo-only).</div>
+  </div>
+
+  <h3>3.3 Recipe pipeline — seed-driven, two-phase</h3>
+  <p class="muted">Recipe-specific engine. Operator gates on audio + final verify before the daily cron publishes. <a href="social-automation/recipe-publisher/docs/pipeline.html">Detailed flow →</a></p>
+  <div class="flow">
+    <div class="step">ideator</div>
+    <div>Weekly Sun research → 2-gate Telegram approval (idea, then enriched seed) → appended to <code>seeds.json</code> + <code>seeds/carousels/{slug}.json</code>.</div>
+    <div class="step">prepare.py</div>
+    <div>Builds artifacts (recipe body, captions, 4 carousel slides, featured image, WP draft) into <code>campaigns/prepared/&lt;seed&gt;/</code>. Status: <code>awaiting_audio</code>.</div>
+    <div class="step">operator audio</div>
+    <div><span class="pill todo">manual</span> Drop <code>audio.mp3</code> from Suno into the prepared folder. Status → <code>audio_ready</code>.</div>
+    <div class="step">--verify</div>
+    <div><code>publish_prepared.py --seed &lt;id&gt; --verify</code> sends Telegram preview (full body + slides + captions + audio). Approve → status <code>verified</code>.</div>
+    <div class="step">publish (cron)</div>
+    <div>Daily 14:00 Israel — drains queue: WP draft→publish, IG carousel, FB page post, Pinterest pin <span class="pill blocked">Pinterest Trial-tier API</span>. Idempotent on crash.</div>
+  </div>
+
+  <h3>3.4 FB group growth — scout, warmup, distribute</h3>
+  <div class="flow">
+    <div class="step">fb-group-scout</div>
+    <div>Weekly Sun. Searches FB for new dog groups (public + private), scores against criteria → Telegram approve → join requests. Caps: 5/day, 15/week.</div>
+    <div class="step">group warmup</div>
+    <div><span class="pill todo">untracked</span> <code>lib/group_warmup.py</code> enforces 48h-comment / 72h-link-post cooldown on newly joined groups before publisher uses them.</div>
+    <div class="step">fb-group-distribute</div>
+    <div>Daily 17:30 — picks eligible blog post + eligible groups, drafts category-tailored captions, posts. Cap: 10 link-shares/day (under FB's ~25/d ceiling).</div>
+  </div>
+
+  <h3>3.5 Own-content tracking</h3>
+  <div class="flow">
+    <div class="step">fb-notification-scan</div>
+    <div>Weekly Sun 09:00. Pulls page notifications, queues incoming comments on our own posts for reply.</div>
+    <div class="step">ig-own-comments</div>
+    <div>Hourly 09:30→. Watches incoming comments on our own IG posts. "Comment RECIPE" CTAs are fulfilled manually by the operator — never propose a DM bot.</div>
+    <div class="step">wp-comment-handler</div>
+    <div>Daily 21:00. Pulls held comments via REST, auto-trashes spam (3+ URLs, spam keywords, spam TLDs), queues rest for Telegram approval, approve+reply in one shot. <span class="pill todo">stale: last run 2026-04-22</span></div>
+  </div>
+
+  <h3>3.6 IG follow-scout</h3>
+  <p class="muted">
+    <span class="pill todo">untracked</span> New flow: <code>lib/ig_follow/</code> + <code>scripts/ig_follow.py</code>.
+    Reads <code>data/competitors.json</code> (multi-consumer; same file feeds FB group search via <code>fb_query</code>),
+    finds engagers + followers of competitor accounts, geo-filters to NA, follows at the daily cap (22/d, mid-band).
+  </p>
+</section>
+
+<section>
+  <h2>4. Schedule (loaded launchd jobs)</h2>
+  <table>
+    <tr><th>Job</th><th>Cadence</th><th>Time (Israel)</th><th>Runs</th></tr>
+    <tr><td>recipe-ideator</td><td>Weekly Sun</td><td>09:00</td><td><code>python -m ideator</code></td></tr>
+    <tr><td>reply-follower-morning</td><td>Daily</td><td>08:00</td><td><code>reply-follower</code></td></tr>
+    <tr><td>comment-approver</td><td>Hourly</td><td>08:00–?</td><td><code>comment_approver.py</code></td></tr>
+    <tr><td>comment-poster</td><td>Daily</td><td>09:00</td><td><code>comment-poster</code></td></tr>
+    <tr><td>fb-notification-scan</td><td>Weekly Sun</td><td>09:00</td><td>page notifications → reply queue</td></tr>
+    <tr><td>ig-own-comments</td><td>Hourly</td><td>09:30–?</td><td><code>ig_own_comments.py</code></td></tr>
+    <tr><td>content-ideator</td><td>Weekly Sun</td><td>10:00</td><td><code>content_pipeline.py --stage ideate</code></td></tr>
+    <tr><td>recipe-publisher</td><td>Daily</td><td>14:00</td><td><code>publish_prepared.py</code> (drainer)</td></tr>
+    <tr><td>content-publish</td><td>Weekly Mon</td><td>15:00</td><td><code>content_pipeline.py --stage publish</code></td></tr>
+    <tr><td>fb-group-scout</td><td>Weekly Sun</td><td>15:30</td><td>find + join new groups</td></tr>
+    <tr><td>fb-scanner</td><td>Daily</td><td>15:30</td><td>scan groups → comment queue</td></tr>
+    <tr><td>fb-group-distribute</td><td>Daily</td><td>17:30</td><td>blog post → eligible groups</td></tr>
+    <tr><td>ig-scanner</td><td>Daily</td><td>19:30</td><td>scan hashtags → like + comment queue</td></tr>
+    <tr><td>auto-drafter</td><td>Daily</td><td>20:00</td><td>draft queued comments</td></tr>
+    <tr><td>reply-follower-evening</td><td>Daily</td><td>20:30</td><td><code>reply-follower</code></td></tr>
+  </table>
+  <p class="muted">
+    <code>schedule.json</code> in repo has drifted from actual launchd state — launchctl is source of truth.
+  </p>
+</section>
+
+<section>
+  <h2>5. Status</h2>
+  <div class="grid-2">
+    <div>
+      <h3>Working &amp; fresh <span class="pill">ok</span></h3>
+      <ul>
+        <li>fb-scanner — last run today, 6 groups, 4 queued</li>
+        <li>ig-scanner — yesterday, 1 like</li>
+        <li>fb-group-scout — 2026-05-06, 5 joined</li>
+        <li>Recipe pipeline — actively producing prepared/ campaigns</li>
+      </ul>
+      <h3>Stale <span class="pill todo">attention</span></h3>
+      <ul>
+        <li>comment-composer — last post 2026-05-06 (queue not draining)</li>
+        <li>site-analyzer — last run 2026-04-28 (context cache aging)</li>
+        <li>wp-comment-handler — last run 2026-04-22 (held comments piling up)</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Blocked <span class="pill blocked">external</span></h3>
+      <ul>
+        <li>Pinterest auto-pin — API on Trial tier (403 / code 29), needs Standard approval</li>
+        <li>Code Snippets / Astra REST — JWT plugin paywalls 3rd-party namespaces</li>
+        <li>mu-plugin deploys via FTP — <code>claudeuser</code> writes to wrong dir; REST-only</li>
+      </ul>
+      <h3>Refactor (Stages 0–6 shipped)</h3>
+      <ul>
+        <li>S0: production scaffolding (mypy strict, errors, pre-commit)</li>
+        <li>S1: foundation lib (io, scheduling, engagement)</li>
+        <li>S2: session adapters (browser, wp_client, graph_api)</li>
+        <li>S3: single approval policy in <code>lib/policy/</code></li>
+        <li>S4: drift fixes (Graph v23, group cap=10, WP env vars)</li>
+        <li>S5a: IG token + account-id helpers extracted</li>
+        <li>S6: Drafter Protocol (Anthropic + Gemini swappable)</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>In-flight (untracked / uncommitted)</h3>
+  <ul>
+    <li><code>recipe-publisher/ideator/</code> — research → enrich → 2-gate seed approval</li>
+    <li><code>lib/ig_follow/</code> + <code>scripts/ig_follow.py</code> — follow-scout</li>
+    <li><code>lib/group_warmup.py</code> — 48h/72h cooldown gate</li>
+    <li><code>lib/recipe_products/</code> + <code>data/recipe_products.json</code> — affiliate attachments per recipe</li>
+    <li><code>lib/draft_history.py</code> — 60-day hook/headline dedup (not yet wired into drafters)</li>
+    <li>6 new recipe carousel seeds under <code>seeds/carousels/</code></li>
+    <li><code>scripts/publish_prepared.py</code> — recipe cron drainer (replaces direct <code>recipe_publisher.py</code> invocation)</li>
+  </ul>
+</section>
+
+<section>
+  <h2>6. Hard constraints</h2>
+  <table>
+    <tr><th>Surface</th><th>Cap</th><th>Notes</th></tr>
+    <tr><td>FB page posts</td><td>3/day</td><td>—</td></tr>
+    <tr><td>FB group link-shares</td><td>10/day</td><td>Under FB's ~25/d spam ceiling</td></tr>
+    <tr><td>FB comments</td><td>5/day</td><td>30-120s random delay</td></tr>
+    <tr><td>FB group joins</td><td>5/day, 15/week</td><td>Sunday-scheduled scout</td></tr>
+    <tr><td>FB group warmup</td><td>48h comment / 72h link</td><td>After joining a new group</td></tr>
+    <tr><td>IG feed posts</td><td>2/day</td><td>min 4h between</td></tr>
+    <tr><td>IG likes</td><td>8/day</td><td>10-45s random delay</td></tr>
+    <tr><td>IG comments</td><td>2/day</td><td>120-180s random delay</td></tr>
+    <tr><td>IG follows</td><td>22/day</td><td>trailing 24h, not calendar day</td></tr>
+    <tr><td>WP outbound replies</td><td>20/day</td><td>moderation of own site not rate-limited</td></tr>
+  </table>
+  <p class="muted">Approval gates: every IG comment, every URL-bearing comment, every first comment to a new group, all WP drafts, all social posts from fb/ig-post-creator, borderline-relevance (0.75-0.80) posts.</p>
+</section>
+
+<section>
+  <h2>7. Key references</h2>
+  <ul>
+    <li><a href="social-automation/CLAUDE.md">social-automation/CLAUDE.md</a> — brand voice, rate limits, approval gates, blueprint</li>
+    <li><a href="social-automation/recipe-publisher/docs/pipeline.html">recipe-publisher/docs/pipeline.html</a> — recipe pipeline detail</li>
+    <li><a href="BRAND_FIX_PLAN.md">BRAND_FIX_PLAN.md</a> — compliance + voice-fracture remediation plan</li>
+    <li><a href="social-automation/README.md">social-automation/README.md</a> — skill catalog + setup</li>
+    <li>Google Sheet (source of truth for content ideas) — gid <code>799238859</code></li>
+  </ul>
+</section>
+
+</main>
+</body>
+</html>
