@@ -18,7 +18,8 @@ IG truncates at ~125 chars in feed and shows the rest only on tap. A caption tha
    - `Comment BAKE and I'll send you the grams + oven temp.`
    Pick the verb that fits the recipe; always uppercase the keyword.
 4. **Question** — one specific, answerable question. Never "what do you think?" or "thoughts?". Ask about substitutions, a dog's reaction, a memory.
-5. **Blank line, then hashtag block** — 8–12 tags, mixing broad / niche / branded. Must include `#nallasdad` and `#dogfoodandfun`.
+5. **Bio-link fallback** — exactly this line on its own: `🔗 Full guide: link in bio`. This is a *fallback* path for non-commenters; the comment-CTA above remains the primary funnel. Goes *after* the question, *before* the hashtags.
+6. **Blank line, then hashtag block** — 8–12 tags, mixing broad / niche / branded. Must include `#nallasdad` and `#dogfoodandfun`.
 
 ## Hashtag mix (rough ratio)
 
@@ -33,7 +34,7 @@ Never exceed 12. Don't repeat hashtag sets verbatim across consecutive posts —
 - Do not start the caption with a hashtag, an emoji, or "POV:"
 - Do not shill a product; this account links to full recipes, not affiliates
 - Do not claim health outcomes. "Great for joints" → forbidden. "A chewy snack Nalla worked hard for" → fine
-- Do not replace the comment-gated CTA with a bare "link in bio" — the comment keyword is what makes the CTA work
+- Do not *replace* the comment-gated CTA with a bare "link in bio" — the comment keyword is what makes the CTA work. Adding the dedicated `🔗 Full guide: link in bio` line *after* the question (per structure step 5) is required and does not count as replacement.
 
 ## Example (full caption)
 
@@ -47,6 +48,8 @@ Liver treats are the only training currency Nalla takes seriously — and once y
 Comment RECIPE and I'll DM you the link to the printable card.
 
 What's the one treat your dog would sell you out for?
+
+🔗 Full guide: link in bio
 
 #doglife #dogrecipes #trainingtreats #homemadedogtreats #dogsofinstagram #puppylove #dogfood #nallasdad #dogfoodandfun
 ```

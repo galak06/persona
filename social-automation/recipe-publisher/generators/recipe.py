@@ -168,6 +168,11 @@ def _validate(recipe: Recipe) -> None:
             "ig_caption missing comment-gated CTA like 'Comment RECIPE' "
             "(uppercase keyword after 'Comment ')"
         )
+    if "link in bio" not in recipe.ig_caption.lower():
+        raise ValueError(
+            "ig_caption missing bio-link fallback line "
+            "(expected '\U0001f517 Full guide: link in bio' between question and hashtags)"
+        )
     for tag in ("#nallasdad", "#dogfoodandfun"):
         if tag not in recipe.ig_caption:
             raise ValueError(f"ig_caption missing required branded hashtag {tag!r}")
@@ -183,17 +188,32 @@ def _validate(recipe: Recipe) -> None:
         raise ValueError(f"medical-claim language detected in body: {hits}")
 
     # Dog-safety: hard reject any toxic ingredient in the structured list.
-    # Safety qualifiers like "xylitol-free peanut butter" must NOT trip the check —
-    # strip negation phrases before scanning.
+    # Safety qualifiers must NOT trip the check — for each occurrence of a
+    # toxic token, look back within the same clause (delimited by . or |) for
+    # a "no" / "without" / "{toxic}-free" prefix. If one exists, the token is
+    # being EXCLUDED, not used.
+    # Handles:
+    #   "xylitol-free peanut butter"
+    #   "no garlic" / "without garlic"
+    #   "no onion or garlic" / "no garlic, onion, salt"
     ingredients_text = " | ".join(recipe.ingredients).lower()
-    for w in _TOXIC_INGREDIENTS:
-        for pat in (
-            rf"\b{re.escape(w)}[- ]free\b",
-            rf"\bno {re.escape(w)}\b",
-            rf"\bwithout {re.escape(w)}\b",
-        ):
-            ingredients_text = re.sub(pat, " ", ingredients_text)
-    toxic_hits = [t for t in _TOXIC_INGREDIENTS if t in ingredients_text]
+    _toxic_alts = "|".join(re.escape(w) for w in _TOXIC_INGREDIENTS)
+    # First pass: strip "{toxic}-free" forms wholesale ("xylitol-free", "fat-free")
+    ingredients_text = re.sub(
+        rf"\b(?:{_toxic_alts})[- ]free\b", " ", ingredients_text
+    )
+    _toxic_token_re = re.compile(rf"\b({_toxic_alts})\b")
+    _negation_re = re.compile(r"\b(?:no|without)\b")
+    toxic_hits: list[str] = []
+    for m in _toxic_token_re.finditer(ingredients_text):
+        # Find the start of this clause (last . or | before the token)
+        before = ingredients_text[: m.start()]
+        clause_start = max(before.rfind("."), before.rfind("|")) + 1
+        clause_before = ingredients_text[clause_start : m.start()]
+        if _negation_re.search(clause_before):
+            continue  # negated — exclusion, not inclusion
+        toxic_hits.append(m.group(1))
+    toxic_hits = sorted(set(toxic_hits))
     if toxic_hits:
         raise ValueError(
             f"dog-toxic ingredient(s) in recipe: {toxic_hits}. "
