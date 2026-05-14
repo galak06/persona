@@ -292,7 +292,52 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip Pinterest step (default: publish 4 pins per recipe)",
     )
+    parser.add_argument(
+        "--min-gap-hours",
+        type=float,
+        default=0.0,
+        help="skip if last successful run was less than N hours ago (default 0 = no gap check)",
+    )
+    parser.add_argument(
+        "--prepare",
+        action="store_true",
+        help="prepare-only: WP draft + carousel + captions + templates → campaigns/prepared/<seed-id>/, no IG/FB push",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="(prepare mode) regenerate even if seed already prepared",
+    )
     args = parser.parse_args(argv)
+
+    if args.prepare:
+        from prepare import prepare as prepare_fn
+
+        topic = args.topic or pick_topic(None)
+        pr = prepare_fn(topic, force=args.force)
+        if pr.status == "success":
+            print(
+                f"\n✅ Prepared: {pr.seed_id}\n"
+                f"   Folder:    {pr.folder}\n"
+                f"   WP draft:  {pr.wp_admin_url}\n"
+                f"   Next step: drop audio.mp3 into the folder, then run "
+                f"scripts/publish_prepared.py --seed {pr.seed_id} --verify"
+            )
+            return 0
+        if pr.status == "skipped":
+            print(f"⏭ Skipped: {pr.seed_id} — {pr.warnings[0] if pr.warnings else ''}")
+            return 0
+        print(f"❌ Prepare failed: {pr.error}")
+        return 1
+
+    if args.min_gap_hours > 0 and _hours_since_last_success() < args.min_gap_hours:
+        elapsed = _hours_since_last_success()
+        logger.info(
+            "skip: last successful run was %.1fh ago, below min-gap %.1fh",
+            elapsed,
+            args.min_gap_hours,
+        )
+        return 0
 
     result = run(
         topic=args.topic,
@@ -301,6 +346,30 @@ def main(argv: list[str] | None = None) -> int:
         skip_pinterest=args.skip_pinterest,
     )
     return 0 if result.status in {"success", "skipped"} else 1
+
+
+def _hours_since_last_success() -> float:
+    """Return hours since last_run.json's status=success timestamp, or +inf."""
+    last_run_path = STATE_DIR / "last_run.json"
+    if not last_run_path.exists():
+        return float("inf")
+    try:
+        data = json.loads(last_run_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return float("inf")
+    if data.get("status") != "success":
+        return float("inf")
+    finished = data.get("finished_at")
+    if not finished:
+        return float("inf")
+    try:
+        ts = datetime.fromisoformat(finished.replace("Z", "+00:00"))
+    except ValueError:
+        return float("inf")
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - ts
+    return delta.total_seconds() / 3600.0
 
 
 if __name__ == "__main__":
