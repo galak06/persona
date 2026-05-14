@@ -61,3 +61,9 @@ social-automation/scripts/_dedup_*
 # invokes `python -m ideator` from this directory)
 social-automation/recipe-publisher/ideator/
 social-automation/recipe-publisher/seeds/seeds.json
+
+# orchestrator per-turn telemetry (file tracked dir, ignore the churning state files)
+.claude/state/delegation_violations.json
+.claude/state/turn_durations.json
+.claude/state/turn_start_timestamp.txt
+.claude/state/last_turn_duration.txt
