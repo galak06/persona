@@ -45,8 +45,71 @@ class FBReelPublishResult:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class FBPagePostResult:
+    post_id: str
+    permalink: str | None = None
+    warnings: list[str] = field(default_factory=list)
+
+
 class FacebookError(RuntimeError):
     pass
+
+
+def publish_link_post_to_facebook(
+    *,
+    message: str,
+    link: str,
+) -> FBPagePostResult:
+    """Post a link card to the FB Page feed.
+
+    Uses the `/feed` endpoint with `link=` so FB fetches the page's Open Graph
+    metadata and renders a clickable card (featured image + title + meta
+    description). Cleaner than uploading the image manually because:
+
+    - the card matches WP's published OG tags (consistent branding),
+    - clicks go directly to WP (better funnel attribution),
+    - feed cards out-perform raw photo posts on click-through for link-driven
+      content like recipe blogs.
+
+    `message` is the conversational copy above the card. Hashtags are allowed
+    but the card itself dominates engagement, so keep `message` short — 2-4
+    sentences with a question is the sweet spot.
+    """
+    page_id = os.environ.get("FB_PAGE_ID") or ""
+    token = os.environ.get("FB_PAGE_TOKEN") or ""
+    if not page_id:
+        raise FacebookError("FB_PAGE_ID not set")
+    if not token:
+        raise FacebookError("FB_PAGE_TOKEN not set")
+
+    warnings: list[str] = []
+    with httpx.Client(timeout=30.0) as client:
+        resp = client.post(
+            f"{_GRAPH_BASE}/{page_id}/feed",
+            data={"message": message, "link": link, "access_token": token},
+        )
+        if resp.status_code >= 400:
+            raise FacebookError(f"FB feed post failed: {resp.status_code} {resp.text[:300]}")
+        post_id = resp.json().get("id", "")
+        if not post_id:
+            raise FacebookError(f"FB feed post returned no id: {resp.text[:300]}")
+
+        permalink: str | None = None
+        try:
+            perm_resp = client.get(
+                f"{_GRAPH_BASE}/{post_id}",
+                params={"fields": "permalink_url", "access_token": token},
+            )
+            if perm_resp.status_code == 200:
+                permalink = perm_resp.json().get("permalink_url")
+            else:
+                warnings.append(f"permalink fetch {perm_resp.status_code}")
+        except Exception as exc:  # noqa: BLE001 — permalink is cosmetic
+            warnings.append(f"permalink fetch error: {exc}")
+
+    logger.info("FB Page link post published: id=%s permalink=%s", post_id, permalink)
+    return FBPagePostResult(post_id=post_id, permalink=permalink, warnings=warnings)
 
 
 def publish_reel_to_facebook(

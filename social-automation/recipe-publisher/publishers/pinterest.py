@@ -46,6 +46,20 @@ class PinterestError(RuntimeError):
     pass
 
 
+class PinterestSkipped(RuntimeError):
+    """Publishing was skipped on purpose (disabled, or Trial-access blocked).
+
+    Distinct from PinterestError so the orchestrator can log a calm warning
+    instead of a full error traceback.
+    """
+
+
+def _is_enabled() -> bool:
+    """`PINTEREST_ENABLED` defaults to true; set to false/0/no/off to skip."""
+    val = os.environ.get("PINTEREST_ENABLED", "true").strip().lower()
+    return val not in {"false", "0", "no", "off", ""}
+
+
 # ---------- public API ----------
 
 
@@ -62,6 +76,10 @@ def publish_pins_for_recipe(
     each slide to the WP media library), reuse those URLs. Otherwise upload
     each slide to WP first.
     """
+    if not _is_enabled():
+        raise PinterestSkipped(
+            "PINTEREST_ENABLED=false — skipping pin creation (Trial-access mode)"
+        )
     board_id = os.environ.get("PINTEREST_BOARD_ID")
     token = os.environ.get("PINTEREST_ACCESS_TOKEN")
     if not board_id:
@@ -119,6 +137,10 @@ def create_single_pin(
     board_id: str | None = None,
 ) -> PinterestPin:
     """Low-level helper reused by backfill + legacy-fix scripts."""
+    if not _is_enabled():
+        raise PinterestSkipped(
+            "PINTEREST_ENABLED=false — skipping single-pin creation"
+        )
     board = board_id or os.environ["PINTEREST_BOARD_ID"]
     token = os.environ["PINTEREST_ACCESS_TOKEN"]
     body = {
@@ -236,6 +258,18 @@ def _create_pin(client: httpx.Client, body: dict, token: str) -> str:
     )
     if resp.status_code == 401:
         raise _TokenExpired()
+    if resp.status_code == 403:
+        # Trial-access apps return 403 with code 29 on POST /pins. Treat as
+        # an expected skip rather than a hard failure so the orchestrator can
+        # log a calm warning (real 403s on other endpoints still raise below).
+        try:
+            code = resp.json().get("code")
+        except (ValueError, KeyError):
+            code = None
+        if code == 29:
+            raise PinterestSkipped(
+                f"trial-access — POST /pins blocked (code 29): {resp.text[:200]}"
+            )
     if resp.status_code >= 400:
         raise PinterestError(
             f"pin create failed: {resp.status_code} {resp.text[:400]}"
