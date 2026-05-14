@@ -82,6 +82,7 @@ module = [
     "lib.engagement.*",
     "lib.sessions.*",
     "lib.policy.*",
+    "lib.ig_follow.*",
 ]
 strict = true
 disallow_any_explicit = true

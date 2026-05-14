@@ -1,15 +1,23 @@
 {
-  "_note": "Pet content brands / influencer pages in US/Canada. Their names are used as FB group-search queries to find groups where they are active or mentioned. Set active=false to temporarily disable without removing. Edit freely — this is the source of truth for competitor_signals.",
+  "_note": "Pet content brands / influencer pages in US/Canada. Source of truth for competitor_signals. Two consumers: (1) `fb_query` (nullable) feeds FB-group-search to find groups where they are active or mentioned; (2) `ig_handle` (nullable, without leading @) feeds the IG follow-scout (lib/ig_follow/) which scrapes their followers + recent-post engagers. Either field can be null when the row is only relevant to the other consumer. Set active=false to temporarily disable without removing. Edit freely.",
   "competitors": [
-    { "name": "Dog Food Advisor",                 "fb_query": "Dog Food Advisor",                 "niche": "reviews",    "active": true },
-    { "name": "Dogster",                          "fb_query": "Dogster",                          "niche": "content",    "active": true },
-    { "name": "The Dogington Post",               "fb_query": "Dogington Post",                   "niche": "content",    "active": true },
-    { "name": "K9 of Mine",                       "fb_query": "K9 of Mine",                       "niche": "reviews",    "active": true },
-    { "name": "BarkPost",                         "fb_query": "BarkPost",                         "niche": "content",    "active": true },
-    { "name": "Pupford",                          "fb_query": "Pupford",                          "niche": "training",   "active": true },
-    { "name": "Cesar Millan",                     "fb_query": "Cesar Millan",                     "niche": "influencer", "active": true },
-    { "name": "Zak George",                       "fb_query": "Zak George",                       "niche": "influencer", "active": true },
-    { "name": "American Kennel Club",             "fb_query": "American Kennel Club",             "niche": "content",    "active": false },
-    { "name": "The Natural Dog Company",          "fb_query": "Natural Dog Company",              "niche": "content",    "active": true }
+    { "name": "Dog Food Advisor",        "fb_query": "Dog Food Advisor",        "ig_handle": null, "niche": "reviews",    "active": true  },
+    { "name": "Dogster",                 "fb_query": "Dogster",                 "ig_handle": null, "niche": "content",    "active": true  },
+    { "name": "The Dogington Post",      "fb_query": "Dogington Post",          "ig_handle": null, "niche": "content",    "active": true  },
+    { "name": "K9 of Mine",              "fb_query": "K9 of Mine",              "ig_handle": null, "niche": "reviews",    "active": true  },
+    { "name": "BarkPost",                "fb_query": "BarkPost",                "ig_handle": null, "niche": "content",    "active": true  },
+    { "name": "Pupford",                 "fb_query": "Pupford",                 "ig_handle": null, "niche": "training",   "active": true  },
+    { "name": "Cesar Millan",            "fb_query": "Cesar Millan",            "ig_handle": null, "niche": "influencer", "active": true  },
+    { "name": "Zak George",              "fb_query": "Zak George",              "ig_handle": null, "niche": "influencer", "active": true  },
+    { "name": "American Kennel Club",    "fb_query": "American Kennel Club",    "ig_handle": null, "niche": "content",    "active": false },
+    { "name": "The Natural Dog Company", "fb_query": "Natural Dog Company",     "ig_handle": null, "niche": "content",    "active": true  },
+
+    { "name": "Fi",                      "fb_query": null,                      "ig_handle": "tryfi",         "niche": "gps",        "active": true  },
+    { "name": "Tractive",                "fb_query": null,                      "ig_handle": "tractive",      "niche": "gps",        "active": true  },
+    { "name": "Whistle",                 "fb_query": null,                      "ig_handle": null,            "niche": "gps",        "active": true  },
+    { "name": "Ollie",                   "fb_query": null,                      "ig_handle": "myollie",       "niche": "fresh_food", "active": true  },
+    { "name": "Nom Nom",                 "fb_query": null,                      "ig_handle": "nomnom",        "niche": "fresh_food", "active": true  },
+    { "name": "The Farmer's Dog",        "fb_query": null,                      "ig_handle": "thefarmersdog", "niche": "fresh_food", "active": true  },
+    { "name": "Open Farm",               "fb_query": null,                      "ig_handle": "openfarmpet",   "niche": "kibble",     "active": true  }
   ]
 }
