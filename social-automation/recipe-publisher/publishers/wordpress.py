@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,19 @@ import httpx
 import markdown as md
 from generators.image import GeneratedImage
 from generators.recipe import Recipe
+
+# Make the project-level lib/ importable so we can attach the affiliate
+# "Our Pick: Tools Used in This Recipe" block before publishing.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT / "lib") not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT / "lib"))
+
+from recipe_products import (  # noqa: E402  (lib path inserted above)
+    insert_or_replace_block,
+    load_catalog,
+    pick_products,
+    render_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,11 +150,35 @@ def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
         recipe.body_markdown,
         extensions=["extra", "sane_lists", "smarty"],
     )
+    html = _maybe_attach_affiliate_block(html, recipe)
     schema_blocks = [_jsonld_block(_recipe_jsonld(recipe, image_url=image_url))]
     faq_schema = _faq_jsonld(recipe)
     if faq_schema is not None:
         schema_blocks.append(_jsonld_block(faq_schema))
     return f"{hero}\n\n{html}\n\n" + "\n\n".join(schema_blocks) + "\n"
+
+
+def _maybe_attach_affiliate_block(html: str, recipe: Recipe) -> str:
+    """Inject the "Our Pick: Tools Used in This Recipe" block before the FAQ.
+
+    Best-effort: any failure (catalog missing, no associates tag, no products
+    matched) logs a warning and returns html unchanged — never blocks publish.
+    """
+    tag = os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
+    if not tag:
+        logger.info("AMAZON_ASSOCIATES_TAG not set — skipping recipe-tools block")
+        return html
+    try:
+        catalog = load_catalog()
+        products = pick_products(recipe.slug, recipe.title, catalog, limit=3)
+        if not products:
+            logger.info("no recipe-tools products matched for slug=%s", recipe.slug)
+            return html
+        block = render_block(products, recipe.slug, associates_tag=tag)
+        return insert_or_replace_block(html, block)
+    except Exception as exc:
+        logger.warning("recipe-tools block injection skipped: %s", exc)
+        return html
 
 
 def _jsonld_block(schema: dict) -> str:

@@ -229,6 +229,31 @@ Convert the post to WordPress-compatible HTML:
 - Image placeholders: `<!-- [IMAGE] filename.png: descriptive alt text -->`
 - Affiliate link placeholders: `[AFFILIATE:product_name]`
 
+### Step 3.5: Inject "Our Pick: Tools Used in This Recipe" block (recipe posts only)
+
+If this post is a **recipe** (category contains "recipe" / slug ends in `-recipe` / `-biscuits` / `-stew` / `-broth` / `-bites` / etc.), inject an Amazon-affiliate "Our Pick" block before the FAQ section. The block is rendered from `data/recipe_products.json` via `lib/recipe_products`.
+
+```python
+import os, sys
+sys.path.insert(0, "lib")
+from recipe_products import load_catalog, pick_products, render_block, insert_or_replace_block
+
+catalog = load_catalog()
+products = pick_products(post_slug, post_title, catalog, limit=3)
+if products:
+    block = render_block(
+        products,
+        post_slug,
+        associates_tag=os.environ["AMAZON_ASSOCIATES_TAG"],
+    )
+    post_html = insert_or_replace_block(post_html, block)
+```
+
+- Cap = 3 products. The matcher picks slow-cooker for stews/broths, bone mold for biscuits/treats/frozen, etc. Edit `data/recipe_products.json` to expand the catalog or pin specific products via `recipe_overrides`.
+- The block carries the FTC disclosure ("As an Amazon Associate, I earn from qualifying purchases…") — no need to add it elsewhere.
+- Idempotent: the block wraps in `<!-- recipe-tools-block:v1 -->` markers, so re-running this step on a regenerated draft replaces in place.
+- Skip silently for non-recipe posts (gear roundups, training guides, etc.) — those use the existing `[AFFILIATE:key]` placeholder system.
+
 ### Step 4: Create WordPress Draft via API
 
 Use WordPress REST API to create a draft:
