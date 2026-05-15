@@ -23,11 +23,13 @@ from pathlib import Path
 import httpx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_progress, log_step
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
-enable_unbuffered()
+from lib.logger import log_progress, log_step
+
 
 from deduplication import is_duplicate, mark_engaged
 from notifier import (
@@ -38,12 +40,12 @@ from notifier import (
 )
 from rate_limiter import can_act, print_status, record_action
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-IG_SESSION_FILE = PROJECT_ROOT / ".claude/state/instagram_session.json"
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
+SESSION_FILE = settings.paths.facebook_session
+IG_SESSION_FILE = settings.paths.instagram_session
+QUEUE_FILE = settings.paths.comment_queue
+LAST_RUN_FILE = settings.paths.last_run
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
+ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 
 
 def load_json(path: Path, default):

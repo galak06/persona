@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-STATE_DIR = Path(__file__).parent.parent / ".claude" / "state"
+STATE_DIR = settings.paths.state_dir
 STATE_FILE = STATE_DIR / "facebook_session.json"
 
 MAX_WAIT_SEC = 600  # 10 minutes — plenty of time for login + 2FA

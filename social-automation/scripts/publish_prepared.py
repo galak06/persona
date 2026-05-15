@@ -40,7 +40,10 @@ from typing import Any, Final
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
 from lib.local_env import load_local_env  # noqa: E402
@@ -52,7 +55,7 @@ logger = logging.getLogger("publish_prepared")
 
 # Campaigns live one level up — at /Users/gilcohen/Projects/dogfoodandfun/campaigns/,
 # not under social-automation/. Matches what prepare.py writes to.
-CAMPAIGNS_ROOT: Final[Path] = PROJECT_ROOT.parent / "campaigns"
+CAMPAIGNS_ROOT: Final[Path] = settings.paths.campaigns_dir
 PREPARED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "prepared"
 PUBLISHED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "published"
 LAST_RUN_FILE: Final[Path] = PROJECT_ROOT / "recipe-publisher" / "state" / "last_publish_prepared.json"

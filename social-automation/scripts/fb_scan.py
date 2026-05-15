@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import time
 from datetime import UTC, date, datetime
@@ -18,25 +19,29 @@ from pathlib import Path
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 # Force unbuffered output so watchdog/monitors can see progress
-from logger import enable_unbuffered, log_progress, log_step
+from lib.logger import log_progress, log_step
 
-enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate
+from draft_helper import draft_comment_for_post
 from group_warmup import COMMENT_WARMUP_HOURS, hours_until_warm, is_group_warm
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
 
-TRACKER_PATH = PROJECT_ROOT / "../../facebook_groups_tracker.xlsx"
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
-CONFIG_FILE = PROJECT_ROOT / "config.json"
+
+TRACKER_PATH = settings.paths.groups_tracker
+QUEUE_FILE = settings.paths.comment_queue
+LAST_RUN_FILE = settings.paths.last_run
+SESSION_FILE = settings.paths.facebook_session
+ERROR_LOG = (settings.paths.logs_dir / "errors.log")
+CONFIG_FILE = (settings.paths.brand_dir / "config.json")
 
 CATEGORY_MAP = {
     "\U0001f356": "food",  # 🍖
@@ -620,6 +625,20 @@ def run_scan() -> None:
 
                     # Queue it
                     requires_approval = score < approval_threshold
+                    draft_comment = draft_comment_for_post(
+                        platform="facebook",
+                        post_text=post_text,
+                        group_or_hashtag=group["name"],
+                        post_url=post_url,
+                    )
+                    if not draft_comment:
+                        log.info(
+                            {
+                                "event": "draft_inline_empty",
+                                "platform": "facebook",
+                                "post_url": post_url,
+                            }
+                        )
                     queue.append(
                         {
                             "platform": "facebook",
@@ -633,6 +652,7 @@ def run_scan() -> None:
                             "queued_at": datetime.now(UTC).isoformat(),
                             "status": "pending",
                             "requires_approval": requires_approval,
+                            "draft_comment": draft_comment,
                         }
                     )
                     posts_queued += 1

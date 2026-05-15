@@ -14,3 +14,6 @@ langgraph>=1.1.0
 langgraph-checkpoint-sqlite>=2.0.0
 arize-phoenix-otel>=0.16.0
 openinference-instrumentation-langchain>=0.1.60
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.7

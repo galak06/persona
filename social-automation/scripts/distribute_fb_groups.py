@@ -38,7 +38,10 @@ from typing import Any, Final
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 from lib.local_env import load_local_env  # noqa: E402
 
@@ -46,7 +49,7 @@ import notifier  # noqa: E402
 
 logger = logging.getLogger("distribute_fb_groups")
 
-CAMPAIGNS_ROOT: Final[Path] = PROJECT_ROOT.parent / "campaigns"
+CAMPAIGNS_ROOT: Final[Path] = settings.paths.campaigns_dir
 PUBLISHED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "published"
 
 

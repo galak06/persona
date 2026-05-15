@@ -252,3 +252,16 @@ def _strip_meta_chrome(text: str) -> str:
     if len(text) >= 2 and text[0] in '"“”' and text[-1] in '"“”':
         text = text[1:-1].strip()
     return text
+
+
+# Re-export the private helpers so sibling modules (e.g. lib.draft_helper)
+# can compose the same Gemini call + voice-rules prompt without duplicating
+# the HTTP payload shape or the brand-voice text. The leading underscore is
+# preserved to signal "internal — don't import from outside lib/".
+__all__ = [
+    "SitePost",
+    "draft_reply",
+    "draft_comment",
+    "_call_gemini",
+    "_VOICE_RULES",
+]

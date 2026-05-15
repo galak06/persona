@@ -7,6 +7,7 @@ Validates voice before returning.
 from __future__ import annotations
 
 import json
+from lib.config import settings
 import re
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from draft_history import (
     was_text_recently_used,
 )
 
-DATA_DIR = Path(__file__).parent.parent / "data"
+DATA_DIR = settings.paths.data_dir
 TEMPLATES_FILE = DATA_DIR / "post_templates.json"
 BRAND_VOICE_FILE = DATA_DIR / "brand_voice_guide.md"
 
@@ -189,10 +190,21 @@ def score_relevance(
     return round(score, 2)
 
 
-def validate_voice(comment: str) -> tuple[bool, list[str]]:
+def validate_voice(
+    comment: str,
+    *,
+    allow_own_url: bool = False,
+) -> tuple[bool, list[str]]:
     """
     Validates that a comment follows Nalla's Dad voice rules.
     Returns (is_valid, list_of_violations).
+
+    allow_own_url: when True, the "dogfoodandfun.com" phrase is excluded from
+    the SALESY check. Only brand publishers that bake the URL into post
+    bodies (FB group posts, FB page link cards, IG carousel captions) may
+    pass True. Engagement-comment paths (fb_scanner, ig_scanner,
+    wp_comment_handler, comment_composer) MUST use the default (False) so
+    third-party replies never carry our URL.
     """
     violations = []
     comment_lower = comment.lower()
@@ -202,7 +214,10 @@ def validate_voice(comment: str) -> tuple[bool, list[str]]:
         if phrase in comment_lower:
             violations.append(f"Medical jargon detected: '{phrase}'")
 
-    for phrase in SALESY_PHRASES:
+    salesy_phrases = SALESY_PHRASES
+    if allow_own_url:
+        salesy_phrases = [p for p in SALESY_PHRASES if p != "dogfoodandfun.com"]
+    for phrase in salesy_phrases:
         if phrase in comment_lower:
             violations.append(f"Salesy language detected: '{phrase}'")
 

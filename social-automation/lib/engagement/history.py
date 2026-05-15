@@ -21,6 +21,7 @@ conversational comments to publishing-only groups.
 from __future__ import annotations
 
 import json
+from lib.config import settings
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -29,7 +30,7 @@ DEFAULT_ENGAGEMENT_ACTIONS: frozenset[str] = frozenset({"comment", "like"})
 "previously engaged". Excludes group_post (broadcast) and own_reply
 (responding to our own posts)."""
 
-_DEFAULT_LOG_FILE = Path(__file__).resolve().parent.parent.parent / "logs/engagement_log.jsonl"
+_DEFAULT_LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 _TEMPLATE_SNIPPET_CHARS = 40
 
 

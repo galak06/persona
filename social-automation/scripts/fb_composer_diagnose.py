@@ -17,7 +17,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
+SESSION_FILE = settings.paths.facebook_session
 
 
 def main() -> None:

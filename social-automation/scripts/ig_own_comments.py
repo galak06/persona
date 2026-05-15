@@ -25,17 +25,19 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
 from local_env import load_local_env
-from logger import enable_unbuffered, log_progress
+from lib.logger import log_progress
 
 # Bridge .claude/settings.local.json secrets into os.environ. Required for
 # launchd cron — no Claude harness here to inject them. Safe no-op when env
 # vars are already set (manual runs win).
 load_local_env()
-enable_unbuffered()
 
 from publishers.instagram import (
     InstagramError,

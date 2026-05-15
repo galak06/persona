@@ -28,15 +28,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_step
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
+
+from lib.logger import log_step
 from notifier import send, skill_error, skill_finished, skill_started
 
-enable_unbuffered()
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
+SESSION_FILE = settings.paths.facebook_session
+TRACKER_FILE = settings.paths.groups_tracker
 
 _MATCH_PREFIX_LEN = 40
 

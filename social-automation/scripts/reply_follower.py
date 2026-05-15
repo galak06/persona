@@ -30,10 +30,13 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 from comment_generator import validate_voice
-from logger import enable_unbuffered, log_step
+from lib.logger import log_step
 from notifier import request_approval, skill_error, skill_finished, skill_started
 from rate_limiter import can_act, record_action
 from reply_drafter import draft_reply as draft_reply_contextual
@@ -42,10 +45,9 @@ from thread_scraper import (
     post_threaded_reply_fb,
 )
 
-enable_unbuffered()
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
+SESSION_FILE = settings.paths.facebook_session
+QUEUE_FILE = settings.paths.comment_queue
 TRACKER_FILE = PROJECT_ROOT / ".claude/state/thread_tracker.json"
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 

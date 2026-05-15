@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import re
 import sys
 import time
@@ -22,23 +23,27 @@ from pathlib import Path
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 # Force unbuffered output so watchdog/monitors can see progress
-from logger import enable_unbuffered, log_progress, log_step
+from lib.logger import log_progress, log_step
 
-enable_unbuffered()
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
+from draft_helper import draft_comment_for_post
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/instagram_session.json"
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
-CONFIG_FILE = PROJECT_ROOT / "config.json"
+
+SESSION_FILE = settings.paths.instagram_session
+QUEUE_FILE = settings.paths.comment_queue
+LAST_RUN_FILE = settings.paths.last_run
+ERROR_LOG = (settings.paths.logs_dir / "errors.log")
+CONFIG_FILE = (settings.paths.brand_dir / "config.json")
 HASHTAG_FILE = PROJECT_ROOT / "data/instagram_accounts.csv"
 
 
@@ -612,6 +617,20 @@ def run_scan() -> None:
     # Sort by score descending, take top N
     comment_candidates.sort(key=lambda c: c["relevance_score"], reverse=True)
     for candidate in comment_candidates[: max(0, comment_budget)]:
+        candidate["draft_comment"] = draft_comment_for_post(
+            platform="instagram",
+            post_text=candidate.get("post_text", ""),
+            group_or_hashtag=candidate.get("hashtag"),
+            post_url=candidate.get("post_url"),
+        )
+        if not candidate["draft_comment"]:
+            log.info(
+                {
+                    "event": "draft_inline_empty",
+                    "platform": "instagram",
+                    "post_url": candidate.get("post_url"),
+                }
+            )
         queue.append(candidate)
         posts_queued += 1
         print(

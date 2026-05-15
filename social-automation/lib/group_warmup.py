@@ -13,11 +13,12 @@ when a join is detected. This module is read-only.
 from __future__ import annotations
 
 import json
+from lib.config import settings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Final
 
-GROUPS_TRACKER_PATH: Final[Path] = Path(__file__).resolve().parent.parent / "data" / "groups_tracker.json"
+GROUPS_TRACKER_PATH: Final[Path] = settings.paths.groups_tracker
 
 COMMENT_WARMUP_HOURS: Final[int] = 48
 LINK_POST_WARMUP_HOURS: Final[int] = 72

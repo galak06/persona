@@ -24,9 +24,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_step
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
+
+import blog_post_queue
+from lib.logger import log_step
 from notifier import (
     send,
     send_and_wait,
@@ -36,13 +40,12 @@ from notifier import (
     skill_started,
 )
 
-enable_unbuffered()
 
 ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 WP_POSTS_CACHE = PROJECT_ROOT / ".claude/state/wp_posts_cache.json"
 TIMELINE_FILE = PROJECT_ROOT / ".claude/state/publishing_timeline.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-CAMPAIGNS_ROOT = PROJECT_ROOT.parent / "campaigns"
+LAST_RUN_FILE = settings.paths.last_run
+CAMPAIGNS_ROOT = settings.paths.campaigns_dir
 
 
 def load_json(path: Path, default=None):
@@ -207,6 +210,19 @@ def stage_publish() -> bool:
         f"#doggear #engineerdogdad #doglife #doghealth"
     )
 
+    # Persist the FB+IG pair to the blog-post queue BEFORE asking Telegram.
+    # The web UI polls this file, so the item must be visible the moment the
+    # approval gate opens. Idempotent — re-runs with identical captions reuse
+    # the same item_id.
+    item_id = blog_post_queue.enqueue_blog_post_pair(
+        post_id=post_id,
+        post_title=post_title,
+        post_url=post_url,
+        fb_caption=fb_caption,
+        ig_caption=ig_caption,
+        image_url=img_url or None,
+    )
+
     # Send for approval — FB and IG together
     preview = (
         f"📢 <b>Ready to publish to social</b>\n\n"
@@ -217,15 +233,45 @@ def stage_publish() -> bool:
         f"Reply: <b>approve</b> (both) · <b>fb</b> (FB only) · <b>ig</b> (IG only) · <b>skip</b>"
     )
 
-    result = send_and_wait(preview, timeout_hours=12)
+    # Phase 3's notifier poll loop accepts ``item_id`` + ``queue_path`` to also
+    # watch for a web-UI decision; without them only Telegram replies count.
+    # If Phase 3 hasn't landed (older signature), drop back to the bare call.
+    try:
+        result = send_and_wait(
+            preview,
+            timeout_hours=12,
+            item_id=item_id,
+            queue_path=blog_post_queue.QUEUE_PATH,
+        )
+    except TypeError:
+        result = send_and_wait(preview, timeout_hours=12)
 
     if result["action"] in ("skipped", "timeout"):
+        # Skip is a terminal state — drop from queue so the web UI stops
+        # showing it.
+        blog_post_queue.mark_published(item_id)
         skill_finished("content-publisher", "Skipped", success=False)
         return False
 
-    reply = result["reply_text"].lower().strip()
-    do_fb = reply in ("approve", "all", "yes", "y", "ok", "fb", "both")
-    do_ig = reply in ("approve", "all", "yes", "y", "ok", "ig", "both")
+    # Determine fan-out: Telegram replies use ``reply_text`` semantics; web UI
+    # writes the channel directly onto the queue item. Read both and prefer
+    # web UI when present (the notifier sets ``decided_by="web_ui"`` on win).
+    decision = blog_post_queue.get_decision(item_id) or {}
+    decided_by = decision.get("decided_by")
+    channel = decision.get("channel")
+
+    if decided_by == "web_ui":
+        # Web UI may have edited captions; prefer the persisted version.
+        if isinstance(decision.get("fb_caption"), str) and decision["fb_caption"]:
+            fb_caption = decision["fb_caption"]
+        if isinstance(decision.get("ig_caption"), str) and decision["ig_caption"]:
+            ig_caption = decision["ig_caption"]
+        do_fb = channel in ("both", "fb_only")
+        do_ig = channel in ("both", "ig_only")
+    else:
+        reply = result["reply_text"].lower().strip()
+        do_fb = reply in ("approve", "all", "yes", "y", "ok", "fb", "both")
+        do_ig = reply in ("approve", "all", "yes", "y", "ok", "ig", "both")
 
     published = []
 

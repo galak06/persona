@@ -70,7 +70,7 @@ def keyword_to_topic_words(keyword: str) -> list[str]:
 
 
 def main() -> int:
-    ideas_path = ROOT / "backups" / "ideas_2026-04-28.json"
+    ideas_path = settings.paths.backups_dir / "ideas_2026-04-28.json"
     if not ideas_path.exists():
         print(f"ERROR: {ideas_path} not found")
         return 1

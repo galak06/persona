@@ -27,16 +27,18 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 from comment_generator import generate_comment, validate_voice
-from logger import enable_unbuffered, log_step
+from lib.logger import log_step
 from notifier import skill_error, skill_finished, skill_started
 from reply_drafter import draft_comment as draft_comment_contextual
 
-enable_unbuffered()
 
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
+QUEUE_FILE = settings.paths.comment_queue
 
 
 def main() -> None:

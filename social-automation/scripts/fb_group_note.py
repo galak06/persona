@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
+TRACKER_FILE = settings.paths.groups_tracker
 
 _VALID_MODES = {
     "direct",

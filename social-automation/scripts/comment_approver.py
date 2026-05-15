@@ -1,15 +1,20 @@
 """
-Comment Approver — sends pending queue items to Telegram for approval and
-updates their status based on the user's reply.
+Comment Approver — auto-approves engagement-comment queue items (Phase 3).
 
-Runs independently from comment_poster.py so the long Telegram wait (up to 12h
-per item) doesn't trip the watchdog's stuck-process detector. This script
-should NOT be wrapped in run_with_watchdog.py.
+The engagement-comment flow is now autonomous: scanners draft the comment
+inline (via ``lib/draft_helper.py``) and append items to ``comment_queue.json``.
+This script drains the queue's ``pending`` items and stamps each one with
+``status=approved, decided_by=auto`` (or ``USER_SKIPPED`` if the draft is empty
+because the inline LLM call failed) so ``comment_poster.py`` can pick them up.
 
-Queue state transitions:
-    pending → approved       (user replied yes / edit:)
-    pending → USER_SKIPPED   (user replied skip / timeout / unknown)
-    pending → pending        (Telegram unreachable — retry next run)
+No Telegram round-trip happens here anymore for engagement comments — that
+gate has been retired. Blog-post pairs (``scripts/content_pipeline.py``) and
+group-join requests (``lib/group_discovery/approval.py``) still use Telegram
+through their own code paths; this script does NOT touch those flows.
+
+Queue state transitions (this script):
+    pending (draft non-empty) → approved        decided_by=auto
+    pending (draft empty)     → USER_SKIPPED    decided_by=auto
 
 Usage:
     python scripts/comment_approver.py
@@ -19,116 +24,146 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import UTC
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_step
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
-enable_unbuffered()
+from lib.logger import enable_unbuffered, log  # type: ignore[unused-ignore,import-not-found]
 
-from notifier import request_approval, skill_finished, skill_started
 
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
+from lib.notifier import skill_finished, skill_started  # type: ignore[unused-ignore,import-not-found]
+from lib.queue_state import (  # type: ignore[unused-ignore,import-not-found]
+    commit_telegram_decision,
+    write_pending,
+)
+
+QUEUE_FILE = settings.paths.comment_queue
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
 
-def load_json(path: Path, default):
+def load_json(path: Path, default: Any) -> Any:
+    """Read JSON from ``path`` or return ``default`` if the file is missing."""
     if path.exists():
         return json.loads(path.read_text())
     return default
 
 
-def save_json(path: Path, data) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
-
-
-def build_engagement_history() -> set[str]:
-    """Load set of groups/hashtags we've previously posted to."""
-    groups: set[str] = set()
-    if LOG_FILE.exists():
-        for line in LOG_FILE.open():
-            try:
-                entry = json.loads(line)
-                if entry.get("action") in ("comment", "like"):
-                    groups.add(entry["target_name"])
-            except Exception:
-                continue
-    return groups
+def _log_event(event: dict[str, Any]) -> None:
+    """Emit a single-line structured JSON event."""
+    log(json.dumps(event, ensure_ascii=False, sort_keys=True))
 
 
 def run() -> None:
-    print("=== Comment Approver ===\n", flush=True)
+    log("=== Comment Approver ===")
 
-    queue = load_json(QUEUE_FILE, [])
-    pending = [q for q in queue if q.get("status") == "pending" and q.get("draft_comment")]
+    queue: list[dict[str, Any]] = load_json(QUEUE_FILE, [])
+    pending: list[dict[str, Any]] = [q for q in queue if q.get("status") == "pending"]
 
-    print(f"Pending (need approval): {len(pending)}", flush=True)
+    log(f"Pending (auto-approve): {len(pending)}")
 
     if not pending:
-        print("Nothing to do — no pending items.", flush=True)
+        log("Nothing to do — no pending items.")
         return
 
-    skill_started("comment-approver", f"Requesting approval for {len(pending)} items")
-
-    previously_posted = build_engagement_history()
+    skill_started("comment-approver", f"Auto-approving {len(pending)} items")
 
     approved = 0
     skipped = 0
-    still_pending = 0
+    failed = 0
 
     for item in pending:
-        group = item.get("group_name") or item.get("hashtag") or item.get("parent_post_title", "")
-        is_new = group not in previously_posted
-        needs_approval = (
-            item.get("requires_approval", False)
-            or item["platform"] == "instagram"
-            # WP replies land on our own site under the Nalla's Dad byline —
-            # every one is a public-facing post from the brand, so route
-            # through Telegram until we have a track record of auto-approval
-            # not producing cringey replies.
-            or item["platform"] == "wordpress"
-            or "dogfoodandfun.com" in item.get("draft_comment", "").lower()
-            or is_new
+        group = (
+            item.get("group_name")
+            or item.get("hashtag")
+            or item.get("parent_post_title", "")
         )
 
-        if not needs_approval:
-            item["status"] = "approved"
-            approved += 1
-            save_json(QUEUE_FILE, queue)
-            continue
+        # Phase 3: every engagement comment is stamped on disk via write_pending
+        # so it picks up a canonical id, then auto-decided in one shot — no
+        # Telegram round-trip, no human gate. Empty drafts (inline Gemini call
+        # failed in the scanner) are skipped so the poster never tries to send
+        # an empty comment.
+        item_id = write_pending(QUEUE_FILE, item)
+        item["id"] = item_id
 
-        log_step(f"Requesting approval: {group}")
-        result = request_approval(
-            platform=item["platform"],
-            group_or_hashtag=group,
-            post_preview=item["post_text"][:200],
-            draft_comment=item["draft_comment"],
-            relevance_score=item["relevance_score"],
-            timeout_hours=12,
-        )
+        draft = item.get("draft_comment", "") or ""
+        platform = item.get("platform", "unknown")
 
-        action = result["action"]
-        if action in ("approved", "edited"):
-            item["status"] = "approved"
-            item["draft_comment"] = result["comment"]
-            approved += 1
-        elif action == "pending":
-            print("  Telegram unreachable — leaving pending for next run", flush=True)
-            still_pending += 1
+        if not draft.strip():
+            status = "USER_SKIPPED"
+            text: str | None = None
+            _log_event(
+                {
+                    "event": "auto_skip_empty_draft",
+                    "item_id": item_id,
+                    "platform": platform,
+                    "group_or_hashtag": group,
+                }
+            )
         else:
-            item["status"] = "USER_SKIPPED"
-            skipped += 1
+            status = "approved"
+            text = draft
+            _log_event(
+                {
+                    "event": "auto_approved",
+                    "item_id": item_id,
+                    "platform": platform,
+                    "group_or_hashtag": group,
+                    "draft_len": len(draft),
+                }
+            )
 
-        save_json(QUEUE_FILE, queue)
+        result = commit_telegram_decision(
+            QUEUE_FILE,
+            item_id,
+            status=status,
+            decided_by="auto",
+            text=text,
+        )
 
-    summary = f"Approved: {approved} | Skipped: {skipped} | Still pending: {still_pending}"
-    print(f"\n=== Done === {summary}", flush=True)
+        if result == "committed":
+            if status == "approved":
+                approved += 1
+            else:
+                skipped += 1
+        elif result == "already_decided":
+            # Another channel (web UI) beat us to it — don't double-count.
+            _log_event(
+                {
+                    "event": "auto_skip_already_decided",
+                    "item_id": item_id,
+                    "platform": platform,
+                }
+            )
+        else:  # "not_found"
+            failed += 1
+            _log_event(
+                {
+                    "event": "auto_commit_not_found",
+                    "item_id": item_id,
+                    "platform": platform,
+                }
+            )
+
+        # Mirror in-memory so any downstream consumer reading the same list sees
+        # the new status. The on-disk truth was already written above.
+        item["status"] = status
+        item["decided_by"] = "auto"
+        item["decided_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+        if text is not None:
+            item["draft_comment"] = text
+
+    summary = f"Approved: {approved} | Skipped: {skipped} | Failed: {failed}"
+    log(f"=== Done === {summary}")
     skill_finished("comment-approver", summary)
 
 

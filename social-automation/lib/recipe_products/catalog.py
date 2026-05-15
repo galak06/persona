@@ -7,12 +7,13 @@ clear errors when the catalog is malformed. No matching logic, no rendering.
 from __future__ import annotations
 
 import json
+from lib.config import settings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
 DEFAULT_CATALOG_PATH: Final[Path] = (
-    Path(__file__).resolve().parent.parent.parent / "data" / "recipe_products.json"
+    settings.paths.data_dir / "recipe_products.json"
 )
 
 

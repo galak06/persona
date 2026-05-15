@@ -130,6 +130,28 @@ class TestValidateVoice:
         assert not valid
         assert any("dogfoodandfun.com" in v for v in violations)
 
+    def test_dogfoodandfun_url_allowed_when_flag_set(self):
+        """Brand publishers (FB group posts, FB page link cards, IG carousel
+        captions) bake the URL into the body — allow_own_url=True must let
+        it through with no violations."""
+        caption = (
+            "Try this homemade kibble recipe — Nalla loved it. "
+            "Full guide at dogfoodandfun.com/recipes/x. What protein do you use?"
+        )
+        valid, violations = validate_voice(caption, allow_own_url=True)
+        assert valid, f"Brand caption with own URL was rejected: {violations}"
+
+    def test_other_salesy_phrases_still_blocked_when_flag_set(self):
+        """allow_own_url=True must ONLY whitelist the brand URL — every
+        other salesy phrase ("buy now", "shop now", etc.) must still fail."""
+        comment = (
+            "We tried this with Nalla last year and it worked great. "
+            "Buy now at dogfoodandfun.com/shop. What protein do you use?"
+        )
+        valid, violations = validate_voice(comment, allow_own_url=True)
+        assert not valid
+        assert any("buy now" in v.lower() for v in violations)
+
     def test_no_question_rejected(self):
         comment = (
             "We dealt with this with Nalla last year. Switching to "

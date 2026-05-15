@@ -14,14 +14,14 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-SCHEDULE_FILE = PROJECT_ROOT / "schedule.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-RATE_FILE = PROJECT_ROOT / ".claude/state/rate_limit_tracker.json"
-DEDUP_FILE = PROJECT_ROOT / ".claude/state/dedup_cache.json"
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
-PENDING_FILE = PROJECT_ROOT / ".claude/state/pending_groups.json"
+SCHEDULE_FILE = settings.paths.schedule_file
+LAST_RUN_FILE = settings.paths.last_run
+RATE_FILE = settings.paths.rate_limit_tracker
+DEDUP_FILE = settings.paths.dedup_cache
+QUEUE_FILE = settings.paths.comment_queue
+PENDING_FILE = settings.paths.pending_groups
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
+ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 
 
 def load_json(path: Path, default):

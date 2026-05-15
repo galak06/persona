@@ -13,9 +13,55 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import fcntl
+import contextlib
 from pathlib import Path
+from typing import Generator, TypeVar
 
 JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
+
+T = TypeVar("T")
+
+@contextlib.contextmanager
+def locked_json(path: Path, default: T, indent: int = 2) -> Generator[T, None, None]:
+    """Context manager for atomic read-modify-write loops under an OS lock.
+
+    Locks the target file, reads and yields the JSON content. When the block
+    exits, writes the modified object back to disk atomically (temp + replace).
+    This serializes concurrent modifications from multiple processes.
+    
+    Args:
+        path: The JSON file to lock and modify.
+        default: The default value to yield if the file is missing or empty.
+        indent: JSON pretty-print indent. Default 2.
+    """
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(default), encoding="utf-8")
+
+    with path.open("r+", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            try:
+                raw = path.read_text(encoding="utf-8")
+            except OSError:
+                raw = ""
+            
+            try:
+                data = json.loads(raw) if raw.strip() else default
+            except json.JSONDecodeError:
+                data = default
+                
+            yield data
+            
+            tmp_path = path.with_suffix(path.suffix + ".tmp")
+            tmp_path.write_text(
+                json.dumps(data, indent=indent, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            os.replace(tmp_path, path)
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 """Recursive type for any JSON-parseable value. Use as the return type
 of `read_json` when the caller is happy to refine via `cast` or
 `isinstance` at the use site."""

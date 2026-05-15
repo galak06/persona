@@ -25,11 +25,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PRIOR_IDEAS = ROOT / "backups" / "ideas_2026-04-28.json"
+PRIOR_IDEAS = settings.paths.backups_dir / "ideas_2026-04-28.json"
 TIER1_DELTAS = ROOT / ".claude" / "state" / "tier1_research_2026-04-28.json"
 IG_SIGNALS = ROOT / ".claude" / "state" / "tier1_real_data_2026-04-28.json"
 TRENDS_CACHE = ROOT / ".claude" / "state" / "keyword_research_cache.json"
-OUT_PATH = ROOT / "backups" / "ideas_2026-04-28-v3.json"
+OUT_PATH = settings.paths.backups_dir / "ideas_2026-04-28-v3.json"
 HISTORY = ROOT / ".claude" / "state" / "ideation_history.json"
 
 

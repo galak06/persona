@@ -31,7 +31,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 from local_env import load_local_env
 
@@ -49,10 +52,10 @@ from notifier import (
     skill_started,
 )
 
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
+QUEUE_FILE = settings.paths.comment_queue
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
-SESSION_FB = PROJECT_ROOT / ".claude/state/facebook_session.json"
-SESSION_IG = PROJECT_ROOT / ".claude/state/instagram_session.json"
+SESSION_FB = settings.paths.facebook_session
+SESSION_IG = settings.paths.instagram_session
 CHECKPOINT_DB = PROJECT_ROOT / ".claude/state/comment_graph_checkpoints.db"
 PENDING_APPROVALS_FILE = PROJECT_ROOT / ".claude/state/comment_graph_pending_approvals.json"
 

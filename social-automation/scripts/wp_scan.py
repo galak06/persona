@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -33,20 +34,24 @@ from pathlib import Path
 import httpx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_progress
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
-enable_unbuffered()
+from lib.logger import log_progress
+
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
+from draft_helper import draft_comment_for_post
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import print_status
 
-QUEUE_FILE = PROJECT_ROOT / ".claude/state/comment_queue.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
+
+QUEUE_FILE = settings.paths.comment_queue
+LAST_RUN_FILE = settings.paths.last_run
+ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 
 # Comments beyond this age are stale — the visitor has moved on, a reply is
 # awkward. Moderation still needs to happen, but we won't auto-draft a reply.
@@ -366,6 +371,20 @@ def run(dry_run: bool = False) -> None:
                     print(f"    DRY: would queue (score={score}, post={post_title!r})", flush=True)
                     continue
 
+                candidate["draft_comment"] = draft_comment_for_post(
+                    platform="wordpress",
+                    post_text=body,
+                    group_or_hashtag=None,
+                    post_url=post_url,
+                )
+                if not candidate["draft_comment"]:
+                    log.info(
+                        {
+                            "event": "draft_inline_empty",
+                            "platform": "wordpress",
+                            "post_url": post_url,
+                        }
+                    )
                 queue.append(candidate)
                 queued += 1
                 print(f"    QUEUED (score={score}, post={post_title[:50]!r})", flush=True)

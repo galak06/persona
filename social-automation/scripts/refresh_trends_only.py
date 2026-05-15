@@ -31,7 +31,7 @@ from keyword_research import get_google_trends
 
 def find_latest_ideas_file() -> Path | None:
     """Pick the freshest ideas_YYYY-MM-DD.json from backups/."""
-    files = sorted((ROOT / "backups").glob("ideas_*.json"))
+    files = sorted((settings.paths.backups_dir).glob("ideas_*.json"))
     return files[-1] if files else None
 
 

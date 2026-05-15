@@ -1,23 +1,40 @@
+# pyright: reportMissingImports=false
+# TODO(file-size): 652 lines, exceeds the project's 300-line cap. Pre-existing
+# size violation extended by Phase 3 web-UI wiring. Splitting deferred to a
+# dedicated refactor (separate the Telegram transport, the approval state
+# machine, and the structured logging helpers into sibling modules).
 """
 Telegram notification helper for DogFoodAndFun social automation.
 Sends push messages to Gil when skills start, finish, or hit errors.
 Also handles interactive comment approvals via Telegram reply.
+
+Phase 3 (web-UI approval channel):
+    ``request_approval`` and ``send_and_wait`` accept optional ``item_id`` +
+    ``queue_path`` kwargs. When supplied, each poll iteration first checks the
+    queue file; if the item has been resolved via ``decided_by="web_ui"`` the
+    function returns immediately. Telegram-side decisions are mirrored back
+    into the queue via ``commit_telegram_decision`` so the web UI sees them.
 """
 
 from __future__ import annotations
 
+import json
+from lib.config import settings as _json
 import os
 import time
 from datetime import UTC, datetime
 
 UTC = UTC
 from pathlib import Path
+from typing import Any
 
 import requests
 
+from queue_state import commit_telegram_decision, read_decision
+
 # ── Credentials ────────────────────────────────────────────────────────────────
 # Store in .claude/state/telegram_config.json to keep out of source code
-_CONFIG_FILE = Path(__file__).resolve().parent.parent / ".claude" / "state" / "telegram_config.json"
+_CONFIG_FILE = settings.paths.state_dir / "telegram_config.json"
 
 
 def _load_config() -> dict:
@@ -160,6 +177,85 @@ def _get_latest_offset(token: str) -> int:
     return 0
 
 
+
+
+def _log_web_ui_win(item_id: str, status: str) -> None:
+    """Structured single-line log when the web UI resolves an item first."""
+    payload = {"event": "approval_web_ui_win", "item_id": item_id, "status": status}
+    # stderr-free structured log so it interleaves with notifier prints.
+    _emit_json_log(payload)
+
+
+def _emit_json_log(payload: dict[str, Any]) -> None:
+    """Single sink for structured logs; isolated so callers stay readable."""
+    print(_json.dumps(payload, sort_keys=True))  # noqa: T201
+
+
+def _build_web_ui_result(
+    decision: dict[str, Any],
+    *,
+    draft_comment: str,
+    mode: str,
+) -> dict[str, Any]:
+    """Translate a web-UI-stamped queue item into the dict shape that
+    ``request_approval`` / ``send_and_wait`` already return to their callers.
+
+    ``mode`` is ``"approval"`` (comment items, returns ``comment``) or
+    ``"send_and_wait"`` (returns ``reply_text`` / ``edit_text``).
+    """
+    status = str(decision.get("status", ""))
+    # Map queue status -> action label.
+    if status == "approved":
+        action = "approved"
+    elif status == "edited":
+        action = "edited"
+    elif status == "USER_SKIPPED":
+        action = "skipped"
+    else:
+        # Unknown status — be conservative and treat as a skip so we don't post.
+        action = "skipped"
+
+    text_value = (
+        decision.get("comment_text")
+        or decision.get("draft_comment")
+        or decision.get("fb_caption")
+        or decision.get("ig_caption")
+        or draft_comment
+    )
+
+    if mode == "approval":
+        return {"action": action, "comment": text_value or draft_comment}
+    # send_and_wait shape
+    edit_text = text_value if action == "edited" else ""
+    return {
+        "action": action,
+        "reply_text": text_value or "",
+        "edit_text": edit_text or "",
+    }
+
+
+def _check_web_ui_decision(
+    item_id: str | None,
+    queue_path: Path | None,
+    draft_comment: str,
+    *,
+    mode: str,
+) -> dict[str, Any] | None:
+    """Return the short-circuit result dict if the web UI already decided,
+    else ``None``. Safe to call when ``item_id`` / ``queue_path`` are missing
+    — returns ``None`` so the caller's existing Telegram path runs unchanged.
+    """
+    if not item_id or queue_path is None:
+        return None
+    decision = read_decision(queue_path, item_id)
+    if decision is None:
+        return None
+    if decision.get("decided_by") != "web_ui":
+        return None
+    _log_web_ui_win(item_id, str(decision.get("status", "")))
+    return _build_web_ui_result(decision, draft_comment=draft_comment, mode=mode)
+
+
 def request_approval(
     platform: str,
     group_or_hashtag: str,
@@ -167,6 +263,9 @@ def request_approval(
     draft_comment: str,
     relevance_score: float,
     timeout_hours: int = 12,
+    *,
+    item_id: str | None = None,
+    queue_path: Path | None = None,
 ) -> dict:
     """
     Send a comment draft to Telegram for approval and wait for a reply.
@@ -186,7 +285,21 @@ def request_approval(
         edit: <new text>   → approved with new text
 
     Times out after timeout_hours and returns action="timeout" (treated as skip).
+
+    Phase 3 web-UI channel:
+        Pass ``item_id`` and ``queue_path`` to enable the parallel web-UI
+        approval path. When set, each poll iteration first checks the queue
+        file; a ``decided_by="web_ui"`` row makes the function return
+        immediately with the equivalent ``action`` / ``comment`` dict. The
+        Telegram path is otherwise unchanged, and a Telegram-side approval
+        is mirrored back to the queue file via ``commit_telegram_decision``.
+        Legacy callers that omit both kwargs see the original behaviour.
     """
+    # Web-UI may already have decided before we even send the Telegram message.
+    early = _check_web_ui_decision(item_id, queue_path, draft_comment, mode="approval")
+    if early is not None:
+        return early
+
     cfg = _load_config()
     token = cfg.get("bot_token", "")
     chat_id = cfg.get("chat_id", "")
@@ -232,6 +345,12 @@ def request_approval(
     poll_interval = 5  # seconds between polls
 
     while time.time() < deadline:
+        # Web-UI short-circuit: if the user clicked Approve/Skip in the web UI
+        # in the last few seconds, exit before round-tripping to Telegram.
+        early = _check_web_ui_decision(item_id, queue_path, draft_comment, mode="approval")
+        if early is not None:
+            return early
+
         updates = _get_updates(token, offset=offset, timeout=poll_interval)
         for update in updates:
             offset = update["update_id"] + 1
@@ -252,10 +371,35 @@ def request_approval(
                 "timeout": "⏰ Timed out.",
             }.get(result["action"], "Got it.")
             send(ack, silent=True)
+
+            # Mirror the Telegram decision to the queue so the web UI sees it
+            # and a later web-UI click 409s rather than double-posting.
+            if item_id and queue_path is not None:
+                status_map = {
+                    "approved": "approved",
+                    "edited": "edited",
+                    "skipped": "USER_SKIPPED",
+                    "timeout": "USER_SKIPPED",
+                }
+                queue_status = status_map.get(result["action"])
+                if queue_status is not None:
+                    commit_telegram_decision(
+                        queue_path,
+                        item_id,
+                        status=queue_status,
+                        text=result.get("comment"),
+                    )
             return result
 
     # Timeout
     send(f"⏰ No reply after {timeout_hours}h — comment skipped.", silent=True)
+    if item_id and queue_path is not None:
+        commit_telegram_decision(
+            queue_path,
+            item_id,
+            status="USER_SKIPPED",
+            text=draft_comment,
+        )
     return {"action": "timeout", "comment": draft_comment}
 
 
@@ -373,6 +517,10 @@ def send_and_wait(
     message: str,
     timeout_hours: int = 24,
     valid_responses: list[str] | None = None,
+    *,
+    item_id: str | None = None,
+    queue_path: Path | None = None,
+    draft_text: str = "",
 ) -> dict:
     """
     Generic send-and-wait: send a Telegram message and poll for a reply.
@@ -390,7 +538,20 @@ def send_and_wait(
         skip / s / no / n             → skipped
         edit: <text>                  → edited with new text
         1,2,3 / specific numbers     → approved (reply_text has the numbers)
+
+    Phase 3 web-UI channel:
+        Pass ``item_id`` and ``queue_path`` to enable the parallel web-UI
+        approval path. Each poll iteration checks the queue file; a
+        ``decided_by="web_ui"`` row returns immediately. Telegram-side
+        decisions are mirrored back via ``commit_telegram_decision``.
+        ``draft_text`` is the text we'd post if the user just replies "yes"
+        — used as the fallback for the web-UI result's ``reply_text``.
     """
+    # Web-UI may have decided before we send the Telegram message.
+    early = _check_web_ui_decision(item_id, queue_path, draft_text, mode="send_and_wait")
+    if early is not None:
+        return early
+
     cfg = _load_config()
     token = cfg.get("bot_token", "")
     chat_id = cfg.get("chat_id", "")
@@ -416,6 +577,11 @@ def send_and_wait(
     poll_interval = 5
 
     while time.time() < deadline:
+        # Web-UI short-circuit
+        early = _check_web_ui_decision(item_id, queue_path, draft_text, mode="send_and_wait")
+        if early is not None:
+            return early
+
         updates = _get_updates(token, offset=offset, timeout=poll_interval)
         for update in updates:
             offset = update["update_id"] + 1
@@ -427,35 +593,60 @@ def send_and_wait(
                 continue
 
             lower = text.lower().strip()
+            result: dict[str, Any] | None = None
 
             # Parse reply
             if lower in ("yes", "y", "approve", "ok", "post", "post it", "all"):
                 send("✅ Approved — proceeding.", silent=True)
-                return {"action": "approved", "reply_text": text, "edit_text": ""}
+                result = {"action": "approved", "reply_text": text, "edit_text": ""}
 
-            if lower in ("skip", "s", "no", "n", "nope"):
+            elif lower in ("skip", "s", "no", "n", "nope"):
                 send("⏭️ Skipped.", silent=True)
-                return {"action": "skipped", "reply_text": text, "edit_text": ""}
+                result = {"action": "skipped", "reply_text": text, "edit_text": ""}
 
-            if lower.startswith("edit:") or lower.startswith("edit "):
+            elif lower.startswith("edit:") or lower.startswith("edit "):
                 edit_text = text[5:].strip()
                 send("✏️ Got your edit — adjusting.", silent=True)
-                return {"action": "edited", "reply_text": text, "edit_text": edit_text}
+                result = {"action": "edited", "reply_text": text, "edit_text": edit_text}
 
-            # Number selections like "1,2,4"
-            if all(c in "0123456789, " for c in lower) and any(c.isdigit() for c in lower):
+            elif all(c in "0123456789, " for c in lower) and any(c.isdigit() for c in lower):
+                # Number selections like "1,2,4"
                 send(f"✅ Selections received: {text}", silent=True)
-                return {"action": "approved", "reply_text": text, "edit_text": ""}
+                result = {"action": "approved", "reply_text": text, "edit_text": ""}
 
-            # Unknown — assume approve if short, skip if ambiguous
-            if len(text) < 10:
+            elif len(text) < 10:
+                # Unknown — assume approve if short, skip if ambiguous
                 send(f"Treating '{text}' as approval.", silent=True)
-                return {"action": "approved", "reply_text": text, "edit_text": ""}
+                result = {"action": "approved", "reply_text": text, "edit_text": ""}
+
             else:
                 send("Treating as edit note.", silent=True)
-                return {"action": "edited", "reply_text": text, "edit_text": text}
+                result = {"action": "edited", "reply_text": text, "edit_text": text}
+
+            # Mirror Telegram decision to the queue when queue semantics in play.
+            if item_id and queue_path is not None and result is not None:
+                status_map = {
+                    "approved": "approved",
+                    "edited": "edited",
+                    "skipped": "USER_SKIPPED",
+                }
+                queue_status = status_map.get(result["action"])
+                if queue_status is not None:
+                    commit_telegram_decision(
+                        queue_path,
+                        item_id,
+                        status=queue_status,
+                        text=result.get("edit_text") or result.get("reply_text"),
+                    )
+            return result
 
     send(f"⏰ No reply after {timeout_hours}h — skipped.", silent=True)
+    if item_id and queue_path is not None:
+        commit_telegram_decision(
+            queue_path,
+            item_id,
+            status="USER_SKIPPED",
+        )
     return {"action": "timeout", "reply_text": "", "edit_text": ""}
 
 

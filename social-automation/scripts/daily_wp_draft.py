@@ -26,11 +26,13 @@ from pathlib import Path
 UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
-from logger import enable_unbuffered, log_step
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
-enable_unbuffered()
+from lib.logger import log_step
+
 
 from notifier import send as send_telegram
 

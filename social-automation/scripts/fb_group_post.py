@@ -24,18 +24,20 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 from comment_generator import validate_voice
 from group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
-from logger import enable_unbuffered, log_step
+from lib.logger import log_step
 from notifier import request_approval, skill_finished, skill_started
 from rate_limiter import can_act, record_action
 
-enable_unbuffered()
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
+SESSION_FILE = settings.paths.facebook_session
+TRACKER_FILE = settings.paths.groups_tracker
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
 # Daily cap on group posts is enforced via lib.rate_limiter.can_act —
@@ -315,7 +317,11 @@ def main() -> None:
                 )
                 continue
 
-            valid, violations = validate_voice(caption)
+            # Brand publisher: the FB group post body intentionally contains
+            # the dogfoodandfun.com URL inline (Page-only "link in first
+            # comment" doesn't translate to groups — see CLAUDE.md). Pass
+            # allow_own_url=True so the URL isn't flagged as SALESY.
+            valid, violations = validate_voice(caption, allow_own_url=True)
             if not valid:
                 print(f"  ⚠️  {group['group_name']}: voice fail {violations}", flush=True)
                 skipped += 1
