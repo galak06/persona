@@ -38,6 +38,9 @@ function buildActivity(params?: ActivityParams): string {
 }
 
 export const endpoints = {
+  /** GET — current site configuration. */
+  config: "/config",
+
   /** GET — list pending approval items. */
   pending: "/pending",
 
@@ -61,6 +64,24 @@ export const endpoints = {
 
   /** GET — readiness probe. */
   health: "/health",
+
+  /** GET — live state of every documented flow + schedule entries. */
+  flowsState: "/flows/state",
+
+  /** POST — manually fire a scheduled job by its launchd label. */
+  scheduleTrigger: (label: string): string =>
+    `/schedule/${enc(label)}/trigger`,
+
+  /** GET — tail the launchd job's log file. */
+  scheduleLog: (label: string, lines = 200): string =>
+    "/schedule/" + encodeURIComponent(label) + "/log?lines=" + lines,
+
+  /** GET — fetch the JSON output artifact for a scheduled job. */
+  scheduleArtifact: (label: string): string =>
+    `/schedule/${enc(label)}/artifact`,
+
+  /** GET — scheduled flows defined in schedule.json but not loaded. */
+  scheduleMissing: "/schedule/missing",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

@@ -238,6 +238,15 @@ def run_scout(
             added = add_to_pending(candidates, known_groups)
             print(f"\n✅ Saved {added} new group(s) to pending queue")
             browser.close()
+            last_run["fb_group_scout"] = {
+                "last_run_at": datetime.now(UTC).isoformat(),
+                "groups_found": len(candidates),
+                "groups_approved": 0,
+                "join_requests_sent": 0,
+                "status": "success",
+                "mode": "dry-run",
+            }
+            save_last_run(last_run)
             return
 
         pending_to_join = [g for g in pending if g["url"].lower() not in known_groups]

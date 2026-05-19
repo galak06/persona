@@ -31,9 +31,12 @@ from typing import Any
 UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(PROJECT_ROOT / "lib") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
+from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
@@ -64,6 +67,7 @@ def _log_event(event: dict[str, Any]) -> None:
 
 def run() -> None:
     log("=== Comment Approver ===")
+    log_trace("system", "Started Comment Approver (Auto)")
 
     queue: list[dict[str, Any]] = load_json(QUEUE_FILE, [])
     pending: list[dict[str, Any]] = [q for q in queue if q.get("status") == "pending"]
@@ -72,7 +76,9 @@ def run() -> None:
 
     if not pending:
         log("Nothing to do — no pending items.")
+        log_trace("system", "Approver finished: no pending items")
         return
+
 
     skill_started("comment-approver", f"Auto-approving {len(pending)} items")
 
@@ -164,6 +170,7 @@ def run() -> None:
 
     summary = f"Approved: {approved} | Skipped: {skipped} | Failed: {failed}"
     log(f"=== Done === {summary}")
+    log_trace("system", f"Approver finished: {approved} approved, {skipped} skipped")
     skill_finished("comment-approver", summary)
 
 

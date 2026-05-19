@@ -43,26 +43,26 @@ TRACKER_FILE = settings.paths.groups_tracker
 
 def _enrich_group(page, url: str) -> dict:
     """Navigate to group URL and return {name, privacy, rules, member_count}."""
+    # Try the main page first for header info
     page.goto(url, wait_until="domcontentloaded", timeout=30000)
     time.sleep(4)
-    # Scroll to nudge the rules/about card into view
-    for pct in (0.25, 0.5, 0.75):
-        page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct})")
-        time.sleep(1)
-    page.evaluate("window.scrollTo(0, 0)")
-    time.sleep(1)
-
-    return page.evaluate(
+    
+    data = page.evaluate(
         """() => {
         const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
-        // Name: first h1 is the group title on a group page.
-        const h1 = document.querySelector('h1');
-        const name = h1 ? norm(h1.textContent) : '';
+        const BLACKLIST = ['notifications', 'facebook', 'home', 'messages', 'watch', 'marketplace', 'groups'];
+        
+        let h1 = document.querySelector('div[role="main"] h1');
+        if (!h1) h1 = document.querySelector('h1');
+        
+        let name = '';
+        if (h1) {
+            const candidate = norm(h1.textContent);
+            if (!BLACKLIST.includes(candidate.toLowerCase())) {
+                name = candidate;
+            }
+        }
 
-        // Privacy + members: FB renders them together as "Public group · 89.6K members".
-        // Scan every div up to ~500 chars long for this pattern — avoids page-wide
-        // false matches while bypassing the left-sidebar chrome that buries the
-        // header past position 4000.
         let privacy = 'unknown';
         let member_count = null;
         const divs = Array.from(document.querySelectorAll('div, span'));
@@ -80,29 +80,52 @@ def _enrich_group(page, url: str) -> dict:
             }
             if (privacy !== 'unknown' && member_count) break;
         }
+        return { name, privacy, member_count };
+    }"""
+    )
 
-        // Rules: look for the rules card. FB usually labels it "Group rules"
-        // with numbered/bulleted items below. Fallback: grab the About text.
+    # Now try to get rules, preferably from the /about page
+    about_url = url.rstrip('/') + '/about'
+    page.goto(about_url, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(4)
+    
+    rules_data = page.evaluate(
+        """() => {
+        const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
         let rules = 'unknown';
-        const allEls = Array.from(document.querySelectorAll('h2, h3, div[role="heading"]'));
+        
+        // Rules are often in a section with 'Group rules' heading
+        const allEls = Array.from(document.querySelectorAll('h2, h3, div[role="heading"], span'));
         const rulesHeader = allEls.find(el => {
             const t = norm(el.textContent).toLowerCase();
             return t === 'group rules' || t === 'rules' || t.startsWith('group rules from');
         });
+        
         if (rulesHeader) {
-            // Walk siblings and descendants to collect rule text.
             const parent = rulesHeader.closest('[role="article"], div, section') || rulesHeader.parentElement;
             if (parent) {
+                // Try to find the actual rules text which is usually in divs below the header
                 const text = norm(parent.textContent);
-                // Trim the header out, keep body
-                const body = text.replace(/^group rules(\\s+from[^:]*)?:?\\s*/i, '').slice(0, 1200);
+                const body = text.replace(/^group rules(\\s+from[^:]*)?:?\\s*/i, '').slice(0, 1500);
                 if (body.length > 20) rules = body;
             }
         }
-
-        return { name, privacy, rules, member_count };
+        
+        // Fallback: look for "About this group" or similar and grab first paragraph
+        if (rules === 'unknown') {
+            const aboutHeader = allEls.find(el => norm(el.textContent).toLowerCase().includes('about this group'));
+            if (aboutHeader) {
+                const parent = aboutHeader.parentElement;
+                if (parent) rules = norm(parent.textContent).slice(0, 500);
+            }
+        }
+        
+        return rules;
     }"""
     )
+    
+    data['rules'] = rules_data
+    return data
 
 
 def main() -> None:
@@ -151,18 +174,26 @@ def main() -> None:
                 except Exception as e:
                     print(f"    ERROR: {e}", flush=True)
                     continue
-                name = data.get("name") or group.get("group_name", "")
+                name = data.get("name")
+                if not name or name.lower() in ['notifications', 'facebook', 'home', 'unknown']:
+                    name = group.get("group_name", "")
+                
                 privacy = data.get("privacy", "unknown")
-                member_count = data.get("member_count")
+                if privacy == "unknown":
+                    privacy = group.get("privacy", "unknown")
+                    
+                member_count = data.get("member_count") or group.get("member_count")
                 rules = data.get("rules", "unknown")
+                if rules == "unknown":
+                    rules = group.get("rules", "unknown")
+
                 print(
                     f"    name={name!r} privacy={privacy} members={member_count} "
                     f"rules={'<found>' if rules != 'unknown' else 'unknown'}",
                     flush=True,
                 )
                 if not args.dry_run:
-                    if name:
-                        group["group_name"] = name
+                    group["group_name"] = name
                     group["privacy"] = privacy
                     group["member_count"] = member_count
                     group["rules"] = rules

@@ -55,6 +55,13 @@ from api.schemas import (
     FacebookGroup,
     FacebookGroupsResponse,
     FacebookGroupUpdateBody,
+    FlowsStateResponse,
+    FlowState,
+    LogTailResponse,
+    MissingFlowEntry,
+    MissingFlowsResponse,
+    ScheduleEntry,
+    TriggerResponse,
 )
 
 _REPO_ROOT: Path = Path(__file__).resolve().parent.parent
@@ -97,12 +104,22 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
+
+@app.get("/api/v1/config")
+def get_config():
+    """Returns the current site configuration."""
+    return {
+        "name": settings.site.name,
+        "url": settings.site.url,
+        "persona": settings.site.brand_persona,
+        "mascot": settings.site.mascot_name,
+    }
 
 @app.get("/api/v1/pending", response_model=PendingResponse)
 def list_pending() -> PendingResponse:
@@ -178,7 +195,7 @@ def approve_item(
             detail="engagement comments are no longer managed via the web UI",
         )
     if kind == "blog_post":
-        assert path is not None
+        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
         payload = body or ApproveBody()
         return rh.approve_blog_post(
             path, item_id, channel=channel, text=payload.text,
@@ -207,7 +224,7 @@ def reject_item(
             detail="engagement comments are no longer managed via the web UI",
         )
     if kind == "blog_post":
-        assert path is not None
+        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
         return rh.approve_blog_post(
             path, item_id, channel=None, text=None,
             fb_caption=None, ig_caption=None, decision_status="USER_SKIPPED",
@@ -239,7 +256,7 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
-    assert path is not None
+    assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
     return rh.approve_blog_post(
         path, item_id, channel=None, text=body.text,
         fb_caption=body.fb_caption, ig_caption=body.ig_caption,
@@ -249,22 +266,51 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
 
 @app.get("/api/v1/facebook/groups", response_model=FacebookGroupsResponse)
 def list_facebook_groups() -> FacebookGroupsResponse:
-    """List all Facebook groups and their statuses."""
-    groups_file = settings.paths.groups_tracker
-    if not groups_file.exists():
-        return FacebookGroupsResponse(groups=[], total=0, as_of=rh.now_iso())
+    """List all Facebook groups bucketed by status.
+
+    Merges two sources:
+      - groups_tracker.json -> status in {joined, join_requested, rejected}
+      - pending_groups.json -> projected with synthetic status="not_joined_yet"
+    """
+    from lib.io.jsonio import read_json
+    assert settings.paths is not None  # noqa: S101
+    groups: list[FacebookGroup] = []
+
     try:
-        import json
-        data = json.loads(groups_file.read_text(encoding="utf-8"))
-        groups = [FacebookGroup.model_validate(g) for g in data]
-        return FacebookGroupsResponse(groups=groups, total=len(groups), as_of=rh.now_iso())
+        tracker_data = read_json(settings.paths.groups_tracker, default=[])
+        if isinstance(tracker_data, list):
+            groups.extend(FacebookGroup.model_validate(g) for g in tracker_data)
+    except FileNotFoundError:
+        pass
     except Exception as exc:
         _log.error("Failed to read groups tracker: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to read groups tracker")
 
+    try:
+        pending_data = read_json(settings.paths.pending_groups, default=[])
+        if isinstance(pending_data, list):
+            for p in pending_data:
+                if not isinstance(p, dict):
+                    continue
+                mc = p.get("member_count")
+                groups.append(FacebookGroup(
+                    group_name=p.get("name", ""),
+                    group_url=p.get("url", ""),
+                    status="not_joined_yet",
+                    privacy=p.get("privacy"),
+                    member_count=str(mc) if mc is not None else None,
+                ))
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        _log.warning("Failed to read pending_groups (continuing): %s", exc)
+
+    return FacebookGroupsResponse(groups=groups, total=len(groups), as_of=rh.now_iso())
+
 @app.put("/api/v1/facebook/groups/{group_name}", response_model=FacebookGroup)
 def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> FacebookGroup:
     """Update a Facebook group's status."""
+    assert settings.paths is not None  # noqa: S101
     groups_file = settings.paths.groups_tracker
     if not groups_file.exists():
         raise HTTPException(status_code=404, detail="groups tracker not found")
@@ -287,6 +333,231 @@ def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> Fac
 def health() -> Response:
     """Liveness probe for launchd / curl. 204 = OK, no body needed."""
     return Response(status_code=204)
+
+
+@app.get("/api/v1/flows/state", response_model=FlowsStateResponse)
+def get_flows_state() -> FlowsStateResponse:
+    """Aggregate per-flow health + launchd schedule snapshot for the UI."""
+    from api.flow_state import collect_flow_states, collect_schedule_state
+    return FlowsStateResponse(
+        flows=[FlowState(**f) for f in collect_flow_states()],
+        schedule=[ScheduleEntry(**s) for s in collect_schedule_state()],
+    )
+
+
+_LABEL_RE = __import__("re").compile(r"com\.dogfoodandfun\.[a-z0-9-]+")
+
+
+@app.post("/api/v1/schedule/{label}/trigger", response_model=TriggerResponse)
+def trigger_schedule(label: str, force: bool = Query(default=False)) -> TriggerResponse:
+    """Fire a launchd job on demand via ``launchctl start <label>``.
+
+    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace
+    to keep this from being abused as a generic launchctl runner. All
+    subprocess args are list-form; no shell. Unless ``force=true`` is
+    passed, the task's declared inputs in ``schedule.json`` must be
+    fresh -- failing a precondition short-circuits with a 200 body
+    carrying ``ok=False`` and the human-readable reason.
+    """
+    import subprocess
+    if not _LABEL_RE.fullmatch(label):
+        raise HTTPException(status_code=400, detail="Invalid label format")
+    if not force:
+        from api.schedule_config import (
+            check_inputs_satisfied,
+            load_schedule_config,
+            task_for_label,
+        )
+        config = load_schedule_config()
+        task = task_for_label(label, config)
+        if task is not None and task.inputs:
+            ok, statuses = check_inputs_satisfied(task)
+            if not ok:
+                first_fail = next((s for s in statuses if not s.ok), None)
+                reason = first_fail.reason if first_fail else "input check failed"
+                return TriggerResponse(
+                    ok=False,
+                    message=f"Prerequisite not satisfied: {reason}",
+                    label=label,
+                )
+    try:
+        result = subprocess.run(  # noqa: S603 - launchctl is a trusted system binary
+            ["/bin/launchctl", "start", label],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return TriggerResponse(ok=False, message="launchctl timed out", label=label)
+    if result.returncode != 0:
+        return TriggerResponse(
+            ok=False,
+            message=(result.stderr or "launchctl exited non-zero").strip()[:200],
+            label=label,
+        )
+    return TriggerResponse(ok=True, message="Triggered", label=label)
+
+
+@app.get("/api/v1/schedule/missing", response_model=MissingFlowsResponse)
+def list_missing_flows() -> MissingFlowsResponse:
+    """Return scheduled flows defined in schedule.json that aren't loaded in launchctl."""
+    import json
+    import subprocess
+    assert settings.paths is not None  # noqa: S101 - BRAND_DIR-bound at startup
+
+    schedule_file = settings.paths.schedule_file
+    if not schedule_file.exists():
+        return MissingFlowsResponse(missing=[], as_of=rh.now_iso())
+
+    try:
+        defined = json.loads(schedule_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        _log.error("Failed to parse schedule.json: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to parse schedule.json") from exc
+
+    # schedule.json shape: dict with "tasks": list[ {id, ...} ].
+    # Tasks have no explicit launchd label; we derive it by stripping the
+    # ``dogfood-`` prefix from ``id`` and prepending ``com.dogfoodandfun.``.
+    # We also accept an explicit ``label`` / ``launchd_label`` if present.
+    def _extract_label(entry: dict) -> str | None:
+        lbl = entry.get("label") or entry.get("launchd_label")
+        if isinstance(lbl, str) and _LABEL_RE.fullmatch(lbl):
+            return lbl
+        tid = entry.get("id")
+        if isinstance(tid, str):
+            suffix = tid.removeprefix("dogfood-")
+            candidate = f"com.dogfoodandfun.{suffix}"
+            if _LABEL_RE.fullmatch(candidate):
+                return candidate
+        return None
+
+    defined_labels: list[str] = []
+    if isinstance(defined, list):
+        entries: list = defined
+    elif isinstance(defined, dict):
+        raw = defined.get("tasks") or defined.get("flows") or []
+        entries = list(raw) if isinstance(raw, (list, tuple)) else list(raw.values())  # type: ignore[union-attr]
+    else:
+        entries = []
+
+    for entry in entries:
+        if isinstance(entry, dict):
+            lbl = _extract_label(entry)
+            if lbl is not None:
+                defined_labels.append(lbl)
+
+    # Query launchctl
+    loaded_labels: set[str] = set()
+    try:
+        result = subprocess.run(  # noqa: S603 - launchctl is a trusted system binary
+            ["/bin/launchctl", "list"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+        for line in result.stdout.splitlines()[1:]:
+            if not line:
+                continue
+            last = line.split("\t")[-1]
+            if last.startswith("com.dogfoodandfun."):
+                loaded_labels.add(last)
+    except subprocess.TimeoutExpired:
+        loaded_labels = set()
+
+    home = Path.home()
+    missing: list[MissingFlowEntry] = []
+    for lbl in defined_labels:
+        if lbl in loaded_labels:
+            continue
+        plist = home / "Library" / "LaunchAgents" / f"{lbl}.plist"
+        plist_str = str(plist) if plist.exists() else None
+        cmd = f"launchctl bootstrap gui/$(id -u) {plist}"
+        missing.append(MissingFlowEntry(label=lbl, plist_path=plist_str, command=cmd))
+
+    return MissingFlowsResponse(missing=missing, as_of=rh.now_iso())
+
+
+@app.get("/api/v1/schedule/{label}/log", response_model=LogTailResponse)
+def get_schedule_log(
+    label: str,
+    lines: int = Query(default=200, ge=1, le=1000),
+) -> LogTailResponse:
+    """Return the last N lines of the log file for a scheduled job.
+
+    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
+    Log path is read from the matching plist's ``StandardOutPath`` —
+    never user-supplied — so we cannot be coerced into reading arbitrary
+    files via path traversal.
+    """
+    import plistlib
+
+    if not _LABEL_RE.fullmatch(label):
+        raise HTTPException(status_code=400, detail="Invalid label format")
+
+    plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    try:
+        with plist_path.open("rb") as f:
+            plist = plistlib.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"label {label} not found")
+
+    log_path_str = plist.get("StandardOutPath")
+    if not log_path_str:
+        return LogTailResponse(label=label, path=None, lines=[], truncated=False)
+
+    log_path = Path(log_path_str)
+    max_bytes = 256 * 1024
+    try:
+        size = log_path.stat().st_size
+        with log_path.open("rb") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+                f.readline()
+                truncated = True
+            else:
+                truncated = False
+            raw = f.read()
+    except FileNotFoundError:
+        return LogTailResponse(label=label, path=str(log_path), lines=[], truncated=False)
+
+    all_lines = raw.decode("utf-8", errors="replace").splitlines()
+    tail = all_lines[-lines:] if len(all_lines) > lines else all_lines
+    return LogTailResponse(
+        label=label,
+        path=str(log_path),
+        lines=tail,
+        truncated=truncated or len(all_lines) > lines,
+    )
+
+
+@app.get("/api/v1/schedule/{label}/artifact")
+def get_schedule_artifact(label: str) -> dict[str, Any]:
+    """Return the JSON content of the output_file for a scheduled job.
+
+    Securely reads only files declared in schedule.json as output_file.
+    """
+    from api.schedule_config import task_for_label, load_schedule_config
+
+    config = load_schedule_config()
+    task = task_for_label(label, config)
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task for {label} not found")
+
+    output_file = getattr(task, "output_file", None)
+    if not output_file:
+        raise HTTPException(status_code=404, detail=f"No output_file defined for {label}")
+
+    path = (rh.paths().brand_dir / output_file).resolve()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Artifact {output_file} not found on disk")
+
+    # Safety: ensure path is inside brand_dir
+    if rh.paths().brand_dir not in path.parents:
+        raise HTTPException(status_code=403, detail="Forbidden: path traversal detected")
+
+    try:
+        data = rh.read_json(path)
+        if data is None:
+             raise HTTPException(status_code=500, detail=f"Could not parse {output_file} as JSON")
+        return {"label": label, "path": output_file, "data": data}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error reading artifact: {exc}")
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run path

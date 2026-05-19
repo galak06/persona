@@ -12,11 +12,19 @@ kept around for backward-compat with legacy items still sitting in
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from datetime import datetime
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-PlatformLiteral = Literal["facebook", "instagram", "wordpress"]
+from api.schedule_schemas import InputStatus as InputStatus
+from api.schedule_schemas import LogTailResponse as LogTailResponse
+from api.schedule_schemas import MissingFlowEntry as MissingFlowEntry
+from api.schedule_schemas import MissingFlowsResponse as MissingFlowsResponse
+from api.schedule_schemas import ScheduleEntry as ScheduleEntry
+from api.schedule_schemas import TriggerResponse as TriggerResponse
+
+PlatformLiteral = Literal["facebook", "instagram", "wordpress", "system"]
 StatusLiteral = Literal[
     "pending",
     "approved",
@@ -35,6 +43,7 @@ ActionLiteral = Literal[
     "page_post",
     "feed_post",
     "group_join",
+    "trace",
 ]
 
 
@@ -233,6 +242,16 @@ class FacebookGroup(BaseModel):
     last_post_status: str | None = None
     last_post_caption: str | None = None
 
+    @field_validator("member_count", mode="before")
+    @classmethod
+    def _coerce_member_count(cls, v: Any) -> str | None:
+        """Coerce raw ints (e.g. 87000) to strings; pass None/str through."""
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return str(v)
+        return v
+
 class FacebookGroupsResponse(BaseModel):
     """Envelope for GET /api/v1/facebook/groups."""
     groups: list[FacebookGroup]
@@ -243,3 +262,33 @@ class FacebookGroupUpdateBody(BaseModel):
     """Body for PUT /api/v1/facebook/groups/{group_name}."""
     status: str | None = None
     posting_mode: str | None = None
+
+
+FlowStatusLiteral = Literal["ok", "error", "never", "stale", "manual"]
+
+
+class FlowState(BaseModel):
+    """One row in the ``/flows/state`` response — health snapshot of a flow.
+
+    Six top-level flows surface to the UI: engagement-comment, blog-campaign,
+    community-growth, social-loyalty, market-intel, content-ideas. Each
+    reader assembles its own ``output_counts`` shape (keys vary per flow);
+    the UI renders them generically. ``sample`` is a small (≤3) tail of the
+    most recent items the flow produced, redacted of any token/secret/
+    password/cookie/auth-keyed fields before serialisation.
+    """
+
+    id: str
+    name: str
+    last_run_at: datetime | None = None
+    last_status: FlowStatusLiteral
+    error_message: str | None = None
+    output_counts: dict[str, int]
+    sample: list[dict[str, Any]]
+
+
+class FlowsStateResponse(BaseModel):
+    """Envelope for ``GET /api/v1/flows/state``."""
+
+    flows: list[FlowState]
+    schedule: list[ScheduleEntry]

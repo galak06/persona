@@ -101,9 +101,61 @@ def stage_ideate() -> bool:
     return True
 
 
+def _check_ideation_freshness(max_age_days: int = 3) -> bool:
+    """Verify that Content Ideas has run recently. Returns True if fresh or user overrides."""
+    hist_path = PROJECT_ROOT.parent / "dogfoodandfun/state/ideation_history.json"
+    last_run_str = None
+    if hist_path.exists():
+        try:
+            hist = json.loads(hist_path.read_text())
+            last_run_str = hist.get("last_run")
+        except Exception:
+            pass
+
+    if not last_run_str:
+        msg = (
+            "⚠️ <b>Content Ideas never run</b>\n\n"
+            "The ideation history is missing or empty. This stage depends on fresh "
+            "ideas to ensure we're targeting the right clusters and trends.\n\n"
+            "Run <code>/content-ideator</code> first.\n\n"
+            "Reply <b>force</b> to proceed anyway (not recommended)."
+        )
+        result = send_and_wait(msg, timeout_hours=1)
+        return result["action"] == "approved" or result.get("reply_text", "").lower() == "force"
+
+    # Clean historical timestamps like "+00:00Z"
+    cleaned = last_run_str.rstrip("Z")
+    try:
+        last_run = datetime.fromisoformat(cleaned)
+    except ValueError:
+        # fallback for naive+Z
+        last_run = datetime.fromisoformat(last_run_str.replace("Z", "+00:00"))
+
+    if last_run.tzinfo is None:
+        last_run = last_run.replace(tzinfo=UTC)
+
+    age = datetime.now(UTC) - last_run
+    if age.total_seconds() > (max_age_days * 86400):
+        days = age.total_seconds() / 86400
+        msg = (
+            f"⏳ <b>Content Ideas are stale</b> ({days:.1f} days old)\n\n"
+            f"The content strategy requires a fresh ideation run every {max_age_days} days "
+            "to capture real-world signals (IG trends, Google Trends US/CA).\n\n"
+            "Recommended: Run <code>/content-ideator</code> now.\n\n"
+            "Reply <b>force</b> to continue with stale ideas."
+        )
+        result = send_and_wait(msg, timeout_hours=1)
+        return result["action"] == "approved" or result.get("reply_text", "").lower() == "force"
+
+    return True
+
+
 def stage_enrich() -> bool:
     """Enrich the next approved idea."""
     log_step("Content Enricher", "starting")
+
+    if not _check_ideation_freshness():
+        return False
 
     cache = load_json(ENRICHMENT_CACHE, [])
     pending = [

@@ -1,4 +1,7 @@
 # pyright: reportMissingImports=false
+# ruff: noqa: T201
+# Pre-existing print()-based logging throughout; structured-log migration is
+# deferred to the same refactor as the file-size split (see TODO below).
 # TODO(file-size): 652 lines, exceeds the project's 300-line cap. Pre-existing
 # size violation extended by Phase 3 web-UI wiring. Splitting deferred to a
 # dedicated refactor (separate the Telegram transport, the approval state
@@ -19,7 +22,6 @@ Phase 3 (web-UI approval channel):
 from __future__ import annotations
 
 import json
-from lib.config import settings as _json
 import os
 import time
 from datetime import UTC, datetime
@@ -32,16 +34,21 @@ import requests
 
 from queue_state import commit_telegram_decision, read_decision
 
+
 # ── Credentials ────────────────────────────────────────────────────────────────
-# Store in .claude/state/telegram_config.json to keep out of source code
-_CONFIG_FILE = settings.paths.state_dir / "telegram_config.json"
+# Store in .claude/state/telegram_config.json to keep out of source code.
+# Resolved lazily so that importing this module does not require BRAND_DIR /
+# a valid brand config — settings is only loaded on first call.
+def _get_config_file() -> Path:
+    from lib.config import settings
+
+    return settings.paths.state_dir / "telegram_config.json"
 
 
 def _load_config() -> dict:
-    if _CONFIG_FILE.exists():
-        import json
-
-        return json.loads(_CONFIG_FILE.read_text())
+    config_file = _get_config_file()
+    if config_file.exists():
+        return json.loads(config_file.read_text())
     # Fallback to env vars
     return {
         "bot_token": os.environ.get("TELEGRAM_BOT_TOKEN", ""),
@@ -161,7 +168,7 @@ def _get_updates(token: str, offset: int = 0, timeout: int = 30) -> list[dict]:
         )
         if resp.ok:
             return resp.json().get("result", [])
-    except Exception:
+    except Exception:  # noqa: S110 - long-poll best-effort; caller treats [] as no updates
         pass
     return []
 
@@ -188,7 +195,7 @@ def _log_web_ui_win(item_id: str, status: str) -> None:
 
 def _emit_json_log(payload: dict[str, Any]) -> None:
     """Single sink for structured logs; isolated so callers stay readable."""
-    print(_json.dumps(payload, sort_keys=True))  # noqa: T201
+    print(json.dumps(payload, sort_keys=True))  # noqa: T201
 
 
 def _build_web_ui_result(

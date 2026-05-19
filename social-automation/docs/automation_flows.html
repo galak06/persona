@@ -178,6 +178,11 @@
                 <p>Log: <code>engagement_log.jsonl</code></p>
             </div>
         </div>
+
+        <!-- NEW: Advanced Orchestration -->
+        <div style="margin-top: 20px; padding: 10px; border: 1px dashed var(--secondary); border-radius: 6px; font-size: 0.9em;">
+            <strong>Advanced Orchestration (LangGraph):</strong> The system also includes <code>comment_composer_graph.py</code>, which uses <b>LangGraph</b> for a state-machine based approach to comment drafting and posting. It enables complex branching, retries, and human-in-the-loop checkpoints during the engagement flow.
+        </div>
     </section>
 
     <!-- FLOW 2: Content Pipeline -->
@@ -264,6 +269,163 @@
             <div class="step">
                 <h3>3. Execution</h3>
                 <p>API triggers Playwright to visit the group and submit the join request (handling join questions if needed).</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FLOW 4: Social Loyalty & Growth -->
+    <section>
+        <h2>🤝 Social Loyalty & Outreach</h2>
+        <p>Maintaining a high-quality community by interacting with our own fans and reaching out to potential new followers.</p>
+        
+        <div class="flow-diagram">
+            <div class="box trigger">
+                <strong>Own-Post Monitor</strong><br>
+                <small>ig_own_comments.py</small>
+                <div class="tag automated">Hourly</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box process">
+                <strong>Targeted Outreach</strong><br>
+                <small>ig_follow.py, ig_like.py</small>
+                <div class="tag automated">Daily</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box finish">
+                <strong>Engagement</strong><br>
+                <small>Playwright / Graph API</small>
+                <div class="tag automated">Execution</div>
+            </div>
+        </div>
+
+        <div class="flow-details">
+            <div class="step">
+                <h3>1. Follower Care</h3>
+                <p><code>ig_own_comments.py</code> watches for new comments on our own posts. It drafts replies and sends them (via Telegram approval) to ensure fans feel seen.</p>
+            </div>
+            <div class="step">
+                <h3>2. Competitor Scouting</h3>
+                <p><code>ig_follow.py</code> analyzes competitors' followers. It uses a "North America likely" heuristic to find and follow high-value leads within daily caps.</p>
+            </div>
+            <div class="step">
+                <h3>3. Interest Signals</h3>
+                <p><code>ig_like.py</code> likes recent posts in our niche, providing a subtle "nudge" to potential followers to check out our profile.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FLOW 5: Market Intelligence -->
+    <section>
+        <h2>🧠 Market Intelligence & Trends</h2>
+        <p>Keeping the content engine fueled with real-world signals and SEO data to ensure relevance.</p>
+        
+        <div class="flow-diagram">
+            <div class="box trigger">
+                <strong>Trend Refresher</strong><br>
+                <small>refresh_trends_only.py</small>
+                <div class="tag automated">Daily</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box process">
+                <strong>Keyword Research</strong><br>
+                <small>refresh_keyword_research.py</small>
+                <div class="tag automated">Weekly</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box finish">
+                <strong>Idea Pool</strong><br>
+                <small>keyword_research_cache.json</small>
+                <div class="tag automated">Intelligence</div>
+            </div>
+        </div>
+
+        <div class="flow-details">
+            <div class="step">
+                <h3>1. Signal Harvesting</h3>
+                <p><code>refresh_trends_only.py</code> fetches Google Trends (US + CA) for core niche keywords. It runs slowly (60s sleeps) to avoid rate limits.</p>
+            </div>
+            <div class="step">
+                <h3>2. Scoring & Ranking</h3>
+                <p><code>refresh_keyword_research.py</code> combines trend data with existing ideas to re-score the "Idea Pool" based on current interest.</p>
+            </div>
+            <div class="step">
+                <h3>3. Content Fuel</h3>
+                <p>The resulting <code>keyword_research_cache.json</code> is the primary input for the <b>Content Pipeline</b> (Flow 2), ensuring we write about what people are searching for *now*.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- FLOW 6: Content Ideas -->
+    <section id="ideas">
+        <h2>💡 Content Ideas</h2>
+        <p class="subtitle">Pipeline of brand content concepts pending pilot or scoping.</p>
+        <div class="flow-details">
+            <div class="step">
+                <h3>🎬 AI Dog Movie Parodies — "Nalla at the Movies"</h3>
+                <p>Cinematic AI-generated Reels recreating iconic movie scenes (Titanic bow, Jurassic Park kitchen, Forrest Gump bench) but cast with a dog — pilot uses brand mascot Nalla. Generative video via Veo. Distribution: Instagram Reels, TikTok, FB Reels. EN-NA target market.</p>
+                <div class="tag approval">Pilot — Needs Approval</div>
+                <p><strong>Next steps:</strong></p>
+                <ul>
+                    <li>Pilot one cinematic Veo reel before scoping a full content stage</li>
+                    <li>Pick the first scene + lock the visual brief (lighting, framing, dog placement)</li>
+                    <li>Define posting cadence + which platforms get the pilot vs. follow-on</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- FLOW 7: Brand Funnel -->
+    <section id="funnel">
+        <h2>🎯 Brand Funnel Architecture</h2>
+        <p>The dogfoodandfun brand operates a multi-channel inbound marketing and affiliate monetization funnel built around the <strong>"Nalla's Dad"</strong> persona.</p>
+
+        <div class="flow-diagram">
+            <div class="box trigger">
+                <strong>Awareness</strong><br>
+                <small>Social Scanners & Reels</small>
+                <div class="tag automated">Top of Funnel</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box process">
+                <strong>Engagement</strong><br>
+                <small>Comments & CTAs</small>
+                <div class="tag automated">Middle of Funnel</div>
+            </div>
+            <div class="arrow">➜</div>
+            <div class="box finish">
+                <strong>Conversion</strong><br>
+                <small>WP Blog & Affiliates</small>
+                <div class="tag automated">Bottom of Funnel</div>
+            </div>
+        </div>
+
+        <div class="flow-details">
+            <div class="step">
+                <h3>1. Top of Funnel: Awareness & Discovery</h3>
+                <p><strong>Goal:</strong> Organic reach and brand presence.</p>
+                <ul>
+                    <li><strong>Proactive Engagement:</strong> Automated agents (<code>fb-scanner</code>, <code>ig-scanner</code>) post helpful, non-salesy replies in Facebook Groups and Instagram hashtags.</li>
+                    <li><strong>Content Generation:</strong> AI-generated 9:16 Reels published to Instagram and Facebook.</li>
+                    <li><strong>Group Publishing:</strong> <code>fb-group-publisher</code> distributes WP blog posts into relevant FB groups.</li>
+                </ul>
+            </div>
+            <div class="step">
+                <h3>2. Middle of Funnel: Engagement & Traffic Routing</h3>
+                <p><strong>Goal:</strong> Drive traffic to owned property (dogfoodandfun.com).</p>
+                <ul>
+                    <li><strong>First-Comment CTA:</strong> Reels prompt users to comment a keyword (e.g., <code>Comment RECIPE</code>), triggering a DM/reply with the full article link.</li>
+                    <li><strong>Bio-Link Fallback:</strong> <code>🔗 Full guide: link in bio</code> serves as a secondary path.</li>
+                    <li><strong>Traffic Centralization:</strong> All channels point directly to the WP site for better attribution and control.</li>
+                </ul>
+            </div>
+            <div class="step">
+                <h3>3. Bottom of Funnel: Conversion & Monetization</h3>
+                <p><strong>Goal:</strong> Monetize traffic via targeted affiliate campaigns.</p>
+                <ul>
+                    <li><strong>The Blog:</strong> SEO-optimized WP posts act as landing pages.</li>
+                    <li><strong>Affiliate Resolution:</strong> <code>affiliate_resolver</code> dynamically swaps placeholders (e.g., <code>[AFFILIATE:fi-collar]</code>) for Amazon Associate links.</li>
+                    <li><strong>Campaign Tracking:</strong> Coordinated pushes are tracked via unique Amazon <code>ascsubtag</code>s for accurate ROI reporting.</li>
+                </ul>
             </div>
         </div>
     </section>

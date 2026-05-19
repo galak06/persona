@@ -23,8 +23,10 @@ from pathlib import Path
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
+from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
@@ -44,7 +46,7 @@ QUEUE_FILE = settings.paths.comment_queue
 LAST_RUN_FILE = settings.paths.last_run
 ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 CONFIG_FILE = (settings.paths.brand_dir / "config.json")
-HASHTAG_FILE = PROJECT_ROOT / "data/instagram_accounts.csv"
+HASHTAG_FILE = settings.paths.instagram_accounts
 
 
 def load_config() -> dict:
@@ -312,6 +314,7 @@ def run_scan() -> None:
     from playwright.sync_api import sync_playwright
 
     print("=== Instagram Hashtag Scanner (CLI) ===\n", flush=True)
+    log_trace("instagram", "Started Instagram hashtag scan")
 
     # Re-run guard — skip if already ran successfully today
     last_run = load_last_run()
@@ -323,6 +326,7 @@ def run_scan() -> None:
         print("Use --force to override.")
         skill_skipped("ig-scanner", msg)
         if "--force" not in sys.argv:
+            log_trace("instagram", "Skipped: already ran today")
             return
         print("--force detected, re-running.\n")
 
@@ -330,11 +334,13 @@ def run_scan() -> None:
     if not SESSION_FILE.exists():
         print("ERROR: No saved Instagram session found.")
         print("Run this first:  python scripts/ig_login.py")
+        log_trace("instagram", "Aborted: No saved session")
         return
 
     # Pre-flight: rate limits
     if not can_act("instagram", "like"):
         print("ABORT: Daily IG like limit reached. Try again tomorrow.")
+        log_trace("instagram", "Aborted: Daily like limit reached")
         skill_skipped("ig-scanner", "Daily IG like limit reached")
         print_status()
         return
@@ -652,6 +658,7 @@ def run_scan() -> None:
     save_last_run(last_run)
 
     # Summary
+    log_trace("instagram", f"Scan complete: {hashtags_scanned} hashtags, {posts_liked} liked, {posts_queued} queued")
     ("8" if not can_act("instagram", "like") else "?")
     print(f"""
 === Instagram Scan Complete ===

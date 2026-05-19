@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "lib"))
 
 from local_env import load_local_env
+from lib.config import settings
 
 load_local_env()
 
@@ -42,8 +43,18 @@ def main() -> int:
         return 1
 
     print(f"Reading keywords from {ideas_path.name}")
-    ideas = json.loads(ideas_path.read_text())
-    keywords = sorted({i["Target_Keyword"] for i in ideas if i.get("Target_Keyword")})
+    raw_data = json.loads(ideas_path.read_text())
+    
+    # Handle both list-based and object-based ideas files
+    if isinstance(raw_data, list):
+        ideas_list = raw_data
+    elif isinstance(raw_data, dict):
+        ideas_list = raw_data.get("ideas", [])
+    else:
+        print(f"ERROR: unexpected data format in {ideas_path.name}")
+        return 1
+
+    keywords = sorted({i["Target_Keyword"] for i in ideas_list if isinstance(i, dict) and i.get("Target_Keyword")})
 
     print(
         f"Refreshing trends for {len(keywords)} unique keywords × 2 geos = {len(keywords) * 2} calls"

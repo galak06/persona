@@ -6,15 +6,15 @@ import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from lib.config import settings
 
-SESSION_FILE = PROJECT_ROOT / ".claude/state/facebook_session.json"
-LAST_RUN_FILE = PROJECT_ROOT / ".claude/state/last_run.json"
-PENDING_FILE = PROJECT_ROOT / ".claude/state/pending_groups.json"
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
-TRACKER_FILE = PROJECT_ROOT.parent.parent / "facebook_groups_tracker.xlsx"
-JSON_TRACKER_FILE = PROJECT_ROOT / "data/groups_tracker.json"
-ERROR_LOG = PROJECT_ROOT / "logs/errors.log"
+SESSION_FILE = settings.paths.facebook_session
+LAST_RUN_FILE = settings.paths.last_run
+PENDING_FILE = settings.paths.pending_groups
+LOG_FILE = settings.paths.brand_dir / settings.file_paths.engagement_log
+TRACKER_FILE = settings.paths.brand_dir / settings.file_paths.facebook_tracker
+JSON_TRACKER_FILE = settings.paths.groups_tracker
+ERROR_LOG = settings.paths.logs_dir / "errors.log"
 
 
 def log_error(msg: str) -> None:

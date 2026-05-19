@@ -75,17 +75,35 @@ def competitor_signal_boost(mentions: int) -> int:
     return min(mentions * 15, 45)
 
 
+# Regional keywords for USA/Canada targeting
+GEO_KEYWORDS = [
+    "usa", "u.s.a", "united states", "american", "canada", "canadian",
+    "america", "north america", "us based", "ca based"
+]
+
+# Non-US/CA signals that should penalize the score
+NON_US_SIGNALS = [
+    "uk", "united kingdom", "australia", "india", "europe", "philippines",
+    "pakistan", "nigeria", "south africa", "london", "sydney", "melbourne"
+]
+
 def score_group(g: dict, competitor_mentions: int = 0) -> int:
     score = 0
-    text = (g["name"] + " " + g["description"]).lower()
-
+    name_desc = (g["name"] + " " + g["description"]).lower()
+    
     # Niche keyword match (additive, max 30)
-    if any(kw in text for kw in FOOD_KW):
+    if any(kw in name_desc for kw in FOOD_KW):
         score += 15
-    if any(kw in text for kw in GPS_KW):
+    if any(kw in name_desc for kw in GPS_KW):
         score += 10
-    if any(kw in text for kw in LIFESTYLE_KW):
+    if any(kw in name_desc for kw in LIFESTYLE_KW):
         score += 5
+
+    # Geo-scoring (USA/Canada)
+    if any(kw in name_desc for kw in GEO_KEYWORDS):
+        score += 15
+    if any(sig in name_desc for sig in NON_US_SIGNALS):
+        score -= 25
 
     # Member count (max 20)
     mc = g["member_count"]
@@ -111,7 +129,7 @@ def score_group(g: dict, competitor_mentions: int = 0) -> int:
     score += competitor_signal_boost(competitor_mentions)
 
     # Product-brand penalty (conflict of interest for review site)
-    if any(brand in text for brand in PRODUCT_BRANDS):
+    if any(brand in name_desc for brand in PRODUCT_BRANDS):
         score -= 40
 
     return max(0, score)

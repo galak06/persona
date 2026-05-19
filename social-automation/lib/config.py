@@ -120,7 +120,10 @@ class BrandPaths(BaseModel):
     data_dir: Path
     state_dir: Path
     logs_dir: Path
-    
+    backups_dir: Path
+    campaigns_dir: Path
+    schedule_file: Path
+
     # Specific file paths within brand
     brand_voice_guide: Path
     campaigns: Path
@@ -205,5 +208,13 @@ def load_config() -> AppSettings:
     settings.paths = _resolve_paths(brand_dir)
     return settings
 
+# Load local environment variables from .claude/settings.local.json
+try:
+    from lib.local_env import load_local_env
+    load_local_env()
+except ImportError:
+    pass
+
 # Singleton instance
 settings = load_config()
+

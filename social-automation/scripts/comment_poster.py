@@ -25,6 +25,7 @@ import httpx
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
+from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
@@ -128,110 +129,71 @@ def post_comment_fb(page, post_url: str, comment: str) -> bool:
         page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {scroll_pct})")
         time.sleep(2)
 
-    # Try clicking any "Write a comment" placeholder or comment area first
-    # This activates the comment box on modern FB
-    clicked_area = page.evaluate("""() => {
-        // Method 1: Click placeholder text
-        const placeholders = document.querySelectorAll('[role="button"]');
-        for (const el of placeholders) {
-            const text = (el.textContent || '').trim().toLowerCase();
-            if (text.includes('write a comment') || text.includes('comment as')) {
-                el.click();
-                return 'clicked_placeholder';
-            }
-        }
-        // Method 2: Click any visible comment form area
-        const forms = document.querySelectorAll('form[role="presentation"], [data-visualcompletion="ignore-dynamic"]');
-        for (const f of forms) {
-            const text = (f.textContent || '').toLowerCase();
-            if (text.includes('comment') || text.includes('write')) {
-                f.click();
-                return 'clicked_form';
-            }
-        }
-        return 'none';
-    }""")
-    print(f"    Pre-click: {clicked_area}", flush=True)
-    time.sleep(2)
+    # Step 1: Click the placeholder to activate the editor
+    # Facebook uses various placeholders depending on group type and profile vs page
+    try:
+        # Look for the element that says "Comment as [Name]" or "Write a public comment..."
+        # It's usually a div or span with role="button" or similar, but the text is the most reliable anchor
+        placeholder = page.locator("text=/^Comment as /i").first
+        if not placeholder.is_visible():
+            placeholder = page.locator("text=/Write an? (public )?(comment|answer).*/i").first
+        
+        if placeholder.is_visible():
+            placeholder.click()
+            print("    Pre-click: clicked_placeholder", flush=True)
+            time.sleep(2)
+        else:
+             print("    Pre-click: none", flush=True)
+    except Exception as e:
+        print(f"    Pre-click error: {e}", flush=True)
 
-    # Now find the activated comment box
-    found = page.evaluate("""() => {
-        // Try multiple selectors in priority order
-        const selectors = [
-            '[contenteditable="true"][data-lexical-editor="true"]',
-            '[contenteditable="true"][role="textbox"]',
-            '[contenteditable="true"][aria-label*="comment" i]',
-            '[contenteditable="true"][aria-label*="Comment" i]',
-            '[contenteditable="true"][aria-label*="Write"]',
-            '[contenteditable="true"][aria-placeholder*="comment" i]',
-            '[contenteditable="true"][aria-placeholder*="Write" i]',
-            'div[contenteditable="true"][spellcheck]',
-        ];
-        for (const sel of selectors) {
-            const box = document.querySelector(sel);
-            if (box) {
-                box.focus();
-                box.click();
-                return 'found:' + sel;
-            }
-        }
-        // Last resort: any contenteditable that's not the main post editor
-        const allEditable = document.querySelectorAll('[contenteditable="true"]');
-        for (const el of allEditable) {
-            const rect = el.getBoundingClientRect();
-            // Skip tiny or hidden elements
-            if (rect.height > 20 && rect.height < 200 && rect.width > 100) {
-                el.focus();
-                el.click();
-                return 'found:contenteditable_fallback';
-            }
-        }
-        return 'not_found';
-    }""")
-    print(f"    Comment box: {found}", flush=True)
+    # Step 2: Find the actual contenteditable editor
+    # Once activated, it becomes a textbox
+    editor = page.locator('div[contenteditable="true"][role="textbox"]').first
+    
+    if not editor.is_visible():
+         # Fallback: look for aria-label containing comment/answer
+         editor = page.locator('div[contenteditable="true"][aria-label*="comment" i]').first
+    
+    if not editor.is_visible():
+        # Fallback 2: look for aria-label containing write
+        editor = page.locator('div[contenteditable="true"][aria-label*="Write" i]').first
 
-    if not found.startswith("found"):
-        # One more try — scroll all the way down
-        page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-        time.sleep(3)
-        found = page.evaluate("""() => {
-            const selectors = [
-                '[contenteditable="true"][data-lexical-editor="true"]',
-                '[contenteditable="true"][role="textbox"]',
-                '[contenteditable="true"][aria-label*="comment" i]',
-                'div[contenteditable="true"][spellcheck]',
-            ];
-            for (const sel of selectors) {
-                const box = document.querySelector(sel);
-                if (box) { box.focus(); box.click(); return 'found:' + sel; }
-            }
-            return 'not_found';
-        }""")
-        print(f"    Comment box (retry): {found}", flush=True)
-
-    if not found.startswith("found"):
+    if not editor.is_visible():
+        print("    Comment box: not_found", flush=True)
         return False
 
-    time.sleep(1)
-    page.keyboard.type(comment, delay=30)
-    time.sleep(2)
+    print("    Comment box: found", flush=True)
+    
+    try:
+        editor.click()
+        time.sleep(1)
+        # Type the comment
+        page.keyboard.insert_text(comment)
+        time.sleep(2)
 
-    # Submit — try button first, then Enter
-    sub = page.evaluate("""() => {
-        const btns = Array.from(document.querySelectorAll('[role="button"]'));
-        const submit = btns.find(b => {
-            const label = (b.getAttribute('aria-label') || '').toLowerCase();
-            return label === 'comment' || label === 'post' || label === 'submit' || label === 'reply';
-        });
-        if (submit) { submit.click(); return 'clicked'; }
-        return 'not_found';
-    }""")
-    if sub != "clicked":
-        page.keyboard.press("Enter")
-    print(f"    Submit: {sub}", flush=True)
+        # Step 3: Find and click the Submit (Send) button
+        # Usually an aria-label="Comment" or "Send" button
+        submit_btn = page.locator('div[aria-label="Comment"][role="button"]').first
+        if not submit_btn.is_visible():
+             submit_btn = page.locator('div[aria-label="Send"][role="button"]').first
+             
+        if submit_btn.is_visible():
+            submit_btn.click()
+            print("    Submit: clicked", flush=True)
+            time.sleep(3)
+            return True
+        else:
+             # Fallback: press Enter
+             print("    Submit: not_found, pressing Enter", flush=True)
+             page.keyboard.press("Enter")
+             time.sleep(3)
+             return True
+             
+    except Exception as e:
+        print(f"    Error during typing/submit: {e}", flush=True)
+        return False
 
-    time.sleep(3)
-    return True
 
 
 def post_comment_ig(page, post_url: str, comment: str) -> bool:
@@ -288,6 +250,7 @@ def post_comment_ig(page, post_url: str, comment: str) -> bool:
 
 def run() -> None:
     print("=== Comment Poster ===\n", flush=True)
+    log_trace("system", "Started Comment Poster")
 
     # Re-run guard
     last_run = load_json(LAST_RUN_FILE, {})
@@ -298,12 +261,18 @@ def run() -> None:
         print(f"SKIP: comment-composer already ran today ({cc_date}).", flush=True)
         skill_skipped("comment-composer", msg)
         if "--force" not in sys.argv:
+            log_trace("system", "Poster skipped: already ran today")
             return
         print("--force detected, re-running.\n", flush=True)
 
     # Load queue
     queue = load_json(QUEUE_FILE, [])
     approved_raw = [q for q in queue if q.get("status") == "approved" and q.get("draft_comment")]
+
+    if not approved_raw:
+        print("Nothing to post — no approved items in queue.")
+        log_trace("system", "Poster finished: nothing to post")
+        return
 
     # Hard guard: drop items whose post_id is already in dedup_cache (was
     # successfully engaged-with on a prior run). Mutates queue so duplicates
@@ -379,7 +348,7 @@ def run() -> None:
                 save_json(QUEUE_FILE, queue)
 
                 if idx < len(wp_approved) - 1:
-                    delay = random.uniform(15, 45)
+                    delay = random.uniform(5, 10)
                     print(f"    Waiting {delay:.0f}s...", flush=True)
                     time.sleep(delay)
 
@@ -464,7 +433,7 @@ def run() -> None:
                         save_json(QUEUE_FILE, queue)
 
                         if idx < len(fb_approved) - 1:
-                            delay = random.uniform(30, 120)
+                            delay = random.uniform(5, 10)
                             print(f"    Waiting {delay:.0f}s...", flush=True)
                             time.sleep(delay)
 
@@ -527,7 +496,7 @@ def run() -> None:
                         save_json(QUEUE_FILE, queue)
 
                         if idx < len(ig_approved) - 1:
-                            delay = random.uniform(120, 180)
+                            delay = random.uniform(5, 10)
                             print(f"    Waiting {delay:.0f}s...", flush=True)
                             time.sleep(delay)
 

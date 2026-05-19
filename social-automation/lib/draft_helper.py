@@ -57,14 +57,16 @@ def draft_comment_for_post(
     ``USER_SKIPPED``).
     """
     if not os.environ.get("GEMINI_API_KEY"):
-        log.info(
+        error_msg = "GEMINI_API_KEY environment variable is not set"
+        log.error(
             {
                 "event": "draft_gemini_key_missing",
                 "platform": platform,
                 "group_or_hashtag": group_or_hashtag,
+                "error": error_msg,
             }
         )
-        return ""
+        raise RuntimeError(error_msg)
 
     prompt = _build_prompt(
         platform=platform,

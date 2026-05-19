@@ -9,10 +9,15 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+
+from lib.bootstrap import init_script
+settings, log = init_script(__name__)
 
 SCHEDULE_FILE = settings.paths.schedule_file
 LAST_RUN_FILE = settings.paths.last_run
@@ -20,8 +25,8 @@ RATE_FILE = settings.paths.rate_limit_tracker
 DEDUP_FILE = settings.paths.dedup_cache
 QUEUE_FILE = settings.paths.comment_queue
 PENDING_FILE = settings.paths.pending_groups
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
-ERROR_LOG = (settings.paths.logs_dir / "errors.log")
+LOG_FILE = settings.paths.brand_dir / settings.file_paths.engagement_log
+ERROR_LOG = settings.paths.logs_dir / "errors.log"
 
 
 def load_json(path: Path, default):

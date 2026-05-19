@@ -28,7 +28,7 @@ const FETCH_LIMIT = 200;
 const CONTENT_PREVIEW = 200;
 
 type PlatformFilter = "all" | Platform;
-type ActionFilter = "all" | "comments" | "likes" | "joins" | "posts";
+type ActionFilter = "all" | "comments" | "likes" | "joins" | "posts" | "system";
 
 const PLATFORM_FILTERS: readonly { key: PlatformFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -43,22 +43,26 @@ const ACTION_FILTERS: readonly { key: ActionFilter; label: string }[] = [
   { key: "likes", label: "Likes" },
   { key: "joins", label: "Joins" },
   { key: "posts", label: "Posts" },
+  { key: "system", label: "System" },
 ];
 
 const ACTION_LABEL: Record<ActivityAction, string> = {
   comment: "comment", like: "like", group_post: "group post",
   reply: "reply", own_reply: "own reply", page_post: "page post",
   feed_post: "feed post", group_join: "group join",
+  trace: "trace",
 };
 
 const CHIP_CYAN = "bg-cyan-50 text-cyan-700 border-cyan-200";
 const CHIP_PINK = "bg-pink-50 text-pink-700 border-pink-200";
 const CHIP_AMBER = "bg-amber-50 text-amber-800 border-amber-200";
 const CHIP_SLATE = "bg-slate-100 text-slate-700 border-slate-200";
+const CHIP_INDIGO = "bg-indigo-50 text-indigo-700 border-indigo-200";
 const ACTION_CHIP: Record<ActivityAction, string> = {
   comment: CHIP_CYAN, reply: CHIP_CYAN, own_reply: CHIP_CYAN,
   like: CHIP_PINK, group_join: CHIP_AMBER,
   page_post: CHIP_SLATE, feed_post: CHIP_SLATE, group_post: CHIP_SLATE,
+  trace: CHIP_INDIGO,
 };
 
 function matchesAction(entry: ActivityEntry, filter: ActionFilter): boolean {
@@ -68,6 +72,7 @@ function matchesAction(entry: ActivityEntry, filter: ActionFilter): boolean {
   if (filter === "likes") return a === "like";
   if (filter === "joins") return a === "group_join";
   if (filter === "posts") return a === "page_post" || a === "feed_post" || a === "group_post";
+  if (filter === "system") return a === "trace";
   return false;
 }
 

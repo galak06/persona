@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/api/v1/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Config
+         * @description Returns the current site configuration.
+         */
+        get: operations["get_config_api_v1_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/pending": {
         parameters: {
             query?: never;
@@ -184,6 +204,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flows/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Flows State
+         * @description Aggregate per-flow health + launchd schedule snapshot for the UI.
+         */
+        get: operations["get_flows_state_api_v1_flows_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedule/{label}/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Trigger Schedule
+         * @description Fire a launchd job on demand via ``launchctl start <label>``.
+         *
+         *     Label is whitelisted against the ``com.dogfoodandfun.*`` namespace
+         *     to keep this from being abused as a generic launchctl runner. All
+         *     subprocess args are list-form; no shell.
+         */
+        post: operations["trigger_schedule_api_v1_schedule__label__trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -207,7 +271,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "comment" | "like" | "group_post" | "reply" | "own_reply" | "page_post" | "feed_post" | "group_join";
+            action: "comment" | "like" | "group_post" | "reply" | "own_reply" | "page_post" | "feed_post" | "group_join" | "trace";
             /**
              * Platform
              * @enum {string}
@@ -413,6 +477,50 @@ export interface components {
             as_of: string;
         };
         /**
+         * FlowState
+         * @description One row in the ``/flows/state`` response — health snapshot of a flow.
+         *
+         *     Six top-level flows surface to the UI: engagement-comment, blog-campaign,
+         *     community-growth, social-loyalty, market-intel, content-ideas. Each
+         *     reader assembles its own ``output_counts`` shape (keys vary per flow);
+         *     the UI renders them generically. ``sample`` is a small (≤3) tail of the
+         *     most recent items the flow produced, redacted of any token/secret/
+         *     password/cookie/auth-keyed fields before serialisation.
+         */
+        FlowState: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Last Run At */
+            last_run_at?: string | null;
+            /**
+             * Last Status
+             * @enum {string}
+             */
+            last_status: "ok" | "error" | "never" | "stale" | "manual";
+            /** Error Message */
+            error_message?: string | null;
+            /** Output Counts */
+            output_counts: {
+                [key: string]: number;
+            };
+            /** Sample */
+            sample: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * FlowsStateResponse
+         * @description Envelope for ``GET /api/v1/flows/state``.
+         */
+        FlowsStateResponse: {
+            /** Flows */
+            flows: components["schemas"]["FlowState"][];
+            /** Schedule */
+            schedule: components["schemas"]["ScheduleEntry"][];
+        };
+        /**
          * GroupItem
          * @description A Facebook group surfaced by ``fb_group_scout`` awaiting a join
          *     decision.
@@ -489,6 +597,68 @@ export interface components {
             /** Reason */
             reason?: string | null;
         };
+        /**
+         * ScheduleEntry
+         * @description One launchd job in the ``/flows/state`` schedule list.
+         *
+         *     Sourced from ``launchctl list`` + ``~/Library/LaunchAgents/com.<brand>.*``
+         *     plist files. ``is_loaded`` is True iff the label currently appears in
+         *     ``launchctl list`` output. ``last_exit_code`` is the second column from
+         *     launchctl (parsed int, or None when not loaded / waiting). ``flow_id``
+         *     maps the cron label back to the parent flow when one exists, else None.
+         */
+        ScheduleEntry: {
+            /** Label */
+            label: string;
+            /** Flow Id */
+            flow_id?: string | null;
+            /** Schedule Human */
+            schedule_human: string;
+            /** Last Fire At */
+            last_fire_at?: string | null;
+            /** Last Exit Code */
+            last_exit_code?: number | null;
+            /** Is Loaded */
+            is_loaded: boolean;
+            /** Order */
+            order?: number | null;
+            /** Depends On */
+            depends_on?: string[];
+            /** Inputs Satisfied */
+            inputs_satisfied?: boolean;
+            /** Input Status */
+            input_status?: components["schemas"]["InputStatus"][];
+        };
+        /**
+         * InputStatus
+         * @description One declared input prerequisite for a scheduled task.
+         */
+        InputStatus: {
+            /** Path */
+            path: string;
+            /** Exists */
+            exists: boolean;
+            /** Count */
+            count: number;
+            /** Age Hours */
+            age_hours: number | null;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * TriggerResponse
+         * @description Envelope for ``POST /api/v1/schedule/{label}/trigger``.
+         */
+        TriggerResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Message */
+            message: string;
+            /** Label */
+            label: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -507,6 +677,26 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_config_api_v1_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_pending_api_v1_pending_get: {
         parameters: {
             query?: never;
@@ -773,8 +963,63 @@ export interface operations {
             };
         };
     };
+    get_flows_state_api_v1_flows_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowsStateResponse"];
+                };
+            };
+        };
+    };
+    trigger_schedule_api_v1_schedule__label__trigger_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
 }
 
+// ----------------------------------------------------------------------
+// Manual type aliases (re-appended after openapi-typescript regen).
+// Mirrors the original hand-rolled tail; keep in sync with backend.
+// ----------------------------------------------------------------------
 export type ActivityAction = components["schemas"]["ActivityEntry"]["action"];
 export type ActivityEntry = components["schemas"]["ActivityEntry"];
 export type ActivityResponse = components["schemas"]["ActivityResponse"];
@@ -803,3 +1048,36 @@ export type CommentItem = {
 export type FacebookGroup = components["schemas"]["FacebookGroup"];
 export type FacebookGroupsResponse = components["schemas"]["FacebookGroupsResponse"];
 export type FacebookGroupUpdateBody = components["schemas"]["FacebookGroupUpdateBody"];
+
+// ----------------------------------------------------------------------
+// Hand-written types — backend exposes these but openapi.json hasn't
+// been regenerated yet. Mirror the pydantic models in api/schemas.py.
+// ----------------------------------------------------------------------
+export interface LogTailResponse {
+    label: string;
+    path: string | null;
+    lines: string[];
+    truncated: boolean;
+}
+
+export interface MissingFlowEntry {
+    label: string;
+    plist_path: string | null;
+    command: string;
+}
+
+export interface MissingFlowsResponse {
+    missing: MissingFlowEntry[];
+    as_of: string;
+}
+
+/** Extension of components["schemas"]["ScheduleEntry"] with fields not yet
+ *  reflected in openapi.json. Backend already returns these per the
+ *  Phase-6 server changes. */
+export type ScheduleEntry = components["schemas"]["ScheduleEntry"] & {
+    script_path?: string | null;
+    log_path?: string | null;
+    output_file?: string | null;
+};
+
+export type InputStatus = components["schemas"]["InputStatus"];

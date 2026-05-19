@@ -30,7 +30,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
@@ -112,6 +113,19 @@ def draft_reply(
     )
 
 
+def is_content_unavailable(page) -> bool:
+    """Detect 'This content isn't available right now' or similar FB error pages."""
+    return page.evaluate(
+        """() => {
+        const t = (document.body.textContent || '').toLowerCase();
+        return t.includes("this content isn't available") || 
+               t.includes("the link you followed may be broken") ||
+               t.includes("page may have been removed") ||
+               t.includes("content isn't available at the moment");
+    }"""
+    )
+
+
 def process_post(page, item: dict, tracker: dict, dry_run: bool) -> tuple[int, int]:
     """Scrape replies, draft + (optionally) post responses. Returns (posted, skipped)."""
     post_url = item["post_url"]
@@ -120,8 +134,19 @@ def process_post(page, item: dict, tracker: dict, dry_run: bool) -> tuple[int, i
         return 0, 0
 
     log_step(f"  → {item.get('group_name', '?')[:40]}")
-    page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+    try:
+        page.goto(post_url, wait_until="domcontentloaded", timeout=45000)
+    except Exception as e:
+        print(f"    ❌ Page load failed: {e}", flush=True)
+        return 0, 0
+
     time.sleep(4)
+    if is_content_unavailable(page):
+        print("    ⚠️  Content unavailable (deleted or private) — skipping", flush=True)
+        # Mark with a special token so we don't keep retrying this specific post ID
+        tracker[item["post_id"]] = ["UNREACHABLE"]
+        return 0, 0
+
     for pct in (0.4, 0.7, 0.9):
         page.evaluate(f"window.scrollTo(0, document.body.scrollHeight * {pct})")
         time.sleep(1.2)
@@ -248,6 +273,8 @@ def main() -> None:
 
         try:
             for item in recent:
+                if "UNREACHABLE" in tracker.get(item["post_id"], []):
+                    continue
                 posted, skipped = process_post(page, item, tracker, args.dry_run)
                 total_posted += posted
                 total_skipped += skipped

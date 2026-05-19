@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom";
+import { endpoints } from "../../api/endpoints";
+import { useApiQuery } from "../../hooks/useApiQuery";
 
 /**
  * Three-tab top navigation: Dashboard | Activity | Inbox.
@@ -16,8 +18,11 @@ interface TabSpec {
 const TABS: readonly TabSpec[] = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/activity", label: "Activity" },
+  { to: "/flows", label: "Flows" },
   { to: "/inbox", label: "Inbox" },
   { to: "/groups", label: "FB Groups" },
+  { to: "/schedule", label: "Schedule" },
+  { to: "/explorer", label: "Explorer" },
 ];
 
 const BASE_TAB =
@@ -25,23 +30,37 @@ const BASE_TAB =
 const ACTIVE_TAB = "bg-cyan-50 text-cyan-700 font-medium";
 const INACTIVE_TAB = "text-slate-500 hover:text-slate-700";
 
+interface ConfigResponse {
+  name: string;
+  url: string;
+  persona: string;
+  mascot: string;
+}
+
 export default function TopBar(): React.JSX.Element {
+  const { data: config } = useApiQuery<ConfigResponse>(endpoints.config);
+
   return (
     <header className="bg-brand-header border-b border-slate-200">
-      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 h-14 flex items-center gap-2">
-        <nav className="flex items-center gap-1" aria-label="Primary">
-          {TABS.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              className={({ isActive }) =>
-                `${BASE_TAB} ${isActive ? ACTIVE_TAB : INACTIVE_TAB}`
-              }
-            >
-              {tab.label}
-            </NavLink>
-          ))}
-        </nav>
+      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 h-14 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-bold text-amber-700 uppercase tracking-wider">
+            {config?.name || "Loading..."}
+          </span>
+          <nav className="flex items-center gap-1" aria-label="Primary">
+            {TABS.map((tab) => (
+              <NavLink
+                key={tab.to}
+                to={tab.to}
+                className={({ isActive }) =>
+                  `${BASE_TAB} ${isActive ? ACTIVE_TAB : INACTIVE_TAB}`
+                }
+              >
+                {tab.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
       </div>
     </header>
   );

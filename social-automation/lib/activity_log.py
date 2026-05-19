@@ -24,7 +24,7 @@ from typing import Any
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 ENGAGEMENT_LOG_PATH: Path = _REPO_ROOT / "logs" / "engagement_log.jsonl"
 
-__all__ = ["ENGAGEMENT_LOG_PATH", "VALID_ACTIONS", "read_recent"]
+__all__ = ["ENGAGEMENT_LOG_PATH", "VALID_ACTIONS", "read_recent", "log_trace"]
 
 # Must mirror ``api.schemas.ActionLiteral``. Listed here so the reader
 # can drop unknown rows cheaply without importing pydantic.
@@ -38,6 +38,7 @@ VALID_ACTIONS: frozenset[str] = frozenset(
         "page_post",
         "feed_post",
         "group_join",
+        "trace",
     }
 )
 _LEGACY_ACTION_ALIASES: dict[str, str] = {"group_join_request": "group_join"}
@@ -145,3 +146,29 @@ def read_recent(
     # then slice. ``list.reverse`` is O(n); on 88 rows this is trivial.
     rows = list(reversed(rows))[:limit]
     return rows, _CACHE_TOTAL
+
+
+def log_trace(
+    platform: str,
+    content: str,
+    target_name: str | None = None,
+    target_url: str | None = None,
+) -> None:
+    """Appends a 'trace' (system debug) entry to the engagement log."""
+    from datetime import UTC, datetime
+
+    now = datetime.now(UTC)
+    entry = {
+        "date": now.strftime("%Y-%m-%d"),
+        "timestamp": now.isoformat(),
+        "action": "trace",
+        "platform": platform,
+        "content": content,
+    }
+    if target_name:
+        entry["target_name"] = target_name
+    if target_url:
+        entry["target_url"] = target_url
+
+    with ENGAGEMENT_LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")

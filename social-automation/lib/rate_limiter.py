@@ -14,6 +14,8 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
+from lib.config import settings
+
 Platform = Literal["facebook", "instagram", "wordpress"]
 ActionType = Literal[
     "comment",
@@ -33,7 +35,7 @@ DAILY_LIMITS: dict[str, int] = {
     "facebook:group_visit": 6,  # reduced from 10 — spread through day
     "facebook:group_post": 10,  # share blog link to group — bumped from 3 (still well under FB's ~25/d ceiling)
     "instagram:like": 8,  # increased from 5 — likes are low-risk
-    "instagram:ig_comment": 2,
+    "instagram:ig_comment": 7,
     # Replies to comments on OUR OWN IG media. Separate bucket from ig_comment
     # (which guards outbound comments on third-party posts — the real spam
     # risk). Conversation on your own post is expected engagement; we cap at
@@ -55,7 +57,12 @@ DELAY_RANGES: dict[str, tuple[int, int]] = {
 
 # Resolve against the actual project root regardless of cwd or caller location
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-STATE_FILE = _PROJECT_ROOT / ".claude" / "state" / "rate_limit_tracker.json"
+# STATE_FILE now resolves to the brand-dir-aware state path
+# (e.g. dogfoodandfun/state/rate_limit_tracker.json), via the BrandPaths
+# resolver in lib.config. The legacy social-automation/.claude/state path
+# never existed under the multi-brand layout and caused FileNotFoundError
+# on every _save_state() call.
+STATE_FILE = settings.paths.rate_limit_tracker
 
 
 def _load_state() -> dict:

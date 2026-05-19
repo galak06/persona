@@ -19,8 +19,10 @@ from pathlib import Path
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
+from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
@@ -58,40 +60,29 @@ def load_config() -> dict:
 
 
 def load_groups() -> list[dict]:
-    """Load joined groups from Excel tracker."""
-    import pandas as pd
-
+    """Load joined groups from JSON tracker."""
     tracker = TRACKER_PATH
     if not tracker.exists():
-        from glob import glob
+        raise FileNotFoundError(f"groups tracker not found at {tracker}")
 
-        hits = glob(
-            str(PROJECT_ROOT / "../../**/facebook_groups_tracker.xlsx"),
-            recursive=True,
-        )
-        if hits:
-            tracker = Path(hits[0])
-        else:
-            raise FileNotFoundError("facebook_groups_tracker.xlsx not found")
-
-    df = pd.read_excel(tracker, sheet_name="Groups Database")
-    df.columns = [c.replace("\n", " ") for c in df.columns]
-
-    joined = df[
-        (df["Joined?"].astype(str).str.contains("Joined", na=False))
-        & (~df["Self-Promo Allowed?"].astype(str).str.contains("No", na=False))
-    ].dropna(subset=["Facebook URL"])
+    with tracker.open() as f:
+        records = json.load(f)
 
     groups = []
-    for _, row in joined.iterrows():
-        url = str(row["Facebook URL"]).strip()
-        if "/groups/search" in url:
+    for row in records:
+        status = str(row.get("status", "")).strip().lower()
+        if status != "joined":
+            continue
+        if str(row.get("self_promo_allowed", "")).strip().lower() == "no":
+            continue
+        url = str(row.get("group_url", "")).strip()
+        if not url or "/groups/search" in url:
             continue
         groups.append(
             {
-                "name": str(row["Group Name"]),
+                "name": str(row.get("group_name", "")),
                 "url": url,
-                "category": str(row.get("Category", "")),
+                "category": str(row.get("category", "")),
             }
         )
     return groups
@@ -322,11 +313,13 @@ def run_scan() -> None:
     from playwright.sync_api import sync_playwright
 
     print("=== Facebook Group Scanner (CLI) ===\n", flush=True)
+    log_trace("facebook", "Started Facebook group scan")
 
     # Check session file
     if not SESSION_FILE.exists():
         print("ERROR: No saved Facebook session found.")
         print("Run this first:  python scripts/fb_login.py")
+        log_trace("facebook", "Aborted: No saved session")
         return
 
     # Already ran successfully today?
@@ -341,11 +334,13 @@ def run_scan() -> None:
         import sys
 
         if "--force" not in sys.argv:
+            log_trace("facebook", "Skipped: already ran today")
             return
 
     # Pre-flight: rate limits
     if not can_act("facebook", "group_visit"):
         print("ABORT: Daily group visit limit reached. Try again tomorrow.")
+        log_trace("facebook", "Aborted: Daily group visit limit reached")
         skill_skipped("fb-scanner", "Daily group visit limit reached")
         print_status()
         return
@@ -697,6 +692,7 @@ def run_scan() -> None:
         f"(✅ {high_confidence} auto, 👀 {needs_approval} need approval)\n"
         f"⏭️ Skipped: {posts_skipped_dedup} dedup, {posts_skipped_score} low score"
     )
+    log_trace("facebook", f"Scan complete: {groups_scanned} groups, {posts_queued} queued")
     print(f"""
 === Facebook Scan Complete ===
 Groups scanned: {groups_scanned} / {len(groups)}
