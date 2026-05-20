@@ -31,6 +31,7 @@ from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
 # Force unbuffered output so watchdog/monitors can see progress
+from lib.engagement.policy import EngagementPolicy
 from lib.logger import log_progress, log_step
 
 
@@ -363,8 +364,7 @@ def run_scan() -> None:
     config = load_config()
     queue = load_queue()
 
-    relevance_threshold = config["content_analysis"]["relevance_threshold"]
-    ig_comment_threshold = 0.75  # aligned with FB threshold
+    policy = EngagementPolicy.from_config(config)
 
     # Stats
     hashtags_scanned = 0
@@ -552,9 +552,9 @@ def run_scan() -> None:
                     }
                     base_score = score_relevance(caption, meta)
                     score = ig_score_adjustments(base_score, like_count)
-                    print(f"        score={score} (threshold={relevance_threshold})")
+                    print(f"        score={score} (threshold={policy.candidate_threshold})")
 
-                    if score < relevance_threshold:
+                    if not policy.is_candidate(score):
                         posts_skipped_score += 1
                         continue
 
@@ -576,7 +576,7 @@ def run_scan() -> None:
                         log_error(f"LIKE_BUTTON_NOT_FOUND: {post_id} result={like_result}")
 
                     # Collect comment candidates (higher bar)
-                    if score >= ig_comment_threshold and "?" in caption:
+                    if policy.is_comment_candidate(score) and "?" in caption:
                         comment_candidates.append(
                             {
                                 "platform": "instagram",

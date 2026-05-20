@@ -27,6 +27,7 @@ from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
 # Force unbuffered output so watchdog/monitors can see progress
+from lib.engagement.policy import EngagementPolicy
 from lib.logger import log_progress, log_step
 
 
@@ -361,8 +362,7 @@ def run_scan() -> None:
     last_run = load_last_run()
     config = load_config()
 
-    relevance_threshold = config["content_analysis"]["relevance_threshold"]
-    approval_threshold = config["content_analysis"]["approval_threshold"]
+    policy = EngagementPolicy.from_config(config)
 
     # Stats
     groups_scanned = 0
@@ -612,14 +612,14 @@ def run_scan() -> None:
                     # Score
                     meta = {"comment_count": comment_count, "hours_old": 12}
                     score = score_relevance(post_text, meta, group_category=category)
-                    print(f"        score={score} (threshold={relevance_threshold})")
+                    print(f"        score={score} (threshold={policy.candidate_threshold})")
 
-                    if score < relevance_threshold:
+                    if not policy.is_candidate(score):
                         posts_skipped_score += 1
                         continue
 
                     # Queue it
-                    requires_approval = score < approval_threshold
+                    requires_approval = policy.requires_approval(score)
                     draft_comment = draft_comment_for_post(
                         platform="facebook",
                         post_text=post_text,
@@ -698,8 +698,8 @@ def run_scan() -> None:
 Groups scanned: {groups_scanned} / {len(groups)}
 Posts evaluated: {posts_evaluated}
 Posts queued for comments: {posts_queued}
-  - High confidence (score >= {approval_threshold}): {high_confidence}
-  - Needs approval ({relevance_threshold}-{approval_threshold}): {needs_approval}
+  - High confidence (score >= {policy.approval_threshold}): {high_confidence}
+  - Needs approval ({policy.candidate_threshold}-{policy.approval_threshold}): {needs_approval}
 Posts skipped — already engaged: {posts_skipped_dedup}
 Posts skipped — below threshold: {posts_skipped_score}
 """)
