@@ -1,7 +1,15 @@
 """
-Instagram Hashtag Scanner — CLI version using Playwright.
-Uses saved session state (from ig_login.py) to browse Instagram.
-Scans hashtags, likes qualifying posts, queues top candidates for comments.
+Instagram Hashtag Scanner — orchestration layer.
+
+Loops over hashtags via InstagramHashtagAdapter, runs base relevance scoring +
+dedup + rate-limit + draft + queue write. All platform-specific work
+(Playwright session, hashtag iteration, DOM scraping, like click, competitor /
+own-account / age guards, IG-specific score nudges) lives in
+`lib/engagement/adapters/instagram.py`.
+
+Cherry-pick of the top-N candidates for the comment queue is intentionally
+still here — slice 3 of the OutboundEngagement refactor moves that into a
+shared pipeline. IG comment quota stays at 2/day until then.
 
 Usage:
     1. First time: python scripts/ig_login.py   (log in, save session)
@@ -10,16 +18,11 @@ Usage:
 
 from __future__ import annotations
 
-import csv
 import json
-import logging
-import re
 import sys
-import time
 from datetime import UTC, date, datetime
-
-UTC = UTC
 from pathlib import Path
+from typing import Any
 
 # Ensure lib is importable
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -28,29 +31,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
-
-# Force unbuffered output so watchdog/monitors can see progress
-from lib.engagement.policy import EngagementPolicy
-from lib.logger import log_progress, log_step
-
 
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
 from draft_helper import draft_comment_for_post
+from lib.engagement.adapter import OutboundAdapter
+from lib.engagement.adapters.instagram import InstagramHashtagAdapter
+from lib.engagement.policy import EngagementPolicy
+from lib.engagement.post import Post
+from lib.logger import log_progress, log_step
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status, record_action, wait_random_delay
-
 
 SESSION_FILE = settings.paths.instagram_session
 QUEUE_FILE = settings.paths.comment_queue
 LAST_RUN_FILE = settings.paths.last_run
-ERROR_LOG = (settings.paths.logs_dir / "errors.log")
-CONFIG_FILE = (settings.paths.brand_dir / "config.json")
+ERROR_LOG = settings.paths.logs_dir / "errors.log"
+CONFIG_FILE = settings.paths.brand_dir / "config.json"
 HASHTAG_FILE = settings.paths.instagram_accounts
 
 
-def load_config() -> dict:
+def load_config() -> dict[str, Any]:
     with CONFIG_FILE.open() as f:
         return json.load(f)
 
@@ -62,309 +65,90 @@ def log_error(msg: str) -> None:
         f.write(f"[{ts}] {msg}\n")
 
 
-def load_hashtags() -> list[dict]:
-    """Load today's hashtags from CSV based on scan frequency."""
-    today = date.today()
-
-    rows = []
-    with HASHTAG_FILE.open() as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            freq = row.get("scan_frequency", "").strip()
-            if should_scan_today(freq, today):
-                rows.append(row)
-    return rows
-
-
-def should_scan_today(freq: str, today: date) -> bool:
-    if freq == "daily":
-        return True
-    if freq == "every_2_days":
-        return today.toordinal() % 2 == 0
-    if freq == "weekly":
-        return today.weekday() == 0  # Mondays
-    return False
-
-
-def load_queue() -> list[dict]:
+def load_queue() -> list[dict[str, Any]]:
     if QUEUE_FILE.exists():
         with QUEUE_FILE.open() as f:
             return json.load(f)
     return []
 
 
-def save_queue(queue: list[dict]) -> None:
+def save_queue(queue: list[dict[str, Any]]) -> None:
     QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with QUEUE_FILE.open("w") as f:
         json.dump(queue, f, indent=2)
 
 
-def load_last_run() -> dict:
+def load_last_run() -> dict[str, Any]:
     if LAST_RUN_FILE.exists():
         with LAST_RUN_FILE.open() as f:
             return json.load(f)
     return {}
 
 
-def save_last_run(data: dict) -> None:
+def save_last_run(data: dict[str, Any]) -> None:
     LAST_RUN_FILE.parent.mkdir(parents=True, exist_ok=True)
     with LAST_RUN_FILE.open("w") as f:
         json.dump(data, f, indent=2)
 
 
-def parse_like_count(text: str) -> int:
-    """Parse Instagram like count from text like '1,234 likes' or '12.5K likes'."""
-    if not text:
-        return 0
-    text = text.lower().replace(",", "")
-    m = re.search(r"(\d+\.?\d*)\s*k", text)
-    if m:
-        return int(float(m.group(1)) * 1000)
-    m = re.search(r"(\d+\.?\d*)\s*m", text)
-    if m:
-        return int(float(m.group(1)) * 1_000_000)
-    m = re.search(r"(\d+)", text)
-    if m:
-        return int(m.group(1))
-    return 0
-
-
-def parse_comment_count(text: str) -> int:
-    """Parse comment count from text like 'View all 42 comments'."""
-    if not text:
-        return 0
-    m = re.search(r"(\d+)\s*comment", text.lower())
-    if m:
-        return int(m.group(1))
-    return 0
-
-
-def ig_score_adjustments(base_score: float, like_count: int) -> float:
-    """Apply IG-specific scoring adjustments on top of base relevance score."""
-    score = base_score
-    if like_count < 500:
-        score += 0.15  # not viral, real engagement possible
-    if like_count > 5000:
-        score -= 0.20  # we'd be lost in the noise
-    return round(score, 2)
-
-
-# --- JavaScript for extracting posts from a hashtag page ---
-
-EXTRACT_HASHTAG_POSTS_JS = """
-() => {
-    const links = Array.from(document.querySelectorAll('a[href*="/p/"]'));
-    const posts = [];
-    const seen = new Set();
-
-    for (const a of links) {
-        const href = a.getAttribute('href') || '';
-        const match = href.match(/\\/p\\/([^\\/]+)/);
-        if (!match) continue;
-        const postId = match[1];
-        if (seen.has(postId)) continue;
-        seen.add(postId);
-
-        posts.push({
-            url: 'https://www.instagram.com' + href,
-            post_id: postId,
-        });
+def _build_default_adapter(config: dict[str, Any]) -> InstagramHashtagAdapter:
+    """Construct the production adapter wired to the scanner's settings paths."""
+    adapter_config: dict[str, object] = {
+        **config,
+        "session_file": SESSION_FILE,
+        "hashtag_file": HASHTAG_FILE,
+        "headless": False,
     }
-    return posts.slice(0, 15);
-}
-"""
-
-EXTRACT_POST_DETAILS_JS = """
-() => {
-    const result = {caption: '', like_text: '', comment_text: '', author: ''};
-
-    // Caption — multiple selector strategies
-    const h1 = document.querySelector('h1');
-    if (h1) result.caption = h1.innerText || '';
-
-    if (!result.caption) {
-        // Fallback: look for the main text block in the post
-        const spans = document.querySelectorAll('span[dir="auto"]');
-        for (const span of spans) {
-            const t = span.innerText || '';
-            if (t.length > 30) {
-                result.caption = t;
-                break;
-            }
-        }
-    }
-
-    // Author — strip all slashes from href e.g. /dogfoodandfun/ → dogfoodandfun
-    const authorLink = document.querySelector(
-        'header a[href]:not([href="/"])'
-    );
-    if (authorLink) {
-        const href = authorLink.getAttribute('href') || '';
-        result.author = href.replace(/\\//g, '').trim();
-    }
-    // Fallback: try the first link with a username-like path
-    if (!result.author) {
-        const links = document.querySelectorAll('a[href^="/"]');
-        for (const a of links) {
-            const h = a.getAttribute('href') || '';
-            if (h.match(/^\\/[a-zA-Z0-9_.]+\\/$/) && h !== '/') {
-                result.author = h.replace(/\\//g, '').trim();
-                break;
-            }
-        }
-    }
-
-    // Like count
-    const likeSection = document.querySelector(
-        'section span:has(> span), ' +
-        'a[href*="liked_by"] span, ' +
-        'button span'
-    );
-    const allSpans = document.querySelectorAll('span');
-    for (const s of allSpans) {
-        const t = s.innerText || '';
-        if (t.match(/\\d.*like/i) || t.match(/like.*\\d/i)) {
-            result.like_text = t;
-            break;
-        }
-    }
-
-    // Comment count
-    for (const s of allSpans) {
-        const t = s.innerText || '';
-        if (t.match(/view.*\\d+.*comment/i) || t.match(/\\d+.*comment/i)) {
-            result.comment_text = t;
-            break;
-        }
-    }
-
-    return result;
-}
-"""
-
-CLICK_LIKE_JS = """
-() => {
-    // Find the like button (heart icon) — multiple strategies
-    const svgs = document.querySelectorAll('svg[aria-label="Like"]');
-    for (const svg of svgs) {
-        const btn = svg.closest('[role="button"]') ||
-                    svg.closest('button') ||
-                    svg.parentElement;
-        if (btn) {
-            btn.click();
-            return 'liked';
-        }
-    }
-
-    // Fallback: aria-label on the button itself
-    const btns = document.querySelectorAll(
-        '[aria-label="Like"][role="button"], button[aria-label="Like"]'
-    );
-    if (btns.length > 0) {
-        btns[0].click();
-        return 'liked';
-    }
-
-    // Check if already liked
-    const unlikeSvgs = document.querySelectorAll('svg[aria-label="Unlike"]');
-    if (unlikeSvgs.length > 0) {
-        return 'already_liked';
-    }
-
-    return 'not_found';
-}
-"""
-
-# Known competitor brand accounts — never like their posts
-COMPETITOR_ACCOUNTS = {
-    "tractive",
-    "tractivepets",
-    "ficollar",
-    "fidogs",
-    "whistlepet",
-    "whistle",
-    "linkakc",
-}
-
-# Our own account — skip to avoid self-engagement
-OWN_ACCOUNT = "dogfoodandfun"
+    return InstagramHashtagAdapter(adapter_config)
 
 
-def dismiss_ig_overlays(page) -> None:
-    """Dismiss Instagram popups (notifications, cookies, login prompts)."""
-    selectors = [
-        "button:has-text('Not Now')",
-        "button:has-text('Cancel')",
-        "button:has-text('Decline')",
-        "button:has-text('Accept')",  # cookie consent
-        "[aria-label='Close']",
-    ]
-    for sel in selectors:
-        try:
-            btn = page.locator(sel)
-            if btn.count() > 0:
-                btn.first.click(timeout=2000)
-                time.sleep(1)
-                return
-        except Exception:
-            pass
-
-
-def run_scan() -> None:
-    """Main scan entry point."""
-    from playwright.sync_api import sync_playwright
-
-    print("=== Instagram Hashtag Scanner (CLI) ===\n", flush=True)
-    log_trace("instagram", "Started Instagram hashtag scan")
-
-    # Re-run guard — skip if already ran successfully today
+def _check_rerun_guard() -> bool:
+    """Return True to continue, False to skip (already ran today)."""
     last_run = load_last_run()
     ig_last = last_run.get("ig_scanner", {})
     ig_last_date = (ig_last.get("last_run_at") or "")[:10]
     if ig_last_date == date.today().isoformat() and ig_last.get("status") == "success":
-        msg = f"Already ran today — liked {ig_last.get('posts_liked', 0)} posts, queued {ig_last.get('posts_queued_for_comment', 0)} for comments"
+        msg = (
+            f"Already ran today — liked {ig_last.get('posts_liked', 0)} posts, "
+            f"queued {ig_last.get('posts_queued_for_comment', 0)} for comments"
+        )
         print(f"SKIP: ig_scanner already ran successfully today ({ig_last_date}).")
         print("Use --force to override.")
         skill_skipped("ig-scanner", msg)
         if "--force" not in sys.argv:
             log_trace("instagram", "Skipped: already ran today")
-            return
+            return False
         print("--force detected, re-running.\n")
+    return True
 
-    # Check session file
-    if not SESSION_FILE.exists():
-        print("ERROR: No saved Instagram session found.")
-        print("Run this first:  python scripts/ig_login.py")
-        log_trace("instagram", "Aborted: No saved session")
-        return
 
-    # Pre-flight: rate limits
+def run_ig_scan(adapter: OutboundAdapter | None = None) -> int:
+    """Orchestrate one IG hashtag scan run.
+
+    Returns the number of posts queued for comments. The adapter parameter is
+    DI for tests; production passes None and gets the real Playwright-backed
+    InstagramHashtagAdapter.
+    """
+    print("=== Instagram Hashtag Scanner (CLI) ===\n", flush=True)
+    log_trace("instagram", "Started Instagram hashtag scan")
+
+    if not _check_rerun_guard():
+        return 0
+
     if not can_act("instagram", "like"):
         print("ABORT: Daily IG like limit reached. Try again tomorrow.")
         log_trace("instagram", "Aborted: Daily like limit reached")
         skill_skipped("ig-scanner", "Daily IG like limit reached")
         print_status()
-        return
+        return 0
 
     skill_started("ig-scanner", "Scanning Instagram hashtags for posts to like/comment")
     print_status()
 
-    # Load hashtags for today
-    hashtags = load_hashtags()
-    print(f"Hashtags to scan today: {len(hashtags)}")
-    for h in hashtags:
-        print(f"  - {h['hashtag']} (tier {h.get('tier', '?')}, {h.get('category', '?')})")
-    print()
-
-    if not hashtags:
-        print("No hashtags scheduled for today. Done.")
-        return
-
-    # Load config and queue
     config = load_config()
-    queue = load_queue()
-
     policy = EngagementPolicy.from_config(config)
+    adapter_active = adapter if adapter is not None else _build_default_adapter(config)
+    queue = load_queue()
 
     # Stats
     hashtags_scanned = 0
@@ -375,291 +159,275 @@ def run_scan() -> None:
     posts_skipped_score = 0
     posts_skipped_competitor = 0
 
-    # Candidates for comment queue (collect all, pick top 2 at end)
-    comment_candidates: list[dict] = []
+    # Candidates collected during scan; top-N picked after the loop.
+    comment_candidates: list[tuple[Post, float, str]] = []
 
-    with sync_playwright() as p:
-        log_step("Launching browser")
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context(
-            storage_state=str(SESSION_FILE),
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
-        page = context.new_page()
-        log_step("Browser launched OK")
+    log_step("Launching browser")
+    try:
+        with adapter_active.session():
+            log_step("Instagram session OK")
+            sources = list(adapter_active.list_sources())
+            print(f"Hashtags to scan today: {len(sources)}")
+            for src in sources:
+                category = getattr(src, "category", "?")
+                print(f"  - {src.name} ({category})")
+            print()
 
-        # Quick login check
-        log_step("Checking Instagram session")
-        page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
-        time.sleep(4)
+            if not sources:
+                print("No hashtags scheduled for today. Done.")
+                _persist_last_run(0, 0, 0, status="success")
+                return 0
 
-        if "login" in page.url.lower() or "accounts/login" in page.url.lower():
-            print("ABORT: Instagram session expired.")
-            print("Re-run:  python scripts/ig_login.py")
-            log_error("SESSION_EXPIRED: Instagram login required")
-            browser.close()
-            return
-
-        log_step("Instagram session OK")
-
-        # Dismiss any startup overlays
-        dismiss_ig_overlays(page)
-        time.sleep(2)
-
-        for htag_idx, htag_row in enumerate(hashtags, 1):
-            hashtag = htag_row["hashtag"].strip().lstrip("#")
-            category = htag_row.get("category", "general").strip()
-
-            if not can_act("instagram", "like"):
-                print(
-                    f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.",
-                    flush=True,
-                )
-                break
-
-            log_progress(htag_idx, len(hashtags), f"Scanning: #{hashtag}", f"category={category}")
-            tag_url = f"https://www.instagram.com/explore/tags/{hashtag}/"
-            print(f"    URL: {tag_url}", flush=True)
-
-            try:
-                page.goto(tag_url, wait_until="domcontentloaded")
-                time.sleep(4)
-
-                # Check for blocked/unavailable hashtag
-                body_text = page.inner_text("body")[:500].lower()
-                if "sorry" in body_text and "page isn't available" in body_text:
-                    print(f"    SKIP: Hashtag #{hashtag} is blocked or unavailable.")
-                    log_error(f"HASHTAG_BLOCKED: #{hashtag}")
-                    continue
-
-                dismiss_ig_overlays(page)
-
-                # Scroll to load more posts
-                for _ in range(2):
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    time.sleep(2)
-
-                hashtags_scanned += 1
-
-                # Extract post links
-                post_links = page.evaluate(EXTRACT_HASHTAG_POSTS_JS)
-                print(f"    Posts found: {len(post_links)}", flush=True)
-
-                if not post_links:
-                    print("    No posts extracted. Skipping hashtag.", flush=True)
-                    continue
-
-                for post_idx, post_info in enumerate(post_links, 1):
-                    post_url = post_info["url"]
-                    post_id = post_info["post_id"]
-
-                    if not can_act("instagram", "like"):
-                        print("    Like limit reached mid-scan.")
-                        break
-
-                    posts_evaluated += 1
-                    print(f"    [{post_idx}/{len(post_links)}] Post {post_id[:12]}...", flush=True)
-
-                    # Dedup check
-                    if is_duplicate("instagram", post_id):
-                        posts_skipped_dedup += 1
-                        print("        SKIP: already engaged", flush=True)
-                        continue
-
-                    # Navigate to individual post
-                    print("        Opening post...", flush=True)
-                    try:
-                        page.goto(post_url, wait_until="domcontentloaded")
-                        time.sleep(3)
-                    except Exception as e:
-                        log_error(f"POST_NAVIGATION_FAILED: {post_id} — {e}")
-                        continue
-
-                    dismiss_ig_overlays(page)
-
-                    # Extract post details
-                    try:
-                        details = page.evaluate(EXTRACT_POST_DETAILS_JS)
-                    except Exception:
-                        details = {
-                            "caption": "",
-                            "like_text": "",
-                            "comment_text": "",
-                            "author": "",
-                        }
-
-                    caption = details.get("caption", "")[:800]
-                    author = details.get("author", "").strip().strip("/").lower()
-
-                    # Fallback: parse author from caption start
-                    # IG captions often render as "username  3w Caption..."
-                    if not author and caption:
-                        m = re.match(r"^([a-zA-Z0-9_.]+)\s", caption)
-                        if m:
-                            author = m.group(1).lower()
-
-                    like_count = parse_like_count(details.get("like_text", ""))
-                    comment_count = parse_comment_count(details.get("comment_text", ""))
-
-                    # Parse post age from caption (e.g. "4h", "3d", "2w", "101w")
-                    post_age_weeks = 0
-                    age_match = re.search(r"\b(\d+)(h|d|w|m)\b", caption)
-                    if age_match:
-                        val, unit = int(age_match.group(1)), age_match.group(2)
-                        if unit == "h":
-                            post_age_weeks = val / (24 * 7)
-                        elif unit == "d":
-                            post_age_weeks = val / 7
-                        elif unit == "w":
-                            post_age_weeks = val
-                        elif unit == "m":
-                            post_age_weeks = val * 4.3
-
-                    snippet = caption[:60].replace("\n", " ")
-                    print(f"    [{posts_evaluated}] @{author}: {snippet}...")
+            for src_idx, source in enumerate(sources, 1):
+                if not can_act("instagram", "like"):
                     print(
-                        f"        likes~{like_count} "
-                        f"comments~{comment_count} "
-                        f"age~{post_age_weeks:.1f}w"
+                        f"\nLike limit reached — stopping after {hashtags_scanned} hashtags.",
+                        flush=True,
                     )
+                    break
 
-                    # Skip own account — check both author field and caption start
-                    if author == OWN_ACCOUNT or caption.lower().startswith(OWN_ACCOUNT):
-                        print("        SKIP: own account")
-                        continue
+                category = getattr(source, "category", "general")
+                log_progress(
+                    src_idx, len(sources), f"Scanning: #{source.name}", f"category={category}"
+                )
+                print(f"    URL: {source.url}", flush=True)
 
-                    # Skip posts older than 2 weeks — too stale for engagement
-                    if post_age_weeks > 2:
-                        print(f"        SKIP: post too old ({post_age_weeks:.0f}w)")
-                        posts_skipped_score += 1
-                        continue
+                try:
+                    hashtags_scanned += 1
+                    for post in adapter_active.iterate_posts(source):
+                        if not can_act("instagram", "like"):
+                            print("    Like limit reached mid-scan.")
+                            break
 
-                    # Skip competitor accounts
-                    if author.lower() in COMPETITOR_ACCOUNTS:
-                        posts_skipped_competitor += 1
-                        print("        SKIP: competitor account")
-                        continue
-
-                    # Score relevance
-                    meta = {
-                        "comment_count": comment_count,
-                        "hours_old": 12,  # conservative estimate
-                    }
-                    base_score = score_relevance(caption, meta)
-                    score = ig_score_adjustments(base_score, like_count)
-                    print(f"        score={score} (threshold={policy.candidate_threshold})")
-
-                    if not policy.is_candidate(score):
-                        posts_skipped_score += 1
-                        continue
-
-                    # Like the post
-                    try:
-                        like_result = page.evaluate(CLICK_LIKE_JS)
-                    except Exception:
-                        like_result = "error"
-
-                    if like_result == "liked":
-                        record_action("instagram", "like")
-                        mark_engaged("instagram", post_id, "like", hashtag)
-                        posts_liked += 1
-                        print(f"        LIKED (#{posts_liked})")
-                    elif like_result == "already_liked":
-                        print("        already liked")
-                    else:
-                        print(f"        like button: {like_result}")
-                        log_error(f"LIKE_BUTTON_NOT_FOUND: {post_id} result={like_result}")
-
-                    # Collect comment candidates (higher bar)
-                    if policy.is_comment_candidate(score) and "?" in caption:
-                        comment_candidates.append(
-                            {
-                                "platform": "instagram",
-                                "post_url": post_url,
-                                "post_id": post_id,
-                                "post_text": caption[:600],
-                                "hashtag": hashtag,
-                                "author": author,
-                                "category": category,
-                                "relevance_score": score,
-                                "like_count": like_count,
-                                "queued_at": datetime.now(UTC).isoformat(),
-                                "status": "pending",
-                                "requires_approval": True,
-                            }
+                        posts_evaluated += 1
+                        result_counters = _process_post(
+                            post=post,
+                            adapter=adapter_active,
+                            policy=policy,
+                            comment_candidates=comment_candidates,
                         )
+                        posts_liked += result_counters["liked"]
+                        posts_skipped_dedup += result_counters["skipped_dedup"]
+                        posts_skipped_score += result_counters["skipped_score"]
+                        posts_skipped_competitor += result_counters["skipped_competitor"]
 
-                    # Delay between posts
-                    wait_random_delay("instagram", "like")
+                        if result_counters["should_delay"]:
+                            wait_random_delay("instagram", "like")
+                except Exception as exc:
+                    msg = f"Error scanning #{source.name}: {exc}"
+                    print(f"    ERROR: {exc}")
+                    log_error(msg)
+                    continue
+    except RuntimeError as exc:
+        # Adapter raises this on missing session file / expired session.
+        msg = str(exc)
+        if "SESSION_EXPIRED" in msg or "No saved Instagram session" in msg:
+            print(f"ABORT: {msg}")
+            print("Re-run:  python scripts/ig_login.py")
+            log_error(msg)
+            log_trace("instagram", "Aborted: session expired or missing")
+            return 0
+        raise
 
-            except Exception as e:
-                msg = f"Error scanning #{hashtag}: {e}"
-                print(f"    ERROR: {e}")
-                log_error(msg)
-                continue
+    # Cherry-pick TOP-N (slice 3 will move this into a shared pipeline).
+    posts_queued = _queue_top_candidates(
+        candidates=comment_candidates,
+        queue=queue,
+        policy=policy,
+    )
+    save_queue(queue)
 
-            # Delay between hashtag pages
-            time.sleep(5)
+    _persist_last_run(hashtags_scanned, posts_liked, posts_queued, status="success")
 
-        # Save refreshed session cookies
-        context.storage_state(path=str(SESSION_FILE))
-        browser.close()
+    log_trace(
+        "instagram",
+        f"Scan complete: {hashtags_scanned} hashtags, {posts_liked} liked, {posts_queued} queued",
+    )
+    _print_summary(
+        hashtags_scanned=hashtags_scanned,
+        posts_evaluated=posts_evaluated,
+        posts_liked=posts_liked,
+        posts_queued=posts_queued,
+        posts_skipped_dedup=posts_skipped_dedup,
+        posts_skipped_score=posts_skipped_score,
+        posts_skipped_competitor=posts_skipped_competitor,
+        comment_candidates=comment_candidates,
+    )
+    print_status()
+    summary = (
+        f"📸 Hashtags scanned: {hashtags_scanned}\n"
+        f"❤️ Posts liked: {posts_liked}/8\n"
+        f"💬 Queued for comment: {posts_queued}/2\n"
+        f"⏭️ Skipped: {posts_skipped_dedup} dedup, "
+        f"{posts_skipped_score} low score, {posts_skipped_competitor} competitor"
+    )
+    skill_finished("ig-scanner", summary)
+    return posts_queued
 
-    # Queue top comment candidates (max 2 per day)
-    comment_budget = 2
+
+def _process_post(
+    *,
+    post: Post,
+    adapter: OutboundAdapter,
+    policy: EngagementPolicy,
+    comment_candidates: list[tuple[Post, float, str]],
+) -> dict[str, int]:
+    """Score + filter + (maybe) like one post. Mutates comment_candidates.
+
+    Returns counters: liked, skipped_dedup, skipped_score, skipped_competitor,
+    should_delay (1 = caller should wait_random_delay, 0 = skip the wait).
+    """
+    counters = {
+        "liked": 0,
+        "skipped_dedup": 0,
+        "skipped_score": 0,
+        "skipped_competitor": 0,
+        "should_delay": 0,
+    }
+    print(f"    Post {post.post_id[:12]}...", flush=True)
+
+    if is_duplicate("instagram", post.post_id):
+        counters["skipped_dedup"] = 1
+        print("        SKIP: already engaged", flush=True)
+        return counters
+
+    rejection = adapter.pre_filter(post)
+    if rejection is not None:
+        if rejection == "competitor":
+            counters["skipped_competitor"] = 1
+            print("        SKIP: competitor account")
+        elif rejection == "own_account":
+            print("        SKIP: own account")
+        elif rejection == "too_old":
+            weeks_old = float(post.platform_extra.get("weeks_old", 0) or 0)
+            print(f"        SKIP: post too old ({weeks_old:.0f}w)")
+            counters["skipped_score"] = 1
+        else:
+            print(f"        SKIP: {rejection}")
+            counters["skipped_score"] = 1
+        return counters
+
+    like_count = int(post.platform_extra.get("like_count", 0) or 0)
+    comment_count = int(post.platform_extra.get("comment_count", 0) or 0)
+    weeks_old = float(post.platform_extra.get("weeks_old", 0) or 0)
+    snippet = post.text[:60].replace("\n", " ")
+    print(f"    @{post.author or '?'}: {snippet}...")
+    print(f"        likes~{like_count} comments~{comment_count} age~{weeks_old:.1f}w")
+
+    base_score = score_relevance(post.text, {"comment_count": comment_count, "hours_old": 12})
+    score = adapter.adjust_score(post, base_score)
+    print(f"        score={score} (threshold={policy.candidate_threshold})")
+
+    if not policy.is_candidate(score):
+        counters["skipped_score"] = 1
+        return counters
+
+    # Inline like.
+    like_result = adapter.like(post)
+    if like_result.liked:
+        record_action("instagram", "like")
+        mark_engaged("instagram", post.post_id, "like", post.source_name or "")
+        counters["liked"] = 1
+        print("        LIKED")
+    elif like_result.reason.startswith("skipped:already_liked"):
+        print("        already liked")
+    else:
+        print(f"        like: {like_result.reason}")
+        log_error(f"LIKE_FAILED: {post.post_id} reason={like_result.reason}")
+
+    # Collect comment candidate (cherry-pick happens after the loop).
+    if policy.is_comment_candidate(score) and "?" in post.text:
+        category = str(post.platform_extra.get("category", "general"))
+        comment_candidates.append((post, score, category))
+
+    counters["should_delay"] = 1
+    return counters
+
+
+def _queue_top_candidates(
+    *,
+    candidates: list[tuple[Post, float, str]],
+    queue: list[dict[str, Any]],
+    policy: EngagementPolicy,
+) -> int:
+    """Sort candidates by score desc, queue up to (daily quota - already queued today).
+
+    Drafts each comment, builds the queue record via Post.to_queue_record (IG always
+    requires approval), and appends in-place to `queue`. Returns count queued.
+    """
+    today_iso = date.today().isoformat()
     existing_ig_today = sum(
         1
         for q in queue
         if q.get("platform") == "instagram"
-        and q.get("queued_at", "").startswith(date.today().isoformat())
+        and q.get("queued_at", "").startswith(today_iso)
     )
-    comment_budget -= existing_ig_today
+    quota = policy.daily_comment_quota.get("instagram", 2)
+    budget = max(0, quota - existing_ig_today)
+    if budget == 0:
+        return 0
 
-    # Sort by score descending, take top N
-    comment_candidates.sort(key=lambda c: c["relevance_score"], reverse=True)
-    for candidate in comment_candidates[: max(0, comment_budget)]:
-        candidate["draft_comment"] = draft_comment_for_post(
+    selected = sorted(candidates, key=lambda c: c[1], reverse=True)[:budget]
+    queued = 0
+    for post, score, _category in selected:
+        draft = draft_comment_for_post(
             platform="instagram",
-            post_text=candidate.get("post_text", ""),
-            group_or_hashtag=candidate.get("hashtag"),
-            post_url=candidate.get("post_url"),
+            post_text=post.text[:600],
+            group_or_hashtag=post.source_name,
+            post_url=post.post_url,
         )
-        if not candidate["draft_comment"]:
+        if not draft:
             log.info(
                 {
                     "event": "draft_inline_empty",
                     "platform": "instagram",
-                    "post_url": candidate.get("post_url"),
+                    "post_url": post.post_url,
                 }
             )
-        queue.append(candidate)
-        posts_queued += 1
-        print(
-            f"\nQUEUED for comment: @{candidate['author']} "
-            f"score={candidate['relevance_score']} "
-            f"#{candidate['hashtag']}"
+        record = post.to_queue_record(
+            score=score,
+            draft=draft,
+            requires_approval=True,  # IG always requires approval
+            queued_at=datetime.now(UTC).isoformat(),
         )
+        queue.append(record)
+        queued += 1
+        print(
+            f"\nQUEUED for comment: @{post.author or '?'} "
+            f"score={score} #{post.source_name}"
+        )
+    return queued
 
-    save_queue(queue)
 
-    # Update last run — mark success so re-run guard skips this on next call
+def _persist_last_run(
+    hashtags_scanned: int,
+    posts_liked: int,
+    posts_queued: int,
+    *,
+    status: str,
+) -> None:
+    last_run = load_last_run()
     last_run["ig_scanner"] = {
         "last_run_at": datetime.now(UTC).isoformat(),
         "hashtags_scanned": hashtags_scanned,
         "posts_liked": posts_liked,
         "posts_queued_for_comment": posts_queued,
-        "status": "success",
+        "status": status,
     }
     save_last_run(last_run)
 
-    # Summary
-    log_trace("instagram", f"Scan complete: {hashtags_scanned} hashtags, {posts_liked} liked, {posts_queued} queued")
-    ("8" if not can_act("instagram", "like") else "?")
+
+def _print_summary(
+    *,
+    hashtags_scanned: int,
+    posts_evaluated: int,
+    posts_liked: int,
+    posts_queued: int,
+    posts_skipped_dedup: int,
+    posts_skipped_score: int,
+    posts_skipped_competitor: int,
+    comment_candidates: list[tuple[Post, float, str]],
+) -> None:
     print(f"""
 === Instagram Scan Complete ===
 Hashtags scanned today: {hashtags_scanned}
@@ -673,23 +441,15 @@ Posts skipped — competitor account: {posts_skipped_competitor}
 
     if comment_candidates:
         print("Top comment candidates:")
-        for i, c in enumerate(comment_candidates[:5], 1):
-            snip = c["post_text"][:50].replace("\n", " ")
+        sorted_cands = sorted(comment_candidates, key=lambda c: c[1], reverse=True)
+        for i, (post, score, _cat) in enumerate(sorted_cands[:5], 1):
+            snip = post.text[:50].replace("\n", " ")
             print(
-                f'  {i}. @{c["author"]} — "{snip}..." '
-                f"(score: {c['relevance_score']}) — #{c['hashtag']}"
+                f'  {i}. @{post.author or "?"} — "{snip}..." '
+                f"(score: {score}) — #{post.source_name}"
             )
         print()
 
-    print_status()
-    summary = (
-        f"📸 Hashtags scanned: {hashtags_scanned}\n"
-        f"❤️ Posts liked: {posts_liked}/8\n"
-        f"💬 Queued for comment: {posts_queued}/2\n"
-        f"⏭️ Skipped: {posts_skipped_dedup} dedup, {posts_skipped_score} low score, {posts_skipped_competitor} competitor"
-    )
-    skill_finished("ig-scanner", summary)
-
 
 if __name__ == "__main__":
-    run_scan()
+    run_ig_scan()

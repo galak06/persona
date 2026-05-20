@@ -7,9 +7,10 @@ same field names — drop-in replacement.
 from __future__ import annotations
 
 import json
-from lib.config import settings
 from datetime import UTC, date, datetime
 from pathlib import Path
+
+from lib.config import settings
 
 _DEFAULT_LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 _CONTENT_TRUNCATE_CHARS = 200

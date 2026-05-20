@@ -21,9 +21,10 @@ conversational comments to publishing-only groups.
 from __future__ import annotations
 
 import json
-from lib.config import settings
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+
+from lib.config import settings
 
 DEFAULT_ENGAGEMENT_ACTIONS: frozenset[str] = frozenset({"comment", "like"})
 """Canonical filter — only conversational actions count toward
