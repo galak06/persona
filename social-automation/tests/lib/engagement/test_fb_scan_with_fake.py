@@ -243,6 +243,38 @@ def test_fb_scan_requires_approval_flag_set_below_approval_threshold(
     assert rec["requires_approval"] is True
 
 
+def test_fb_scan_real_mark_engaged_writes_dedup(
+    fb_environment_real_dedup: dict[str, Path],
+) -> None:
+    """Regression: production ``mark_engaged`` call must accept the args
+    ``fb_scan`` passes.
+
+    The slice-2 fixture stubbed ``mark_engaged`` to a no-op, which masked a
+    real TypeError: ``fb_scan.py`` called ``mark_engaged(platform, post_id)``
+    but ``lib/deduplication.py`` requires a third positional ``action: str``.
+    This test runs the scanner WITHOUT the stub and asserts the dedup cache
+    file actually receives the post id.
+    """
+    group = _group("888", "Real Dedup Group")
+    adapter = FakeAdapter(
+        "facebook",
+        [group],
+        {"888": [_make_fb_post("p_real", "best dog food kibble nutrition", group)]},
+    )
+
+    from scripts.fb_scan import run_fb_scan
+
+    run_fb_scan(adapter=adapter)
+
+    dedup_cache = json.loads(fb_environment_real_dedup["dedup_file"].read_text())
+    assert "facebook" in dedup_cache
+    assert "p_real" in dedup_cache["facebook"]
+    entry = dedup_cache["facebook"]["p_real"]
+    assert entry["action"] == "comment_queued"
+    assert entry["group_or_hashtag"] == "Real Dedup Group"
+    assert entry["status"] == "engaged"
+
+
 def test_fb_scan_updates_last_run_on_success(
     fb_environment: dict[str, Path],
 ) -> None:

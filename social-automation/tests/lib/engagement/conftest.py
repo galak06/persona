@@ -102,18 +102,17 @@ def read_queue(queue_file: Path) -> list[dict[str, Any]]:
 # --- FB fixture -------------------------------------------------------------
 
 
-@pytest.fixture
-def fb_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[dict[str, Path]]:
-    """Redirect every fb_scan state-file dependency into tmp_path.
+def _build_fb_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stub_mark_engaged: bool = True,
+) -> dict[str, Path]:
+    """Shared FB-environment setup; ``stub_mark_engaged`` toggles the dedup stub.
 
-    Patches the AppSettings singleton paths AND the module-level path
-    constants in ``scripts.fb_scan``, bare ``deduplication``, and bare
-    ``rate_limiter``. Stubs Gemini drafter, Telegram notifier, sleep
-    delays, and ``mark_engaged`` — fb_scan calls it with only
-    ``(platform, post_id)`` but the production signature requires
-    ``action`` (existing bug, flag for slice 3); stub to a no-op.
+    Most tests pass ``stub_mark_engaged=True`` (the historical default), but
+    the regression test for the ``mark_engaged`` signature passes ``False``
+    so the real production call path executes against the tmp dedup file.
     """
     brand_dir = tmp_path / "brand"
     state_dir = brand_dir / "state"
@@ -169,9 +168,10 @@ def fb_environment(
     monkeypatch.setattr(bare_activity_log, "log_trace", lambda *a, **kw: None)
     monkeypatch.setattr(fb_scan, "log_trace", lambda *a, **kw: None)
     _stub_skill_notifications(monkeypatch, fb_scan)
-    monkeypatch.setattr(fb_scan, "mark_engaged", lambda *a, **kw: None)
+    if stub_mark_engaged:
+        monkeypatch.setattr(fb_scan, "mark_engaged", lambda *a, **kw: None)
 
-    yield {
+    return {
         "state_dir": state_dir,
         "queue_file": queue_file,
         "last_run_file": last_run_file,
@@ -180,6 +180,33 @@ def fb_environment(
         "config_file": config_file,
         "brand_dir": brand_dir,
     }
+
+
+@pytest.fixture
+def fb_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[dict[str, Path]]:
+    """Redirect every fb_scan state-file dependency into tmp_path.
+
+    Patches the AppSettings singleton paths AND the module-level path
+    constants in ``scripts.fb_scan``, bare ``deduplication``, and bare
+    ``rate_limiter``. Stubs Gemini drafter, Telegram notifier, sleep
+    delays, and ``mark_engaged``.
+    """
+    yield _build_fb_environment(tmp_path, monkeypatch, stub_mark_engaged=True)
+
+
+@pytest.fixture
+def fb_environment_real_dedup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[dict[str, Path]]:
+    """Same as ``fb_environment`` but DOES NOT stub ``mark_engaged``.
+
+    Used by the signature-regression test to prove the production
+    ``mark_engaged`` call path actually works (writes to the dedup cache
+    without raising ``TypeError``).
+    """
+    yield _build_fb_environment(tmp_path, monkeypatch, stub_mark_engaged=False)
 
 
 # --- IG fixture -------------------------------------------------------------

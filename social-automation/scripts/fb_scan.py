@@ -282,7 +282,9 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> int:
                             queued_at=datetime.now(UTC).isoformat(),
                         )
                     )
-                    mark_engaged("facebook", post.post_id)
+                    mark_engaged(
+                        "facebook", post.post_id, "comment_queued", source.name
+                    )
                     posts_queued += 1
                     if requires_approval:
                         needs_approval += 1
