@@ -107,9 +107,9 @@ class FakeLog:
 # --- Stub callables ---------------------------------------------------------
 
 
-def stub_score(text: str) -> float:
-    """Deterministic scorer: 0.85 if 'food' in text, else 0.40."""
-    return 0.85 if "food" in text else 0.40
+def stub_score(post: Post) -> float:
+    """Deterministic scorer: 0.85 if 'food' in post.text, else 0.40."""
+    return 0.85 if "food" in post.text else 0.40
 
 
 def stub_now() -> str:
@@ -183,7 +183,7 @@ def run(
     rate_tracker: FakeRateTracker | None = None,
     drafter: FakeDrafter | None = None,
     queue_io: FakeQueueIO | None = None,
-    score: Callable[[str], float] = stub_score,
+    score: Callable[[Post], float] = stub_score,
 ) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter, FakeQueueIO]:
     """Run pipeline with sensible defaults; return report + collaborators."""
     p = policy or make_policy()

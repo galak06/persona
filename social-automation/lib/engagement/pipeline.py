@@ -91,7 +91,7 @@ def run_outbound_scan(
     queue_io: _QueueIO,
     log: _Log,
     now_iso: Callable[[], str],
-    score_relevance: Callable[[str], float],
+    score_relevance: Callable[[Post], float],
 ) -> ScanReport:
     """Run one outbound-engagement scan and return a `ScanReport`.
 
@@ -196,7 +196,7 @@ def _process_post(
     dedup: _Dedup,
     rate_tracker: _RateTracker,
     log: _Log,
-    score_relevance: Callable[[str], float],
+    score_relevance: Callable[[Post], float],
 ) -> _PostOutcome:
     """Score, like, and mark one post. Returns the per-post counters."""
     platform = adapter.platform
@@ -207,7 +207,7 @@ def _process_post(
     if reason is not None:
         return _PostOutcome(pre_filter_reason=reason)
 
-    base = score_relevance(post.text)
+    base = score_relevance(post)
     score = adapter.adjust_score(post, base)
     if not policy.is_candidate(score):
         return _PostOutcome()

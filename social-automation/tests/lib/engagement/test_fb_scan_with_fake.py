@@ -242,26 +242,32 @@ def test_fb_scan_requires_approval_flag_set_below_approval_threshold(
 ) -> None:
     """Posts between comment_threshold and approval_threshold need approval.
 
-    ``score_relevance`` only emits multiples of 0.10, so we set
-    ``ig_comment_threshold=0.70`` and ``approval_threshold=0.85`` —
-    a 0.80 text then clears the comment gate but falls under approval.
+    The pipeline restores the slice-2 ``(text, meta, group_category)``
+    signature, so ``hours_old=12`` adds +0.10 and a "food" category adds
+    +0.15 (when base score ≥ 0.30). To land between 0.75 and 0.95 we use a
+    non-food (``category="general"``) post with ``comment_count`` outside
+    the 5–50 bonus band: food (0.40) + brand "ollie" (0.20) + question
+    (0.20) + hours_old bonus (0.10) = 0.90.
     """
     config_file = fb_environment["config_file"]
     payload = json.loads(config_file.read_text())
-    payload["content_analysis"]["ig_comment_threshold"] = 0.70
-    payload["content_analysis"]["approval_threshold"] = 0.85
+    payload["content_analysis"]["ig_comment_threshold"] = 0.75
+    payload["content_analysis"]["approval_threshold"] = 0.95
     config_file.write_text(json.dumps(payload))
 
     group = _group("888")
-    # food (0.40) + brand "ollie" (0.20) + question (0.20) = 0.80
-    text_at_080 = "best ollie dog food kibble nutrition recipe?"
-    adapter = _fb_adapter(group, [_make_fb_post("p_borderline", text_at_080, group)])
+    text = "best ollie dog food kibble nutrition recipe?"
+    # category="general" + comment_count=2 → no group/engagement bonuses
+    adapter = _fb_adapter(
+        group,
+        [_make_fb_post("p_borderline", text, group, category="general", comment_count=2)],
+    )
 
     run_fb_scan(adapter=adapter)
     queue = read_queue(fb_environment["queue_file"])
     assert len(queue) == 1
     rec = queue[0]
-    assert rec["relevance_score"] < 0.85
+    assert 0.75 <= rec["relevance_score"] < 0.95
     assert rec["requires_approval"] is True
 
 

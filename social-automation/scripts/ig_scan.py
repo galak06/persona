@@ -29,6 +29,7 @@ from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.instagram import InstagramHashtagAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
+from lib.engagement.post import Post
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status
 
@@ -72,6 +73,21 @@ def _load_json(path: Path, default: Any) -> Any:
     return json.loads(path.read_text()) if path.exists() else default
 
 
+def _score_post(post: Post) -> float:
+    """Adapt the pipeline's `(Post) -> float` callable to the real
+    `score_relevance(text, post_meta)` signature.
+
+    Restores the IG meta signal dropped during the slice-3 pipeline
+    extraction. Mirrors the pre-pipeline call in slice 2 (commit 856013e):
+    IG hard-coded `hours_old=12` and did not pass `group_category`.
+    """
+    comment_count_raw = post.platform_extra.get("comment_count", 0) or 0
+    return _score_relevance(
+        post.text,
+        {"comment_count": int(comment_count_raw), "hours_old": 12},  # type: ignore[call-overload]
+    )
+
+
 def _already_ran_today(last_run: dict[str, Any]) -> bool:
     ig = last_run.get("ig_scanner", {})
     return (ig.get("last_run_at") or "")[:10] == date.today().isoformat() and ig.get(
@@ -108,7 +124,7 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
             dedup=deduplication, rate_tracker=rate_limiter, drafter=draft_helper,
             queue_io=queue_io, log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
-            score_relevance=lambda text: _score_relevance(text),
+            score_relevance=_score_post,
         )
     except RuntimeError as exc:
         msg = str(exc)
