@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.dogfoodandfun.comment-composer</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/gilcohen/.local/bin/claude</string>
+		<string>--dangerously-skip-permissions</string>
+		<string>/comment-composer</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/gilcohen/Projects/dogfoodandfun/social-automation</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>22</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/Users/gilcohen/Projects/dogfoodandfun/dogfoodandfun/logs/cron_comment_composer.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/gilcohen/Projects/dogfoodandfun/dogfoodandfun/logs/cron_comment_composer.log</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/gilcohen/.local/bin:/opt/homebrew/Caskroom/miniconda/base/condabin:/Users/gilcohen/bin:/usr/local/bin:/Users/gilcohen/.pyenv/shims:/opt/homebrew/bin:/opt/homebrew/sbin:/Users/gilcohen/Library/Application Support/Code/User/globalStorage/github.copilot-chat/debugCommand:/Users/gilcohen/Library/Application Support/Code/User/globalStorage/github.copilot-chat/copilotCli:/Users/gilcohen/.local/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/Users/gilcohen/.vscode/extensions/ms-python.debugpy-2026.6.0-darwin-arm64/bundled/scripts/noConfigScripts</string>
+		<key>PYTHONUNBUFFERED</key>
+		<string>1</string>
+		<key>HOME</key>
+		<string>/Users/gilcohen</string>
+		<key>BRAND_DIR</key>
+		<string>/Users/gilcohen/Projects/dogfoodandfun/dogfoodandfun</string>
+	</dict>
+</dict>
+</plist>
