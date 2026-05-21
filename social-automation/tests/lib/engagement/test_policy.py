@@ -5,7 +5,7 @@ Covers:
     - sensible defaults when optional keys are missing
     - boundary semantics for is_candidate / is_comment_candidate / requires_approval
     - frozen dataclass invariant (no runtime mutation)
-    - slice 3 invariants: FB like quota = 0, IG comment quota = 10
+    - slice 4 invariants: FB like quota = 5, IG comment quota = 10
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class TestFromConfig:
         assert policy.approval_threshold == 0.80
         assert policy.comment_threshold == 0.75  # default
         assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
-        assert policy.daily_like_quota == {"facebook": 0, "instagram": 8}
+        assert policy.daily_like_quota == {"facebook": 5, "instagram": 8}
 
     def test_from_config_defaults_ig_comment_threshold_to_0_75(self) -> None:
         config = _production_like_config()
@@ -81,7 +81,7 @@ class TestFromConfig:
         policy = EngagementPolicy.from_config(config)
 
         assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
-        assert policy.daily_like_quota == {"facebook": 0, "instagram": 8}
+        assert policy.daily_like_quota == {"facebook": 5, "instagram": 8}
 
 
 class TestIsCandidate:
@@ -127,14 +127,13 @@ class TestFrozen:
 class TestSlice1Invariants:
     """Behavior gates locking in current production defaults.
 
-    Future slices will bump these (slice 4 adds FB inline liking, possibly
-    bumps IG to 10 comments/day). When that happens, these tests are the
-    visible spot to update.
+    Slice 4 activated FB inline liking (0 → 5/day). When future slices bump
+    these further, these tests are the visible spot to update.
     """
 
-    def test_default_daily_like_quota_facebook_is_zero(self) -> None:
+    def test_default_daily_like_quota_facebook_is_five(self) -> None:
         policy = EngagementPolicy.from_config(_production_like_config())
-        assert policy.daily_like_quota["facebook"] == 0
+        assert policy.daily_like_quota["facebook"] == 5
 
     def test_default_daily_comment_quota_instagram_is_ten(self) -> None:
         policy = EngagementPolicy.from_config(_production_like_config())

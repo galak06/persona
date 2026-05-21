@@ -1,7 +1,9 @@
 """End-to-end ``run_fb_scan()`` tests with FakeAdapter — no browser, no net.
 
 Slice 3: FB cherry-picks top-N per day where N = quota - already-queued-today.
-Fixture (``fb_environment``) + ``read_queue`` helper live in ``conftest.py``.
+Slice 4 Wave 0: FB inline ``like()`` is real; ``daily_like_quota["facebook"]=5``
+and ``DAILY_LIMITS["facebook:like"]=5``. The ``test_fb_scan_likes_*`` cases
+lock that contract. Fixtures + ``read_queue`` helper in ``conftest.py``.
 """
 from __future__ import annotations
 
@@ -10,15 +12,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.fb_scan import run_fb_scan
+
 from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.post import Post
-from scripts.fb_scan import run_fb_scan
 
 from .conftest import read_queue
 
-
 # --- helpers ----------------------------------------------------------------
-
 
 def _group(group_id: str, name: str = "G") -> FakeSource:
     return FakeSource(
@@ -46,28 +47,29 @@ def _make_fb_post(
     )
 
 
-def _fb_adapter(
-    group: FakeSource, posts: list[Post], **kw: Any
-) -> FakeAdapter:
+def _fb_adapter(group: FakeSource, posts: list[Post], **kw: Any) -> FakeAdapter:
     return FakeAdapter("facebook", [group], {group.id: posts}, **kw)
 
 
-# The new pipeline passes only post text to ``score_relevance`` (no
-# meta / group_category bonus), so test fixtures hit threshold via text alone.
 _HIGH_SCORE_TEXT = "best ollie dog food kibble nutrition recipe?"  # 0.80
 _LOW_SCORE_TEXT = "Random unrelated content about cars"  # 0.00
 
 
-def _override_fb_quota(fb_env: dict[str, Path], quota: int) -> None:
-    """Rewrite the FB ``comments_per_day`` quota in the tmp config file."""
-    config_file = fb_env["config_file"]
-    payload = json.loads(config_file.read_text())
-    payload["rate_limits"]["facebook"]["comments_per_day"] = quota
-    config_file.write_text(json.dumps(payload))
+def _override_fb_config(
+    fb_env: dict[str, Path], *, comments: int | None = None, likes: int | None = None
+) -> None:
+    """Rewrite FB rate-limit quotas in the tmp config file."""
+    cf = fb_env["config_file"]
+    payload = json.loads(cf.read_text())
+    fb = payload["rate_limits"]["facebook"]
+    if comments is not None:
+        fb["comments_per_day"] = comments
+    if likes is not None:
+        fb["likes_per_day"] = likes
+    cf.write_text(json.dumps(payload))
 
 
 def _seed_today_record(post_id: str) -> dict[str, Any]:
-    """Minimal FB queue record stamped today for budget arithmetic."""
     return {
         "platform": "facebook",
         "post_id": post_id,
@@ -77,17 +79,13 @@ def _seed_today_record(post_id: str) -> dict[str, Any]:
 
 # --- tests ------------------------------------------------------------------
 
-
 def test_fb_scan_queues_high_score_posts(fb_environment: dict[str, Path]) -> None:
     """High-relevance posts get queued; low-relevance posts don't."""
     group = _group("111", "Test Dog Group")
-    adapter = _fb_adapter(
-        group,
-        [
-            _make_fb_post("p1", _HIGH_SCORE_TEXT, group),
-            _make_fb_post("p2", _LOW_SCORE_TEXT, group),
-        ],
-    )
+    adapter = _fb_adapter(group, [
+        _make_fb_post("p1", _HIGH_SCORE_TEXT, group),
+        _make_fb_post("p2", _LOW_SCORE_TEXT, group),
+    ])
 
     report = run_fb_scan(adapter=adapter)
     queued_ids = [r["post_id"] for r in read_queue(fb_environment["queue_file"])]
@@ -96,67 +94,47 @@ def test_fb_scan_queues_high_score_posts(fb_environment: dict[str, Path]) -> Non
     assert report is not None and report.queued == 1
 
 
-def test_fb_scan_cherry_picks_when_under_quota(
-    fb_environment: dict[str, Path],
-) -> None:
-    """Quota=5, 3 qualifying posts -> all 3 queue (3 < quota).
-
-    Renamed from slice-2's ``test_fb_scan_inline_queueing_multiple_posts``:
-    the assertion is unchanged but the semantic is now "cherry-pick has
-    headroom" rather than "inline queue every match".
-    """
+def test_fb_scan_cherry_picks_when_under_quota(fb_environment: dict[str, Path]) -> None:
+    """Quota=5, 3 qualifying posts -> all 3 queue (3 < quota)."""
     group = _group("222")
     posts = [_make_fb_post(f"p{i}", _HIGH_SCORE_TEXT, group) for i in range(3)]
-
     run_fb_scan(adapter=_fb_adapter(group, posts))
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
     assert queued_ids == {"p0", "p1", "p2"}
 
 
-def test_fb_scan_cherry_picks_top_n_by_score(
-    fb_environment: dict[str, Path],
-) -> None:
-    """Quota=3, 7 candidates of descending score -> only top-3 queue.
-
-    Proves the pipeline orders by score before applying the daily budget.
-    """
-    _override_fb_quota(fb_environment, quota=3)
+def test_fb_scan_cherry_picks_top_n_by_score(fb_environment: dict[str, Path]) -> None:
+    """Quota=3, 7 candidates of descending score -> only top-3 queue."""
+    _override_fb_config(fb_environment, comments=3)
     group = _group("333", "Score Sort Group")
     # Scores via base text-only relevance: p1=1.10, p2=0.90, p3=0.80,
     # p4/p5=0.70, p6=0.60, p7=0.40 — only p1/p2/p3 clear comment_threshold (0.75).
-    posts = [
-        _make_fb_post("p1", "best fi collar gps tracker for dog food running?", group),
-        _make_fb_post("p2", "best dog food for running with gps tracker?", group),
-        _make_fb_post("p3", "best ollie dog food kibble nutrition recipe?", group),
-        _make_fb_post("p4", "dog food kibble nutrition gps", group),
-        _make_fb_post("p5", "best dog food kibble nutrition GPS", group),
-        _make_fb_post("p6", "What dog food should I feed my dog?", group),
-        _make_fb_post("p7", "best dog food kibble nutrition for puppies", group),
+    texts = [
+        "best fi collar gps tracker for dog food running?",
+        "best dog food for running with gps tracker?",
+        "best ollie dog food kibble nutrition recipe?",
+        "dog food kibble nutrition gps",
+        "best dog food kibble nutrition GPS",
+        "What dog food should I feed my dog?",
+        "best dog food kibble nutrition for puppies",
     ]
-
+    posts = [_make_fb_post(f"p{i+1}", t, group) for i, t in enumerate(texts)]
     report = run_fb_scan(adapter=_fb_adapter(group, posts))
     queued = read_queue(fb_environment["queue_file"])
     queued_ids = [r["post_id"] for r in queued]
     assert report is not None and report.queued == 3
-    # Top 3 by score are unambiguously p1 > p2 > p3 (no ties at the top).
-    assert set(queued_ids) == {"p1", "p2", "p3"}, (
-        f"Cherry-pick should select p1/p2/p3, got {queued_ids}"
-    )
+    assert set(queued_ids) == {"p1", "p2", "p3"}, queued_ids
     scores = [r["relevance_score"] for r in queued]
     assert scores == sorted(scores, reverse=True)
 
 
-def test_fb_scan_existing_today_reduces_budget(
-    fb_environment: dict[str, Path],
-) -> None:
+def test_fb_scan_existing_today_reduces_budget(fb_environment: dict[str, Path]) -> None:
     """Pre-seed 2 today, quota=3, scan 5 fresh -> budget=1 -> 1 appended."""
-    _override_fb_quota(fb_environment, quota=3)
+    _override_fb_config(fb_environment, comments=3)
     pre_seeded = [_seed_today_record("seed_a"), _seed_today_record("seed_b")]
     fb_environment["queue_file"].write_text(json.dumps(pre_seeded))
-
     group = _group("444", "Fresh Group")
     posts = [_make_fb_post(f"f{i}", _HIGH_SCORE_TEXT, group) for i in range(5)]
-
     report = run_fb_scan(adapter=_fb_adapter(group, posts))
     queue = read_queue(fb_environment["queue_file"])
     new_ids = {r["post_id"] for r in queue} - {"seed_a", "seed_b"}
@@ -167,28 +145,14 @@ def test_fb_scan_existing_today_reduces_budget(
 
 def test_fb_scan_skips_duplicates(fb_environment: dict[str, Path]) -> None:
     """Posts already in the dedup cache are skipped."""
-    fb_environment["dedup_file"].write_text(
-        json.dumps(
-            {
-                "facebook": {
-                    "p_dup": {
-                        "engaged_at": "2099-01-01",
-                        "action": "comment",
-                        "status": "engaged",
-                    }
-                }
-            }
-        )
-    )
+    fb_environment["dedup_file"].write_text(json.dumps({"facebook": {"p_dup": {
+        "engaged_at": "2099-01-01", "action": "comment", "status": "engaged",
+    }}}))
     group = _group("555")
-    adapter = _fb_adapter(
-        group,
-        [
-            _make_fb_post("p_dup", _HIGH_SCORE_TEXT, group),
-            _make_fb_post("p_new", _HIGH_SCORE_TEXT, group),
-        ],
-    )
-
+    adapter = _fb_adapter(group, [
+        _make_fb_post("p_dup", _HIGH_SCORE_TEXT, group),
+        _make_fb_post("p_new", _HIGH_SCORE_TEXT, group),
+    ])
     run_fb_scan(adapter=adapter)
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
     assert "p_dup" not in queued_ids
@@ -211,7 +175,9 @@ def test_fb_scan_record_shape(fb_environment: dict[str, Path]) -> None:
         "category", "relevance_score", "queued_at", "status", "requires_approval",
         "draft_comment",
     }
-    assert (rec["platform"], rec["post_id"], rec["status"]) == ("facebook", "p1", "pending")
+    assert (rec["platform"], rec["post_id"], rec["status"]) == (
+        "facebook", "p1", "pending"
+    )
     assert rec["group_name"] == "Dogs"
     assert rec["group_url"] == "https://www.facebook.com/groups/666"
     assert rec["category"] == "food"
@@ -222,15 +188,10 @@ def test_fb_scan_record_shape(fb_environment: dict[str, Path]) -> None:
 def test_fb_scan_pre_filter_rejection(fb_environment: dict[str, Path]) -> None:
     """Posts rejected by the adapter's pre_filter are not queued."""
     group = _group("777")
-    adapter = _fb_adapter(
-        group,
-        [
-            _make_fb_post("p_keep", _HIGH_SCORE_TEXT, group),
-            _make_fb_post("p_reject", _HIGH_SCORE_TEXT, group),
-        ],
-        pre_filter_overrides={"p_reject": "competitor"},
-    )
-
+    adapter = _fb_adapter(group, [
+        _make_fb_post("p_keep", _HIGH_SCORE_TEXT, group),
+        _make_fb_post("p_reject", _HIGH_SCORE_TEXT, group),
+    ], pre_filter_overrides={"p_reject": "competitor"})
     run_fb_scan(adapter=adapter)
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
     assert "p_keep" in queued_ids
@@ -240,29 +201,17 @@ def test_fb_scan_pre_filter_rejection(fb_environment: dict[str, Path]) -> None:
 def test_fb_scan_requires_approval_flag_set_below_approval_threshold(
     fb_environment: dict[str, Path],
 ) -> None:
-    """Posts between comment_threshold and approval_threshold need approval.
-
-    The pipeline restores the slice-2 ``(text, meta, group_category)``
-    signature, so ``hours_old=12`` adds +0.10 and a "food" category adds
-    +0.15 (when base score ≥ 0.30). To land between 0.75 and 0.95 we use a
-    non-food (``category="general"``) post with ``comment_count`` outside
-    the 5–50 bonus band: food (0.40) + brand "ollie" (0.20) + question
-    (0.20) + hours_old bonus (0.10) = 0.90.
-    """
-    config_file = fb_environment["config_file"]
-    payload = json.loads(config_file.read_text())
+    """Posts between comment_threshold and approval_threshold need approval."""
+    cf = fb_environment["config_file"]
+    payload = json.loads(cf.read_text())
     payload["content_analysis"]["ig_comment_threshold"] = 0.75
     payload["content_analysis"]["approval_threshold"] = 0.95
-    config_file.write_text(json.dumps(payload))
-
+    cf.write_text(json.dumps(payload))
     group = _group("888")
     text = "best ollie dog food kibble nutrition recipe?"
-    # category="general" + comment_count=2 → no group/engagement bonuses
-    adapter = _fb_adapter(
-        group,
-        [_make_fb_post("p_borderline", text, group, category="general", comment_count=2)],
-    )
-
+    adapter = _fb_adapter(group, [
+        _make_fb_post("p_borderline", text, group, category="general", comment_count=2),
+    ])
     run_fb_scan(adapter=adapter)
     queue = read_queue(fb_environment["queue_file"])
     assert len(queue) == 1
@@ -274,32 +223,77 @@ def test_fb_scan_requires_approval_flag_set_below_approval_threshold(
 def test_fb_scan_real_mark_engaged_writes_dedup(
     fb_environment_real_dedup: dict[str, Path],
 ) -> None:
-    """Regression: production ``mark_engaged`` writes the legacy
-    ``comment_queued`` marker the post-pipeline scanner still emits for FB.
+    """Regression: production ``mark_engaged`` writes a real dedup entry.
+
+    Slice 4 Wave 0: ``p_real`` clears the candidate-like gate, so the
+    dedup entry may carry action="like" or "comment_queued" — both prove
+    the production call path executed.
     """
     group = _group("999", "Real Dedup Group")
     adapter = _fb_adapter(group, [_make_fb_post("p_real", _HIGH_SCORE_TEXT, group)])
-
     run_fb_scan(adapter=adapter)
     dedup_cache = json.loads(fb_environment_real_dedup["dedup_file"].read_text())
     assert "facebook" in dedup_cache
     assert "p_real" in dedup_cache["facebook"]
     entry = dedup_cache["facebook"]["p_real"]
-    assert entry["action"] == "comment_queued"
+    assert entry["action"] in ("comment_queued", "like")
     assert entry["group_or_hashtag"] == "Real Dedup Group"
     assert entry["status"] == "engaged"
 
 
-def test_fb_scan_updates_last_run_on_success(
-    fb_environment: dict[str, Path],
-) -> None:
+def test_fb_scan_updates_last_run_on_success(fb_environment: dict[str, Path]) -> None:
     """``last_run.json`` is stamped with fb_scanner success after a run."""
     group = _group("aaa")
     adapter = _fb_adapter(group, [_make_fb_post("p1", _HIGH_SCORE_TEXT, group)])
-
     run_fb_scan(adapter=adapter)
     last_run = json.loads(fb_environment["last_run_file"].read_text())
     assert "fb_scanner" in last_run
     assert last_run["fb_scanner"]["status"] == "success"
     assert last_run["fb_scanner"]["groups_scanned"] == 1
     assert last_run["fb_scanner"]["posts_queued"] == 1
+
+
+# --- Slice 4 Wave 0: FB inline like contract --------------------------------
+
+def test_fb_scan_likes_qualifying_posts(fb_environment: dict[str, Path]) -> None:
+    """Every FB post clearing candidate_threshold gets ``like()`` invoked."""
+    group = _group("bbb", "FB Like Group")
+    posts = [_make_fb_post(f"p{i}", _HIGH_SCORE_TEXT, group) for i in range(3)]
+    run_fb_scan(adapter=(adapter := _fb_adapter(group, posts)))
+    attempted = {p.post_id for p in adapter.likes_attempted}
+    succeeded = {p.post_id for p in adapter.likes_succeeded}
+    assert attempted == {"p0", "p1", "p2"}
+    assert succeeded == {"p0", "p1", "p2"}
+
+
+def test_fb_scan_skips_likes_when_below_candidate_threshold(
+    fb_environment: dict[str, Path],
+) -> None:
+    """Low-score posts never reach the like step; only candidates are liked."""
+    group = _group("ccc", "Mixed Score Group")
+    adapter = _fb_adapter(group, [
+        _make_fb_post("p_low", _LOW_SCORE_TEXT, group),
+        _make_fb_post("p_high", _HIGH_SCORE_TEXT, group),
+    ])
+    run_fb_scan(adapter=adapter)
+    attempted = {p.post_id for p in adapter.likes_attempted}
+    assert attempted == {"p_high"}
+
+
+def test_fb_scan_likes_respect_daily_like_quota(
+    fb_environment: dict[str, Path],
+) -> None:
+    """``daily_like_quota["facebook"] = 0`` suppresses every like attempt.
+
+    Inverse case (default quota=5, 3 posts) is locked in
+    ``test_fb_scan_likes_qualifying_posts``.
+    """
+    _override_fb_config(fb_environment, likes=0)
+    group = _group("ddd", "No-Like Group")
+    posts = [_make_fb_post(f"p{i}", _HIGH_SCORE_TEXT, group) for i in range(3)]
+    run_fb_scan(adapter=(adapter := _fb_adapter(group, posts)))
+    assert adapter.likes_attempted == []
+    assert adapter.likes_succeeded == []
+    # Comment queue still populated — the quota gate is like-specific.
+    queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
+    assert queued_ids == {"p0", "p1", "p2"}

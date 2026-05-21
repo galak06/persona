@@ -162,3 +162,53 @@ USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/131.0.0.0 Safari/537.36"
 )
+
+
+# --- JS: click the 👍 like button on a Facebook Group post --------------------
+#
+# Locates the like button on the currently-loaded post via aria-label, then
+# clicks it with a plain `.click()` — this registers the default thumbs-up
+# reaction. We intentionally DO NOT hover the button, because FB opens the
+# reactions popover (Love / Haha / Wow / Sad / Angry) on hover/long-press and
+# we want the simple Like, not a reaction variant.
+#
+# Idempotency rule:
+#   - When the active actor (the Page, set via switch_to_page_profile) has
+#     already liked the post, FB sets `aria-pressed="true"` on the same button
+#     and may swap the `aria-label` to "Liked" or "Remove Like".
+#   - In that case we return {"status": "already_liked"} so the pipeline maps
+#     it to LikeResult.skipped("already_liked") instead of double-clicking
+#     (which would UN-like the post).
+#
+# Return shape (consumed by FacebookGroupAdapter.like):
+#   {"status": "ok"}                              — clicked, like registered
+#   {"status": "already_liked"}                   — was already liked, no-op
+#   {"status": "failed", "reason": "button_not_found"}  — no candidate in DOM
+#
+# Selector strategy mirrors the EXTRACT_POSTS_JS approach: scan all elements
+# carrying an aria-label so we tolerate FB's frequent DOM churn (the actual
+# tag/role on the like button has changed multiple times — div[role=button],
+# button, span[role=button] — but aria-label has remained stable).
+
+CLICK_LIKE_JS: str = """
+() => {
+    const likeLabels = ['like', 'liked', 'remove like'];
+    const candidates = Array.from(document.querySelectorAll(
+        '[role="button"][aria-label], button[aria-label], div[aria-label]'
+    ));
+    const button = candidates.find(el => {
+        const lbl = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+        return likeLabels.includes(lbl);
+    });
+    if (!button) {
+        return {status: 'failed', reason: 'button_not_found'};
+    }
+    const label = (button.getAttribute('aria-label') || '').trim().toLowerCase();
+    const pressed = button.getAttribute('aria-pressed') === 'true';
+    if (pressed || label === 'liked' || label === 'remove like') {
+        return {status: 'already_liked'};
+    }
+    button.click();
+    return {status: 'ok'};
+}
+"""

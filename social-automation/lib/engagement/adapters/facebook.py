@@ -1,9 +1,8 @@
 """FacebookGroupAdapter — outbound engagement on FB groups.
 
 Implements OutboundAdapter. Owns the Playwright session, page-profile switch
-(act as the brand Page), group iteration, and post extraction.
-like() returns LikeResult.skipped("not_supported") — slice 4 will fill in
-Page-as-actor liking on Group posts.
+(act as the brand Page), group iteration, post extraction, and inline liking
+of Group posts (executed as the active Page profile).
 
 This module is a refactor-by-extraction of scripts/fb_scan.py: same selectors,
 same scroll counts, same login validation, same page-profile switch sequence.
@@ -33,6 +32,7 @@ from lib.engagement.adapters._facebook_helpers import (
 )
 from lib.engagement.adapters.facebook_dom import (
     ARTICLE_COUNT_JS,
+    CLICK_LIKE_JS,
     EXTRACT_POSTS_JS,
     STORY_MESSAGE_COUNT_JS,
     USER_AGENT,
@@ -280,5 +280,35 @@ class FacebookGroupAdapter:
         return base
 
     def like(self, post: Post) -> LikeResult:
-        """Slice 4 will add Page-as-actor liking on Group posts."""
-        return LikeResult.skipped("not_supported")
+        """Click 👍 on a Group post as the active Page profile.
+
+        Requires session() to have switched to the Page profile (done in
+        __enter__). Idempotent: returns LikeResult.skipped("already_liked")
+        if the Page already liked the post. Any Playwright / navigation
+        failure maps to LikeResult.failed(reason) so the pipeline keeps
+        scanning instead of crashing.
+        """
+        if self._page is None:
+            return LikeResult.failed("no_active_session")
+        page = self._page
+        try:
+            current_url = page.url or ""
+            if post.post_url and post.post_url not in current_url:
+                page.goto(post.post_url, wait_until="domcontentloaded")
+                # Brief settle time — FB's like-button DOM appears asynchronously
+                # after navigation. Mirrors InstagramHashtagAdapter.like().
+                page.wait_for_timeout(1500)
+                dismiss_overlays(page)
+            result = page.evaluate(CLICK_LIKE_JS)
+        except Exception as exc:
+            return LikeResult.failed(f"playwright_error:{type(exc).__name__}")
+
+        if not isinstance(result, dict):
+            return LikeResult.failed("no_status")
+        status = result.get("status")
+        if status == "ok":
+            return LikeResult.ok()
+        if status == "already_liked":
+            return LikeResult.skipped("already_liked")
+        reason = str(result.get("reason", "unknown"))
+        return LikeResult.failed(reason)

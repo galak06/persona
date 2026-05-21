@@ -34,6 +34,7 @@ DAILY_LIMITS: dict[str, int] = {
     "facebook:comment": 5,
     "facebook:group_visit": 6,  # reduced from 10 — spread through day
     "facebook:group_post": 10,  # share blog link to group — bumped from 3 (still well under FB's ~25/d ceiling)
+    "facebook:like": 5,  # Page-as-actor likes during scans (slice 4)
     "instagram:like": 8,  # increased from 5 — likes are low-risk
     "instagram:ig_comment": 7,
     # Replies to comments on OUR OWN IG media. Separate bucket from ig_comment

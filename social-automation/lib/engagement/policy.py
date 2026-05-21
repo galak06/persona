@@ -33,7 +33,7 @@ _log = logging.getLogger(__name__)
 _DEFAULT_IG_COMMENT_THRESHOLD: float = 0.75
 _DEFAULT_FB_COMMENT_QUOTA: int = 5
 _DEFAULT_IG_COMMENT_QUOTA: int = 10
-_DEFAULT_FB_LIKE_QUOTA: int = 0  # FB doesn't like inline today; slice 4 changes this.
+_DEFAULT_FB_LIKE_QUOTA: int = 5  # Slice 4 activates FB inline likes; conservative starting cap.
 _DEFAULT_IG_LIKE_QUOTA: int = 8
 
 
