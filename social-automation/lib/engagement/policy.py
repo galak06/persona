@@ -32,7 +32,7 @@ _log = logging.getLogger(__name__)
 # policy is constructible from a minimal config.
 _DEFAULT_IG_COMMENT_THRESHOLD: float = 0.75
 _DEFAULT_FB_COMMENT_QUOTA: int = 5
-_DEFAULT_IG_COMMENT_QUOTA: int = 2
+_DEFAULT_IG_COMMENT_QUOTA: int = 10
 _DEFAULT_FB_LIKE_QUOTA: int = 0  # FB doesn't like inline today; slice 4 changes this.
 _DEFAULT_IG_LIKE_QUOTA: int = 8
 

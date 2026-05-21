@@ -1,29 +1,28 @@
-"""End-to-end test of ``run_fb_scan()`` with FakeAdapter — no browser, no
-network.
+"""End-to-end ``run_fb_scan()`` tests with FakeAdapter — no browser, no net.
 
-Drives the FB scanner through dedup, scoring, drafting, queue write, and
-rate-limit gating with a canned FakeAdapter instead of Playwright.
-
-Shared fixture (``fb_environment``) and the ``read_queue`` helper live in
-``conftest.py``.
+Slice 3: FB cherry-picks top-N per day where N = quota - already-queued-today.
+Fixture (``fb_environment``) + ``read_queue`` helper live in ``conftest.py``.
 """
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.post import Post
+from scripts.fb_scan import run_fb_scan
 
 from .conftest import read_queue
 
 
+# --- helpers ----------------------------------------------------------------
+
+
 def _group(group_id: str, name: str = "G") -> FakeSource:
     return FakeSource(
-        id=group_id,
-        name=name,
-        url=f"https://www.facebook.com/groups/{group_id}",
+        id=group_id, name=name, url=f"https://www.facebook.com/groups/{group_id}"
     )
 
 
@@ -47,54 +46,123 @@ def _make_fb_post(
     )
 
 
+def _fb_adapter(
+    group: FakeSource, posts: list[Post], **kw: Any
+) -> FakeAdapter:
+    return FakeAdapter("facebook", [group], {group.id: posts}, **kw)
+
+
+# The new pipeline passes only post text to ``score_relevance`` (no
+# meta / group_category bonus), so test fixtures hit threshold via text alone.
+_HIGH_SCORE_TEXT = "best ollie dog food kibble nutrition recipe?"  # 0.80
+_LOW_SCORE_TEXT = "Random unrelated content about cars"  # 0.00
+
+
+def _override_fb_quota(fb_env: dict[str, Path], quota: int) -> None:
+    """Rewrite the FB ``comments_per_day`` quota in the tmp config file."""
+    config_file = fb_env["config_file"]
+    payload = json.loads(config_file.read_text())
+    payload["rate_limits"]["facebook"]["comments_per_day"] = quota
+    config_file.write_text(json.dumps(payload))
+
+
+def _seed_today_record(post_id: str) -> dict[str, Any]:
+    """Minimal FB queue record stamped today for budget arithmetic."""
+    return {
+        "platform": "facebook",
+        "post_id": post_id,
+        "queued_at": datetime.now(UTC).isoformat(),
+    }
+
+
+# --- tests ------------------------------------------------------------------
+
+
 def test_fb_scan_queues_high_score_posts(fb_environment: dict[str, Path]) -> None:
     """High-relevance posts get queued; low-relevance posts don't."""
     group = _group("111", "Test Dog Group")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {
-            "111": [
-                _make_fb_post(
-                    "p1",
-                    "What dog food kibble is best for my golden retriever's nutrition?",
-                    group,
-                ),
-                _make_fb_post("p2", "Random unrelated content about cars", group),
-            ]
-        },
+    adapter = _fb_adapter(
+        group,
+        [
+            _make_fb_post("p1", _HIGH_SCORE_TEXT, group),
+            _make_fb_post("p2", _LOW_SCORE_TEXT, group),
+        ],
     )
 
-    from scripts.fb_scan import run_fb_scan
-
-    queued_count = run_fb_scan(adapter=adapter)
+    report = run_fb_scan(adapter=adapter)
     queued_ids = [r["post_id"] for r in read_queue(fb_environment["queue_file"])]
-
     assert "p1" in queued_ids
     assert "p2" not in queued_ids
-    assert queued_count == 1
+    assert report is not None and report.queued == 1
 
 
-def test_fb_scan_inline_queueing_multiple_posts(
+def test_fb_scan_cherry_picks_when_under_quota(
     fb_environment: dict[str, Path],
 ) -> None:
-    """FB queues every qualifying post inline (no cherry-pick at slice 2)."""
+    """Quota=5, 3 qualifying posts -> all 3 queue (3 < quota).
+
+    Renamed from slice-2's ``test_fb_scan_inline_queueing_multiple_posts``:
+    the assertion is unchanged but the semantic is now "cherry-pick has
+    headroom" rather than "inline queue every match".
+    """
     group = _group("222")
-    posts = [
-        _make_fb_post(
-            f"p{i}",
-            "best dog food kibble nutrition recipe ingredients raw diet",
-            group,
-        )
-        for i in range(3)
-    ]
-    adapter = FakeAdapter("facebook", [group], {"222": posts})
+    posts = [_make_fb_post(f"p{i}", _HIGH_SCORE_TEXT, group) for i in range(3)]
 
-    from scripts.fb_scan import run_fb_scan
-
-    run_fb_scan(adapter=adapter)
+    run_fb_scan(adapter=_fb_adapter(group, posts))
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
-    assert len(queued_ids) >= 2
+    assert queued_ids == {"p0", "p1", "p2"}
+
+
+def test_fb_scan_cherry_picks_top_n_by_score(
+    fb_environment: dict[str, Path],
+) -> None:
+    """Quota=3, 7 candidates of descending score -> only top-3 queue.
+
+    Proves the pipeline orders by score before applying the daily budget.
+    """
+    _override_fb_quota(fb_environment, quota=3)
+    group = _group("333", "Score Sort Group")
+    # Scores via base text-only relevance: p1=1.10, p2=0.90, p3=0.80,
+    # p4/p5=0.70, p6=0.60, p7=0.40 — only p1/p2/p3 clear comment_threshold (0.75).
+    posts = [
+        _make_fb_post("p1", "best fi collar gps tracker for dog food running?", group),
+        _make_fb_post("p2", "best dog food for running with gps tracker?", group),
+        _make_fb_post("p3", "best ollie dog food kibble nutrition recipe?", group),
+        _make_fb_post("p4", "dog food kibble nutrition gps", group),
+        _make_fb_post("p5", "best dog food kibble nutrition GPS", group),
+        _make_fb_post("p6", "What dog food should I feed my dog?", group),
+        _make_fb_post("p7", "best dog food kibble nutrition for puppies", group),
+    ]
+
+    report = run_fb_scan(adapter=_fb_adapter(group, posts))
+    queued = read_queue(fb_environment["queue_file"])
+    queued_ids = [r["post_id"] for r in queued]
+    assert report is not None and report.queued == 3
+    # Top 3 by score are unambiguously p1 > p2 > p3 (no ties at the top).
+    assert set(queued_ids) == {"p1", "p2", "p3"}, (
+        f"Cherry-pick should select p1/p2/p3, got {queued_ids}"
+    )
+    scores = [r["relevance_score"] for r in queued]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_fb_scan_existing_today_reduces_budget(
+    fb_environment: dict[str, Path],
+) -> None:
+    """Pre-seed 2 today, quota=3, scan 5 fresh -> budget=1 -> 1 appended."""
+    _override_fb_quota(fb_environment, quota=3)
+    pre_seeded = [_seed_today_record("seed_a"), _seed_today_record("seed_b")]
+    fb_environment["queue_file"].write_text(json.dumps(pre_seeded))
+
+    group = _group("444", "Fresh Group")
+    posts = [_make_fb_post(f"f{i}", _HIGH_SCORE_TEXT, group) for i in range(5)]
+
+    report = run_fb_scan(adapter=_fb_adapter(group, posts))
+    queue = read_queue(fb_environment["queue_file"])
+    new_ids = {r["post_id"] for r in queue} - {"seed_a", "seed_b"}
+    assert report is not None and report.queued == 1
+    assert len(new_ids) == 1
+    assert {"seed_a", "seed_b"}.issubset({r["post_id"] for r in queue})
 
 
 def test_fb_scan_skips_duplicates(fb_environment: dict[str, Path]) -> None:
@@ -112,19 +180,14 @@ def test_fb_scan_skips_duplicates(fb_environment: dict[str, Path]) -> None:
             }
         )
     )
-    group = _group("333")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {
-            "333": [
-                _make_fb_post("p_dup", "best dog food kibble nutrition", group),
-                _make_fb_post("p_new", "best dog food kibble nutrition", group),
-            ]
-        },
+    group = _group("555")
+    adapter = _fb_adapter(
+        group,
+        [
+            _make_fb_post("p_dup", _HIGH_SCORE_TEXT, group),
+            _make_fb_post("p_new", _HIGH_SCORE_TEXT, group),
+        ],
     )
-
-    from scripts.fb_scan import run_fb_scan
 
     run_fb_scan(adapter=adapter)
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
@@ -134,72 +197,39 @@ def test_fb_scan_skips_duplicates(fb_environment: dict[str, Path]) -> None:
 
 def test_fb_scan_record_shape(fb_environment: dict[str, Path]) -> None:
     """Queue records have the FB shape with the expected 12 keys."""
-    group = _group("444", "Dogs")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {
-            "444": [
-                _make_fb_post(
-                    "p1",
-                    "best dog food kibble nutrition for puppies",
-                    group,
-                    category="food",
-                )
-            ]
-        },
+    group = _group("666", "Dogs")
+    adapter = _fb_adapter(
+        group, [_make_fb_post("p1", _HIGH_SCORE_TEXT, group, category="food")]
     )
-
-    from scripts.fb_scan import run_fb_scan
 
     run_fb_scan(adapter=adapter)
     queue = read_queue(fb_environment["queue_file"])
-
     assert len(queue) == 1
     rec: dict[str, Any] = queue[0]
-    expected_keys = {
-        "platform",
-        "post_url",
-        "post_id",
-        "post_text",
-        "group_name",
-        "group_url",
-        "category",
-        "relevance_score",
-        "queued_at",
-        "status",
-        "requires_approval",
+    assert set(rec.keys()) == {
+        "platform", "post_url", "post_id", "post_text", "group_name", "group_url",
+        "category", "relevance_score", "queued_at", "status", "requires_approval",
         "draft_comment",
     }
-    assert set(rec.keys()) == expected_keys
-    assert rec["platform"] == "facebook"
-    assert rec["post_id"] == "p1"
+    assert (rec["platform"], rec["post_id"], rec["status"]) == ("facebook", "p1", "pending")
     assert rec["group_name"] == "Dogs"
-    assert rec["group_url"] == "https://www.facebook.com/groups/444"
+    assert rec["group_url"] == "https://www.facebook.com/groups/666"
     assert rec["category"] == "food"
-    assert rec["status"] == "pending"
     assert isinstance(rec["requires_approval"], bool)
     assert rec["draft_comment"].startswith("DRAFT for")
 
 
 def test_fb_scan_pre_filter_rejection(fb_environment: dict[str, Path]) -> None:
     """Posts rejected by the adapter's pre_filter are not queued."""
-    group = _group("555")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {
-            "555": [
-                _make_fb_post("p_keep", "best dog food kibble nutrition recipe", group),
-                _make_fb_post(
-                    "p_reject", "best dog food kibble nutrition recipe", group
-                ),
-            ]
-        },
+    group = _group("777")
+    adapter = _fb_adapter(
+        group,
+        [
+            _make_fb_post("p_keep", _HIGH_SCORE_TEXT, group),
+            _make_fb_post("p_reject", _HIGH_SCORE_TEXT, group),
+        ],
         pre_filter_overrides={"p_reject": "competitor"},
     )
-
-    from scripts.fb_scan import run_fb_scan
 
     run_fb_scan(adapter=adapter)
     queued_ids = {r["post_id"] for r in read_queue(fb_environment["queue_file"])}
@@ -210,62 +240,41 @@ def test_fb_scan_pre_filter_rejection(fb_environment: dict[str, Path]) -> None:
 def test_fb_scan_requires_approval_flag_set_below_approval_threshold(
     fb_environment: dict[str, Path],
 ) -> None:
-    """Posts scoring between candidate and approval thresholds need approval.
+    """Posts between comment_threshold and approval_threshold need approval.
 
-    With category="general" (no group-context bonus) and comment_count=2 (no
-    5-50 bonus), score lands ~0.70 — clears candidate, under approval.
+    ``score_relevance`` only emits multiples of 0.10, so we set
+    ``ig_comment_threshold=0.70`` and ``approval_threshold=0.85`` —
+    a 0.80 text then clears the comment gate but falls under approval.
     """
-    group = _group("666")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {
-            "666": [
-                _make_fb_post(
-                    "p_borderline",
-                    "What dog food should I feed my dog?",
-                    group,
-                    category="general",
-                    comment_count=2,
-                )
-            ]
-        },
-    )
+    config_file = fb_environment["config_file"]
+    payload = json.loads(config_file.read_text())
+    payload["content_analysis"]["ig_comment_threshold"] = 0.70
+    payload["content_analysis"]["approval_threshold"] = 0.85
+    config_file.write_text(json.dumps(payload))
 
-    from scripts.fb_scan import run_fb_scan
+    group = _group("888")
+    # food (0.40) + brand "ollie" (0.20) + question (0.20) = 0.80
+    text_at_080 = "best ollie dog food kibble nutrition recipe?"
+    adapter = _fb_adapter(group, [_make_fb_post("p_borderline", text_at_080, group)])
 
     run_fb_scan(adapter=adapter)
     queue = read_queue(fb_environment["queue_file"])
-
     assert len(queue) == 1
     rec = queue[0]
-    assert rec["relevance_score"] < 0.80
+    assert rec["relevance_score"] < 0.85
     assert rec["requires_approval"] is True
 
 
 def test_fb_scan_real_mark_engaged_writes_dedup(
     fb_environment_real_dedup: dict[str, Path],
 ) -> None:
-    """Regression: production ``mark_engaged`` call must accept the args
-    ``fb_scan`` passes.
-
-    The slice-2 fixture stubbed ``mark_engaged`` to a no-op, which masked a
-    real TypeError: ``fb_scan.py`` called ``mark_engaged(platform, post_id)``
-    but ``lib/deduplication.py`` requires a third positional ``action: str``.
-    This test runs the scanner WITHOUT the stub and asserts the dedup cache
-    file actually receives the post id.
+    """Regression: production ``mark_engaged`` writes the legacy
+    ``comment_queued`` marker the post-pipeline scanner still emits for FB.
     """
-    group = _group("888", "Real Dedup Group")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {"888": [_make_fb_post("p_real", "best dog food kibble nutrition", group)]},
-    )
-
-    from scripts.fb_scan import run_fb_scan
+    group = _group("999", "Real Dedup Group")
+    adapter = _fb_adapter(group, [_make_fb_post("p_real", _HIGH_SCORE_TEXT, group)])
 
     run_fb_scan(adapter=adapter)
-
     dedup_cache = json.loads(fb_environment_real_dedup["dedup_file"].read_text())
     assert "facebook" in dedup_cache
     assert "p_real" in dedup_cache["facebook"]
@@ -279,18 +288,11 @@ def test_fb_scan_updates_last_run_on_success(
     fb_environment: dict[str, Path],
 ) -> None:
     """``last_run.json`` is stamped with fb_scanner success after a run."""
-    group = _group("777")
-    adapter = FakeAdapter(
-        "facebook",
-        [group],
-        {"777": [_make_fb_post("p1", "best dog food kibble nutrition", group)]},
-    )
-
-    from scripts.fb_scan import run_fb_scan
+    group = _group("aaa")
+    adapter = _fb_adapter(group, [_make_fb_post("p1", _HIGH_SCORE_TEXT, group)])
 
     run_fb_scan(adapter=adapter)
     last_run = json.loads(fb_environment["last_run_file"].read_text())
-
     assert "fb_scanner" in last_run
     assert last_run["fb_scanner"]["status"] == "success"
     assert last_run["fb_scanner"]["groups_scanned"] == 1

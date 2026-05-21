@@ -14,4 +14,4 @@ Vocabulary for the social-automation engine. Brand-agnostic — applies to any b
 
 **Candidate pool** — posts that cleared the score gate during a scan, awaiting cherry-pick for the daily comment quota.
 
-**Cherry-pick queueing** — at end of scan, sort candidates by score descending, take top-N where N = remaining daily comment budget. (Currently only IG does this; FB queues inline. Unification ships in a later slice.)
+**Cherry-pick queueing** — at end of scan, sort candidates by score descending, take top-N where N = remaining daily comment budget. Applied uniformly to FB+IG by `run_outbound_scan` (since slice 3, 2026-05-21). Quota source: `EngagementPolicy.daily_comment_quota`.

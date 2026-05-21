@@ -5,7 +5,7 @@ Covers:
     - sensible defaults when optional keys are missing
     - boundary semantics for is_candidate / is_comment_candidate / requires_approval
     - frozen dataclass invariant (no runtime mutation)
-    - slice 1 invariants: FB like quota = 0, IG comment quota = 2
+    - slice 3 invariants: FB like quota = 0, IG comment quota = 10
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def _production_like_config() -> dict[str, object]:
                 "comments_per_day": 5,
             },
             "instagram": {
-                "comments_per_day": 2,
+                "comments_per_day": 10,
                 "likes_per_day": 8,
             },
         },
@@ -43,7 +43,7 @@ class TestFromConfig:
         assert policy.candidate_threshold == 0.70
         assert policy.approval_threshold == 0.80
         assert policy.comment_threshold == 0.75  # default
-        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 2}
+        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
         assert policy.daily_like_quota == {"facebook": 0, "instagram": 8}
 
     def test_from_config_defaults_ig_comment_threshold_to_0_75(self) -> None:
@@ -80,7 +80,7 @@ class TestFromConfig:
 
         policy = EngagementPolicy.from_config(config)
 
-        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 2}
+        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
         assert policy.daily_like_quota == {"facebook": 0, "instagram": 8}
 
 
@@ -136,6 +136,6 @@ class TestSlice1Invariants:
         policy = EngagementPolicy.from_config(_production_like_config())
         assert policy.daily_like_quota["facebook"] == 0
 
-    def test_default_daily_comment_quota_instagram_is_two(self) -> None:
+    def test_default_daily_comment_quota_instagram_is_ten(self) -> None:
         policy = EngagementPolicy.from_config(_production_like_config())
-        assert policy.daily_comment_quota["instagram"] == 2
+        assert policy.daily_comment_quota["instagram"] == 10

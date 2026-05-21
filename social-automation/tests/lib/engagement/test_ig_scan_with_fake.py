@@ -1,17 +1,17 @@
-"""End-to-end test of ``run_ig_scan()`` driven by FakeAdapter — no browser,
-no network, no Google/Telegram API.
+"""End-to-end tests for ``run_ig_scan()`` via FakeAdapter — no browser/network.
 
-Slice 2 of OutboundEngagement: locks in the cherry-pick-top-N + inline-like
-behavior that ig_scan still owns. Slice 3 will move cherry-pick into a
-shared pipeline; these tests stay the gate.
-
-Shared fixture (``ig_environment``) lives in ``conftest.py``.
+Slice 3 of OutboundEngagement: scanner is a thin wrapper around
+``run_outbound_scan``. Locks the IG contract (10/day default quota,
+per-config quota override, today-budget math, ``?`` candidate gate, queue
+record shape, approval flag). Fixture in ``conftest.py``.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from scripts.ig_scan import run_ig_scan
 
@@ -28,8 +28,6 @@ def _make_ig_post(
     *,
     author: str = "@dogtrainer",
     like_count: int = 300,
-    comment_count: int = 12,
-    weeks_old: int = 0,
 ) -> Post:
     """Build an IG Post with realistic platform_extra metadata."""
     return Post(
@@ -39,72 +37,152 @@ def _make_ig_post(
         text=text,
         author=author,
         source_id=source.id,
-        source_name=source.id,  # hashtag string
+        source_name=source.id,
         source_url=source.url,
         platform_extra={
             "category": "training",
             "like_count": like_count,
-            "comment_count": comment_count,
-            "weeks_old": weeks_old,
+            "comment_count": 12,
+            "weeks_old": 0,
         },
     )
 
 
 def _hashtag(tag: str) -> FakeSource:
     return FakeSource(
-        id=tag,
-        name=tag,
-        url=f"https://www.instagram.com/explore/tags/{tag}/",
+        id=tag, name=tag, url=f"https://www.instagram.com/explore/tags/{tag}/"
     )
+
+
+def _override_ig_quota(config_path: Path, comments_per_day: int) -> None:
+    """Rewrite the fixture's config.json to set IG comments_per_day."""
+    cfg = json.loads(config_path.read_text())
+    cfg.setdefault("rate_limits", {}).setdefault("instagram", {})[
+        "comments_per_day"
+    ] = comments_per_day
+    config_path.write_text(json.dumps(cfg))
+
+
+def _high_score_question(idx: int) -> str:
+    """Question-form text: food + brand "ollie" + question = 0.80, clears gates."""
+    return f"best ollie dog food kibble nutrition recipe number {idx} for my dog?"
+
+
+def _single_post_adapter(hashtag_id: str, post: Post) -> FakeAdapter:
+    """Build a FakeAdapter with one hashtag holding one post."""
+    return FakeAdapter("instagram", [_hashtag(hashtag_id)], {hashtag_id: [post]})
 
 
 # --- tests ------------------------------------------------------------------
 
 
-def test_ig_scan_cherry_picks_top_2_from_five_candidates(
-    ig_environment: dict[str, Path],
+def test_ig_scan_cherry_picks_by_quota(
+    ig_environment: dict[str, Any],
 ) -> None:
-    """Even with 5 comment-candidates, only top-2 by score reach the queue."""
-    state_dir = ig_environment["state_dir"]
+    """quota=2 override: from 5 candidates, top-2 by score reach the queue.
+
+    Locks cherry-pick math independent of the 10/day default. Scores from
+    `score_relevance(text)` only — top tier (=1.10) wins over second (=0.90).
+    """
+    state_dir: Path = ig_environment["state_dir"]
+    _override_ig_quota(ig_environment["config_path"], comments_per_day=2)
+
     hashtag = _hashtag("doggear")
-    # All texts include "?" so they hit the IG comment-candidate gate; scores
-    # diverge via brand/category signals so the cherry-pick is deterministic.
-    posts = [
-        # Top: food + brand "ollie" + question + meta bonus -> ~1.00
-        _make_ig_post("p1", "best ollie dog food kibble nutrition recipe?", hashtag),
-        # Second: gps + brand "fi" + question + meta -> ~0.90
-        _make_ig_post(
-            "p2", "fi collar gps tracker running canicross with dog?", hashtag
-        ),
-        # Mid: food + question + meta -> ~0.80
-        _make_ig_post("p3", "homemade chicken recipe for picky eater dog?", hashtag),
-        _make_ig_post(
-            "p4", "raw kibble protein diet for sensitive stomach dog?", hashtag
-        ),
-        _make_ig_post("p5", "best dog food brand for puppy nutrition?", hashtag),
+    texts = [
+        # Top tier (1.10)
+        "best ollie dog food kibble nutrition recipe with gps tracker?",
+        "fi collar canicross running with ollie food kibble diet?",
+        # Second tier (0.90) — queueable but dropped at quota.
+        "homemade dog food recipe nutrition for running dog?",
+        "raw kibble protein diet for canicross dog?",
+        "puppy nutrition kibble for trail hike running dog?",
     ]
+    posts = [_make_ig_post(f"p{i + 1}", t, hashtag) for i, t in enumerate(texts)]
     adapter = FakeAdapter("instagram", [hashtag], {"doggear": posts})
 
-    queued_count = run_ig_scan(adapter=adapter)
+    report = run_ig_scan(adapter=adapter)
+    assert report is not None
+    assert report.queued == 2
 
     queue = json.loads((state_dir / "comment_queue.json").read_text())
-    queued_ids = [r["post_id"] for r in queue]
-    assert queued_count == 2
-    assert len(queued_ids) == 2
-    assert set(queued_ids) == {"p1", "p2"}, (
-        f"Cherry-pick should select p1+p2 (highest scores), got {queued_ids}"
+    queued_ids = {r["post_id"] for r in queue}
+    assert queued_ids == {"p1", "p2"}, (
+        f"Cherry-pick should select p1+p2 (top tier), got {queued_ids}"
     )
 
 
+def test_ig_scan_quota_default_is_10(ig_environment: dict[str, Any]) -> None:
+    """Without per-test override, IG default quota is 10/day.
+
+    15 high-score candidates -> exactly 10 reach the queue.
+    """
+    state_dir: Path = ig_environment["state_dir"]
+    hashtag = _hashtag("dogfood")
+    posts = [
+        _make_ig_post(f"p{i}", _high_score_question(i), hashtag) for i in range(15)
+    ]
+    adapter = FakeAdapter("instagram", [hashtag], {"dogfood": posts})
+
+    report = run_ig_scan(adapter=adapter)
+    assert report is not None
+    assert report.queued == 10, f"default quota=10, got {report.queued}"
+
+    queue = json.loads((state_dir / "comment_queue.json").read_text())
+    assert len(queue) == 10
+
+
+def test_ig_scan_existing_today_reduces_budget(
+    ig_environment: dict[str, Any],
+) -> None:
+    """Pre-seeded today-records consume the day's quota budget.
+
+    4 IG records today + quota=10 -> next run gets budget=6. With 8 fresh
+    candidates, exactly 6 are queued.
+    """
+    state_dir: Path = ig_environment["state_dir"]
+    queue_path: Path = ig_environment["queue_path"]
+    today_iso = datetime.now(UTC).isoformat()
+    queue_path.write_text(json.dumps([
+        {
+            "platform": "instagram",
+            "post_id": f"existing_{i}",
+            "post_url": f"https://www.instagram.com/p/existing_{i}/",
+            "queued_at": today_iso,
+            "status": "pending",
+        }
+        for i in range(4)
+    ]))
+
+    hashtag = _hashtag("dogfood")
+    posts = [
+        _make_ig_post(f"fresh_{i}", _high_score_question(i), hashtag)
+        for i in range(8)
+    ]
+    adapter = FakeAdapter("instagram", [hashtag], {"dogfood": posts})
+
+    report = run_ig_scan(adapter=adapter)
+    assert report is not None
+    assert report.queued == 6, f"budget=10-4=6, got {report.queued}"
+
+    queue = json.loads((state_dir / "comment_queue.json").read_text())
+    fresh_ids = [r["post_id"] for r in queue if r["post_id"].startswith("fresh_")]
+    assert len(fresh_ids) == 6
+    assert sum(1 for r in queue if r["post_id"].startswith("existing_")) == 4
+
+
 def test_ig_scan_likes_inline_above_candidate_threshold(
-    ig_environment: dict[str, Path],
+    ig_environment: dict[str, Any],
 ) -> None:
     """Posts clearing candidate_threshold (0.70) get like() called inline."""
     hashtag = _hashtag("dogfood")
     posts = [
-        # food (+0.40) + brand "ollie" (+0.20) + meta (+0.20) = 0.80 -> liked
-        _make_ig_post("p1", "ollie dog food kibble nutrition recipe", hashtag),
-        # Well below threshold -> not liked
+        # food + active + brand "ollie" = 0.90; no "?" so not a comment
+        # candidate but still clears the like gate.
+        _make_ig_post(
+            "p1",
+            "ollie dog food kibble nutrition recipe with running gear",
+            hashtag,
+        ),
         _make_ig_post("p2", "weather forecast today", hashtag),
     ]
     adapter = FakeAdapter("instagram", [hashtag], {"dogfood": posts})
@@ -117,72 +195,41 @@ def test_ig_scan_likes_inline_above_candidate_threshold(
 
 
 def test_ig_scan_requires_approval_always_true(
-    ig_environment: dict[str, Path],
+    ig_environment: dict[str, Any],
 ) -> None:
     """Per CLAUDE.md every queued IG record must have requires_approval=True."""
-    state_dir = ig_environment["state_dir"]
-    hashtag = _hashtag("dogs")
-    adapter = FakeAdapter(
-        "instagram",
-        [hashtag],
-        {
-            "dogs": [
-                _make_ig_post(
-                    "p1",
-                    "best ollie dog food kibble nutrition recipe for my dog?",
-                    hashtag,
-                )
-            ]
-        },
+    state_dir: Path = ig_environment["state_dir"]
+    post = _make_ig_post(
+        "p1",
+        "best ollie dog food kibble nutrition recipe for my dog?",
+        _hashtag("dogs"),
     )
-
-    run_ig_scan(adapter=adapter)
+    run_ig_scan(adapter=_single_post_adapter("dogs", post))
 
     queue = json.loads((state_dir / "comment_queue.json").read_text())
     assert len(queue) >= 1
-    for rec in queue:
-        assert rec["requires_approval"] is True
+    assert all(rec["requires_approval"] is True for rec in queue)
 
 
-def test_ig_scan_queue_record_shape(ig_environment: dict[str, Path]) -> None:
-    """IG queue record has the exact 13 IG keys with the expected values."""
-    state_dir = ig_environment["state_dir"]
-    hashtag = _hashtag("dogs")
-    adapter = FakeAdapter(
-        "instagram",
-        [hashtag],
-        {
-            "dogs": [
-                _make_ig_post(
-                    "p1",
-                    "best ollie dog food kibble nutrition for my dog?",
-                    hashtag,
-                    author="@trainer_jane",
-                    like_count=342,
-                )
-            ]
-        },
+def test_ig_scan_queue_record_shape(ig_environment: dict[str, Any]) -> None:
+    """IG queue record has the expected IG keys with the expected values."""
+    state_dir: Path = ig_environment["state_dir"]
+    post = _make_ig_post(
+        "p1",
+        "best ollie dog food kibble nutrition for my dog?",
+        _hashtag("dogs"),
+        author="@trainer_jane",
+        like_count=342,
     )
-
-    run_ig_scan(adapter=adapter)
+    run_ig_scan(adapter=_single_post_adapter("dogs", post))
 
     queue = json.loads((state_dir / "comment_queue.json").read_text())
     assert len(queue) == 1
     rec = queue[0]
     expected_keys = {
-        "platform",
-        "post_url",
-        "post_id",
-        "post_text",
-        "hashtag",
-        "author",
-        "category",
-        "relevance_score",
-        "like_count",
-        "queued_at",
-        "status",
-        "requires_approval",
-        "draft_comment",
+        "platform", "post_url", "post_id", "post_text", "hashtag", "author",
+        "category", "relevance_score", "like_count", "queued_at", "status",
+        "requires_approval", "draft_comment",
     }
     assert set(rec.keys()) == expected_keys
     assert rec["platform"] == "instagram"
@@ -195,25 +242,18 @@ def test_ig_scan_queue_record_shape(ig_environment: dict[str, Path]) -> None:
 
 
 def test_ig_scan_respects_pre_filter_rejections(
-    ig_environment: dict[str, Path],
+    ig_environment: dict[str, Any],
 ) -> None:
     """Posts the adapter pre-filters (e.g. competitor) are never liked."""
-    state_dir = ig_environment["state_dir"]
+    state_dir: Path = ig_environment["state_dir"]
     hashtag = _hashtag("t1")
+    text = "best ollie dog food kibble nutrition for my dog?"
     posts = [
-        _make_ig_post(
-            "p_competitor",
-            "best ollie dog food kibble nutrition for my dog?",
-            hashtag,
-        ),
-        _make_ig_post(
-            "p_ok", "best ollie dog food kibble nutrition for my dog?", hashtag
-        ),
+        _make_ig_post("p_competitor", text, hashtag),
+        _make_ig_post("p_ok", text, hashtag),
     ]
     adapter = FakeAdapter(
-        "instagram",
-        [hashtag],
-        {"t1": posts},
+        "instagram", [hashtag], {"t1": posts},
         pre_filter_overrides={"p_competitor": "competitor"},
     )
 
@@ -224,44 +264,36 @@ def test_ig_scan_respects_pre_filter_rejections(
     assert "p_ok" in attempted_ids
 
     queue = json.loads((state_dir / "comment_queue.json").read_text())
-    queued_ids = {r["post_id"] for r in queue}
-    assert "p_competitor" not in queued_ids
+    assert "p_competitor" not in {r["post_id"] for r in queue}
 
 
 def test_ig_scan_empty_sources_returns_zero(
-    ig_environment: dict[str, Path],
+    ig_environment: dict[str, Any],
 ) -> None:
-    """No hashtags -> no work, returns 0, no queue writes."""
-    state_dir = ig_environment["state_dir"]
+    """No hashtags -> no work, report.queued=0, queue stays empty."""
+    state_dir: Path = ig_environment["state_dir"]
     adapter = FakeAdapter("instagram", sources=[], posts_by_source={})
 
-    queued = run_ig_scan(adapter=adapter)
-
-    assert queued == 0
-    queue = json.loads((state_dir / "comment_queue.json").read_text())
-    assert queue == []
+    report = run_ig_scan(adapter=adapter)
+    assert report is not None
+    assert report.queued == 0
+    assert json.loads((state_dir / "comment_queue.json").read_text()) == []
 
 
 def test_ig_scan_skips_low_score_posts(
-    ig_environment: dict[str, Path],
+    ig_environment: dict[str, Any],
 ) -> None:
     """Posts below candidate_threshold are not liked and not queued."""
-    state_dir = ig_environment["state_dir"]
+    state_dir: Path = ig_environment["state_dir"]
     hashtag = _hashtag("randoms")
-    adapter = FakeAdapter(
-        "instagram",
-        [hashtag],
-        {
-            "randoms": [
-                _make_ig_post("low1", "sunset photo from yesterday", hashtag),
-                _make_ig_post("low2", "morning coffee thoughts", hashtag),
-            ]
-        },
-    )
+    posts = [
+        _make_ig_post("low1", "sunset photo from yesterday", hashtag),
+        _make_ig_post("low2", "morning coffee thoughts", hashtag),
+    ]
+    adapter = FakeAdapter("instagram", [hashtag], {"randoms": posts})
 
-    queued = run_ig_scan(adapter=adapter)
-
-    assert queued == 0
+    report = run_ig_scan(adapter=adapter)
+    assert report is not None
+    assert report.queued == 0
     assert adapter.likes_succeeded == []
-    queue = json.loads((state_dir / "comment_queue.json").read_text())
-    assert queue == []
+    assert json.loads((state_dir / "comment_queue.json").read_text()) == []
