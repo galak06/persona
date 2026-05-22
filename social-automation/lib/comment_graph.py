@@ -74,7 +74,7 @@ class Context:
 def n_preflight(state: State, config) -> dict:
     item = state["queue_item"]
     platform = item["platform"]
-    action = "ig_comment" if platform == "instagram" else "comment"
+    action = "comment"
     if not can_act(platform, action):
         return {"decision": "rate_limited"}
     if is_duplicate(platform, item["post_id"]):
@@ -190,7 +190,7 @@ def n_record(state: State, config) -> dict:
         return {}
     item = state["queue_item"]
     platform = item["platform"]
-    action = "ig_comment" if platform == "instagram" else "comment"
+    action = "comment"
     record_action(platform, action)
     target = item.get("group_name") or item.get("hashtag", "")
     mark_engaged(platform, item["post_id"], "comment", target)

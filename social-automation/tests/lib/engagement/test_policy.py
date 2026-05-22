@@ -6,11 +6,14 @@ Covers:
     - boundary semantics for is_candidate / is_comment_candidate / requires_approval
     - frozen dataclass invariant (no runtime mutation)
     - slice 4 invariants: FB like quota = 5, IG comment quota = 10
+    - slice A: from_profiles reads quotas from profiles/<platform>.json
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
+from pathlib import Path
 
 import pytest
 
@@ -138,3 +141,70 @@ class TestSlice1Invariants:
     def test_default_daily_comment_quota_instagram_is_ten(self) -> None:
         policy = EngagementPolicy.from_config(_production_like_config())
         assert policy.daily_comment_quota["instagram"] == 10
+
+
+# Path to the real production profiles dir. tests/lib/engagement/test_policy.py
+# is 3 parents deep relative to social-automation/, so .parents[3] / "profiles"
+# lands on the canonical profile JSONs.
+_PROFILES_DIR = Path(__file__).resolve().parents[3] / "profiles"
+
+
+def _write_profile(dir_path: Path, name: str, payload: dict[str, object]) -> Path:
+    """Write a profile JSON fixture; returns the path."""
+    target = dir_path / name
+    target.write_text(json.dumps(payload), encoding="utf-8")
+    return target
+
+
+class TestFromProfiles:
+    def test_from_profiles_reads_quotas(self) -> None:
+        policy = EngagementPolicy.from_profiles(_PROFILES_DIR)
+
+        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
+        assert policy.daily_like_quota == {"facebook": 5, "instagram": 8}
+
+    def test_from_profiles_omits_wp_from_quota_dicts(self) -> None:
+        policy = EngagementPolicy.from_profiles(_PROFILES_DIR)
+
+        assert "wordpress" not in policy.daily_comment_quota
+        assert "wordpress" not in policy.daily_like_quota
+
+    def test_from_profiles_uses_default_thresholds_when_none(self) -> None:
+        policy = EngagementPolicy.from_profiles(_PROFILES_DIR)
+
+        # Matches the slice-1 baseline that from_config({}) produces today.
+        assert policy.candidate_threshold == 0.70
+        assert policy.comment_threshold == 0.75
+        assert policy.approval_threshold == 0.80
+
+    def test_from_profiles_accepts_explicit_thresholds(self) -> None:
+        policy = EngagementPolicy.from_profiles(
+            _PROFILES_DIR,
+            thresholds={
+                "candidate_threshold": 0.50,
+                "comment_threshold": 0.60,
+                "approval_threshold": 0.65,
+            },
+        )
+
+        assert policy.candidate_threshold == 0.50
+        assert policy.comment_threshold == 0.60
+        assert policy.approval_threshold == 0.65
+
+    def test_from_profiles_skips_underscore_files(self, tmp_path: Path) -> None:
+        _write_profile(
+            tmp_path,
+            "_draft.json",
+            {"platform": "draftplatform", "rate_limits": {"comments_per_day": 99}},
+        )
+        _write_profile(
+            tmp_path,
+            "facebook.json",
+            {"platform": "facebook", "rate_limits": {"comments_per_day": 5, "likes_per_day": 5}},
+        )
+
+        policy = EngagementPolicy.from_profiles(tmp_path)
+
+        assert policy.daily_comment_quota == {"facebook": 5}
+        assert "draftplatform" not in policy.daily_comment_quota
+        assert policy.daily_like_quota == {"facebook": 5}

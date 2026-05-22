@@ -22,10 +22,23 @@ Design notes:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 
 _log = logging.getLogger(__name__)
+
+# Slice-1 baseline threshold defaults — mirrors the values that
+# `from_config({})` produces today. Slice C will fold these into profile
+# JSONs; until then, `from_profiles` accepts an explicit `thresholds`
+# override and otherwise falls back to this map.
+_DEFAULT_THRESHOLDS: dict[str, float] = {
+    "candidate_threshold": 0.70,
+    "comment_threshold": 0.75,
+    "approval_threshold": 0.80,
+    "ig_comment_threshold": 0.75,
+}
 
 # Defaults — match current production behavior (CLAUDE.md rate-limits + ig_scan
 # hardcode). Anything missing from config.json falls back to these, so the
@@ -127,6 +140,77 @@ class EngagementPolicy:
         _log.info(
             "engagement_policy_loaded",
             extra={
+                "candidate_threshold": policy.candidate_threshold,
+                "comment_threshold": policy.comment_threshold,
+                "approval_threshold": policy.approval_threshold,
+                "daily_comment_quota": policy.daily_comment_quota,
+                "daily_like_quota": policy.daily_like_quota,
+            },
+        )
+
+        return policy
+
+    @classmethod
+    def from_profiles(
+        cls,
+        profile_dir: Path,
+        *,
+        thresholds: dict[str, float] | None = None,
+    ) -> EngagementPolicy:
+        """Build an EngagementPolicy by reading `profiles/*.json`.
+
+        For slice A, only the rate-limit fields (daily_comment_quota,
+        daily_like_quota) come from profiles. Thresholds (candidate, comment,
+        approval) come from the optional `thresholds` dict — slice C will move
+        them into profiles too. When `thresholds` is None, defaults to the
+        slice-1 baseline values that `from_config({})` produces today.
+
+        Profile JSON shape:
+            {"platform": "<name>", "rate_limits": {"comments_per_day": N, ...}}
+
+        Files starting with `_` are skipped. Profiles missing a rate-limit
+        field (e.g. WordPress has no `comments_per_day`) are omitted from the
+        quota dicts — callers use `.get(platform, 0)` so absence == 0.
+        """
+        resolved = dict(_DEFAULT_THRESHOLDS)
+        if thresholds is not None:
+            resolved.update(thresholds)
+
+        daily_comment_quota: dict[str, int] = {}
+        daily_like_quota: dict[str, int] = {}
+
+        for path in sorted(profile_dir.glob("*.json")):
+            if path.name.startswith("_"):
+                continue
+            with path.open("r", encoding="utf-8") as fh:
+                profile = json.load(fh)
+            if not isinstance(profile, dict):
+                continue
+            platform_value = profile.get("platform")
+            if not isinstance(platform_value, str) or not platform_value:
+                continue
+            rate_limits = _as_mapping(profile.get("rate_limits"))
+            if "comments_per_day" in rate_limits:
+                daily_comment_quota[platform_value] = _as_int(
+                    rate_limits.get("comments_per_day"), 0
+                )
+            if "likes_per_day" in rate_limits:
+                daily_like_quota[platform_value] = _as_int(
+                    rate_limits.get("likes_per_day"), 0
+                )
+
+        policy = cls(
+            candidate_threshold=resolved["candidate_threshold"],
+            comment_threshold=resolved["comment_threshold"],
+            approval_threshold=resolved["approval_threshold"],
+            daily_comment_quota=daily_comment_quota,
+            daily_like_quota=daily_like_quota,
+        )
+
+        _log.info(
+            "engagement_policy_loaded_from_profiles",
+            extra={
+                "profile_dir": str(profile_dir),
                 "candidate_threshold": policy.candidate_threshold,
                 "comment_threshold": policy.comment_threshold,
                 "approval_threshold": policy.approval_threshold,

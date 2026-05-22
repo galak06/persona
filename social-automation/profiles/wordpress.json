@@ -1,0 +1,8 @@
+{
+  "platform": "wordpress",
+  "rate_limits": {
+    "replies_per_day": 20,
+    "delay_between_replies": "15-45s random"
+  },
+  "_notes": "wp_scan moderation actions are NOT rate-limited (site-owner action on own property, per ADR-0001)."
+}

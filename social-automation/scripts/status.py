@@ -133,7 +133,7 @@ def main() -> None:
         "facebook:comment": 5,
         "facebook:group_visit": 6,
         "instagram:like": 8,
-        "instagram:ig_comment": 2,
+        "instagram:comment": 10,
     }
     for key, limit in limits.items():
         used = today_rate.get(key, 0)

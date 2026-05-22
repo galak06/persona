@@ -18,7 +18,7 @@ social-automation/.claude/state/
 
 # Content drafts and site assets (local only)
 dogfoodandfun/
-tools/
+/tools/
 post_instructions.md
 CLAUDE.md
 

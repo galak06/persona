@@ -1,0 +1,25 @@
+{
+  "_generated": "tools.profiles_build (slice A: rate_limits)",
+  "delays": {
+    "facebook:comment": "30-120s random",
+    "facebook:group_visit": "45-180s random",
+    "facebook:like": "30-90s random",
+    "instagram:comment": "120-180s random",
+    "instagram:follow": "60-180s random",
+    "instagram:like": "10-45s random",
+    "wordpress:reply": "15-45s random"
+  },
+  "limits": {
+    "facebook:comment": 5,
+    "facebook:group_join": 5,
+    "facebook:group_post": 10,
+    "facebook:group_visit": 6,
+    "facebook:like": 5,
+    "facebook:page_post": 3,
+    "instagram:comment": 10,
+    "instagram:feed_post": 2,
+    "instagram:follow": 22,
+    "instagram:like": 8,
+    "wordpress:reply": 20
+  }
+}

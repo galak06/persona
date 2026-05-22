@@ -315,7 +315,7 @@ def run() -> None:
     if wp_approved:
         log_step(f"Posting {len(wp_approved)} WordPress replies")
         for idx, item in enumerate(wp_approved):
-            if not can_act("wordpress", "comment"):
+            if not can_act("wordpress", "reply"):
                 print("\nDaily WP reply limit reached.", flush=True)
                 break
 
@@ -335,7 +335,7 @@ def run() -> None:
                     failed += 1
                     continue
 
-                record_action("wordpress", "comment")
+                record_action("wordpress", "reply")
                 mark_engaged("wordpress", comment_id, "comment", target)
                 log_engagement("comment", "wordpress", target, draft)
 
@@ -449,7 +449,7 @@ def run() -> None:
             fb_ctx.close()
 
         # ── Instagram comments ──
-        if ig_approved and can_act("instagram", "ig_comment"):
+        if ig_approved and can_act("instagram", "comment"):
             log_step(f"Posting {len(ig_approved)} Instagram comments")
             ig_ctx = browser.new_context(
                 storage_state=str(IG_SESSION_FILE),
@@ -467,7 +467,7 @@ def run() -> None:
             else:
                 log_step("Instagram session OK")
                 for idx, item in enumerate(ig_approved):
-                    if not can_act("instagram", "ig_comment"):
+                    if not can_act("instagram", "comment"):
                         print("\nDaily IG comment limit reached.", flush=True)
                         break
 
@@ -484,7 +484,7 @@ def run() -> None:
                             failed += 1
                             continue
 
-                        record_action("instagram", "ig_comment")
+                        record_action("instagram", "comment")
                         mark_engaged("instagram", item["post_id"], "comment", hashtag)
                         log_engagement("comment", "instagram", hashtag, draft)
 

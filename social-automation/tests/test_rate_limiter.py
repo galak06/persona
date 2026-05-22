@@ -53,7 +53,7 @@ class TestCanAct:
         assert rate_limiter.can_act("facebook", "comment") is True
         assert rate_limiter.can_act("facebook", "group_visit") is True
         assert rate_limiter.can_act("instagram", "like") is True
-        assert rate_limiter.can_act("instagram", "ig_comment") is True
+        assert rate_limiter.can_act("instagram", "comment") is True
 
 
 class TestRecordAction:
@@ -101,7 +101,30 @@ class TestGetDailyStatus:
 
 class TestDailyLimits:
     def test_limits_match_spec(self):
+        # Canonical daily caps emitted by tools.profiles_build from
+        # profiles/*.json. Keys use the flat <platform>:<action> form;
+        # legacy "ig_*" prefix dropped in slice A.
         assert rate_limiter.DAILY_LIMITS["facebook:comment"] == 5
+        assert rate_limiter.DAILY_LIMITS["facebook:like"] == 5
         assert rate_limiter.DAILY_LIMITS["facebook:group_visit"] == 6
+        assert rate_limiter.DAILY_LIMITS["facebook:group_post"] == 10
+        assert rate_limiter.DAILY_LIMITS["facebook:group_join"] == 5
+        assert rate_limiter.DAILY_LIMITS["facebook:page_post"] == 3
         assert rate_limiter.DAILY_LIMITS["instagram:like"] == 8
-        assert rate_limiter.DAILY_LIMITS["instagram:ig_comment"] == 2
+        assert rate_limiter.DAILY_LIMITS["instagram:comment"] == 10
+        assert rate_limiter.DAILY_LIMITS["instagram:follow"] == 22
+        assert rate_limiter.DAILY_LIMITS["instagram:feed_post"] == 2
+        assert rate_limiter.DAILY_LIMITS["wordpress:reply"] == 20
+        # Legacy bucket preserved in rate_limiter (no profile field yet).
+        assert rate_limiter.DAILY_LIMITS["instagram:own_reply"] == 15
+
+    def test_delay_ranges_are_int_tuples(self):
+        # Delays are parsed from strings like "30-120s random" into
+        # (lo, hi) integer-second tuples by rate_limiter._parse_delay.
+        assert rate_limiter.DELAY_RANGES["facebook:comment"] == (30, 120)
+        assert rate_limiter.DELAY_RANGES["facebook:group_visit"] == (45, 180)
+        assert rate_limiter.DELAY_RANGES["facebook:like"] == (30, 90)
+        assert rate_limiter.DELAY_RANGES["instagram:like"] == (10, 45)
+        assert rate_limiter.DELAY_RANGES["instagram:comment"] == (120, 180)
+        assert rate_limiter.DELAY_RANGES["instagram:follow"] == (60, 180)
+        assert rate_limiter.DELAY_RANGES["wordpress:reply"] == (15, 45)

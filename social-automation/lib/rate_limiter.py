@@ -2,6 +2,13 @@
 Rate limiter for DogFoodAndFun social media automation.
 Enforces daily hard limits per platform + action type.
 Persists state to .claude/state/rate_limit_tracker.json
+
+DAILY_LIMITS and DELAY_RANGES are loaded at module-import time from the
+generated artifact at ``data/rate_limits.json``. That artifact is built by
+``python -m tools.profiles_build`` from the profile JSONs in ``profiles/``.
+
+If the artifact is missing, importing this module raises RuntimeError —
+that's intentional. The deploy/CI flow must run the build first.
 """
 
 from __future__ import annotations
@@ -9,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import time
 from datetime import date
 from pathlib import Path
@@ -17,47 +25,83 @@ from typing import Literal
 from lib.config import settings
 
 Platform = Literal["facebook", "instagram", "wordpress"]
+# Action names match the flat keys emitted by tools.profiles_build, plus
+# ``own_reply`` — a legacy bucket for replies on OUR OWN IG media that has
+# not yet migrated into the profile JSON (no matching field name in
+# tools.profiles_build's _DAILY_FIELD_TO_ACTION).
 ActionType = Literal[
     "comment",
     "like",
     "group_visit",
     "group_post",
-    "ig_comment",
+    "group_join",
+    "page_post",
+    "feed_post",
+    "follow",
+    "reply",
     "own_reply",
 ]
 
-# wordpress:comment counts only *outbound* replies we post to moderated
-# visitor comments on dogfoodandfun.com. Approving/trashing a visitor comment
-# (site-owner moderation) is not rate-limited — those are our own admin
-# actions on our own site, not engagement toward a third party.
-DAILY_LIMITS: dict[str, int] = {
-    "facebook:comment": 5,
-    "facebook:group_visit": 6,  # reduced from 10 — spread through day
-    "facebook:group_post": 10,  # share blog link to group — bumped from 3 (still well under FB's ~25/d ceiling)
-    "facebook:like": 5,  # Page-as-actor likes during scans (slice 4)
-    "instagram:like": 8,  # increased from 5 — likes are low-risk
-    "instagram:ig_comment": 7,
-    # Replies to comments on OUR OWN IG media. Separate bucket from ig_comment
-    # (which guards outbound comments on third-party posts — the real spam
-    # risk). Conversation on your own post is expected engagement; we cap at
-    # 15/day to stay well under IG's per-user API ceilings while letting every
-    # recipe post have a real thread.
-    "instagram:own_reply": 15,
-    "wordpress:comment": 20,
-}
-
-DELAY_RANGES: dict[str, tuple[int, int]] = {
-    "facebook:comment": (30, 120),
-    "facebook:group_visit": (45, 180),
-    "facebook:group_post": (60, 180),
-    "instagram:like": (10, 45),
-    "instagram:ig_comment": (120, 180),
-    "instagram:own_reply": (30, 90),
-    "wordpress:comment": (15, 45),
-}
-
 # Resolve against the actual project root regardless of cwd or caller location
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_RATE_LIMITS_PATH = _PROJECT_ROOT / "data" / "rate_limits.json"
+
+# Legacy runtime-only buckets not represented in profiles_build's field map.
+# Replies to comments on OUR OWN IG media. Separate bucket from instagram:comment
+# (which guards outbound comments on third-party posts — the real spam risk).
+# Conversation on your own post is expected engagement; capped at 15/day to stay
+# well under IG's per-user API ceilings while letting every recipe post have a
+# real thread. Delay range mirrors the previous inline value.
+_LEGACY_LIMITS: dict[str, int] = {
+    "instagram:own_reply": 15,
+}
+_LEGACY_DELAYS: dict[str, tuple[int, int]] = {
+    "instagram:own_reply": (5, 10),
+}
+
+# Matches the leading "NN-MMs" in delay strings like "30-120s random". The
+# trailing " random" qualifier is informational only and ignored at runtime.
+_DELAY_PATTERN: re.Pattern[str] = re.compile(r"^\s*(\d+)\s*-\s*(\d+)\s*s", re.IGNORECASE)
+
+
+def _parse_delay(spec: str) -> tuple[int, int]:
+    """Parse a delay spec like "30-120s random" into (lo, hi) seconds."""
+    match = _DELAY_PATTERN.match(spec)
+    if match is None:
+        raise ValueError(f"Unrecognized delay format: {spec!r} (expected '<lo>-<hi>s ...')")
+    lo, hi = int(match.group(1)), int(match.group(2))
+    if lo > hi:
+        raise ValueError(f"Delay range out of order: {spec!r} ({lo} > {hi})")
+    return lo, hi
+
+
+def _load_artifact() -> tuple[dict[str, int], dict[str, tuple[int, int]]]:
+    """Load the generated rate_limits artifact and merge legacy buckets.
+
+    Returns:
+        (limits, delays) — limits map ``<platform>:<action>`` -> int daily cap;
+        delays map ``<platform>:<action>`` -> (lo_seconds, hi_seconds) tuple.
+    """
+    if not _RATE_LIMITS_PATH.exists():
+        raise RuntimeError(
+            f"Missing {_RATE_LIMITS_PATH} — run 'python -m tools.profiles_build' to generate it."
+        )
+    with _RATE_LIMITS_PATH.open() as fh:
+        data = json.load(fh)
+
+    raw_limits = data.get("limits", {})
+    raw_delays = data.get("delays", {})
+    if not isinstance(raw_limits, dict) or not isinstance(raw_delays, dict):
+        raise RuntimeError(f"Malformed artifact at {_RATE_LIMITS_PATH}: limits/delays must be objects")
+
+    limits: dict[str, int] = {**raw_limits, **_LEGACY_LIMITS}
+    delays: dict[str, tuple[int, int]] = {key: _parse_delay(spec) for key, spec in raw_delays.items()}
+    delays.update(_LEGACY_DELAYS)
+    return limits, delays
+
+
+DAILY_LIMITS, DELAY_RANGES = _load_artifact()
+
 # STATE_FILE now resolves to the brand-dir-aware state path
 # (e.g. dogfoodandfun/state/rate_limit_tracker.json), via the BrandPaths
 # resolver in lib.config. The legacy social-automation/.claude/state path
