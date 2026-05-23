@@ -1,12 +1,24 @@
 """Tests for tools.profiles_build — profile loading + artifact composition."""
+# ruff: noqa: S101, RUF100  (pytest tests use `assert` by design; local ruff disables S)
 
 from __future__ import annotations
 
 import json
+import plistlib
 from pathlib import Path
+from typing import Any
 
 import pytest
-
+from tools.launchd_plists import (
+    compose_brand_plists as launchd_compose_brand_plists,
+)
+from tools.launchd_plists import (
+    compose_plist_xml,
+    cron_to_launchd,
+    default_plist_paths,
+    install_plists,
+    resolve_plist_paths,
+)
 from tools.profiles_build import (
     _GENERATED_BY,
     _GENERATED_BY_BRAND_SCHEDULE,
@@ -17,6 +29,7 @@ from tools.profiles_build import (
     build_rate_limits,
     check_artifact,
     compose_artifact,
+    compose_brand_plists,
     compose_brand_schedule_artifact,
     compose_rate_limits_artifact,
     compose_schedule_artifact,
@@ -26,6 +39,229 @@ from tools.profiles_build import (
     validate_dag,
     write_artifact,
 )
+
+# ---------------------------------------------------------------------------
+# Slice D: launchd plist generation
+# ---------------------------------------------------------------------------
+
+_PLIST_BRAND_FIXTURE: dict[str, Any] = {
+    "brand": {
+        "name": "TestBrand",
+        "key": "tbrand",
+        "site": "https://example.test",
+    },
+}
+
+
+def _make_task(
+    task_id: str = "tbrand-fb-scanner",
+    cron: str = "33 15 * * *",
+    script: str | None = "scripts/fb_scan.py",
+    skill: str = "fb-scanner",
+) -> dict[str, Any]:
+    """Helper: build a minimal task dict like the brand schedule emits."""
+    task: dict[str, Any] = {
+        "id": task_id,
+        "skill": skill,
+        "schedule": {"cron": cron, "cadence": "daily"},
+    }
+    if script is not None:
+        task["script"] = script
+    return task
+
+
+class TestCronToLaunchd:
+    def test_daily_at_time(self) -> None:
+        assert cron_to_launchd("33 15 * * *") == {"Hour": 15, "Minute": 33}
+
+    def test_weekly_sunday(self) -> None:
+        assert cron_to_launchd("0 9 * * 0") == {"Hour": 9, "Minute": 0, "Weekday": 0}
+
+    def test_multiple_hours(self) -> None:
+        # Multiple comma-separated hours expand to a list of dicts so launchd
+        # fires the agent at each hour with the same minute.
+        result = cron_to_launchd("0 9,14,20 * * *")
+        assert result == [
+            {"Hour": 9, "Minute": 0},
+            {"Hour": 14, "Minute": 0},
+            {"Hour": 20, "Minute": 0},
+        ]
+
+    def test_hourly_range(self) -> None:
+        # Hour range "8-22" expands to 15 entries (8..22 inclusive).
+        result = cron_to_launchd("0 8-22 * * *")
+        assert isinstance(result, list)
+        assert len(result) == 15
+        assert result[0] == {"Hour": 8, "Minute": 0}
+        assert result[-1] == {"Hour": 22, "Minute": 0}
+
+    def test_step_values_raise(self) -> None:
+        with pytest.raises(NotImplementedError, match="step values"):
+            cron_to_launchd("0 */2 * * *")
+
+    def test_invalid_field_count_raises(self) -> None:
+        # 6-field "seconds + cron" form is not supported.
+        with pytest.raises(ValueError, match="5-field cron"):
+            cron_to_launchd("0 0 15 * * *")
+
+
+class TestComposePlistXml:
+    def test_has_label(self) -> None:
+        task = _make_task()
+        payload = compose_plist_xml(task, _PLIST_BRAND_FIXTURE, default_plist_paths())
+        plist = plistlib.loads(payload)
+        assert plist["Label"] == "com.testbrand.fb-scanner"
+        assert "ProgramArguments" in plist
+        assert "StartCalendarInterval" in plist
+
+    def test_environment_includes_brand_dir(self, tmp_path: Path) -> None:
+        task = _make_task()
+        paths = resolve_plist_paths(tmp_path)
+        plist = plistlib.loads(compose_plist_xml(task, _PLIST_BRAND_FIXTURE, paths))
+        env = plist["EnvironmentVariables"]
+        assert env["BRAND_DIR"] == str(tmp_path)
+        assert "PATH" in env
+        assert env["PYTHONUNBUFFERED"] == "1"
+
+    def test_runatload_false(self) -> None:
+        plist = plistlib.loads(
+            compose_plist_xml(_make_task(), _PLIST_BRAND_FIXTURE, default_plist_paths())
+        )
+        assert plist["RunAtLoad"] is False
+
+    def test_claude_cli_fallback_for_scriptless_task(self) -> None:
+        # Tasks with no `script` field are run via Claude CLI as a slash command.
+        task = _make_task(
+            task_id="tbrand-wp-comment-handler",
+            script=None,
+            skill="wp-comment-handler",
+        )
+        plist = plistlib.loads(
+            compose_plist_xml(task, _PLIST_BRAND_FIXTURE, default_plist_paths())
+        )
+        prog_args = plist["ProgramArguments"]
+        assert prog_args[1] == "--dangerously-skip-permissions"
+        assert prog_args[2] == "/wp-comment-handler"
+
+
+class TestComposeBrandPlists:
+    def test_produces_one_per_task(self) -> None:
+        # 3 distinct task ids -> 3 plist files. Re-use the launchd helper that
+        # takes brand-schedule tasks directly so we don't depend on profiles.
+        tasks = [
+            _make_task("tbrand-a", "0 9 * * *", "scripts/a.py", "skill-a"),
+            _make_task("tbrand-b", "0 10 * * *", "scripts/b.py", "skill-b"),
+            _make_task("tbrand-c", "0 11 * * *", "scripts/c.py", "skill-c"),
+        ]
+        plists = launchd_compose_brand_plists(tasks, _PLIST_BRAND_FIXTURE)
+        assert len(plists) == 3
+
+    def test_filename_convention(self) -> None:
+        tasks = [_make_task("tbrand-fb-scanner")]
+        plists = launchd_compose_brand_plists(tasks, _PLIST_BRAND_FIXTURE)
+        assert "com.testbrand.fb-scanner.plist" in plists
+
+    def test_skips_tasks_with_no_cron(self) -> None:
+        # On-demand tasks (no schedule.cron) should not produce a plist —
+        # launchd only handles scheduled jobs.
+        tasks = [_make_task("tbrand-a", "0 9 * * *", "scripts/a.py", "skill-a")]
+        tasks.append({"id": "tbrand-on-demand", "skill": "x", "schedule": {}})
+        plists = launchd_compose_brand_plists(tasks, _PLIST_BRAND_FIXTURE)
+        assert len(plists) == 1
+
+    def test_high_level_compose_brand_plists_wrapper(self) -> None:
+        # The wrapper in profiles_build resolves brand-prefix tasks from
+        # merged_profiles. Smoke-test that the wrapper returns a non-empty dict
+        # when given a profile with one flow.
+        profiles = {
+            "facebook": {
+                "platform": "facebook",
+                "flows": [
+                    {
+                        "id": "fb-scanner",
+                        "order": 10,
+                        "skill": "fb-scanner",
+                        "script": "scripts/fb_scan.py",
+                        "schedule": {"cron": "33 15 * * *", "cadence": "daily"},
+                    },
+                ],
+            },
+        }
+        plists = compose_brand_plists(profiles, _PLIST_BRAND_FIXTURE)
+        assert "com.testbrand.fb-scanner.plist" in plists
+
+
+class TestInstallSubcommand:
+    def test_dry_run_no_filesystem_changes(self, tmp_path: Path) -> None:
+        # Dry-run install must NEVER spawn launchctl or touch the LaunchAgents
+        # directory. Capture every subprocess invocation through a stub runner.
+        plist_dir = tmp_path / "launchd"
+        plist_dir.mkdir()
+        (plist_dir / "com.testbrand.foo.plist").write_bytes(b"<plist/>")
+        launch_agents_dir = tmp_path / "LaunchAgents"  # intentionally missing
+
+        captured: list[list[str]] = []
+
+        def stub_runner(cmd: list[str], **_: object) -> object:
+            captured.append(cmd)
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        rc = install_plists(
+            plist_dir,
+            apply=False,
+            launch_agents_dir=launch_agents_dir,
+            runner=stub_runner,
+        )
+
+        assert rc == 0
+        assert captured == []  # zero subprocess calls under dry-run
+        assert not launch_agents_dir.exists()
+
+    def test_apply_required_to_change_filesystem(self, tmp_path: Path) -> None:
+        # Without --apply the plist file MUST NOT be copied into LaunchAgents.
+        plist_dir = tmp_path / "launchd"
+        plist_dir.mkdir()
+        (plist_dir / "com.testbrand.foo.plist").write_bytes(b"<plist/>")
+        launch_agents_dir = tmp_path / "LaunchAgents"
+        launch_agents_dir.mkdir()
+
+        def stub_runner(*_a: object, **_kw: object) -> object:
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        before = sorted(p.name for p in launch_agents_dir.iterdir())
+        install_plists(
+            plist_dir,
+            apply=False,
+            launch_agents_dir=launch_agents_dir,
+            runner=stub_runner,
+        )
+        after = sorted(p.name for p in launch_agents_dir.iterdir())
+        assert before == after == []
+
+    def test_apply_copies_files_and_calls_launchctl(self, tmp_path: Path) -> None:
+        # With --apply, both `launchctl` bootout + bootstrap fire AND the file
+        # lands in the target dir.
+        plist_dir = tmp_path / "launchd"
+        plist_dir.mkdir()
+        (plist_dir / "com.testbrand.foo.plist").write_bytes(b"<plist/>")
+        launch_agents_dir = tmp_path / "LaunchAgents"
+
+        captured: list[list[str]] = []
+
+        def stub_runner(cmd: list[str], **_: object) -> object:
+            captured.append(cmd)
+            return type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        install_plists(
+            plist_dir,
+            apply=True,
+            launch_agents_dir=launch_agents_dir,
+            runner=stub_runner,
+        )
+
+        assert (launch_agents_dir / "com.testbrand.foo.plist").exists()
+        assert any("bootstrap" in c for c in captured)
+        assert any("bootout" in c for c in captured)
 
 
 @pytest.fixture(autouse=True)
@@ -701,7 +937,7 @@ class TestComposeBrandScheduleArtifact:
         assert artifact["tasks"] == []
 
     def test_raises_when_brand_key_missing(self) -> None:
-        with pytest.raises(ValueError, match="brand.key required"):
+        with pytest.raises(ValueError, match=r"brand\.key required"):
             compose_brand_schedule_artifact({}, {"brand": {"name": "no-key"}})
 
 

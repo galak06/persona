@@ -5,11 +5,16 @@ artifacts the runtime reads.
 
 Slice A: data/rate_limits.json (consumed by lib/rate_limiter.py).
 Slice B: data/schedule.json   (aggregated cross-profile flow DAG).
+Slice C: <brand_dir>/schedule.json (brand-prefixed task ids).
+Slice D: <brand_dir>/launchd/*.plist (one launchd plist per task) + install/uninstall.
 
 Usage:
-    python -m tools.profiles_build                # write/update BOTH artifacts
-    python -m tools.profiles_build --check        # verify both + DAG; exit 1 on drift
+    python -m tools.profiles_build                # write/update artifacts
+    python -m tools.profiles_build --check        # verify all + DAG; exit 1 on drift
     python -m tools.profiles_build --validate-dag # DAG-only validation (fast pre-commit)
+    python -m tools.profiles_build install   --brand-dir <dir>            # dry-run install
+    python -m tools.profiles_build install   --brand-dir <dir> --apply    # actually install
+    python -m tools.profiles_build uninstall --brand-dir <dir>            # dry-run uninstall
 
 Profile asymmetry (intentional):
     `_*.json` profiles (like `_engine.json`) are SKIPPED by `build_rate_limits`
@@ -35,9 +40,37 @@ from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any
 
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    check_plist_dir as _check_plist_dir,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    compose_brand_plists as _compose_brand_plists_impl,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    compose_plist_xml as compose_plist_xml,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    cron_to_launchd as cron_to_launchd,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    install_plists as _install_plists,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    resolve_plist_paths as _resolve_plist_paths,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    uninstall_plists as _uninstall_plists,
+)
+from .launchd_plists import (  # pyright: ignore[reportMissingImports]
+    write_plist_dir as _write_plist_dir,
+)
+
 Profile = dict[str, Any]
 Artifact = dict[str, Any]
 Flow = dict[str, Any]
+PlistDict = dict[str, Any]
+PlistPaths = dict[str, str]
+
 
 # Fixed strings (not timestamps) so --check stays idempotent across runs.
 _GENERATED_BY: str = "tools.profiles_build (slice A: rate_limits)"
@@ -349,23 +382,62 @@ def _default_brand_dir() -> Path | None:
     return Path(env_val) if env_val else None
 
 
+def compose_brand_plists(
+    merged_profiles: dict[str, Profile],
+    brand: dict[str, Any],
+    paths: dict[str, str] | None = None,
+) -> dict[str, bytes]:
+    """Build plists from merged_profiles + brand. Wraps the helper module."""
+    sched = compose_brand_schedule_artifact(merged_profiles, brand)
+    return _compose_brand_plists_impl(sched["tasks"], brand, paths)
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build profile-derived runtime artifacts.")
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="build",
+        choices=["build", "install", "uninstall"],
+        help="build (default): emit artifacts. install/uninstall: manage launchd plists.",
+    )
     parser.add_argument("--check", action="store_true",
                         help="Exit non-zero if any artifact would differ from current.")
     parser.add_argument("--validate-dag", action="store_true",
                         help="Only validate the flow DAG; don't read/write artifacts.")
+    parser.add_argument("--apply", action="store_true",
+                        help="install/uninstall: actually mutate the system. "
+                             "Without this flag, runs as a dry-run.")
     parser.add_argument("--profile-dir", type=Path, default=_DEFAULT_PROFILE_DIR)
     parser.add_argument("--rate-limits-out", type=Path, default=_DEFAULT_RATE_LIMITS_PATH)
     parser.add_argument("--schedule-out", type=Path, default=_DEFAULT_SCHEDULE_PATH)
     parser.add_argument("--brand-dir", type=Path, default=_default_brand_dir(),
-                        help="Optional brand overlay dir. Reads <dir>/brand.json + writes "
-                             "<dir>/schedule.json (brand-prefixed). Default: $BRAND_DIR or none.")
+                        help="Optional brand overlay dir. Reads <dir>/brand.json, writes "
+                             "<dir>/schedule.json (brand-prefixed) + <dir>/launchd/*.plist. "
+                             "Default: $BRAND_DIR or none.")
     return parser.parse_args(argv)
 
 
 def _main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    # install/uninstall short-circuit the artifact pipeline — they operate on
+    # the already-emitted <brand_dir>/launchd/ directory.
+    if args.command == "install":
+        if args.brand_dir is None:
+            sys.stderr.write("install: --brand-dir is required.\n")
+            return 1
+        return _install_plists(args.brand_dir / "launchd", apply=args.apply)
+    if args.command == "uninstall":
+        if args.brand_dir is None:
+            sys.stderr.write("uninstall: --brand-dir is required.\n")
+            return 1
+        brand_for_uninstall = load_brand_overlay(args.brand_dir)
+        if brand_for_uninstall is None:
+            sys.stderr.write(f"uninstall: no brand.json at {args.brand_dir}.\n")
+            return 1
+        return _uninstall_plists(brand_for_uninstall, apply=args.apply)
+
     profiles = load_profiles(args.profile_dir)
     brand = load_brand_overlay(args.brand_dir)
     merged_profiles = merge_brand_into_profiles(profiles, brand)
@@ -378,9 +450,15 @@ def _main(argv: list[str] | None = None) -> int:
 
     brand_sched_artifact: Artifact | None = None
     brand_sched_path: Path | None = None
+    brand_plists: dict[str, bytes] | None = None
+    brand_plist_dir: Path | None = None
     if brand is not None and args.brand_dir is not None:
         brand_sched_artifact = compose_brand_schedule_artifact(merged_profiles, brand)
         brand_sched_path = args.brand_dir / "schedule.json"
+        brand_plists = compose_brand_plists(
+            merged_profiles, brand, _resolve_plist_paths(args.brand_dir)
+        )
+        brand_plist_dir = args.brand_dir / "launchd"
 
     dag_ok, reason = validate_dag(sched_artifact["tasks"])
 
@@ -402,9 +480,12 @@ def _main(argv: list[str] | None = None) -> int:
         rl_ok = check_artifact(args.rate_limits_out, rl_artifact)
         sched_ok = check_artifact(args.schedule_out, sched_artifact)
         brand_ok = True
+        plist_drift: list[str] = []
         if brand_sched_artifact is not None and brand_sched_path is not None:
             brand_ok = check_artifact(brand_sched_path, brand_sched_artifact)
-        if rl_ok and sched_ok and brand_ok:
+        if brand_plists is not None and brand_plist_dir is not None:
+            plist_drift = _check_plist_dir(brand_plists, brand_plist_dir)
+        if rl_ok and sched_ok and brand_ok and not plist_drift:
             return 0
         if not rl_ok:
             sys.stderr.write(f"profiles_build --check: {args.rate_limits_out} is out of date.\n")
@@ -412,6 +493,8 @@ def _main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"profiles_build --check: {args.schedule_out} is out of date.\n")
         if not brand_ok and brand_sched_path is not None:
             sys.stderr.write(f"profiles_build --check: {brand_sched_path} is out of date.\n")
+        for drift in plist_drift:
+            sys.stderr.write(f"profiles_build --check: launchd drift -- {drift}\n")
         return 1
 
     write_artifact(args.rate_limits_out, rl_artifact)
@@ -421,6 +504,11 @@ def _main(argv: list[str] | None = None) -> int:
     if brand_sched_artifact is not None and brand_sched_path is not None:
         write_artifact(brand_sched_path, brand_sched_artifact)
         sys.stdout.write(f"profiles_build: wrote {brand_sched_path}\n")
+    if brand_plists is not None and brand_plist_dir is not None:
+        written = _write_plist_dir(brand_plists, brand_plist_dir)
+        sys.stdout.write(
+            f"profiles_build: wrote {len(written)} plist(s) to {brand_plist_dir}\n"
+        )
     return 0
 
 
