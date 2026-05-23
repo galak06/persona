@@ -9,6 +9,7 @@ import pytest
 
 from tools.profiles_build import (
     _GENERATED_BY,
+    _GENERATED_BY_BRAND_SCHEDULE,
     _GENERATED_BY_SCHEDULE,
     _main,
     build_delay_ranges,
@@ -16,12 +17,27 @@ from tools.profiles_build import (
     build_rate_limits,
     check_artifact,
     compose_artifact,
+    compose_brand_schedule_artifact,
     compose_rate_limits_artifact,
     compose_schedule_artifact,
+    load_brand_overlay,
     load_profiles,
+    merge_brand_into_profiles,
     validate_dag,
     write_artifact,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clear_brand_dir_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Isolate every test from the BRAND_DIR env var (default for --brand-dir).
+
+    Without this, tests inherit a host BRAND_DIR pointing at a real brand
+    overlay and the engine artifacts unexpectedly include brand-overridden
+    fields. Tests that exercise the brand path opt back in by passing
+    `--brand-dir` explicitly.
+    """
+    monkeypatch.delenv("BRAND_DIR", raising=False)
 
 
 def _write_profile(profile_dir: Path, name: str, payload: dict) -> Path:
@@ -517,3 +533,282 @@ class TestMain:
 
         assert rc == 1
         assert not sched_out.exists()
+
+
+# --- Slice C: brand overlay --------------------------------------------------
+
+_BRAND_FIXTURE: dict = {
+    "brand": {
+        "name": "TestBrand",
+        "key": "tbrand",
+        "site": "https://example.test",
+        "voice": {"persona": "Test Persona"},
+    },
+    "profiles": {
+        "facebook": {"auth": {"page_id_env": "FB_PAGE_ID"}},
+        "instagram": {
+            "auth": {"account_id_env": "IG_ACCOUNT_ID"},
+            "rate_limits": {
+                "own_replies_per_day": 15,
+                "delay_between_own_replies": "5-10s random",
+            },
+        },
+    },
+}
+
+
+class TestLoadBrandOverlay:
+    def test_missing_dir_returns_none(self) -> None:
+        assert load_brand_overlay(None) is None
+
+    def test_missing_file_returns_none(self, tmp_path: Path) -> None:
+        # brand_dir exists, but brand.json doesn't.
+        assert load_brand_overlay(tmp_path) is None
+
+    def test_reads_brand_json(self, tmp_path: Path) -> None:
+        (tmp_path / "brand.json").write_text(json.dumps(_BRAND_FIXTURE))
+
+        loaded = load_brand_overlay(tmp_path)
+
+        assert loaded is not None
+        assert loaded["brand"]["key"] == "tbrand"
+        assert loaded["profiles"]["instagram"]["rate_limits"]["own_replies_per_day"] == 15
+
+
+class TestMergeBrandIntoProfiles:
+    def test_no_brand_returns_input(self) -> None:
+        profiles = {"facebook": {"platform": "facebook", "rate_limits": {"comments_per_day": 5}}}
+
+        merged = merge_brand_into_profiles(profiles, None)
+
+        assert merged == profiles
+        # Returned dict must not be the same object (caller-mutation safety).
+        merged["facebook"]["rate_limits"]["comments_per_day"] = 99
+        assert profiles["facebook"]["rate_limits"]["comments_per_day"] == 5
+
+    def test_overrides_rate_limit(self) -> None:
+        profiles = {
+            "facebook": {"platform": "facebook", "rate_limits": {"comments_per_day": 5}},
+        }
+        brand = {
+            "brand": {"key": "x"},
+            "profiles": {"facebook": {"rate_limits": {"comments_per_day": 3}}},
+        }
+
+        merged = merge_brand_into_profiles(profiles, brand)
+
+        assert merged["facebook"]["rate_limits"]["comments_per_day"] == 3
+        # Input unchanged.
+        assert profiles["facebook"]["rate_limits"]["comments_per_day"] == 5
+
+    def test_adds_auth_block(self) -> None:
+        profiles = {
+            "facebook": {"platform": "facebook", "rate_limits": {}},
+        }
+        brand = {
+            "brand": {"key": "x"},
+            "profiles": {"facebook": {"auth": {"page_id_env": "FB_PAGE_ID"}}},
+        }
+
+        merged = merge_brand_into_profiles(profiles, brand)
+
+        assert merged["facebook"]["auth"] == {"page_id_env": "FB_PAGE_ID"}
+
+    def test_preserves_other_keys(self) -> None:
+        # Brand only touches rate_limits; flows + other keys survive untouched.
+        profiles = {
+            "facebook": {
+                "platform": "facebook",
+                "rate_limits": {"comments_per_day": 5},
+                "flows": [{"id": "fb_scan", "order": 10}],
+            },
+        }
+        brand = {
+            "brand": {"key": "x"},
+            "profiles": {"facebook": {"rate_limits": {"comments_per_day": 2}}},
+        }
+
+        merged = merge_brand_into_profiles(profiles, brand)
+
+        assert merged["facebook"]["flows"] == [{"id": "fb_scan", "order": 10}]
+        assert merged["facebook"]["platform"] == "facebook"
+        assert merged["facebook"]["rate_limits"]["comments_per_day"] == 2
+
+    def test_stashes_brand_metadata_at__brand(self) -> None:
+        profiles: dict = {}
+        brand = {
+            "brand": {"name": "TestBrand", "key": "tbrand", "site": "https://x.test"},
+            "profiles": {},
+        }
+
+        merged = merge_brand_into_profiles(profiles, brand)
+
+        assert merged["_brand"]["name"] == "TestBrand"
+        assert merged["_brand"]["key"] == "tbrand"
+        assert merged["_brand"]["site"] == "https://x.test"
+
+    def test_unknown_platform_in_brand_is_added(self) -> None:
+        # New platform from brand overlay (unusual but supported).
+        profiles: dict = {
+            "facebook": {"platform": "facebook", "rate_limits": {}},
+        }
+        brand = {
+            "brand": {"key": "x"},
+            "profiles": {"newplatform": {"rate_limits": {"comments_per_day": 1}}},
+        }
+
+        merged = merge_brand_into_profiles(profiles, brand)
+
+        assert "newplatform" in merged
+        assert merged["newplatform"]["rate_limits"]["comments_per_day"] == 1
+
+
+class TestComposeBrandScheduleArtifact:
+    def test_applies_prefix(self) -> None:
+        merged = {
+            "facebook": {"platform": "facebook", "flows": [{"id": "fb-scanner", "order": 10}]},
+            "_brand": {"key": "dogfood"},
+        }
+        brand = {"brand": {"key": "dogfood"}}
+
+        artifact = compose_brand_schedule_artifact(merged, brand)
+
+        ids = [t["id"] for t in artifact["tasks"]]
+        assert ids == ["dogfood-fb-scanner"]
+
+    def test_rewrites_depends_on(self) -> None:
+        merged = {
+            "_engine": {"platform": "engine", "flows": [{"id": "site-analyzer", "order": 5}]},
+            "facebook": {
+                "platform": "facebook",
+                "flows": [{"id": "fb-scanner", "order": 10, "depends_on": ["site-analyzer"]}],
+            },
+        }
+        brand = {"brand": {"key": "dogfood"}}
+
+        artifact = compose_brand_schedule_artifact(merged, brand)
+
+        by_id = {t["id"]: t for t in artifact["tasks"]}
+        assert by_id["dogfood-fb-scanner"]["depends_on"] == ["dogfood-site-analyzer"]
+        # Roots get empty depends_on (rewritten from missing/empty list).
+        assert by_id["dogfood-site-analyzer"]["depends_on"] == []
+
+    def test_has_generated_header(self) -> None:
+        brand = {"brand": {"key": "x"}}
+        artifact = compose_brand_schedule_artifact({}, brand)
+
+        assert artifact["_generated"] == _GENERATED_BY_BRAND_SCHEDULE
+        assert artifact["tasks"] == []
+
+    def test_raises_when_brand_key_missing(self) -> None:
+        with pytest.raises(ValueError, match="brand.key required"):
+            compose_brand_schedule_artifact({}, {"brand": {"name": "no-key"}})
+
+
+class TestOwnReplyFieldMapping:
+    def test_own_replies_per_day_maps_to_own_reply_action(self) -> None:
+        profiles = {
+            "instagram": {
+                "platform": "instagram",
+                "rate_limits": {"own_replies_per_day": 15},
+            },
+        }
+
+        limits = build_rate_limits(profiles)
+
+        assert limits == {"instagram:own_reply": 15}
+
+    def test_delay_between_own_replies_maps_to_own_reply(self) -> None:
+        profiles = {
+            "instagram": {
+                "platform": "instagram",
+                "rate_limits": {"delay_between_own_replies": "5-10s random"},
+            },
+        }
+
+        delays = build_delay_ranges(profiles)
+
+        assert delays == {"instagram:own_reply": "5-10s random"}
+
+
+class TestMainBrandOverlay:
+    def test_brand_dir_writes_brand_schedule(self, tmp_path: Path) -> None:
+        profile_dir = tmp_path / "profiles"
+        _write_profile(
+            profile_dir,
+            "facebook.json",
+            {
+                "platform": "facebook",
+                "rate_limits": {"comments_per_day": 5},
+                "flows": [{"id": "fb-scanner", "order": 10}],
+            },
+        )
+        brand_dir = tmp_path / "brand"
+        brand_dir.mkdir()
+        (brand_dir / "brand.json").write_text(json.dumps(_BRAND_FIXTURE))
+        out = tmp_path / "rate_limits.json"
+        sched_out = tmp_path / "schedule.json"
+
+        rc = _main([
+            "--profile-dir", str(profile_dir),
+            "--rate-limits-out", str(out),
+            "--schedule-out", str(sched_out),
+            "--brand-dir", str(brand_dir),
+        ])
+
+        assert rc == 0
+        brand_sched_path = brand_dir / "schedule.json"
+        assert brand_sched_path.exists()
+        brand_sched = json.loads(brand_sched_path.read_text())
+        assert brand_sched["_generated"] == _GENERATED_BY_BRAND_SCHEDULE
+        # Task ids should carry the brand prefix.
+        task_ids = [t["id"] for t in brand_sched["tasks"]]
+        assert "tbrand-fb-scanner" in task_ids
+        # Engine schedule remains abstract (no prefix).
+        engine_sched = json.loads(sched_out.read_text())
+        engine_ids = [t["id"] for t in engine_sched["tasks"]]
+        assert "fb-scanner" in engine_ids
+        assert all(not tid.startswith("tbrand-") for tid in engine_ids)
+        # Rate limits picked up brand override.
+        rl = json.loads(out.read_text())
+        assert rl["limits"].get("instagram:own_reply") == 15
+
+    def test_brand_dir_check_detects_drift(self, tmp_path: Path) -> None:
+        profile_dir = tmp_path / "profiles"
+        _write_profile(
+            profile_dir,
+            "facebook.json",
+            {
+                "platform": "facebook",
+                "rate_limits": {},
+                "flows": [{"id": "fb-scanner", "order": 10}],
+            },
+        )
+        brand_dir = tmp_path / "brand"
+        brand_dir.mkdir()
+        (brand_dir / "brand.json").write_text(json.dumps(_BRAND_FIXTURE))
+        out = tmp_path / "rate_limits.json"
+        sched_out = tmp_path / "schedule.json"
+
+        # First emit everything in sync.
+        assert _main([
+            "--profile-dir", str(profile_dir),
+            "--rate-limits-out", str(out),
+            "--schedule-out", str(sched_out),
+            "--brand-dir", str(brand_dir),
+        ]) == 0
+        # Stomp the brand schedule with a stale version.
+        (brand_dir / "schedule.json").write_text(json.dumps({
+            "_generated": _GENERATED_BY_BRAND_SCHEDULE,
+            "tasks": [{"id": "tbrand-stale"}],
+        }))
+
+        rc = _main([
+            "--check",
+            "--profile-dir", str(profile_dir),
+            "--rate-limits-out", str(out),
+            "--schedule-out", str(sched_out),
+            "--brand-dir", str(brand_dir),
+        ])
+
+        assert rc == 1

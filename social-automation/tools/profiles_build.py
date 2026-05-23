@@ -27,6 +27,7 @@ Legacy "ig_*" prefix dropped. Weekly limits preserved in profile JSON only.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import sys
@@ -41,6 +42,7 @@ Flow = dict[str, Any]
 # Fixed strings (not timestamps) so --check stays idempotent across runs.
 _GENERATED_BY: str = "tools.profiles_build (slice A: rate_limits)"
 _GENERATED_BY_SCHEDULE: str = "tools.profiles_build (slice B: schedule)"
+_GENERATED_BY_BRAND_SCHEDULE: str = "tools.profiles_build (slice C: brand schedule)"
 
 # Map a profile rate-limit field name to a flat <platform>:<action> suffix.
 # None means "skip" (handled elsewhere or not relevant to slice A).
@@ -54,6 +56,7 @@ _DAILY_FIELD_TO_ACTION: dict[str, str | None] = {
     "follows_per_day": "follow",
     "group_join_requests_per_day": "group_join",
     "replies_per_day": "reply",
+    "own_replies_per_day": "own_reply",
     # Weekly cadence -- preserved in profile JSON, not the daily flat dict.
     "group_join_requests_per_week": None,
 }
@@ -66,6 +69,7 @@ _DELAY_FIELD_TO_ACTION: dict[str, str] = {
     "delay_between_group_visits": "group_visit",
     "delay_between_follows": "follow",
     "delay_between_replies": "reply",
+    "delay_between_own_replies": "own_reply",
 }
 
 
@@ -200,6 +204,67 @@ def validate_dag(flows: list[Flow]) -> tuple[bool, str]:
     return True, ""
 
 
+def load_brand_overlay(brand_dir: Path | None) -> dict[str, Any] | None:
+    """Load <brand_dir>/brand.json if present.
+
+    Returns None if brand_dir is None or the file doesn't exist; otherwise
+    returns the parsed dict.
+    """
+    if brand_dir is None:
+        return None
+    path = brand_dir / "brand.json"
+    if not path.exists():
+        return None
+    with path.open() as fh:
+        data: dict[str, Any] = json.load(fh)
+    return data
+
+
+def _deep_merge_dict(target: dict[str, Any], overlay: dict[str, Any]) -> None:
+    """In-place deep merge. Dicts merge recursively; everything else is replaced.
+
+    Lists are REPLACED (not concatenated) — keeps semantics predictable.
+    """
+    for key, value in overlay.items():
+        if (
+            key in target
+            and isinstance(target[key], dict)
+            and isinstance(value, dict)
+        ):
+            _deep_merge_dict(target[key], value)
+        else:
+            target[key] = copy.deepcopy(value)
+
+
+def merge_brand_into_profiles(
+    profiles: dict[str, Profile],
+    brand: dict[str, Any] | None,
+) -> dict[str, Profile]:
+    """Deep-merge `brand.profiles.<platform>` into each engine profile.
+
+    Brand values override engine values. Lists are replaced (not concatenated).
+    Brand metadata (name, key, site, voice) is stashed at the top-level result
+    key `_brand` for downstream consumers.
+
+    Returns a NEW dict (does not mutate inputs).
+    """
+    if brand is None:
+        return {k: copy.deepcopy(v) for k, v in profiles.items()}
+    result: dict[str, Profile] = {k: copy.deepcopy(v) for k, v in profiles.items()}
+    brand_profiles = brand.get("profiles", {})
+    if isinstance(brand_profiles, dict):
+        for platform_name, overlay in brand_profiles.items():
+            if not isinstance(overlay, dict):
+                continue
+            if platform_name in result:
+                _deep_merge_dict(result[platform_name], overlay)
+            else:
+                # New platform from brand overlay (unusual but supported).
+                result[platform_name] = copy.deepcopy(overlay)
+    result["_brand"] = copy.deepcopy(brand.get("brand", {}))
+    return result
+
+
 def compose_rate_limits_artifact(profiles: dict[str, Profile]) -> Artifact:
     """Slice A artifact. Skips `_*` profiles."""
     return {
@@ -214,6 +279,42 @@ def compose_schedule_artifact(profiles: dict[str, Profile]) -> Artifact:
     return {
         "_generated": _GENERATED_BY_SCHEDULE,
         "tasks": build_flows(profiles),
+    }
+
+
+def compose_brand_schedule_artifact(
+    merged_profiles: dict[str, Profile],
+    brand: dict[str, Any],
+) -> Artifact:
+    """Emit brand-level schedule with `<brand.key>-` prefix applied.
+
+    Reads flows from the merged profiles (which already include `_engine` flows).
+    For each flow, prepends the brand key to `id` and to every `depends_on`
+    entry. Engine artifacts (`data/schedule.json`) use ABSTRACT ids; brand
+    artifacts namespace by brand key so multiple brands can share one runner.
+    """
+    brand_meta = brand.get("brand", brand)
+    key = brand_meta.get("key") if isinstance(brand_meta, dict) else None
+    if not key:
+        # Tolerate flat shape {"key": "...", ...} in case caller passed the
+        # inner brand dict directly.
+        key = brand.get("key")
+    if not key:
+        raise ValueError("brand.key required for prefix")
+    prefix = f"{key}-"
+
+    flows = build_flows(merged_profiles)
+    prefixed_tasks: list[Flow] = []
+    for flow in flows:
+        new_flow: Flow = dict(flow)
+        new_flow["id"] = f"{prefix}{flow['id']}"
+        new_flow["depends_on"] = [
+            f"{prefix}{dep}" for dep in flow.get("depends_on", [])
+        ]
+        prefixed_tasks.append(new_flow)
+    return {
+        "_generated": _GENERATED_BY_BRAND_SCHEDULE,
+        "tasks": prefixed_tasks,
     }
 
 
@@ -242,6 +343,12 @@ def check_artifact(path: Path, expected: Artifact) -> bool:
     return bool(current == expected)
 
 
+def _default_brand_dir() -> Path | None:
+    """Resolve --brand-dir default from BRAND_DIR env var, else None."""
+    env_val = os.environ.get("BRAND_DIR")
+    return Path(env_val) if env_val else None
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build profile-derived runtime artifacts.")
     parser.add_argument("--check", action="store_true",
@@ -251,14 +358,29 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--profile-dir", type=Path, default=_DEFAULT_PROFILE_DIR)
     parser.add_argument("--rate-limits-out", type=Path, default=_DEFAULT_RATE_LIMITS_PATH)
     parser.add_argument("--schedule-out", type=Path, default=_DEFAULT_SCHEDULE_PATH)
+    parser.add_argument("--brand-dir", type=Path, default=_default_brand_dir(),
+                        help="Optional brand overlay dir. Reads <dir>/brand.json + writes "
+                             "<dir>/schedule.json (brand-prefixed). Default: $BRAND_DIR or none.")
     return parser.parse_args(argv)
 
 
 def _main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     profiles = load_profiles(args.profile_dir)
-    rl_artifact = compose_rate_limits_artifact(profiles)
-    sched_artifact = compose_schedule_artifact(profiles)
+    brand = load_brand_overlay(args.brand_dir)
+    merged_profiles = merge_brand_into_profiles(profiles, brand)
+
+    # Engine artifacts read from merged profiles so brand-overridden rate
+    # limits flow through to data/rate_limits.json. The engine schedule
+    # stays abstract (no brand prefix); only the brand schedule is namespaced.
+    rl_artifact = compose_rate_limits_artifact(merged_profiles)
+    sched_artifact = compose_schedule_artifact(merged_profiles)
+
+    brand_sched_artifact: Artifact | None = None
+    brand_sched_path: Path | None = None
+    if brand is not None and args.brand_dir is not None:
+        brand_sched_artifact = compose_brand_schedule_artifact(merged_profiles, brand)
+        brand_sched_path = args.brand_dir / "schedule.json"
 
     dag_ok, reason = validate_dag(sched_artifact["tasks"])
 
@@ -279,18 +401,26 @@ def _main(argv: list[str] | None = None) -> int:
     if args.check:
         rl_ok = check_artifact(args.rate_limits_out, rl_artifact)
         sched_ok = check_artifact(args.schedule_out, sched_artifact)
-        if rl_ok and sched_ok:
+        brand_ok = True
+        if brand_sched_artifact is not None and brand_sched_path is not None:
+            brand_ok = check_artifact(brand_sched_path, brand_sched_artifact)
+        if rl_ok and sched_ok and brand_ok:
             return 0
         if not rl_ok:
             sys.stderr.write(f"profiles_build --check: {args.rate_limits_out} is out of date.\n")
         if not sched_ok:
             sys.stderr.write(f"profiles_build --check: {args.schedule_out} is out of date.\n")
+        if not brand_ok and brand_sched_path is not None:
+            sys.stderr.write(f"profiles_build --check: {brand_sched_path} is out of date.\n")
         return 1
 
     write_artifact(args.rate_limits_out, rl_artifact)
     sys.stdout.write(f"profiles_build: wrote {args.rate_limits_out}\n")
     write_artifact(args.schedule_out, sched_artifact)
     sys.stdout.write(f"profiles_build: wrote {args.schedule_out}\n")
+    if brand_sched_artifact is not None and brand_sched_path is not None:
+        write_artifact(brand_sched_path, brand_sched_artifact)
+        sys.stdout.write(f"profiles_build: wrote {brand_sched_path}\n")
     return 0
 
 
