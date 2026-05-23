@@ -12,5 +12,104 @@
     "delay_between_group_visits": "45-180s random",
     "delay_between_likes": "30-90s random"
   },
-  "_notes": "Slice A: rate_limits section only. Flows + approval_gates + capabilities arrive in later slices."
+  "flows": [
+    {
+      "id": "fb-scanner",
+      "skill": "fb-scanner",
+      "script": "scripts/fb_scan.py",
+      "description": "Scan joined Facebook dog groups for relevant posts, queue for commenting",
+      "schedule": {
+        "cron": "33 15 * * *",
+        "cadence": "daily"
+      },
+      "output_file": ".claude/state/comment_queue.json",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "rate_limits": {
+        "group_visits_per_day": 6,
+        "comments_per_day": 5
+      },
+      "order": 20,
+      "depends_on": [
+        "site-analyzer"
+      ],
+      "inputs": [
+        {
+          "path": "data/site_content_cache.json",
+          "min_count": 1,
+          "max_age_hours": 26,
+          "produced_by": "site-analyzer"
+        }
+      ]
+    },
+    {
+      "id": "fb-group-scout",
+      "skill": "fb-group-scout",
+      "script": "scripts/fb_group_scout.py",
+      "description": "Search Facebook for new dog groups (public + private) to join, score and present for approval",
+      "schedule": {
+        "cron": "3 15 * * 0",
+        "cadence": "weekly",
+        "next_run": "2026-05-17"
+      },
+      "output_file": ".claude/state/pending_groups.json",
+      "re_run_guard": true,
+      "re_run_cadence": "weekly",
+      "requires_browser": true,
+      "requires_approval": true,
+      "approval_channel": "telegram",
+      "telegram_notify": true,
+      "rate_limits": {
+        "join_requests_per_week": 3
+      },
+      "order": 100,
+      "depends_on": [],
+      "inputs": []
+    },
+    {
+      "id": "fb-group-distribute",
+      "skill": "fb-group-publisher",
+      "script": "scripts/distribute_fb_groups.py",
+      "description": "Daily distribute published WP posts to eligible FB groups (browser-based)",
+      "schedule": {
+        "cron": "30 17 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": true,
+      "approval_channel": "telegram",
+      "telegram_notify": true,
+      "rate_limits": {
+        "group_posts_per_day": 10
+      },
+      "order": 110,
+      "depends_on": [
+        "content-publish"
+      ],
+      "inputs": []
+    },
+    {
+      "id": "fb-notification-scan",
+      "skill": "fb-scanner",
+      "script": "scripts/fb_notification_scan.py",
+      "description": "Weekly Facebook notification sweep — surface group activity worth a follow-up reply",
+      "schedule": {
+        "cron": "0 9 * * 0",
+        "cadence": "weekly"
+      },
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "order": 115,
+      "depends_on": [],
+      "inputs": []
+    }
+  ],
+  "_notes": "Slice B: flows[] added. fb-group-distribute orphan fix: depends_on now [content-publish] (was [])."
 }

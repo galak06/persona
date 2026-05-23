@@ -1,0 +1,407 @@
+{
+  "_generated": "tools.profiles_build (slice B: schedule)",
+  "tasks": [
+    {
+      "depends_on": [],
+      "description": "Crawl dogfoodandfun.com RSS + sitemap, cache recent posts for comment context",
+      "id": "site-analyzer",
+      "inputs": [],
+      "order": 10,
+      "output_file": "data/site_content_cache.json",
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 15 * * *"
+      },
+      "script": null,
+      "skill": "site-analyzer",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [
+        "site-analyzer"
+      ],
+      "description": "Scan joined Facebook dog groups for relevant posts, queue for commenting",
+      "id": "fb-scanner",
+      "inputs": [
+        {
+          "max_age_hours": 26,
+          "min_count": 1,
+          "path": "data/site_content_cache.json",
+          "produced_by": "site-analyzer"
+        }
+      ],
+      "order": 20,
+      "output_file": ".claude/state/comment_queue.json",
+      "rate_limits": {
+        "comments_per_day": 5,
+        "group_visits_per_day": 6
+      },
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "33 15 * * *"
+      },
+      "script": "scripts/fb_scan.py",
+      "skill": "fb-scanner",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [
+        "site-analyzer"
+      ],
+      "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
+      "id": "ig-scanner",
+      "inputs": [
+        {
+          "max_age_hours": 26,
+          "min_count": 1,
+          "path": "data/site_content_cache.json",
+          "produced_by": "site-analyzer"
+        }
+      ],
+      "order": 30,
+      "output_file": ".claude/state/comment_queue.json",
+      "rate_limits": {
+        "comments_per_day": 2,
+        "likes_per_day": 8
+      },
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "3 19 * * *"
+      },
+      "script": "scripts/ig_scan.py",
+      "skill": "ig-scanner",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Pull held dogfoodandfun.com comments via WP REST, auto-trash spam, queue rest for Telegram approval. Source: social-automation/CLAUDE.md L31 (Engagement Pipeline \u2014 wp-comment-handler Daily 9:00 PM Israel).",
+      "id": "wp-comment-handler",
+      "inputs": [],
+      "order": 45,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 21 * * *"
+      },
+      "script": null,
+      "skill": "wp-comment-handler",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "approval_timeout_hours": 12,
+      "depends_on": [
+        "fb-scanner",
+        "ig-scanner"
+      ],
+      "description": "Draft, validate, and post queued comments. Sends approvals via Telegram bot",
+      "id": "comment-composer",
+      "inputs": [
+        {
+          "max_age_hours": 14,
+          "min_count": 1,
+          "path": "state/comment_queue.json",
+          "produced_by": "fb-scanner"
+        }
+      ],
+      "order": 50,
+      "output_file": "logs/engagement_log.jsonl",
+      "rate_limits": {
+        "fb_comments_per_day": 5,
+        "ig_comments_per_day": 2
+      },
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 22 * * *"
+      },
+      "script": null,
+      "skill": "comment-composer",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [
+        "comment-composer"
+      ],
+      "description": "Hourly Telegram-approval checker for queued comments (subordinate to comment-composer)",
+      "id": "comment-approver",
+      "inputs": [],
+      "order": 51,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "hourly",
+        "cron": "0 8-22 * * *"
+      },
+      "script": "scripts/comment_approver.py",
+      "skill": "comment-composer",
+      "telegram_notify": false
+    },
+    {
+      "depends_on": [
+        "comment-approver"
+      ],
+      "description": "Daily poster for approved comments (subordinate to comment-composer)",
+      "id": "comment-poster",
+      "inputs": [],
+      "order": 52,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 9 * * *"
+      },
+      "script": "scripts/comment_poster.py",
+      "skill": "comment-composer",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [],
+      "description": "Weekly content-pipeline ideate stage \u2014 generate post ideas, append to Google Sheet",
+      "id": "content-ideator",
+      "inputs": [],
+      "order": 70,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "0 10 * * 0"
+      },
+      "script": "scripts/content_pipeline.py --stage ideate",
+      "skill": "content-ideator",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [
+        "content-ideator"
+      ],
+      "description": "Auto-draft WordPress posts from enriched ideas in the Google Sheet",
+      "id": "auto-drafter",
+      "inputs": [
+        {
+          "max_age_hours": 168,
+          "min_count": 1,
+          "path": "state/ideation_history.json",
+          "produced_by": "content-ideator"
+        }
+      ],
+      "order": 75,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 20 * * *"
+      },
+      "script": "scripts/auto_drafter.py",
+      "skill": "wp-post-creator",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [
+        "auto-drafter"
+      ],
+      "description": "Weekly content-pipeline publish stage \u2014 publish approved WordPress drafts",
+      "id": "content-publish",
+      "inputs": [],
+      "order": 80,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "0 15 * * 1"
+      },
+      "script": "scripts/content_pipeline.py --stage publish",
+      "skill": "wp-post-creator",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Weekly recipe ideator \u2014 surfaces 4 approved recipe candidates",
+      "id": "recipe-ideator",
+      "inputs": [],
+      "order": 85,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "0 9 * * 0"
+      },
+      "script": "python -m ideator.main",
+      "skill": "content-ideator",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [
+        "recipe-ideator"
+      ],
+      "description": "Daily recipe publisher \u2014 publishes prepared recipe posts with min-gap pacing",
+      "id": "recipe-publisher",
+      "inputs": [],
+      "order": 90,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 14 * * *"
+      },
+      "script": "scripts/publish_prepared.py",
+      "skill": "wp-post-creator",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Search Facebook for new dog groups (public + private) to join, score and present for approval",
+      "id": "fb-group-scout",
+      "inputs": [],
+      "order": 100,
+      "output_file": ".claude/state/pending_groups.json",
+      "rate_limits": {
+        "join_requests_per_week": 3
+      },
+      "re_run_cadence": "weekly",
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "3 15 * * 0",
+        "next_run": "2026-05-17"
+      },
+      "script": "scripts/fb_group_scout.py",
+      "skill": "fb-group-scout",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [
+        "content-publish"
+      ],
+      "description": "Daily distribute published WP posts to eligible FB groups (browser-based)",
+      "id": "fb-group-distribute",
+      "inputs": [],
+      "order": 110,
+      "output_file": "logs/engagement_log.jsonl",
+      "rate_limits": {
+        "group_posts_per_day": 10
+      },
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "30 17 * * *"
+      },
+      "script": "scripts/distribute_fb_groups.py",
+      "skill": "fb-group-publisher",
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [],
+      "description": "Weekly Facebook notification sweep \u2014 surface group activity worth a follow-up reply",
+      "id": "fb-notification-scan",
+      "inputs": [],
+      "order": 115,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "0 9 * * 0"
+      },
+      "script": "scripts/fb_notification_scan.py",
+      "skill": "fb-scanner",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Morning reply-follower \u2014 chase replies on our recent comments/posts",
+      "id": "reply-follower-morning",
+      "inputs": [],
+      "order": 125,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 8 * * *"
+      },
+      "script": "scripts/reply_follower.py",
+      "skill": "comment-composer",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Evening reply-follower \u2014 chase replies on our recent comments/posts",
+      "id": "reply-follower-evening",
+      "inputs": [],
+      "order": 130,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_approval": true,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "30 19 * * *"
+      },
+      "script": "scripts/reply_follower.py",
+      "skill": "comment-composer",
+      "telegram_notify": true
+    },
+    {
+      "approval_channel": "telegram",
+      "depends_on": [],
+      "description": "Hourly sweep of our own Instagram posts to reply to incoming comments",
+      "id": "ig-own-comments",
+      "inputs": [],
+      "order": 135,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": false,
+      "requires_approval": true,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 9,14,20 * * *"
+      },
+      "script": "scripts/ig_own_comments.py",
+      "skill": "comment-composer",
+      "telegram_notify": true
+    }
+  ]
+}
