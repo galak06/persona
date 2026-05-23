@@ -114,7 +114,7 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     config = _load_json(CONFIG_FILE, {})
     policy = EngagementPolicy.from_config(config)
     active = adapter or InstagramHashtagAdapter(
-        {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE, "headless": False}
+        {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE}
     )
     queue_io = _QueueIO(QUEUE_FILE)
 

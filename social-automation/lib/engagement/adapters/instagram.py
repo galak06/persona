@@ -43,6 +43,7 @@ from lib.engagement.adapters.instagram_parsing import (
 )
 from lib.engagement.post import Post
 from lib.engagement.result import LikeResult
+from lib.local_env import get_runtime_headless
 
 _log = logging.getLogger(__name__)
 
@@ -68,12 +69,13 @@ class InstagramHashtagAdapter:
         Expected keys:
             session_file: Path to the Playwright storage_state JSON
             hashtag_file: Path to instagram_accounts.csv
-            headless:     bool (default False, matches current production)
+
+        Playwright headless mode is sourced from the brand overlay via
+        `get_runtime_headless()` (see lib/local_env.py), not from `config`.
         """
         self._config = config
         self._session_file: Path = Path(str(config["session_file"]))
         self._hashtag_file: Path = Path(str(config["hashtag_file"]))
-        self._headless: bool = bool(config.get("headless", False))
         self._playwright: Playwright | None = None
         self._browser: Browser | None = None
         self._context: BrowserContext | None = None
@@ -97,7 +99,7 @@ class InstagramHashtagAdapter:
         playwright = sync_playwright().start()
         self._playwright = playwright
         try:
-            browser = playwright.chromium.launch(headless=self._headless)
+            browser = playwright.chromium.launch(headless=get_runtime_headless())
             self._browser = browser
             context = browser.new_context(
                 storage_state=str(self._session_file),

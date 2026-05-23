@@ -31,6 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
+
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
 from local_env import load_local_env
@@ -316,7 +318,7 @@ def run(args: argparse.Namespace) -> int:
 
     with sync_playwright() as p:
         log_step("Launching browser")
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
         ctx = browser.new_context(
             storage_state=str(SESSION_FILE),
             viewport={"width": 1280, "height": 900},

@@ -29,6 +29,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
+
 from comment_generator import validate_voice
 from group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
 from lib.logger import log_step
@@ -399,7 +401,7 @@ class _browser_session:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
-        self._browser = pw.chromium.launch(headless=False)
+        self._browser = pw.chromium.launch(headless=get_runtime_headless())
         self._ctx = self._browser.new_context(
             storage_state=str(SESSION_FILE),
             viewport={"width": 1280, "height": 900},

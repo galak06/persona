@@ -162,23 +162,26 @@ class BrowserSession:
 @contextmanager
 def fb_session(
     *,
-    headless: bool = False,
+    headless: bool | None = None,
     storage_state_path: Path | None = None,
 ) -> Iterator[Page]:
     """Open a Playwright session against the persisted Facebook cookies.
 
     Args:
-        headless: Run headless. Default False (FB heuristics flag
-            headless agents more aggressively).
+        headless: Run headless. Default None — consult the brand overlay
+            via `get_runtime_headless()` (production-safe True when no
+            overlay is present; False in local dev).
         storage_state_path: Override session-state file (tests).
             Default `.claude/state/facebook_session.json`.
 
     Yields:
         A ready `playwright.sync_api.Page`. Caller navigates from there.
     """
+    from lib.local_env import get_runtime_headless
+
     config = BrowserSessionConfig(
         storage_state_path=storage_state_path or _DEFAULT_FB_SESSION,
-        headless=headless,
+        headless=get_runtime_headless() if headless is None else headless,
     )
     with BrowserSession(config) as page:
         yield page
@@ -187,16 +190,18 @@ def fb_session(
 @contextmanager
 def ig_session(
     *,
-    headless: bool = False,
+    headless: bool | None = None,
     storage_state_path: Path | None = None,
 ) -> Iterator[Page]:
     """Open a Playwright session against the persisted Instagram cookies.
 
     Same shape as `fb_session`, different storage-state file.
     """
+    from lib.local_env import get_runtime_headless
+
     config = BrowserSessionConfig(
         storage_state_path=storage_state_path or _DEFAULT_IG_SESSION,
-        headless=headless,
+        headless=get_runtime_headless() if headless is None else headless,
     )
     with BrowserSession(config) as page:
         yield page

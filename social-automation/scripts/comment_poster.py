@@ -29,6 +29,8 @@ from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
+
 from lib.logger import log_progress, log_step
 
 
@@ -383,7 +385,7 @@ def run() -> None:
     )
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
 
         # ── Facebook comments ──
         if fb_approved and can_act("facebook", "comment"):

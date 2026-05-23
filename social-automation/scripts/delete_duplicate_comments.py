@@ -16,6 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from lib.local_env import get_runtime_headless
+
 MANIFEST = PROJECT_ROOT / ".claude" / "state" / "duplicate_cleanup_manifest_2026-05-05.json"
 FB_SESSION = PROJECT_ROOT / ".claude" / "state" / "facebook_session.json"
 IG_SESSION = PROJECT_ROOT / ".claude" / "state" / "instagram_session.json"
@@ -266,7 +270,7 @@ def main() -> None:
     ig = [t for t in targets if t["platform"] == "instagram"]
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
         run_platform(browser, fb, FB_SESSION, "https://www.facebook.com", args.dry_run)
         run_platform(browser, ig, IG_SESSION, "https://www.instagram.com", args.dry_run)
         browser.close()

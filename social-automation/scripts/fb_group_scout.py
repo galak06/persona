@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
+
 from group_discovery.approval import (
     get_user_approval,
     parse_approve_arg,
@@ -187,7 +189,7 @@ def run_scout(
     )
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
         context = browser.new_context(
             storage_state=str(SESSION_FILE),
             viewport={"width": 1280, "height": 900},

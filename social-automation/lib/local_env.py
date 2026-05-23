@@ -8,6 +8,9 @@ launchd plists. Scripts call `load_local_env()` at startup to bridge the gap.
 
 Existing values in os.environ are NOT overwritten, so a manual `FB_PAGE_TOKEN=...
 python ...` invocation still wins.
+
+Also exposes brand-overlay runtime helpers (e.g. `get_runtime_headless`) that
+read `<BRAND_DIR>/brand.json` for env-specific Playwright flags.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 _SETTINGS_FILE = Path(__file__).resolve().parent.parent.parent / ".claude" / "settings.local.json"
 
@@ -36,3 +40,33 @@ def load_local_env(*, settings_file: Path | None = None) -> int:
         os.environ[k] = str(v)
         loaded += 1
     return loaded
+
+
+def get_runtime_headless() -> bool:
+    """Return Playwright headless setting from the brand overlay.
+
+    Reads `<BRAND_DIR>/brand.json` -> `runtime.headless`. Defaults to True
+    (production-safe) if `BRAND_DIR` is unset, `brand.json` is missing or
+    malformed, or the `runtime.headless` field is not specified.
+
+    Set to False in `brand.json` for local dev to see the browser window.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return True
+    brand_path = Path(brand_dir) / "brand.json"
+    if not brand_path.exists():
+        return True
+    try:
+        data: Any = json.loads(brand_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return True
+    if not isinstance(data, dict):
+        return True
+    runtime = data.get("runtime")
+    if not isinstance(runtime, dict):
+        return True
+    headless = runtime.get("headless")
+    if not isinstance(headless, bool):
+        return True
+    return headless

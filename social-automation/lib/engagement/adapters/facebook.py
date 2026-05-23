@@ -39,6 +39,7 @@ from lib.engagement.adapters.facebook_dom import (
 )
 from lib.engagement.post import Post
 from lib.engagement.result import LikeResult
+from lib.local_env import get_runtime_headless
 
 _PW_ERRORS: tuple[type[BaseException], ...] = (PlaywrightError, PlaywrightTimeoutError)
 
@@ -119,7 +120,7 @@ class FacebookGroupAdapter:
         pw_ctx = sync_playwright().start()
         self._playwright = pw_ctx
         try:
-            self._browser = pw_ctx.chromium.launch(headless=False)
+            self._browser = pw_ctx.chromium.launch(headless=get_runtime_headless())
             self._context = self._new_context()
             self._page = self._context.new_page()
 

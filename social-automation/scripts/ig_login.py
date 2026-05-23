@@ -14,6 +14,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from lib.local_env import get_runtime_headless
+
 STATE_DIR = settings.paths.state_dir
 STATE_FILE = STATE_DIR / "instagram_session.json"
 
@@ -24,7 +26,7 @@ def main() -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
         context = browser.new_context(
             viewport={"width": 1280, "height": 900},
             user_agent=(

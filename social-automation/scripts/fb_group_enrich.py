@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
 from lib.logger import log_step
 from notifier import skill_error, skill_finished, skill_started
 
@@ -158,7 +159,7 @@ def main() -> None:
 
     updated = 0
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=get_runtime_headless())
         ctx = browser.new_context(
             storage_state=str(SESSION_FILE),
             viewport={"width": 1280, "height": 900},

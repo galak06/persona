@@ -39,6 +39,8 @@ if str(PROJECT_ROOT / "lib") not in sys.path:
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
+from lib.local_env import get_runtime_headless
+
 from local_env import load_local_env
 
 # Load env early so PHOENIX_ENABLED etc. are visible before tracing setup.
@@ -80,7 +82,7 @@ def _open_browsers(ctx: Context) -> None:
     from playwright.sync_api import sync_playwright
 
     p = sync_playwright().start()
-    browser = p.chromium.launch(headless=False)
+    browser = p.chromium.launch(headless=get_runtime_headless())
     if SESSION_FB.exists():
         ctx.fb_page = browser.new_context(storage_state=str(SESSION_FB)).new_page()
     if SESSION_IG.exists():
