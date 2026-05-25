@@ -26,6 +26,15 @@ const apiClient = axios.create({
   },
 });
 
+apiClient.interceptors.request.use((config) => {
+  const brand = localStorage.getItem("social_automation_selected_brand");
+  if (brand) {
+    config.headers["X-Brand"] = brand;
+  }
+  return config;
+});
+
+
 /**
  * Single error-message extractor for axios + FastAPI failures. Handles
  * three FastAPI detail shapes (string / validation array / object).

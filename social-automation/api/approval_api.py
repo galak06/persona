@@ -11,11 +11,7 @@ decide in parallel. Surfaces:
 - ``POST /api/v1/items/{id}/reject``  → dispatches by item ``type``
 - ``POST /api/v1/items/{id}/edit``    → blog_post only
 
-Engagement comments no longer surface to the web UI — they flow
-autonomously through the scanner → inline Gemini draft → comment_poster
-pipeline and are reported via ``/activity``. Items still sitting in
-``comment_queue.json`` from before that cut-over are visible to
-``get_item`` but every approve/reject/edit returns 410 Gone.
+Engagement comments are fully managed via the web UI.
 
 The route handlers below are thin — dispatch lives in
 ``api.routes_helpers`` to keep this module under the 300-line cap.
@@ -47,6 +43,7 @@ from api.schemas import (
     ActivityResponse,
     ApproveBody,
     BlogPostItem,
+    CommentItem,
     DecisionResponse,
     EditBody,
     GroupItem,
@@ -123,17 +120,28 @@ def get_config():
 
 @app.get("/api/v1/pending", response_model=PendingResponse)
 def list_pending() -> PendingResponse:
-    """All blog-post pairs + group-join candidates awaiting a decision."""
+    """All blog-post pairs, group-join candidates, and comments awaiting a decision."""
     blog_posts_raw = rh.pending_only(state.read_queue(rh.BLOG_POST_QUEUE_PATH))
+    comments_raw = rh.pending_only(state.read_queue(rh.COMMENT_QUEUE_PATH))
     from lib import groups_queue
-    items: list[BlogPostItem | GroupItem] = []
+    items: list[CommentItem | BlogPostItem | GroupItem] = []
+    
+    for raw in comments_raw:
+        try:
+            items.append(rh.to_comment(raw))
+        except (ValueError, TypeError) as exc:
+            _log.warning("skipping malformed comment %s: %s", raw.get("id"), exc)
+
     for raw in blog_posts_raw:
         try:
             items.append(rh.to_blog_post(raw))
         except (ValueError, TypeError) as exc:
             _log.warning("skipping malformed blog_post %s: %s", raw.get("id"), exc)
+            
     items.extend(groups_queue.read_pending_groups())
+    
     counts = {
+        "comments": sum(1 for i in items if isinstance(i, CommentItem)),
         "blog_posts": sum(1 for i in items if isinstance(i, BlogPostItem)),
         "groups_to_join": sum(1 for i in items if isinstance(i, GroupItem)),
         "total": len(items),
@@ -161,17 +169,14 @@ def list_activity(
 
 
 @app.get("/api/v1/items/{item_id}")
-def get_item(item_id: str) -> BlogPostItem | GroupItem:
-    """Look up a single item by id. 410 for legacy comments."""
+def get_item(item_id: str) -> CommentItem | BlogPostItem | GroupItem:
+    """Look up a single item by id."""
     located = rh.queue_for_id(item_id)
     if located is None:
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, _path, raw = located
     if kind == "comment":
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="engagement comments are no longer managed via the web UI",
-        )
+        return rh.to_comment(raw)
     if kind == "blog_post":
         return rh.to_blog_post(raw)
     return GroupItem.model_validate(raw)
@@ -190,9 +195,10 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="engagement comments are no longer managed via the web UI",
+        assert path is not None
+        payload = body or ApproveBody()
+        return rh.approve_comment(
+            path, item_id, decision_status="approved", text=payload.text
         )
     if kind == "blog_post":
         assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
@@ -219,9 +225,9 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="engagement comments are no longer managed via the web UI",
+        assert path is not None
+        return rh.approve_comment(
+            path, item_id, decision_status="USER_SKIPPED", text=None
         )
     if kind == "blog_post":
         assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
@@ -246,17 +252,16 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
     if located is None:
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, _raw = located
-    if kind == "comment":
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="engagement comments are no longer managed via the web UI",
-        )
     if kind == "group_to_join":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
     assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+    if kind == "comment":
+        return rh.approve_comment(
+            path, item_id, decision_status="edited", text=body.text
+        )
     return rh.approve_blog_post(
         path, item_id, channel=None, text=body.text,
         fb_caption=body.fb_caption, ig_caption=body.ig_caption,

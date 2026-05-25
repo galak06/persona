@@ -140,6 +140,12 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     print_status()
 
     config = _load_json(CONFIG_FILE, {})
+    # Inject resolved paths so the adapter doesn't get empty strings
+    config["paths"] = {
+        "facebook_session": str(settings.paths.facebook_session),
+        "groups_tracker": str(settings.paths.groups_tracker),
+    }
+
     policy = EngagementPolicy.from_config(config)
     active = adapter or FacebookGroupAdapter(config)
     queue_io = _QueueIO(QUEUE_FILE)

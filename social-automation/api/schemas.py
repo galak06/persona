@@ -126,7 +126,7 @@ class GroupItem(_ItemBase):
 
 
 PendingItem = Annotated[
-    BlogPostItem | GroupItem,
+    CommentItem | BlogPostItem | GroupItem,
     Field(discriminator="type"),
 ]
 

@@ -203,7 +203,10 @@ def run(
         result.topic = pick_topic(topic)
         logger.info("topic selected: %s", result.topic)
 
-        recipe = generate_recipe(result.topic)
+        from lib.local_env import get_brand_campaign
+
+        hook_blocklist = (get_brand_campaign() or {}).get("hook_blocklist")
+        recipe = generate_recipe(result.topic, hook_blocklist=hook_blocklist)
         result.recipe_title = recipe.title
 
         if is_duplicate(recipe):

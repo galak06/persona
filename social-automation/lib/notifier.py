@@ -410,6 +410,103 @@ def request_approval(
     return {"action": "timeout", "comment": draft_comment}
 
 
+def request_publish_approval(
+    platform: str,
+    target: str,
+    post_preview: str,
+    draft_caption: str,
+    *,
+    timeout_seconds: int = 300,
+) -> dict:
+    """Approval helper for browser-driven publishers (fb_group_post.py, etc).
+
+    Differs from ``request_approval`` in two ways tailored to the
+    "approve-then-open-browser" rule (see feedback_approval_before_browser):
+
+    1. Timeout is measured in SECONDS (default 300) rather than hours.
+    2. Timeout = AUTO-APPROVE (returns ``action="approved"``) rather than
+       skip. Idle-Telegram should not block a scheduled publisher run.
+
+    Explicit ``skip`` / ``no`` from the user still returns ``action="skipped"``;
+    explicit ``edit: ...`` returns ``action="edited"`` with the new text.
+
+    A separate function (not a flag on ``request_approval``) so we don't
+    accidentally flip the timeout-action semantics for comment-approval
+    callers (ig_own_comments, reply_follower) that depend on timeout=skip.
+    """
+    cfg = _load_config()
+    token = cfg.get("bot_token", "")
+    chat_id = cfg.get("chat_id", "")
+
+    if not token or not chat_id:
+        print(
+            "[notifier] No Telegram credentials — auto-approving publish "
+            "(no human-in-the-loop available)."
+        )
+        return {"action": "approved", "comment": draft_caption}
+
+    try:
+        offset = _get_latest_offset(token)
+    except Exception:
+        print(
+            "[notifier] Telegram unreachable (getUpdates failed) — "
+            "auto-approving publish to keep the cron unblocked."
+        )
+        return {"action": "approved", "comment": draft_caption}
+
+    icon = "📘" if platform == "facebook" else "📸"
+    msg = (
+        f"{icon} <b>Publish approval needed</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Platform:</b> {platform.capitalize()}\n"
+        f"<b>Target:</b> {target}\n"
+        f"<b>Post:</b> <i>{post_preview[:200]}</i>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Draft:</b>\n"
+        f"<blockquote>{draft_caption[:600]}</blockquote>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Reply: <b>yes</b> · <b>skip</b> · <b>edit: your new text</b>\n"
+        f"⏳ Auto-approves in {timeout_seconds}s if no reply"
+    )
+    sent = send(msg, silent=False)
+    if not sent:
+        print("[notifier] Telegram send failed — auto-approving publish.")
+        return {"action": "approved", "comment": draft_caption}
+    print(
+        f"[notifier] Approval request sent to Telegram. "
+        f"Waiting up to {timeout_seconds}s (timeout = auto-approve)...",
+        flush=True,
+    )
+
+    deadline = time.time() + timeout_seconds
+    poll_interval = 3
+    while time.time() < deadline:
+        wait = min(poll_interval, max(1, int(deadline - time.time())))
+        updates = _get_updates(token, offset=offset, timeout=wait)
+        for update in updates:
+            offset = update["update_id"] + 1
+            msg_data = update.get("message", {})
+            if str(msg_data.get("chat", {}).get("id", "")) != str(chat_id):
+                continue
+            text = msg_data.get("text", "").strip()
+            if not text:
+                continue
+            result = _parse_reply(text, draft_caption)
+            ack = {
+                "approved": "✅ Approved — opening browser now.",
+                "skipped": "⏭️ Skipped.",
+                "edited": "✅ Edited — opening browser with your version.",
+            }.get(result["action"], "Got it.")
+            send(ack, silent=True)
+            return result
+
+    send(
+        f"⏰ No reply after {timeout_seconds}s — auto-approving and publishing.",
+        silent=True,
+    )
+    return {"action": "approved", "comment": draft_caption}
+
+
 def send_approval_request(
     platform: str,
     group_or_hashtag: str,

@@ -1,9 +1,3 @@
-// Disabled 2026-05-15 — comment flow retired.
-// Component is still imported by PendingTab.tsx to keep the
-// discriminated-union switch exhaustive; the server now hides every
-// comment from /api/v1/pending so this card never renders. Restore by
-// re-adding the fb_scanner / ig_scanner / wp_comments tabs in FlowTabs.tsx
-// and flipping APPROVAL_API_COMMENTS_ENABLED=true.
 /**
  * Pending comment row — FB group, IG hashtag, or WP on-site reply.
  *

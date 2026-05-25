@@ -64,16 +64,18 @@ export function isResolvedResult<T>(
 }
 
 /** Producer-flow filter applied above the card list. */
-export type FlowFilter = "all" | "blog_posts" | "groups_to_join";
+export type FlowFilter = "all" | "comments" | "blog_posts" | "groups_to_join";
 
 export const FLOWS: readonly FlowFilter[] = [
   "all",
+  "comments",
   "blog_posts",
   "groups_to_join",
 ];
 
 export const FLOW_LABELS: Record<FlowFilter, string> = {
   all: "All",
+  comments: "Comments",
   blog_posts: "Blog posts",
   groups_to_join: "Groups to join",
 };
@@ -81,6 +83,7 @@ export const FLOW_LABELS: Record<FlowFilter, string> = {
 /** True when `item` belongs to the producer flow `flow`. */
 export function itemMatchesFlow(item: PendingItem, flow: FlowFilter): boolean {
   if (flow === "all") return true;
+  if (flow === "comments") return item.type === "comment";
   if (flow === "blog_posts") return item.type === "blog_post";
   if (flow === "groups_to_join") return item.type === "group_to_join";
   return false;

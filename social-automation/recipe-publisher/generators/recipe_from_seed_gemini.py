@@ -28,7 +28,12 @@ _GEMINI_ENDPOINT = (
 )
 
 
-def generate_from_seed_gemini(topic: str, seed: RecipeSeed) -> dict[str, Any]:
+def generate_from_seed_gemini(
+    topic: str,
+    seed: RecipeSeed,
+    *,
+    extra_instructions: str | None = None,
+) -> dict[str, Any]:
     """Call Gemini function-calling for voice fields. Same output shape as the Anthropic path."""
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
@@ -37,6 +42,8 @@ def generate_from_seed_gemini(topic: str, seed: RecipeSeed) -> dict[str, Any]:
     sections = seed_to_body_sections(seed)
     system_prompt = (_PROMPTS_DIR / "recipe_system.md").read_text()
     user_msg = _build_user_message(topic, seed, sections)
+    if extra_instructions:
+        user_msg = f"{user_msg}\n\nADDITIONAL CONSTRAINTS:\n{extra_instructions}"
 
     tool_decl = {
         "name": VOICE_TOOL["name"],

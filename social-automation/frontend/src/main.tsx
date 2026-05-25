@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "./index.css";
 import App from "./App";
+import { BrandProvider } from "./context/BrandContext";
 
 const rootEl = document.getElementById("root");
 if (!rootEl) {
@@ -11,8 +12,10 @@ if (!rootEl) {
 
 createRoot(rootEl).render(
   <StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <BrandProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </BrandProvider>
   </StrictMode>,
 );

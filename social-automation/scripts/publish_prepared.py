@@ -46,7 +46,7 @@ from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
-from lib.local_env import load_local_env  # noqa: E402
+from lib.local_env import get_brand_campaign, load_local_env  # noqa: E402
 from lib.sessions import wp_client  # noqa: E402
 
 import notifier  # noqa: E402
@@ -464,25 +464,51 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
         logger.exception("FB reel push failed")
         warnings.append(f"FB reel failed: {exc}")
 
-    # Step 4.25: post a link card to the FB Page feed (separate audience from
-    # FB Reels feed). Uses Open Graph metadata from the live WP page so the
-    # card auto-renders with featured image + title + meta description.
+    # Step 4.25: post to the FB Page feed (separate audience from FB Reels).
+    # If brand.campaign.link_in_first_comment is true, the body is text-only
+    # and the WP URL is dropped as a follow-up first comment (dodges FB's
+    # outbound-link reach penalty). Otherwise we post a standard link card.
     fb_page_post_id = ""
     fb_page_post_permalink = ""
+    fb_page_comment_id = ""
     fb_message = (fb_caption or _short_fb_message_from_ig(ig_caption)).strip()
+    brand_campaign = get_brand_campaign()
+    link_first = bool(brand_campaign.get("link_in_first_comment"))
     try:
-        from publishers.facebook import publish_link_post_to_facebook
+        from publishers.facebook import (
+            post_first_comment_to_facebook,
+            publish_link_post_to_facebook,
+        )
 
-        fb_page = publish_link_post_to_facebook(message=fb_message, link=live_url)
+        fb_page = publish_link_post_to_facebook(
+            message=fb_message,
+            link=live_url,
+            link_in_first_comment=link_first,
+        )
         fb_page_post_id = fb_page.post_id or ""
         fb_page_post_permalink = fb_page.permalink or ""
         if fb_page.warnings:
             warnings.extend(f"FB-page: {w}" for w in fb_page.warnings)
         logger.info(
-            "FB Page link post published: id=%s permalink=%s",
+            "FB Page feed post published: id=%s permalink=%s link_in_first_comment=%s",
             fb_page_post_id,
             fb_page_post_permalink,
+            link_first,
         )
+
+        if link_first and fb_page_post_id and live_url:
+            comment_id, comment_warnings = post_first_comment_to_facebook(
+                fb_page_post_id, live_url
+            )
+            fb_page.comment_id = comment_id
+            fb_page.comment_warnings = comment_warnings
+            fb_page_comment_id = comment_id or ""
+            if comment_warnings:
+                warnings.extend(f"FB-page-comment: {w}" for w in comment_warnings)
+            logger.info(
+                "FB Page first-comment result: post_id=%s comment_id=%s warnings=%d",
+                fb_page_post_id, fb_page_comment_id, len(comment_warnings),
+            )
     except Exception as exc:  # noqa: BLE001
         logger.exception("FB Page link post failed")
         warnings.append(f"FB Page post failed: {exc}")

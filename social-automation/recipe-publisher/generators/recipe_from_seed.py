@@ -127,6 +127,7 @@ def generate_from_seed(
     *,
     client: Anthropic,
     model: str,
+    extra_instructions: str | None = None,
 ) -> dict:
     """Call Claude for voice fields only. Returns the raw tool input dict.
 
@@ -137,6 +138,8 @@ def generate_from_seed(
     system_prompt = (_PROMPTS_DIR / "recipe_system.md").read_text()
 
     user_msg = _build_user_message(topic, seed, sections)
+    if extra_instructions:
+        user_msg = f"{user_msg}\n\nADDITIONAL CONSTRAINTS:\n{extra_instructions}"
 
     logger.info(
         "generating voice fields for topic=%r seed=%s model=%s",

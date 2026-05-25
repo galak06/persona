@@ -388,17 +388,28 @@ def _wait_for_container(
     max_polls: int = _MAX_CONTAINER_POLLS,
     poll_interval_sec: float = _POLL_INTERVAL_SEC,
 ) -> None:
-    for _ in range(max_polls):
+    # Give Meta a significant moment to propagate the container before the first poll
+    time.sleep(30.0)
+    
+    for i in range(max_polls):
         r = client.get(
             f"/{container_id}",
             params={"fields": "status_code", "access_token": token},
         )
+        
+        # Meta can return 400 if the container is so new it's not in the graph yet
+        # or if it's currently being transcoded. We'll wait up to 10 polls (~50s)
+        if r.status_code == 400 and i < 10:
+            logger.warning("container %s status poll hit 400 (poll %d) — Meta might still be transcoding. Retrying...", container_id, i)
+            time.sleep(poll_interval_sec)
+            continue
+            
         r.raise_for_status()
         status = r.json().get("status_code")
         if status == "FINISHED":
             return
         if status in {"ERROR", "EXPIRED"}:
-            raise InstagramError(f"container status={status}")
+            raise InstagramError(f"container status={status}: {r.json()}")
         time.sleep(poll_interval_sec)
     warnings.append(
         f"container {container_id} never reached FINISHED within "

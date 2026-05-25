@@ -17,3 +17,4 @@ openinference-instrumentation-langchain>=0.1.60
 fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.7
+croniter>=3.0.3

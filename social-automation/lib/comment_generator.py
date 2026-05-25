@@ -194,6 +194,7 @@ def validate_voice(
     comment: str,
     *,
     allow_own_url: bool = False,
+    allow_long: bool = False,
 ) -> tuple[bool, list[str]]:
     """
     Validates that a comment follows Nalla's Dad voice rules.
@@ -205,7 +206,14 @@ def validate_voice(
     pass True. Engagement-comment paths (fb_scanner, ig_scanner,
     wp_comment_handler, comment_composer) MUST use the default (False) so
     third-party replies never carry our URL.
+
+    allow_long: when True, the upper length cap is raised from 500 to 700.
+    Reel-mode FB group posts append a campaign teaser + CTA on top of the
+    recipe body + URL line, consistently landing at 506-515 chars. Only
+    callers that produce reel-mode captions (fb_group_post.py with
+    --reel-path) should pass True. All other paths keep the 500 cap.
     """
+    max_len = 700 if allow_long else 500
     violations = []
     comment_lower = comment.lower()
 
@@ -228,8 +236,8 @@ def validate_voice(
     # Length
     if len(comment) < 40:
         violations.append(f"Comment too short ({len(comment)} chars) — needs substance")
-    if len(comment) > 500:
-        violations.append(f"Comment too long ({len(comment)} chars) — trim to under 500")
+    if len(comment) > max_len:
+        violations.append(f"Comment too long ({len(comment)} chars) — trim to under {max_len}")
 
     # Generic openers are forbidden
     generic_openers = ["great post!", "love this!", "awesome!", "nice post", "amazing!"]

@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
-import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from campaign_assembly import append_teaser_and_cta
 from generators.carousel import generate_carousel_slides
 from generators.carousel_drafter import ensure_carousel_json
 from generators.image import GeneratedImage, generate_image
@@ -44,6 +45,49 @@ SKILL_DIR = Path(__file__).parent
 STATE_DIR = SKILL_DIR / "state"
 PROJECT_ROOT = SKILL_DIR.parent.parent
 PREPARED_ROOT = PROJECT_ROOT / "campaigns" / "prepared"
+
+
+def _load_brand_campaign() -> dict[str, Any] | None:
+    """Read `<BRAND_DIR>/brand.json` and return its `campaign` block, or None.
+
+    Mirrors the lookup pattern in `lib/local_env.get_runtime_headless`. Silent
+    on missing/malformed input so brands without a campaign block (Slice 1
+    not opted in) skip teaser/CTA append without crashing prepare.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return None
+    brand_path = Path(brand_dir) / "brand.json"
+    if not brand_path.exists():
+        return None
+    try:
+        data: Any = json.loads(brand_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    campaign = data.get("campaign")
+    return campaign if isinstance(campaign, dict) else None
+
+
+def _rotation_state_path() -> Path | None:
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return None
+    return Path(brand_dir) / "state" / "campaign_rotation.json"
+
+
+def _maybe_append_campaign_close(fb_caption: str) -> str:
+    """FB-only: append rotating teaser + CTA when the brand has opted in."""
+    campaign = _load_brand_campaign()
+    rotation_path = _rotation_state_path()
+    if campaign is None or rotation_path is None:
+        return fb_caption
+    teasers = campaign.get("teasers") or []
+    ctas = campaign.get("ctas") or []
+    if not isinstance(teasers, list) or not isinstance(ctas, list):
+        return fb_caption
+    return append_teaser_and_cta(fb_caption, list(teasers), list(ctas), rotation_path)
 
 
 @dataclass
@@ -135,7 +179,9 @@ def prepare(topic: str, *, force: bool = False) -> PrepareResult:
     result = PrepareResult(started_at=started, topic=topic)
 
     try:
-        recipe = generate_recipe(topic)
+        campaign = _load_brand_campaign() or {}
+        hook_blocklist = campaign.get("hook_blocklist")
+        recipe = generate_recipe(topic, hook_blocklist=hook_blocklist)
         result.seed_id = recipe.seed_id
         result.slug = recipe.slug
         result.recipe_title = recipe.title  # type: ignore[attr-defined]
@@ -214,6 +260,7 @@ def prepare(topic: str, *, force: bool = False) -> PrepareResult:
         # Save reference artifacts
         (folder / "ig_caption.txt").write_text(recipe.ig_caption, encoding="utf-8")
         fb = getattr(recipe, "fb_caption", "") or ""
+        fb = _maybe_append_campaign_close(fb)
         (folder / "fb_caption.txt").write_text(fb, encoding="utf-8")
         (folder / "recipe_body.html").write_text(recipe.body_markdown, encoding="utf-8")
 

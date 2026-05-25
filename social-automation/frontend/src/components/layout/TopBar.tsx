@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { endpoints } from "../../api/endpoints";
 import { useApiQuery } from "../../hooks/useApiQuery";
+import { useBrand } from "../../context/BrandContext";
 
 /**
  * Three-tab top navigation: Dashboard | Activity | Inbox.
@@ -39,14 +40,28 @@ interface ConfigResponse {
 
 export default function TopBar(): React.JSX.Element {
   const { data: config } = useApiQuery<ConfigResponse>(endpoints.config);
+  const { selectedBrand, setSelectedBrand, availableBrands } = useBrand();
 
   return (
     <header className="bg-brand-header border-b border-slate-200">
       <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-amber-700 uppercase tracking-wider">
-            {config?.name || "Loading..."}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-amber-700 uppercase tracking-wider">
+              {config?.name || "Loading..."}
+            </span>
+            <select
+              value={selectedBrand}
+              onChange={(e) => setSelectedBrand(e.target.value)}
+              className="ml-2 text-sm border-gray-300 rounded-md shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50"
+            >
+              {availableBrands.map((brand) => (
+                <option key={brand} value={brand}>
+                  {brand}
+                </option>
+              ))}
+            </select>
+          </div>
           <nav className="flex items-center gap-1" aria-label="Primary">
             {TABS.map((tab) => (
               <NavLink

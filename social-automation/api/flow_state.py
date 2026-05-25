@@ -19,6 +19,7 @@ from typing import Any
 
 from api.flow_helpers import (
     read_blog_campaign,
+    read_brand_campaigns,
     read_community_growth,
     read_content_ideas,
     read_engagement_comment,
@@ -32,6 +33,7 @@ _log = logging.getLogger("approval_api.flow_state")
 _READERS: list[tuple[str, str, Callable[[], dict[str, Any]]]] = [
     ("engagement-comment", "Engagement Comment Flow", read_engagement_comment),
     ("blog-campaign", "Blog & Campaign Pipeline", read_blog_campaign),
+    ("brand-campaigns", "Brand Campaigns", read_brand_campaigns),
     ("community-growth", "Community Growth Flow", read_community_growth),
     ("social-loyalty", "Social Loyalty & Outreach", read_social_loyalty),
     ("market-intel", "Market Intelligence & Trends", read_market_intel),

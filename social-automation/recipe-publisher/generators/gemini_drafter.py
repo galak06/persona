@@ -20,5 +20,11 @@ class GeminiDrafter:
     Stateless — env vars read by the underlying call on each invocation.
     """
 
-    def draft_voice(self, topic: str, seed: RecipeSeed) -> dict[str, Any]:
-        return generate_from_seed_gemini(topic, seed)
+    def draft_voice(
+        self,
+        topic: str,
+        seed: RecipeSeed,
+        *,
+        extra_instructions: str | None = None,
+    ) -> dict[str, Any]:
+        return generate_from_seed_gemini(topic, seed, extra_instructions=extra_instructions)

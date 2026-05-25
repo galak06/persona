@@ -517,7 +517,10 @@ def _prepare_reel(seed_id: str, skill_label: str = "reel-publisher"):
             return None
         log_step(skill_label, f"generating recipe voice for {seed.title!r}")
         try:
-            recipe = generate_recipe(seed.title)
+            from lib.local_env import get_brand_campaign
+
+            hook_blocklist = (get_brand_campaign() or {}).get("hook_blocklist")
+            recipe = generate_recipe(seed.title, hook_blocklist=hook_blocklist)
         except Exception as e:
             skill_error(skill_label, f"recipe generation failed: {e}")
             return None

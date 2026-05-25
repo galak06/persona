@@ -4,6 +4,7 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import type { components, ScheduleEntry } from "../types/openapi";
 import LoadingState from "../components/ui/LoadingState";
 import Alert from "../components/ui/Alert";
+import { relativeTime } from "./Inbox/shared";
 
 type FlowsStateResponse = components["schemas"]["FlowsStateResponse"];
 
@@ -62,17 +63,16 @@ export default function Explorer(): React.JSX.Element {
   const [selectedFlowId, setSelectedFlowId] = useState<string>("");
   const [selectedStepLabel, setSelectedStepLabel] = useState<string>("");
 
-  const flows = data?.flows ?? [];
-  const schedule = (data?.schedule ?? []) as ScheduleEntry[];
-
   const flowOptions = useMemo(() => {
+    const flows = data?.flows ?? [];
     return flows.map((f) => ({ id: f.id, name: f.name }));
-  }, [flows]);
+  }, [data?.flows]);
 
   const stepsInSelectedFlow = useMemo(() => {
     if (!selectedFlowId) return [];
+    const schedule = (data?.schedule ?? []) as ScheduleEntry[];
     return schedule.filter((s) => s.flow_id === selectedFlowId);
-  }, [selectedFlowId, schedule]);
+  }, [selectedFlowId, data?.schedule]);
 
   const selectedStep = useMemo(() => {
     return stepsInSelectedFlow.find((s) => s.label === selectedStepLabel);
@@ -126,8 +126,13 @@ export default function Explorer(): React.JSX.Element {
 
       {selectedStep ? (
         <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-          <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+          <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-900 font-mono">{selectedStep.label}</h3>
+            {selectedStep.last_fire_at && (
+              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-tight">
+                Last run: {relativeTime(selectedStep.last_fire_at)}
+              </span>
+            )}
           </div>
           <div className="p-4 space-y-6">
             <section className="space-y-3">

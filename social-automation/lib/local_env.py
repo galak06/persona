@@ -70,3 +70,27 @@ def get_runtime_headless() -> bool:
     if not isinstance(headless, bool):
         return True
     return headless
+
+
+def get_brand_campaign() -> dict[str, Any]:
+    """Return the `campaign` block from the brand overlay (or {}).
+
+    Mirrors the same `_brand_campaign` slot produced by
+    `tools.profiles_build.merge_brand_into_profiles`, but read direct from
+    `<BRAND_DIR>/brand.json` so callers (publishers, scripts) don't need
+    the full profile-merge pipeline at import time.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return {}
+    brand_path = Path(brand_dir) / "brand.json"
+    if not brand_path.exists():
+        return {}
+    try:
+        data: Any = json.loads(brand_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    campaign = data.get("campaign")
+    return campaign if isinstance(campaign, dict) else {}

@@ -269,15 +269,41 @@ def _deep_merge_dict(target: dict[str, Any], overlay: dict[str, Any]) -> None:
             target[key] = copy.deepcopy(value)
 
 
+def validate_brand_campaign(
+    campaign: dict[str, Any] | None,
+    brand_json_path: Path | None = None,
+) -> None:
+    """Validate `brand.campaign`. No-op if missing or `link_in_first_comment` is falsy.
+
+    When `link_in_first_comment` is true, requires `ctas`, `teasers`, and
+    `hook_blocklist` to be non-empty lists. Raises ValueError with the
+    brand.json path on failure.
+    """
+    if not isinstance(campaign, dict):
+        return
+    if not campaign.get("link_in_first_comment"):
+        return
+    where = f" in {brand_json_path}" if brand_json_path else ""
+    for field in ("ctas", "teasers", "hook_blocklist"):
+        value = campaign.get(field)
+        if not isinstance(value, list) or not value:
+            raise ValueError(
+                f"brand.campaign.{field} must be a non-empty list when "
+                f"link_in_first_comment is true{where}"
+            )
+
+
 def merge_brand_into_profiles(
     profiles: dict[str, Profile],
     brand: dict[str, Any] | None,
+    brand_json_path: Path | None = None,
 ) -> dict[str, Profile]:
     """Deep-merge `brand.profiles.<platform>` into each engine profile.
 
     Brand values override engine values. Lists are replaced (not concatenated).
     Brand metadata (name, key, site, voice) is stashed at the top-level result
-    key `_brand` for downstream consumers.
+    key `_brand` for downstream consumers. `brand.campaign` (if present) is
+    validated and stashed at `_brand_campaign`.
 
     Returns a NEW dict (does not mutate inputs).
     """
@@ -295,6 +321,10 @@ def merge_brand_into_profiles(
                 # New platform from brand overlay (unusual but supported).
                 result[platform_name] = copy.deepcopy(overlay)
     result["_brand"] = copy.deepcopy(brand.get("brand", {}))
+    campaign = brand.get("campaign")
+    validate_brand_campaign(campaign if isinstance(campaign, dict) else None, brand_json_path)
+    if isinstance(campaign, dict):
+        result["_brand_campaign"] = copy.deepcopy(campaign)
     return result
 
 
@@ -440,7 +470,8 @@ def _main(argv: list[str] | None = None) -> int:
 
     profiles = load_profiles(args.profile_dir)
     brand = load_brand_overlay(args.brand_dir)
-    merged_profiles = merge_brand_into_profiles(profiles, brand)
+    brand_json_path = (args.brand_dir / "brand.json") if args.brand_dir else None
+    merged_profiles = merge_brand_into_profiles(profiles, brand, brand_json_path)
 
     # Engine artifacts read from merged profiles so brand-overridden rate
     # limits flow through to data/rate_limits.json. The engine schedule

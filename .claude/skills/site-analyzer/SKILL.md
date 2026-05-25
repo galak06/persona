@@ -4,7 +4,7 @@ description: >
   Crawl {{brand.domain}} (or any site in config.json) and build a fresh content
   cache of recent posts, categories, and keywords. Run FIRST before fb-scanner,
   ig-scanner, or comment-composer to ensure comments reference current site content.
-  Updates data/site_content_cache.json with post titles, summaries, URLs, tags.
+  Updates $BRAND_DIR/$BRAND_DIR/data/site_content_cache.json with post titles, summaries, URLs, tags.
   Use when the user says "analyze site", "sync site content", "update site cache",
   "run site analyzer", "refresh content cache", or automatically before any scan run.
 ---
@@ -12,7 +12,7 @@ description: >
 # Site Analyzer — {{brand.name}}
 
 Pre-run step for all agents. Crawls the site, extracts recent posts + metadata,
-and saves to `data/site_content_cache.json`. This lets comment-composer reference
+and saves to `$BRAND_DIR/data/site_content_cache.json`. This lets comment-composer reference
 actual current content (not stale templates) for natural, relevant comments.
 
 ---
@@ -24,11 +24,13 @@ Run automatically at the start of each agent session **if** the cache is older t
 
 ```python
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
-config = json.loads(Path('../config.json').read_text())
-cache_file = Path('../data/site_content_cache.json')
+brand_dir = Path(os.environ.get('BRAND_DIR', '..'))
+config = json.loads((brand_dir / 'config.json').read_text())
+cache_file = brand_dir / '$BRAND_DIR/data/site_content_cache.json'
 
 cache_is_stale = True
 if cache_file.exists():
@@ -41,7 +43,7 @@ if cache_file.exists():
         if not cache_is_stale:
             print(f"Site cache is fresh ({age} old). Skipping site analysis.")
             # Exit skill — cache is good
-
+```
 if not cache_is_stale:
     # No action needed — exit
     pass
@@ -232,7 +234,7 @@ Content gaps (no recent posts):
 Facebook: {follower_count} followers | Last post: {date}
 Instagram: {follower_count} followers | Last post: {date}
 
-Cache saved to: data/site_content_cache.json
+Cache saved to: $BRAND_DIR/data/site_content_cache.json
 ```
 
 ---

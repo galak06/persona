@@ -107,6 +107,39 @@ def pending_only(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def approve_comment(
+    path: Path,
+    item_id: str,
+    *,
+    text: str | None,
+    decision_status: Literal["approved", "USER_SKIPPED", "edited"],
+) -> DecisionResponse:
+    """Shared commit path for comment approve / reject / edit."""
+    decided_at = now_iso()
+    result = state.commit_decision(
+        path,
+        item_id,
+        status=decision_status,
+        decided_by="web_ui",
+        decided_at=decided_at,
+        text=text,
+    )
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
+    if result == "already_decided":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"item {item_id} was already decided by another channel",
+        )
+    _log.info(
+        '{"event": "comment_decision", "id": "%s", "status": "%s"}',
+        item_id, decision_status,
+    )
+    return DecisionResponse(
+        id=item_id, status=decision_status, decided_by="web_ui", decided_at=decided_at,
+    )
+
+
 def approve_blog_post(
     path: Path,
     item_id: str,

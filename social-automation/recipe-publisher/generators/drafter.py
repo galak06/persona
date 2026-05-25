@@ -35,12 +35,20 @@ class Drafter(Protocol):
     output shape lets callers treat providers as interchangeable.
     """
 
-    def draft_voice(self, topic: str, seed: RecipeSeed) -> dict[str, Any]:
+    def draft_voice(
+        self,
+        topic: str,
+        seed: RecipeSeed,
+        *,
+        extra_instructions: str | None = None,
+    ) -> dict[str, Any]:
         """Produce the voice fields for `topic` grounded in `seed`.
 
         Args:
             topic: The recipe topic (free-form text matched against seeds).
             seed: The vetted seed providing frozen ingredients/steps/times.
+            extra_instructions: Optional additional guidance appended to the
+                user prompt (e.g. anti-pattern hints on re-prompt).
 
         Returns:
             Voice fields dict with `title`, `meta_description`, `intro`,

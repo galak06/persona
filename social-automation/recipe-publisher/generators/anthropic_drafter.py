@@ -36,6 +36,18 @@ class AnthropicDrafter:
         self._client: object = client
         self._model: str = model or os.environ.get("RECIPE_MODEL") or _DEFAULT_MODEL
 
-    def draft_voice(self, topic: str, seed: RecipeSeed) -> dict[str, Any]:
+    def draft_voice(
+        self,
+        topic: str,
+        seed: RecipeSeed,
+        *,
+        extra_instructions: str | None = None,
+    ) -> dict[str, Any]:
         """Delegate to the existing `generate_from_seed` for the actual tool call."""
-        return generate_from_seed(topic, seed, client=self._client, model=self._model)  # type: ignore[arg-type]
+        return generate_from_seed(  # type: ignore[arg-type]
+            topic,
+            seed,
+            client=self._client,
+            model=self._model,
+            extra_instructions=extra_instructions,
+        )

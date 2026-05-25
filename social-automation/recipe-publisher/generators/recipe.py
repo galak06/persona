@@ -15,6 +15,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
+from .caption_validator import validate_hook
 from .drafter import Drafter, get_drafter
 from .recipe_from_seed import assemble_body_markdown
 from .seeds import NoSeedMatchError, match_seed
@@ -48,7 +49,12 @@ def _slugify(text: str) -> str:
     return re.sub(r"[\s_-]+", "-", s)[:80]
 
 
-def generate_recipe(topic: str, *, drafter: Drafter | None = None) -> Recipe:
+def generate_recipe(
+    topic: str,
+    *,
+    drafter: Drafter | None = None,
+    hook_blocklist: list[str] | None = None,
+) -> Recipe:
     """Match topic to a seed and produce a voice-wrapped recipe. Raises if no seed fits.
 
     Args:
@@ -56,6 +62,10 @@ def generate_recipe(topic: str, *, drafter: Drafter | None = None) -> Recipe:
         drafter: Optional override for the voice drafter. None auto-selects via
             `VOICE_PROVIDER` env var (defaults: Gemini if its key is set and
             Anthropic is not, else Anthropic). Tests inject a mock here.
+        hook_blocklist: Optional regex patterns the caption's first sentence
+            must NOT match. None skips hook validation (back-compat for callers
+            without brand context). On first failure, the drafter is re-prompted
+            once with an explicit anti-pattern hint; second failure raises.
     """
     seed = match_seed(topic)
     if seed is None:
@@ -67,7 +77,7 @@ def generate_recipe(topic: str, *, drafter: Drafter | None = None) -> Recipe:
     logger.info("topic=%r matched seed=%s", topic, seed.id)
 
     voice_drafter = drafter or get_drafter()
-    voice = voice_drafter.draft_voice(topic, seed)
+    voice = _draft_with_hook_retry(voice_drafter, topic, seed, hook_blocklist)
     body = assemble_body_markdown(voice, seed)
     title = (voice.get("title") or seed.title).strip()
 
@@ -89,6 +99,30 @@ def generate_recipe(topic: str, *, drafter: Drafter | None = None) -> Recipe:
     )
     _validate(recipe)
     return recipe
+
+
+def _draft_with_hook_retry(
+    drafter: Drafter,
+    topic: str,
+    seed,  # noqa: ANN001  — RecipeSeed; avoid circular import noise
+    hook_blocklist: list[str] | None,
+) -> dict:
+    voice = drafter.draft_voice(topic, seed)
+    if not hook_blocklist:
+        return voice
+    try:
+        validate_hook(voice.get("ig_caption", ""), hook_blocklist)
+        return voice
+    except Exception as first_err:
+        logger.warning("hook validation failed, re-prompting drafter once: %s", first_err)
+        hint = (
+            f"Do NOT start the caption with any of these phrases: {hook_blocklist}. "
+            "The first sentence must be a concrete moment "
+            "(e.g., 'Nalla turned her nose up at her dinner.')."
+        )
+        voice = drafter.draft_voice(topic, seed, extra_instructions=hint)
+        validate_hook(voice.get("ig_caption", ""), hook_blocklist)
+        return voice
 
 
 # Dog-toxic ingredients — any substring match in an ingredient line is a hard reject.

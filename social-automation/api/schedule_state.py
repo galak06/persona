@@ -57,6 +57,7 @@ _LABEL_TO_FLOW: dict[str, str] = {
     "ig-own-comments": "social-loyalty",
     "refresh-trends": "market-intel",
     "refresh-keyword-research": "market-intel",
+    "campaign-worker": "brand-campaigns",
 }
 
 # Map plist short-name → cron log filename (in settings.paths.logs_dir).
@@ -81,6 +82,7 @@ _LABEL_TO_LOG: dict[str, str] = {
     "ig-own-comments": "cron_ig_own_comments.log",
     "refresh-trends": "cron_refresh_trends.log",
     "refresh-keyword-research": "cron_refresh_trends.log",
+    "campaign-worker": "cron_campaign_worker.log",
 }
 
 _WEEKDAYS = {

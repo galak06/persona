@@ -2,14 +2,9 @@
  * PendingTab — lists every pending approval item the backend returns.
  *
  * Polls `GET /api/v1/pending` every 3 seconds. Renders the discriminated
- * union (`BlogPostCard` / `GroupCard`) and tracks an optimistic-removal
+ * union (`BlogPostCard` / `GroupCard` / `CommentCard`) and tracks an optimistic-removal
  * set so a card disappears the instant the user clicks Approve/Skip,
  * before the next refetch ships fresh data.
- *
- * NOTE 2026-05-15 — the engagement-comment flow was retired. The server
- * never ships `type=="comment"` items via this endpoint anymore;
- * CommentCard remains in the repo as dead code (see its disabled-marker
- * comment) but is not imported here.
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -23,6 +18,7 @@ import { useApiQuery } from "../../hooks/useApiQuery";
 import type { PendingItem, PendingResponse } from "../../types/openapi";
 
 import BlogPostCard from "./BlogPostCard";
+import CommentCard from "./CommentCard";
 import GroupCard from "./GroupCard";
 import { relativeTime } from "./shared";
 
@@ -82,7 +78,7 @@ export default function PendingTab(): React.JSX.Element {
     );
   }
 
-  const counts = data?.counts ?? { blog_posts: 0, groups_to_join: 0 };
+  const counts = data?.counts ?? { comments: 0, blog_posts: 0, groups_to_join: 0 };
   const totalPending = visibleItems.length;
   const asOf = data?.as_of ?? null;
 
@@ -90,6 +86,7 @@ export default function PendingTab(): React.JSX.Element {
     <div className="space-y-4">
       <Header
         total={totalPending}
+        comments={counts.comments}
         blogPosts={counts.blog_posts}
         groups={counts.groups_to_join}
         asOf={asOf}
@@ -130,9 +127,14 @@ export default function PendingTab(): React.JSX.Element {
                     onResolved={markResolved}
                   />
                 );
-              // @ts-expect-error Legacy comments
               case "comment":
-                return null;
+                return (
+                  <CommentCard
+                    key={item.id}
+                    item={item}
+                    onResolved={markResolved}
+                  />
+                );
             }
           })}
         </div>
@@ -143,6 +145,7 @@ export default function PendingTab(): React.JSX.Element {
 
 interface HeaderProps {
   total: number;
+  comments: number;
   blogPosts: number;
   groups: number;
   asOf: string | null;
@@ -152,6 +155,7 @@ interface HeaderProps {
 
 function Header({
   total,
+  comments,
   blogPosts,
   groups,
   asOf,
@@ -168,7 +172,7 @@ function Header({
           pending
           <span className="text-slate-400">
             {" "}
-            ({blogPosts} blog {blogPosts === 1 ? "post" : "posts"}, {groups}{" "}
+            ({comments} {comments === 1 ? "comment" : "comments"}, {blogPosts} blog {blogPosts === 1 ? "post" : "posts"}, {groups}{" "}
             {groups === 1 ? "group" : "groups"})
           </span>
         </span>

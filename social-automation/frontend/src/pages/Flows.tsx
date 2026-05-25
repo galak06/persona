@@ -6,7 +6,7 @@
  * error block, and a collapsible sample of the most recent outputs.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 import Alert from "../components/ui/Alert";
 import LoadingState from "../components/ui/LoadingState";
@@ -84,7 +84,12 @@ interface RefreshedIndicatorProps {
 }
 
 function RefreshedIndicator({ asOf }: RefreshedIndicatorProps): React.JSX.Element {
-  const seconds = Math.max(0, Math.round((Date.now() - asOf) / 1000));
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.round((now - asOf) / 1000));
   return (
     <p className="text-xs text-slate-500">
       Refreshed {seconds}s ago · polled every {POLL_MS / 1000}s
@@ -182,6 +187,7 @@ export default function Flows(): React.JSX.Element {
     { refetchInterval: POLL_MS },
   );
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/purity
   const asOf = useMemo(() => Date.now(), [data]);
 
   if (loading && !data) {
@@ -224,5 +230,5 @@ export default function Flows(): React.JSX.Element {
         </div>
       )}
     </section>
-  );
-}
+    );
+    }

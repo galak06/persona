@@ -50,6 +50,8 @@ class FBPagePostResult:
     post_id: str
     permalink: str | None = None
     warnings: list[str] = field(default_factory=list)
+    comment_id: str | None = None
+    comment_warnings: list[str] = field(default_factory=list)
 
 
 class FacebookError(RuntimeError):
@@ -60,21 +62,27 @@ def publish_link_post_to_facebook(
     *,
     message: str,
     link: str,
+    link_in_first_comment: bool = False,
+    dry_run: bool = False,
 ) -> FBPagePostResult:
-    """Post a link card to the FB Page feed.
+    """Post to the FB Page feed.
 
-    Uses the `/feed` endpoint with `link=` so FB fetches the page's Open Graph
-    metadata and renders a clickable card (featured image + title + meta
-    description). Cleaner than uploading the image manually because:
+    Default behavior (link_in_first_comment=False): posts a link card via
+    `/feed` with `link=` so FB renders the WP Open Graph card. Cleaner than
+    a raw photo because:
 
-    - the card matches WP's published OG tags (consistent branding),
-    - clicks go directly to WP (better funnel attribution),
-    - feed cards out-perform raw photo posts on click-through for link-driven
+    - the card matches WP's OG tags (consistent branding),
+    - clicks go directly to WP (better attribution),
+    - link cards out-perform photo posts on click-through for link-driven
       content like recipe blogs.
 
-    `message` is the conversational copy above the card. Hashtags are allowed
-    but the card itself dominates engagement, so keep `message` short — 2-4
-    sentences with a question is the sweet spot.
+    When `link_in_first_comment=True`: drops the `link` field AND keeps the
+    URL out of `message` — body is text-only. Caller is expected to post the
+    URL as a follow-up first comment via `post_first_comment_to_facebook`.
+    This pattern dodges the FB outbound-link reach penalty on Page posts.
+
+    `message` is the conversational copy. Hashtags allowed but keep it short
+    (2-4 sentences) — the card or first comment carries the URL.
     """
     page_id = os.environ.get("FB_PAGE_ID") or ""
     token = os.environ.get("FB_PAGE_TOKEN") or ""
@@ -83,12 +91,21 @@ def publish_link_post_to_facebook(
     if not token:
         raise FacebookError("FB_PAGE_TOKEN not set")
 
+    payload: dict[str, str] = {"message": message, "access_token": token}
+    if not link_in_first_comment:
+        payload["link"] = link
+
+    if dry_run:
+        redacted = {k: ("<redacted>" if k == "access_token" else v) for k, v in payload.items()}
+        logger.info(
+            "[dry-run] FB /feed POST url=%s/%s/feed payload=%s",
+            _GRAPH_BASE, page_id, redacted,
+        )
+        return FBPagePostResult(post_id="dryrun_post_id", permalink=None, warnings=[])
+
     warnings: list[str] = []
     with httpx.Client(timeout=30.0) as client:
-        resp = client.post(
-            f"{_GRAPH_BASE}/{page_id}/feed",
-            data={"message": message, "link": link, "access_token": token},
-        )
+        resp = client.post(f"{_GRAPH_BASE}/{page_id}/feed", data=payload)
         if resp.status_code >= 400:
             raise FacebookError(f"FB feed post failed: {resp.status_code} {resp.text[:300]}")
         post_id = resp.json().get("id", "")
@@ -108,8 +125,72 @@ def publish_link_post_to_facebook(
         except Exception as exc:  # noqa: BLE001 — permalink is cosmetic
             warnings.append(f"permalink fetch error: {exc}")
 
-    logger.info("FB Page link post published: id=%s permalink=%s", post_id, permalink)
+    logger.info(
+        "FB Page feed post published: id=%s permalink=%s link_in_first_comment=%s",
+        post_id, permalink, link_in_first_comment,
+    )
     return FBPagePostResult(post_id=post_id, permalink=permalink, warnings=warnings)
+
+
+def post_first_comment_to_facebook(
+    post_id: str,
+    message: str,
+    *,
+    access_token: str | None = None,
+    dry_run: bool = False,
+) -> tuple[str | None, list[str]]:
+    """Post a first comment on the page post (best-effort).
+
+    Used right after `publish_link_post_to_facebook` with
+    `link_in_first_comment=True` to drop the WP URL as a comment instead of
+    embedding it in the body — sidesteps FB's outbound-link reach penalty.
+
+    Returns `(comment_id_or_None, warnings)`. Never raises: the page post
+    itself already succeeded, the comment is cosmetic. Caller can fold the
+    warnings into their existing warnings surface.
+    """
+    token = access_token or os.environ.get("FB_PAGE_TOKEN") or ""
+    if not token:
+        return None, ["post_first_comment_to_facebook: FB_PAGE_TOKEN not set"]
+
+    payload: dict[str, str] = {"message": message, "access_token": token}
+
+    if dry_run:
+        redacted = {k: ("<redacted>" if k == "access_token" else v) for k, v in payload.items()}
+        logger.info(
+            "[dry-run] FB /{post_id}/comments POST url=%s/%s/comments payload=%s",
+            _GRAPH_BASE, post_id, redacted,
+        )
+        return "dryrun_comment_id", []
+
+    warnings: list[str] = []
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(f"{_GRAPH_BASE}/{post_id}/comments", data=payload)
+            if resp.status_code >= 400:
+                msg = (
+                    f"first-comment POST failed: {resp.status_code} "
+                    f"{resp.text[:300]}"
+                )
+                logger.warning("FB %s post_id=%s", msg, post_id)
+                warnings.append(msg)
+                return None, warnings
+            body = resp.json()
+            comment_id = body.get("id")
+            if not comment_id:
+                msg = f"first-comment POST returned no id: {resp.text[:300]}"
+                logger.warning("FB %s post_id=%s", msg, post_id)
+                warnings.append(msg)
+                return None, warnings
+            logger.info(
+                "FB Page first-comment posted: post_id=%s comment_id=%s",
+                post_id, comment_id,
+            )
+            return comment_id, warnings
+    except httpx.HTTPError as exc:
+        msg = f"first-comment POST httpx error: {exc}"
+        logger.warning("FB %s post_id=%s", msg, post_id)
+        return None, [msg]
 
 
 def publish_reel_to_facebook(
