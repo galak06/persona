@@ -29,6 +29,10 @@ import tempfile
 import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
@@ -40,6 +44,7 @@ settings, log = init_script(__name__)
 
 from comment_generator import validate_voice
 from group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
+from lib.fb.session import FbSession, build_fb_session
 from lib.fb_composer_reel import (
     _attach_reel_in_composer,
     build_dry_run_plan,
@@ -47,12 +52,14 @@ from lib.fb_composer_reel import (
     reel_target_categories,
 )
 from lib.fb_group_publish import assert_create_post_dialog, publish_to_group
+from lib.groups.notes import append_group_note
 from lib.local_env import get_brand_campaign
 from lib.logger import log_step
 from notifier import request_publish_approval, skill_finished, skill_started
 from rate_limiter import can_act, record_action
 
-SESSION_FILE = settings.paths.facebook_session
+if settings.paths is None:
+    raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
 TRACKER_FILE = settings.paths.groups_tracker
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
@@ -103,7 +110,7 @@ def draft_for_general(title: str, url: str) -> str:
     return body + f"\n\nFull breakdown: {url}" + closer
 
 
-def draft_caption(group: dict, title: str, url: str) -> str:
+def draft_caption(group: dict[str, Any], title: str, url: str) -> str:
     """Caption with the URL inline in the body. The 'link in first comment' pattern
     is a FB Page-only tactic (algorithmically rewarded for our own posts) — for
     group posts the link belongs in the body, where members actually see it.
@@ -118,7 +125,7 @@ def draft_caption(group: dict, title: str, url: str) -> str:
 
 
 
-def _is_big_group(group: dict) -> bool:
+def _is_big_group(group: dict[str, Any]) -> bool:
     raw = (group.get("member_count") or "").strip()
     if raw.lower().endswith("k"):
         try:
@@ -166,7 +173,7 @@ def _post_fingerprint(caption: str, n: int = 60) -> str:
 
 
 def verify_post_visible(
-    page,
+    page: Page,
     group_url: str,
     caption: str,
     timeout_s: int = POST_VERIFY_TIMEOUT_S,
@@ -251,7 +258,7 @@ def verify_post_visible(
 
 
 def open_composer_and_post(
-    page,
+    page: Page,
     group_url: str,
     text: str,
     link_url: str | None,
@@ -524,7 +531,7 @@ def open_composer_and_post(
     return STATUS_POSTED, permalink
 
 
-def _post_first_comment_link(page, url: str) -> None:
+def _post_first_comment_link(page: Page, url: str) -> None:
     """For big groups we drop the link in a first comment (algorithmically favored)."""
     # After posting, FB sometimes navigates to the post detail. Wait + find the
     # newest comment box near the top of the feed.
@@ -551,7 +558,7 @@ def _post_first_comment_link(page, url: str) -> None:
     time.sleep(3)
 
 
-def log_engagement(group: dict, text: str) -> None:
+def log_engagement(group: dict[str, Any], text: str) -> None:
     entry = {
         "date": date.today().isoformat(),
         "timestamp": datetime.now(UTC).isoformat(),
@@ -569,10 +576,23 @@ def log_engagement(group: dict, text: str) -> None:
 EXIT_NO_POSTS = 22
 
 
-def main() -> None:
+def _health_check(session: FbSession) -> int:
+    if session.is_authenticated():
+        print(f"FB session OK (storage: {session.storage_path})")
+        return 0
+    print(f"SESSION_EXPIRED: {session.storage_path} missing or empty", file=sys.stderr)
+    return 1
+
+
+def main(session: FbSession) -> int:
     parser = argparse.ArgumentParser(description="Post a WP blog link to joined FB groups")
     parser.add_argument("--url", required=True, help="Blog post URL to share")
     parser.add_argument("--title", required=True, help="Blog post title (for the caption)")
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="verify FB session is authenticated and exit",
+    )
     parser.add_argument("--only", help="group id (digits from URL) — limit to one group")
     parser.add_argument("--dry-run", action="store_true", help="draft + approve, skip posting")
     parser.add_argument(
@@ -635,7 +655,7 @@ def main() -> None:
     reel_path: Path | None = args.reel_path
     reel_thumbnail: Path | None = args.reel_thumbnail
     reel_mode = reel_path is not None
-    if reel_mode and not reel_path.exists():
+    if reel_path is not None and not reel_path.exists():
         print(f"❌ reel path does not exist: {reel_path}", flush=True)
         sys.exit(2)
 
@@ -718,7 +738,7 @@ def main() -> None:
         summary = f"dry-run planned={len(lines) // 2}"
         skill_finished("fb-group-post", summary)
         print(f"\n=== Done (dry-run) === {summary}", flush=True)
-        return
+        return 0
 
     # PER-GROUP LOOP — approval-first, then per-group browser open/close.
     # See feedback_approval_before_browser.md: Telegram MUST be sent with
@@ -778,8 +798,8 @@ def main() -> None:
         permalink: str | None = None
         try:
             status, permalink = publish_to_group(
+                session=session,
                 group_url=group["group_url"],
-                session_file=SESSION_FILE,
                 composer_fn=open_composer_and_post,
                 caption=final,
                 link_for_comment=link_for_comment,
@@ -851,13 +871,17 @@ def main() -> None:
             group["last_post_status"] = "pending_admin_approval"
             group["last_post_caption"] = final
             group["posting_mode"] = "admins_only"
-            group.setdefault("notes", "")
-            note = (
-                f"\n[{now}] Auto-reclassified to admins_only: composer "
-                f"showed 'Submit for approval' on reel post attempt."
+            note_text = (
+                "Auto-reclassified to admins_only: composer "
+                "showed 'Submit for approval' on reel post attempt."
             )
-            if note.strip() not in (group.get("notes") or ""):
-                group["notes"] = (group.get("notes") or "") + note
+            existing_notes = group.get("notes") or []
+            if isinstance(existing_notes, list):
+                already = any(n.get("text") == note_text for n in existing_notes)
+            else:
+                already = note_text in str(existing_notes)
+            if not already:
+                append_group_note(group, note_text)
             TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
             skipped += 1
             print(
@@ -878,15 +902,21 @@ def main() -> None:
             # situation that warrants manual investigation rather than retry.
             group["last_post_status"] = "submit_unverified"
             group["last_post_caption"] = final
-            group.setdefault("notes", "")
             unverified_note = (
-                f"\n[{now}] Submit clicked but post not visible in "
+                "Submit clicked but post not visible in "
                 f"/my_posted_content within {POST_VERIFY_TIMEOUT_S}s — "
-                f"likely auto-filter / spam classifier / shadowban. "
-                f"Investigate before re-posting."
+                "likely auto-filter / spam classifier / shadowban. "
+                "Investigate before re-posting."
             )
-            if unverified_note.strip() not in (group.get("notes") or ""):
-                group["notes"] = (group.get("notes") or "") + unverified_note
+            existing_notes = group.get("notes") or []
+            if isinstance(existing_notes, list):
+                already = any(
+                    n.get("text") == unverified_note for n in existing_notes
+                )
+            else:
+                already = unverified_note in str(existing_notes)
+            if not already:
+                append_group_note(group, unverified_note)
             TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
             skipped += 1
             print(
@@ -906,8 +936,18 @@ def main() -> None:
     # mark the campaign as distributed. Link-card mode keeps the legacy
     # rc=0 contract; only reel-mode opts into the stricter exit-code gate.
     if reel_mode and posted == 0:
-        sys.exit(EXIT_NO_POSTS)
+        return EXIT_NO_POSTS
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    # Composition root: build the brand-scoped FB session ONCE and inject
+    # it into main(). PlaywrightFbSession.__init__ is cheap (browser only
+    # launches on .page()), so --dry-run pays nothing for this.
+    #
+    # --health-check bypasses argparse's required=True on --url/--title
+    # via a sentinel scan: the flag is meant to short-circuit early in
+    # smoke/cron probes without forcing the operator to pass dummy values.
+    if "--health-check" in sys.argv:
+        sys.exit(_health_check(build_fb_session()))
+    sys.exit(main(build_fb_session()))

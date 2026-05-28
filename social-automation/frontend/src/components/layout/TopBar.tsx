@@ -20,10 +20,12 @@ const TABS: readonly TabSpec[] = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/activity", label: "Activity" },
   { to: "/flows", label: "Flows" },
+  { to: "/campaigns", label: "Campaigns" },
   { to: "/inbox", label: "Inbox" },
   { to: "/groups", label: "FB Groups" },
   { to: "/schedule", label: "Schedule" },
   { to: "/explorer", label: "Explorer" },
+  { to: "/flow-guide", label: "Flow Guide" },
 ];
 
 const BASE_TAB =

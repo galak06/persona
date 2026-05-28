@@ -1,28 +1,24 @@
-"""Facebook Group Scout — searches FB for dog groups to join, sourced from
-niche keywords + content-competitor names (data/competitors.json). Reuses
-facebook_session.json from fb_login.py.
+"""Facebook Group Scout — find dog groups to join from niche keywords +
+content-competitor names (data/competitors.json). Reuses the brand FB session.
 
-Usage:
-    fb_group_scout.py                    # normal run (weekly cadence)
-    fb_group_scout.py --force            # override weekly re-run guard
-    fb_group_scout.py --dry-run          # list, no join requests
-    fb_group_scout.py --approve "1 10"   # non-interactive approval (or 'all'/'none')
+CLI: --force / --dry-run / --approve "1 10"|'all'|'none' / --bypass-daily-cap /
+--health-check (exit 0 if session present, 1 otherwise).
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import time
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
-settings, log = init_script(__name__)
 
-from lib.local_env import get_runtime_headless
+settings, log = init_script(__name__)
 
 from group_discovery.approval import (
     get_user_approval,
@@ -30,17 +26,11 @@ from group_discovery.approval import (
     print_candidate,
     send_join_requests,
 )
-from group_discovery.competitor_signals import (
-    active_queries as competitor_queries,
-)
-from group_discovery.competitor_signals import (
-    annotate_with_mentions,
-    load_competitors,
-)
+from group_discovery.competitor_signals import active_queries as competitor_queries
+from group_discovery.competitor_signals import annotate_with_mentions, load_competitors
 from group_discovery.fb_search import pace_between_queries, search_groups
 from group_discovery.scoring import parse_member_count, score_group
 from group_discovery.state import (
-    SESSION_FILE,
     add_to_pending,
     join_requests_this_week,
     join_requests_today,
@@ -52,25 +42,21 @@ from group_discovery.state import (
     save_last_run,
     save_pending,
 )
+from lib.fb.session import FbSession, build_fb_session
+from lib.runtime.singleton import SingletonLock
 from notifier import skill_finished, skill_skipped, skill_started
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 JOIN_LIMIT_PER_WEEK = 15
 JOIN_LIMIT_PER_DAY = 5  # ~5x prior cap, still ~5x under FB's ~25/day ceiling
 MIN_SCORE = 40
 
 SEARCH_QUERIES = [
-    "homemade dog food",
-    "raw dog food",
-    "dog nutrition",
-    "dog food recipes",
-    "dog diet advice",
-    "running with dogs",
-    "canicross",
-    "GPS dog tracker",
-    "dog hiking",
-    "dog owners community",
-    "healthy dogs",
-    "dog product reviews",
+    "homemade dog food", "raw dog food", "dog nutrition", "dog food recipes",
+    "dog diet advice", "running with dogs", "canicross", "GPS dog tracker",
+    "dog hiking", "dog owners community", "healthy dogs", "dog product reviews",
 ]
 
 
@@ -81,9 +67,9 @@ def compute_budget(bypass_daily: bool = False) -> tuple[int, int, int]:
     return (w if bypass_daily else min(w, d)), w, d
 
 
-def check_rerun_guard(last_run: dict) -> bool:
+def check_rerun_guard(last_run: dict[str, dict[str, Any]]) -> bool:
     """True if scout should skip (ran successfully in last 7d, no --force)."""
-    last_at = (last_run.get("fb_group_scout", {}).get("last_run_at") or "")[:10]
+    last_at = str(last_run.get("fb_group_scout", {}).get("last_run_at") or "")[:10]
     if not last_at:
         return False
     days = (date.today() - date.fromisoformat(last_at)).days
@@ -97,9 +83,11 @@ def check_rerun_guard(last_run: dict) -> bool:
     return False
 
 
-def collect_candidates(page, queries: list[tuple[str, str]], known: set[str]) -> dict[str, dict]:
+def collect_candidates(
+    page: Page, queries: list[tuple[str, str]], known: set[str]
+) -> dict[str, dict[str, Any]]:
     """Run every (label, query) pair, return url → card dict (highest score kept)."""
-    all_candidates: dict[str, dict] = {}
+    all_candidates: dict[str, dict[str, Any]] = {}
     for label, query in queries:
         print(f'Searching [{label}]: "{query}"')
         try:
@@ -126,7 +114,23 @@ def collect_candidates(page, queries: list[tuple[str, str]], known: set[str]) ->
     return all_candidates
 
 
-def apply_competitor_boost(candidates: list[dict]) -> None:
+def _success_record(
+    *, found: int, approved: int = 0, sent: int = 0, mode: str | None = None
+) -> dict[str, Any]:
+    """Build the last_run.fb_group_scout payload (uniform across exit paths)."""
+    rec: dict[str, Any] = {
+        "last_run_at": datetime.now(UTC).isoformat(),
+        "groups_found": found,
+        "groups_approved": approved,
+        "join_requests_sent": sent,
+        "status": "success",
+    }
+    if mode:
+        rec["mode"] = mode
+    return rec
+
+
+def apply_competitor_boost(candidates: list[dict[str, Any]]) -> None:
     """Annotate candidates with competitor mentions and re-score with boost."""
     competitors = load_competitors()
     if not competitors:
@@ -136,13 +140,10 @@ def apply_competitor_boost(candidates: list[dict]) -> None:
         g["score"] = score_group(g, competitor_mentions=g.get("competitor_mentions", 0))
 
 
-def run_scout(
-    dry_run: bool = False,
-    preselected: str | None = None,
-    bypass_daily: bool = False,
+def main(
+    session: FbSession, *, dry_run: bool = False,
+    preselected: str | None = None, bypass_daily: bool = False,
 ) -> None:
-    from playwright.sync_api import sync_playwright
-
     print("=== Facebook Group Scout (CLI) ===\n")
 
     last_run = load_last_run()
@@ -150,23 +151,14 @@ def run_scout(
         return
 
     budget, weekly, daily = compute_budget(bypass_daily=bypass_daily)
-    print(
-        f"Budget — weekly remaining: {weekly}/{JOIN_LIMIT_PER_WEEK}, "
-        f"daily remaining: {daily}/{JOIN_LIMIT_PER_DAY}, effective: {budget}"
-    )
+    caps = f"weekly {weekly}/{JOIN_LIMIT_PER_WEEK}, daily {daily}/{JOIN_LIMIT_PER_DAY}"
+    print(f"Budget — {caps}, effective: {budget}")
     if budget <= 0 and not dry_run:
-        reason = (
-            "Weekly limit reached" if weekly <= 0 else "Daily limit reached — try again tomorrow"
-        )
+        reason = "Weekly limit reached" if weekly <= 0 else "Daily limit reached — try again tomorrow"
         print(f"ABORT: {reason}.")
         skill_skipped("fb-group-scout", reason)
         return
-
-    skill_started(
-        "fb-group-scout",
-        f"Searching for new dog groups — budget: {budget} "
-        f"(weekly {weekly}/{JOIN_LIMIT_PER_WEEK}, daily {daily}/{JOIN_LIMIT_PER_DAY})",
-    )
+    skill_started("fb-group-scout", f"Searching for new dog groups — budget: {budget} ({caps})")
 
     known_groups = load_known_groups()
     print(f"Known groups to skip: {len(known_groups)}")
@@ -177,38 +169,23 @@ def run_scout(
     if pending:
         print(f"\n📋 Pending queue: {len(pending)} group(s) from previous runs")
 
-    if not SESSION_FILE.exists():
+    if not session.is_authenticated():
         print("ERROR: No saved Facebook session found. Run: python scripts/fb_login.py")
         return
 
     queries: list[tuple[str, str]] = [("keyword", q) for q in SEARCH_QUERIES]
     queries += [("competitor", q) for q in competitor_queries()]
-    print(
-        f"\nQuery plan: {len(SEARCH_QUERIES)} keyword + "
-        f"{len(queries) - len(SEARCH_QUERIES)} competitor"
-    )
+    print(f"\nQuery plan: {len(SEARCH_QUERIES)} keyword + {len(queries) - len(SEARCH_QUERIES)} competitor")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=get_runtime_headless())
-        context = browser.new_context(
-            storage_state=str(SESSION_FILE),
-            viewport={"width": 1280, "height": 900},
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        )
-        page = context.new_page()
-
+    with session.page() as page:
         print("\nChecking Facebook session...")
         page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
         time.sleep(3)
         if "login" in page.url.lower():
             print("ABORT: Facebook session expired. Re-run fb_login.py")
             log_error("SESSION_EXPIRED")
-            browser.close()
             return
+
         print("Facebook session OK.\n")
 
         all_candidates = collect_candidates(page, queries, known_groups)
@@ -222,14 +199,7 @@ def run_scout(
 
         if not candidates:
             print("No new qualifying groups found. Done.")
-            browser.close()
-            last_run["fb_group_scout"] = {
-                "last_run_at": datetime.now(UTC).isoformat(),
-                "groups_found": 0,
-                "groups_approved": 0,
-                "join_requests_sent": 0,
-                "status": "success",
-            }
+            last_run["fb_group_scout"] = _success_record(found=0)
             save_last_run(last_run)
             return
 
@@ -239,15 +209,7 @@ def run_scout(
                 print_candidate(i, g)
             added = add_to_pending(candidates, known_groups)
             print(f"\n✅ Saved {added} new group(s) to pending queue")
-            browser.close()
-            last_run["fb_group_scout"] = {
-                "last_run_at": datetime.now(UTC).isoformat(),
-                "groups_found": len(candidates),
-                "groups_approved": 0,
-                "join_requests_sent": 0,
-                "status": "success",
-                "mode": "dry-run",
-            }
+            last_run["fb_group_scout"] = _success_record(found=len(candidates), mode="dry-run")
             save_last_run(last_run)
             return
 
@@ -265,13 +227,9 @@ def run_scout(
         if not approved:
             print("\nNo groups approved.")
             add_to_pending(candidates, known_groups)
-            browser.close()
             return
 
         join_requests_sent = send_join_requests(page, approved, known_groups)
-
-        context.storage_state(path=str(SESSION_FILE))
-        browser.close()
 
     remove_from_pending([g["url"] for g in approved])
     unapproved = [g for g in candidates if g not in approved]
@@ -279,33 +237,50 @@ def run_scout(
     if added_pending:
         print(f"Saved {added_pending} unapproved candidate(s) to pending queue for next run.")
 
-    last_run["fb_group_scout"] = {
-        "last_run_at": datetime.now(UTC).isoformat(),
-        "groups_found": len(candidates),
-        "groups_approved": len(approved),
-        "join_requests_sent": join_requests_sent,
-        "status": "success",
-    }
+    last_run["fb_group_scout"] = _success_record(
+        found=len(candidates), approved=len(approved), sent=join_requests_sent
+    )
     save_last_run(last_run)
 
     pending_remaining = len(load_pending())
     _, weekly_after, daily_after = compute_budget()
+    caps_after = f"weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK}, daily {daily_after}/{JOIN_LIMIT_PER_DAY}"
     print(
         f"\n=== Scout Complete: {len(queries)} queries → {len(all_candidates)} raw → "
         f"{len(candidates)} surfaced → {join_requests_sent} joined "
-        f"(weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK}, daily {daily_after}/{JOIN_LIMIT_PER_DAY}, "
-        f"pending={pending_remaining}) ==="
+        f"({caps_after}, pending={pending_remaining}) ==="
     )
-    skill_finished(
-        "fb-group-scout",
+    skill_finished("fb-group-scout", (
         f"🔍 {len(queries)} queries → {len(candidates)} candidates\n"
-        f"✅ Joined: {join_requests_sent} (weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK} remaining)",
-    )
+        f"✅ Joined: {join_requests_sent} (weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK} remaining)"
+    ))
+
+
+def _build_argparser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Facebook Group Scout — find dog groups to join.")
+    parser.add_argument("--force", action="store_true", help="Override weekly re-run guard.")
+    parser.add_argument("--dry-run", action="store_true", help="List candidates; no join requests.")
+    parser.add_argument("--approve", type=str, default=None, help="'all'/'none'/'1 3 5'.")
+    parser.add_argument("--bypass-daily-cap", action="store_true", help="Skip daily cap only.")
+    parser.add_argument("--health-check", action="store_true", help="Probe session, exit 0/1.")
+    return parser
 
 
 if __name__ == "__main__":
-    run_scout(
-        dry_run="--dry-run" in sys.argv,
-        preselected=parse_approve_arg(),
-        bypass_daily="--bypass-daily-cap" in sys.argv,
-    )
+    args = _build_argparser().parse_args()
+    fb_session = build_fb_session()
+
+    if args.health_check:
+        if fb_session.is_authenticated():
+            print(f"FB session OK (storage: {fb_session.storage_path})")
+            sys.exit(0)
+        print(f"SESSION_EXPIRED: {fb_session.storage_path} missing or empty", file=sys.stderr)
+        sys.exit(1)
+
+    with SingletonLock("fb_group_scout"):
+        main(
+            fb_session,
+            dry_run=args.dry_run,
+            preselected=args.approve if args.approve is not None else parse_approve_arg(),
+            bypass_daily=args.bypass_daily_cap,
+        )

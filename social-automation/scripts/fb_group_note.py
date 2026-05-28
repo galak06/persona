@@ -34,6 +34,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from lib.groups.notes import append_group_note
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TRACKER_FILE = settings.paths.groups_tracker
 
@@ -119,7 +121,7 @@ def main() -> None:
     if args.caption:
         entry["last_post_caption"] = args.caption
     if args.note:
-        entry["notes"].append({"at": now, "text": args.note})
+        append_group_note(entry, args.note)
 
     _save(tracker)
     print(f"  {entry['group_name']}")

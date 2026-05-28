@@ -25,7 +25,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import (
     BackgroundTasks,
@@ -52,6 +52,8 @@ from api.schemas import (
     FacebookGroup,
     FacebookGroupsResponse,
     FacebookGroupUpdateBody,
+    FlowGuideEntry,
+    FlowGuideResponse,
     FlowsStateResponse,
     FlowState,
     LogTailResponse,
@@ -90,6 +92,8 @@ _load_secrets()
 # Import the new lib + helper modules *after* secrets load so any
 # module-level config-driven paths resolve correctly.
 from api import routes_helpers as rh
+from api.campaigns_api import router as _campaigns_router
+from api.recipe_card_api import router as _recipe_card_router
 from lib import activity_log
 from lib.config import settings
 
@@ -106,6 +110,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
+
+app.include_router(_campaigns_router, prefix="/api/v1/campaigns", tags=["campaigns"])
+app.include_router(_recipe_card_router, prefix="/api/v1")
 
 
 @app.get("/api/v1/config")
@@ -195,7 +202,7 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        assert path is not None
+        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
         payload = body or ApproveBody()
         return rh.approve_comment(
             path, item_id, decision_status="approved", text=payload.text
@@ -225,7 +232,7 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        assert path is not None
+        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
         return rh.approve_comment(
             path, item_id, decision_status="USER_SKIPPED", text=None
         )
@@ -348,6 +355,30 @@ def get_flows_state() -> FlowsStateResponse:
         flows=[FlowState(**f) for f in collect_flow_states()],
         schedule=[ScheduleEntry(**s) for s in collect_schedule_state()],
     )
+
+
+@app.get("/api/v1/flows/guide", response_model=FlowGuideResponse)
+def get_flows_guide() -> FlowGuideResponse:
+    """Static flow descriptions merged with live last-run state."""
+    from api.flow_descriptions import FLOW_DESCRIPTIONS
+    try:
+        from api.flow_state import collect_flow_states
+        state_by_id: dict[str, dict[str, Any]] = {
+            f["id"]: f for f in collect_flow_states()
+        }
+    except Exception:
+        _log.exception("flows_guide: failed to collect live state; serving descriptions only")
+        state_by_id = {}
+
+    entries = [
+        FlowGuideEntry(
+            **desc.model_dump(),
+            last_run_at=state_by_id.get(desc.id, {}).get("last_run_at"),
+            last_status=state_by_id.get(desc.id, {}).get("last_status"),
+        )
+        for desc in FLOW_DESCRIPTIONS
+    ]
+    return FlowGuideResponse(flows=entries)
 
 
 _LABEL_RE = __import__("re").compile(r"com\.dogfoodandfun\.[a-z0-9-]+")

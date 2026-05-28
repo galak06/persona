@@ -10,12 +10,14 @@ export const PLATFORM_ICON: Record<Platform, string> = {
   facebook: "📘",
   instagram: "📸",
   wordpress: "📰",
+  system: "⚙️",
 };
 
 export const PLATFORM_LABEL: Record<Platform, string> = {
   facebook: "Facebook",
   instagram: "Instagram",
   wordpress: "WordPress",
+  system: "System",
 };
 
 /**

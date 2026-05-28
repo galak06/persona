@@ -292,3 +292,71 @@ class FlowsStateResponse(BaseModel):
 
     flows: list[FlowState]
     schedule: list[ScheduleEntry]
+
+
+class JobDescription(BaseModel):
+    """One-liner describing a single cron job inside a flow."""
+
+    id: str
+    summary: str
+    category: str | None = None
+
+
+class FlowDescription(BaseModel):
+    """Static, code-defined description of a top-level flow."""
+
+    id: str
+    title: str
+    summary: str
+    jobs: list[JobDescription] = []
+
+
+class FlowGuideEntry(FlowDescription):
+    """A flow description merged with its live last-run state."""
+
+    last_run_at: datetime | None = None
+    last_status: str | None = None
+
+
+class FlowGuideResponse(BaseModel):
+    """Response shape for ``GET /api/v1/flows/guide``."""
+
+    flows: list[FlowGuideEntry]
+
+
+CampaignStatusLiteral = Literal["success", "error", "never"]
+
+
+class CampaignSummary(BaseModel):
+    """Summary row for ``GET /api/v1/campaigns``.
+
+    Aggregates the on-disk campaign config + state.json + ready/published
+    folder counts into a single UI-friendly shape. ``last_status`` is
+    derived from ``state.history[-1].status`` and defaults to ``"never"``
+    when the campaign has no run history yet.
+    """
+
+    name: str
+    last_run: datetime | None = None
+    current_task_index: int = 0
+    last_status: CampaignStatusLiteral = "never"
+    ready_count: int = 0
+    published_count: int = 0
+    has_prepare_tasks: bool = False
+    has_publish_tasks: bool = False
+
+
+class CampaignDetail(CampaignSummary):
+    """Detail payload for ``GET /api/v1/campaigns/{name}``.
+
+    Extends ``CampaignSummary`` with the full run history list so the UI
+    can render the timeline view without a second round-trip.
+    """
+
+    history: list[dict[str, Any]] = []
+
+
+class CampaignListResponse(BaseModel):
+    """Envelope for ``GET /api/v1/campaigns``."""
+
+    campaigns: list[CampaignSummary]

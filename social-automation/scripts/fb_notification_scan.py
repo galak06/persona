@@ -8,8 +8,9 @@ The tracker is the source of truth for `fb-group-publisher` — which groups are
 we in, what are their rules, and when did we last post there.
 
 Usage:
-    python scripts/fb_notification_scan.py            # scan + update tracker
-    python scripts/fb_notification_scan.py --dry-run  # show what would be added
+    python -m scripts.fb_notification_scan                # scan + update tracker
+    python -m scripts.fb_notification_scan --dry-run      # show what would be added
+    python -m scripts.fb_notification_scan --health-check # verify session + exit
 """
 
 from __future__ import annotations
@@ -20,19 +21,27 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from lib.local_env import get_runtime_headless
+from lib.fb.session import FbSession, build_fb_session
 from lib.logger import log_step
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from notifier import skill_error, skill_finished, skill_started
 
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
-SESSION_FILE = settings.paths.facebook_session
+SKILL_NAME = "fb-notification-scan"
+
+if settings.paths is None:
+    raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
 TRACKER_FILE = settings.paths.groups_tracker
 
 _APPROVAL_KEYWORDS = (
@@ -45,18 +54,19 @@ _APPROVAL_KEYWORDS = (
 )
 
 
-def _load_tracker() -> list[dict]:
+def _load_tracker() -> list[dict[str, Any]]:
     if TRACKER_FILE.exists():
-        return json.loads(TRACKER_FILE.read_text())
+        loaded: list[dict[str, Any]] = json.loads(TRACKER_FILE.read_text())
+        return loaded
     return []
 
 
-def _save_tracker(data: list[dict]) -> None:
+def _save_tracker(data: list[dict[str, Any]]) -> None:
     TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
     TRACKER_FILE.write_text(json.dumps(data, indent=2))
 
 
-def _scan_notifications(page) -> list[dict]:
+def _scan_notifications(page: Page) -> list[dict[str, str]]:
     """Return a list of {group_name, group_url, notification_text} for approvals."""
     page.goto(
         "https://www.facebook.com/notifications",
@@ -107,10 +117,11 @@ def _scan_notifications(page) -> list[dict]:
     }""",
         list(_APPROVAL_KEYWORDS),
     )
-    return raw or []
+    result: list[dict[str, str]] = raw or []
+    return result
 
 
-def _upsert(tracker: list[dict], entry: dict) -> tuple[bool, str]:
+def _upsert(tracker: list[dict[str, Any]], entry: dict[str, Any]) -> tuple[bool, str]:
     """Insert entry if new, or update status if already present. Returns (added, action)."""
     for existing in tracker:
         if existing.get("group_url") == entry["group_url"]:
@@ -123,47 +134,51 @@ def _upsert(tracker: list[dict], entry: dict) -> tuple[bool, str]:
     return True, "added"
 
 
-def main() -> None:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scan FB notifications for group approvals")
-    parser.add_argument("--dry-run", action="store_true", help="scan only, don't update tracker")
-    args = parser.parse_args()
-
-    skill_started("fb-notification-scan", "scanning FB for group approvals")
-
-    if not SESSION_FILE.exists():
-        skill_error("fb-notification-scan", "FB session not found — run fb_login.py")
-        return
-
-    from playwright.sync_api import sync_playwright
-
-    ua = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="scan only, don't write the tracker",
     )
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="verify FB session is authenticated and exit",
+    )
+    return parser.parse_args()
+
+
+def _health_check(session: FbSession) -> int:
+    if not session.is_authenticated():
+        print(
+            f"FB session not authenticated (storage: {session.storage_path}) — "
+            "run fb_login.py",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"FB session OK (storage: {session.storage_path})", file=sys.stderr)
+    return 0
+
+
+def main(session: FbSession, *, dry_run: bool = False) -> int:
+    skill_started(SKILL_NAME, "scanning FB for group approvals")
+
+    if not session.is_authenticated():
+        skill_error(SKILL_NAME, "FB session not found — run fb_login.py")
+        return 1
 
     tracker = _load_tracker()
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=get_runtime_headless())
-        ctx = browser.new_context(
-            storage_state=str(SESSION_FILE),
-            viewport={"width": 1280, "height": 900},
-            user_agent=ua,
-        )
-        page = ctx.new_page()
-        try:
-            approvals = _scan_notifications(page)
-        finally:
-            ctx.storage_state(path=str(SESSION_FILE))
-            ctx.close()
-            browser.close()
+    with session.page() as page:
+        approvals = _scan_notifications(page)
 
     log_step(f"found {len(approvals)} approval notifications")
     now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     added = updated = 0
     for a in approvals:
-        entry = {
+        entry: dict[str, Any] = {
             "group_name": a["group_name"],
             "group_url": a["group_url"],
             "status": "joined",
@@ -172,7 +187,7 @@ def main() -> None:
             "last_post_at": None,
             "source_notification": a["notification_text"],
         }
-        is_added, action = _upsert(tracker, entry)
+        _, action = _upsert(tracker, entry)
         if action == "added":
             added += 1
             print(f"  + {a['group_name']} — {a['group_url']}", flush=True)
@@ -180,19 +195,34 @@ def main() -> None:
             updated += 1
             print(f"  ~ {a['group_name']} (status → joined)", flush=True)
 
-    if not args.dry_run and (added or updated):
-        _save_tracker(tracker)
-        print(f"\nTracker updated: +{added} added, {updated} updated → {TRACKER_FILE}", flush=True)
-    elif args.dry_run:
+    if dry_run:
         print("\n(dry-run — tracker not written)", flush=True)
+    elif added or updated:
+        _save_tracker(tracker)
+        print(
+            f"\nTracker updated: +{added} added, {updated} updated → {TRACKER_FILE}",
+            flush=True,
+        )
     else:
         print("\nNothing new to add.", flush=True)
 
     skill_finished(
-        "fb-notification-scan",
+        SKILL_NAME,
         f"{added} new, {updated} updated, {len(tracker)} total",
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    fb_session = build_fb_session()
+
+    if args.health_check:
+        sys.exit(_health_check(fb_session))
+
+    try:
+        with SingletonLock(SKILL_NAME):
+            sys.exit(main(fb_session, dry_run=args.dry_run))
+    except LockAcquisitionError as exc:
+        print(f"another instance of {SKILL_NAME!r} is running: {exc}", file=sys.stderr)
+        sys.exit(0)

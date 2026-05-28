@@ -34,7 +34,12 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["B011", "SIM300"]  # allow assert True in tests
+"tests/*" = ["B011", "SIM300", "RUF100"]  # allow assert True in tests; RUF100
+                                          # exempt so file-level `# ruff: noqa:
+                                          # S101, S603` (kept for the project's
+                                          # PostToolUse security-lint hook,
+                                          # which DOES enable `S`) doesn't
+                                          # fire here.
 
 # Legacy-debt ignores — remove when the file is migrated in later stages.
 # Each ignore is intentional, not a blanket exemption. New code MUST NOT
@@ -83,6 +88,7 @@ module = [
     "lib.sessions.*",
     "lib.policy.*",
     "lib.ig_follow.*",
+    "lib.campaigns.*",
 ]
 strict = true
 disallow_any_explicit = true

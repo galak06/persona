@@ -34,7 +34,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final
 
@@ -55,7 +55,7 @@ logger = logging.getLogger("publish_prepared")
 
 # Campaigns live one level up — at /Users/gilcohen/Projects/dogfoodandfun/campaigns/,
 # not under social-automation/. Matches what prepare.py writes to.
-CAMPAIGNS_ROOT: Final[Path] = settings.paths.campaigns_dir
+CAMPAIGNS_ROOT: Final[Path] = settings.paths.campaigns_dir  # type: ignore[union-attr]
 PREPARED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "prepared"
 PUBLISHED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "published"
 LAST_RUN_FILE: Final[Path] = PROJECT_ROOT / "recipe-publisher" / "state" / "last_publish_prepared.json"
@@ -194,12 +194,11 @@ def verify_seed(seed_id: str) -> int:
     """Telegram-preview a prepared campaign and flip state to 'verified'."""
     folder = PREPARED_ROOT / seed_id
     if not folder.exists():
-        print(f"❌ no prepared folder: {folder}")
+        print(f"❌ no prepared folder: {folder}")  # noqa: T201
         return 1
     meta = _read_metadata(folder)
-    status = _read_status(folder)
     if not _audio_present(folder):
-        print(f"❌ {seed_id}: audio.mp3 not found in {folder}")
+        print(f"❌ {seed_id}: audio.mp3 not found in {folder}")  # noqa: T201
         return 1
 
     msg = (
@@ -220,7 +219,7 @@ def verify_seed(seed_id: str) -> int:
     token = cfg.get("bot_token", "")
     chat_id = cfg.get("chat_id", "")
     if not token or not chat_id:
-        print("⚠️  no telegram — auto-verifying without confirmation.")
+        print("⚠️  no telegram — auto-verifying without confirmation.")  # noqa: T201
         _write_status(folder, "verified", by="cli_no_telegram")
         return 0
 
@@ -233,13 +232,13 @@ def verify_seed(seed_id: str) -> int:
             if text in ("yes", "y", "approve"):
                 _write_status(folder, "verified", by="cli_user")
                 notifier.send(f"✅ verified: <code>{seed_id}</code>", silent=True)
-                print(f"✅ verified: {seed_id}")
+                print(f"✅ verified: {seed_id}")  # noqa: T201
                 return 0
             if text in ("skip", "no", "n"):
                 notifier.send(f"⏭ skipped verify: <code>{seed_id}</code>", silent=True)
-                print(f"⏭ skip: {seed_id}")
+                print(f"⏭ skip: {seed_id}")  # noqa: T201
                 return 0
-    print("⏰ timed out — left as audio_ready")
+    print("⏰ timed out — left as audio_ready")  # noqa: T201
     return 1
 
 
@@ -381,7 +380,7 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
     fb_caption = (folder / "fb_caption.txt").read_text(encoding="utf-8").strip() if (folder / "fb_caption.txt").exists() else ""
 
     if dry_run:
-        print(
+        print(  # noqa: T201
             f"[dry-run] would mux ({source_mp4.name} + {audio_path.name}) → muxed.mp4, "
             f"promote WP {wp_id} → publish, push IG reel + FB reel for {seed_id}"
         )
@@ -408,6 +407,33 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
     with wp_client() as client:
         live_url = _promote_wp_draft(client, int(wp_id))
     logger.info("WP %d promoted to publish: %s", wp_id, live_url)
+
+    # Step 2.5: recipe card PDF — best-effort; never blocks the publish flow
+    rc = settings.recipe_card
+    if rc.enabled:
+        try:
+            from lib.recipe_card import content_parser, pdf_generator, wp_sync as rc_wp  # noqa: E402
+            _post = rc_wp.fetch_post_data(int(wp_id))
+            _recipe = content_parser.parse_recipe(_post["title"], _post["content"])
+            if _recipe.ingredients or _recipe.instructions:
+                _stamp = rc_wp.fetch_nalla_stamp(rc.stamp_media_id)
+                _pdf = pdf_generator.generate_recipe_card_pdf(
+                    title=_recipe.title,
+                    ingredients=_recipe.ingredients,
+                    instructions=_recipe.instructions,
+                    nalla_stamp_bytes=_stamp,
+                    cook_temp=_recipe.cook_temp,
+                    cook_time=_recipe.cook_time,
+                    header_title=rc.header_title,
+                    footer_text=rc.footer_text,
+                )
+                _pdf_url = rc_wp.upload_pdf(_pdf, f"recipe-card-{wp_id}.pdf")
+                rc_wp.inject_download_button(int(wp_id), _pdf_url)
+                logger.info("Recipe card uploaded for WP %d: %s", wp_id, _pdf_url)
+            else:
+                logger.info("Post %d: no parseable recipe — skipping card.", wp_id)
+        except Exception as exc:
+            logger.warning("Recipe card generation failed for WP %d: %s", wp_id, exc)
 
     recipe = _build_recipe_stub(meta, ig_caption)
 
@@ -601,13 +627,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         rows = _list_prepared()
         if not rows:
-            print("(no prepared campaigns)")
+            print("(no prepared campaigns)")  # noqa: T201
             return 0
-        print(f"{'seed_id':<48} {'state':<18} {'audio?':<8}")
-        print("-" * 80)
+        print(f"{'seed_id':<48} {'state':<18} {'audio?':<8}")  # noqa: T201
+        print("-" * 80)  # noqa: T201
         for r in rows:
             audio = "✅" if _audio_present(r.path) else "—"
-            print(f"{r.seed_id:<48} {r.state:<18} {audio:<8}")
+            print(f"{r.seed_id:<48} {r.state:<18} {audio:<8}")  # noqa: T201
         return 0
 
     if args.verify and args.seed:
@@ -615,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.min_gap_hours > 0 and _hours_since_last_success() < args.min_gap_hours:
         elapsed = _hours_since_last_success()
-        print(f"skip: last publish was {elapsed:.1f}h ago, below min-gap {args.min_gap_hours:.1f}h")
+        print(f"skip: last publish was {elapsed:.1f}h ago, below min-gap {args.min_gap_hours:.1f}h")  # noqa: T201
         return 0
 
     rows = _list_prepared()
@@ -629,17 +655,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.seed:
         rows = [r for r in rows if r.seed_id == args.seed]
         if not rows:
-            print(f"❌ no prepared folder for seed: {args.seed}")
+            print(f"❌ no prepared folder for seed: {args.seed}")  # noqa: T201
             return 1
     else:
         rows = [r for r in rows if r.state in eligible_states]
 
     if not rows:
-        print("(nothing to publish — no campaigns in eligible state)")
+        print("(nothing to publish — no campaigns in eligible state)")  # noqa: T201
         return 0
 
     target = rows[0]
-    print(f"publishing: {target.seed_id} (state={target.state})")
+    print(f"publishing: {target.seed_id} (state={target.state})")  # noqa: T201
     ok = publish_one(target.path, dry_run=args.dry_run)
     _record_last_run(target.seed_id, "success" if ok else "failed")
     return 0 if ok else 1

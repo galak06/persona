@@ -24,15 +24,15 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from lib.local_env import get_runtime_headless
+from lib.fb.session import FbSession
 
 logger = logging.getLogger(__name__)
 
 
 def publish_to_group(
     *,
+    session: FbSession,
     group_url: str,
-    session_file: Path,
     composer_fn: Callable[..., tuple[str, str | None]],
     caption: str,
     link_for_comment: str | None,
@@ -55,61 +55,36 @@ def publish_to_group(
     contenteditable selection, submit click, /my_posted_content verifier).
     This module owns only the browser lifecycle so the per-group
     "open → act → close" rule is enforceable in one place.
+
+    The browser lifecycle (launch / viewport / UA / cookie persist) is
+    delegated to the injected `FbSession`; `session.page()` opens a
+    FRESH context per call, so the per-group "open → act → close" rule
+    holds without this module touching Playwright directly.
     """
-    from playwright.sync_api import sync_playwright
+    with session.page() as page:
+        page.goto("https://www.facebook.com", wait_until="domcontentloaded")
+        time.sleep(2)
+        if "login" in page.url.lower():
+            raise RuntimeError("FB session expired")
 
-    if not session_file.exists():
-        raise RuntimeError("FB session missing — run fb_login.py first")
-
-    ua = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    )
-
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=get_runtime_headless())
-        ctx = browser.new_context(
-            storage_state=str(session_file),
-            viewport={"width": 1280, "height": 900},
-            user_agent=ua,
+        result = composer_fn(
+            page,
+            group_url,
+            caption,
+            link_for_comment,
+            reel_path=reel_path,
+            reel_thumbnail=reel_thumbnail,
+            no_submit=no_submit,
+            screenshot_path=screenshot_path,
         )
-        try:
-            page = ctx.new_page()
-            page.goto("https://www.facebook.com", wait_until="domcontentloaded")
-            time.sleep(2)
-            if "login" in page.url.lower():
-                raise RuntimeError("FB session expired")
-
-            result = composer_fn(
-                page,
-                group_url,
-                caption,
-                link_for_comment,
-                reel_path=reel_path,
-                reel_thumbnail=reel_thumbnail,
-                no_submit=no_submit,
-                screenshot_path=screenshot_path,
-            )
-            # Defensive: composer_fn must return (status, permalink). Normalize
-            # any stray bare-string return so callers always get a tuple.
-            if isinstance(result, tuple):
-                status = str(result[0])
-                permalink = result[1] if len(result) > 1 else None
-            else:
-                status = str(result)
-                permalink = None
-        finally:
-            # Persist any cookie refresh, then tear down hard. We open per
-            # group; closing immediately keeps the session short (FB
-            # flags long-idle Chromium sessions as suspicious).
-            try:
-                ctx.storage_state(path=str(session_file))
-            except Exception as e:
-                # Best-effort cookie persist — if it fails the next run
-                # will just re-use the previous session state.
-                logger.warning("session-persist failed: %s", e)
-            ctx.close()
-            browser.close()
+        # Defensive: composer_fn must return (status, permalink). Normalize
+        # any stray bare-string return so callers always get a tuple.
+        if isinstance(result, tuple):
+            status = str(result[0])
+            permalink = result[1] if len(result) > 1 else None
+        else:
+            status = str(result)
+            permalink = None
 
     return status, permalink
 

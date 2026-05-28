@@ -1,12 +1,14 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import TopBar from "./components/layout/TopBar";
 import Activity from "./pages/Activity";
+import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
 import Flows from "./pages/Flows";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
 import Schedule from "./pages/Schedule";
 import Explorer from "./pages/Explorer";
+import FlowGuide from "./pages/FlowGuide";
 import NotFound from "./pages/NotFound";
 
 /**
@@ -24,10 +26,12 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/flows" element={<Flows />} />
+          <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/groups" element={<Groups />} />
           <Route path="/schedule" element={<Schedule />} />
           <Route path="/explorer" element={<Explorer />} />
+          <Route path="/flow-guide" element={<FlowGuide />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

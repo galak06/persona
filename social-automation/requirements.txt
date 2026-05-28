@@ -18,3 +18,5 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 pydantic>=2.7
 croniter>=3.0.3
+pillow>=10.0
+reportlab>=4.2

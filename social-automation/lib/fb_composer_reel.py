@@ -20,7 +20,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +118,10 @@ def maybe_append_campaign_close(caption: str, campaign: dict[str, Any]) -> str:
     ctas = campaign.get("ctas") or []
     if not isinstance(teasers, list) or not isinstance(ctas, list):
         return caption
-    return append_teaser_and_cta(caption, list(teasers), list(ctas), rotation_path)
+    return cast(
+        str,
+        append_teaser_and_cta(caption, list(teasers), list(ctas), rotation_path),
+    )
 
 
 def reel_target_categories(campaign: dict[str, Any]) -> set[str]:

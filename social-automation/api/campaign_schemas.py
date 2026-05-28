@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Union
+import warnings
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ScheduleConfig(BaseModel):
@@ -18,7 +19,7 @@ class GenericTask(BaseModel):
     type: Literal["generic"]
     platform: str
     action: str
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
 class CustomHookTask(BaseModel):
@@ -26,28 +27,57 @@ class CustomHookTask(BaseModel):
     type: Literal["custom_hook"]
     script_path: str
     function: str
-    params: Dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
 
 
-CampaignTask = Union[GenericTask, CustomHookTask]
+CampaignTask = GenericTask | CustomHookTask
 
 
 class CampaignConfig(BaseModel):
     """Configuration for a generalized campaign."""
     schedule: ScheduleConfig
-    tasks: List[CampaignTask]
+    prepare_tasks: list[CampaignTask] = Field(default_factory=list)
+    publish_tasks: list[CampaignTask] = Field(default_factory=list)
+    tasks: list[CampaignTask] = Field(
+        default_factory=list,
+        description="DEPRECATED — use publish_tasks. Auto-migrated by validator.",
+    )
+
+    @model_validator(mode="after")
+    def _migrate_legacy_tasks(self) -> CampaignConfig:
+        """Back-compat: migrate legacy ``tasks`` into ``publish_tasks``.
+
+        - If only ``tasks`` is set, copy into ``publish_tasks`` and warn once.
+        - If both are set, raise — caller must remove the legacy field.
+        """
+        if self.tasks and self.publish_tasks:
+            raise ValueError(
+                "CampaignConfig has both 'tasks' (legacy) and "
+                "'publish_tasks' (current) set; remove 'tasks'."
+            )
+        if self.tasks and not self.publish_tasks:
+            warnings.warn(
+                "CampaignConfig field 'tasks' is deprecated; "
+                "use 'publish_tasks' instead. Auto-migrating.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.publish_tasks = list(self.tasks)
+        return self
+
 
 class CampaignState(BaseModel):
     """Internal state tracking for a campaign."""
-    last_run: Optional[str] = None
+    last_run: str | None = None
     current_task_index: int = 0
-    history: List[Dict[str, Any]] = Field(default_factory=list)
+    history: list[dict[str, Any]] = Field(default_factory=list)
+
 
 __all__ = [
-    "ScheduleConfig",
-    "GenericTask",
-    "CustomHookTask",
-    "CampaignTask",
     "CampaignConfig",
-    "CampaignState"
+    "CampaignState",
+    "CampaignTask",
+    "CustomHookTask",
+    "GenericTask",
+    "ScheduleConfig",
 ]

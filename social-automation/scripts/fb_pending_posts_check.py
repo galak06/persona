@@ -13,9 +13,11 @@ looks for our caption in the group's feed, and updates status accordingly:
 Safe: navigation + read-only scraping. No posting.
 
 Usage:
-    python scripts/fb_pending_posts_check.py                 # check every pending entry
-    python scripts/fb_pending_posts_check.py --only 398460282269029
-    python scripts/fb_pending_posts_check.py --stale-days 3  # flag posts pending > 3d
+    python -m scripts.fb_pending_posts_check                  # check every pending entry
+    python -m scripts.fb_pending_posts_check --only 398460282269029
+    python -m scripts.fb_pending_posts_check --stale-days 3   # flag posts pending > 3d
+    python -m scripts.fb_pending_posts_check --dry-run        # scan only, no tracker write
+    python -m scripts.fb_pending_posts_check --health-check   # verify session + exit
 """
 
 from __future__ import annotations
@@ -26,19 +28,28 @@ import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from lib.local_env import get_runtime_headless
+from lib.fb.session import FbSession, build_fb_session
+from lib.groups.notes import append_group_note
 from lib.logger import log_step
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from notifier import send, skill_error, skill_finished, skill_started
 
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
-SESSION_FILE = settings.paths.facebook_session
+SKILL_NAME = "fb-pending-posts-check"
+
+if settings.paths is None:
+    raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
 TRACKER_FILE = settings.paths.groups_tracker
 
 _MATCH_PREFIX_LEN = 40
@@ -48,7 +59,7 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _scan_feed_for_caption(page, caption_prefix: str) -> dict:
+def _scan_feed_for_caption(page: Page, caption_prefix: str) -> dict[str, Any]:
     """Return {found, permalink, pending_banner} for the given caption prefix."""
     time.sleep(4)
     for pct in (0.3, 0.6):
@@ -56,7 +67,7 @@ def _scan_feed_for_caption(page, caption_prefix: str) -> dict:
         time.sleep(1.2)
     page.evaluate("window.scrollTo(0, 0)")
     time.sleep(1.5)
-    return page.evaluate(
+    result: dict[str, Any] = page.evaluate(
         """(prefix) => {
         const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
         const needle = norm(prefix).toLowerCase();
@@ -91,9 +102,10 @@ def _scan_feed_for_caption(page, caption_prefix: str) -> dict:
     }""",
         caption_prefix,
     )
+    return result
 
 
-def _process(page, entry: dict, stale_days: int) -> str:
+def _process(page: Page, entry: dict[str, Any], stale_days: int) -> str:
     """Return one of: posted / still_pending / stale_pending / no_caption."""
     last_caption = entry.get("last_post_caption") or ""
     if not last_caption:
@@ -108,14 +120,13 @@ def _process(page, entry: dict, stale_days: int) -> str:
         return "still_pending"
 
     now = _now_iso()
-    entry.setdefault("notes", [])
     entry["last_checked_at"] = now
 
     if result["found"]:
         entry["last_post_status"] = "posted"
         if result["permalink"]:
             entry["last_post_permalink"] = result["permalink"]
-        entry["notes"].append({"at": now, "text": "Pending post now visible in feed."})
+        append_group_note(entry, "Pending post now visible in feed.")
         return "posted"
 
     pending_since_str = entry.get("last_post_at") or now
@@ -126,95 +137,135 @@ def _process(page, entry: dict, stale_days: int) -> str:
     age_days = (datetime.now(UTC) - pending_since).days
     if age_days >= stale_days:
         entry["last_post_status"] = "stale_pending"
-        entry["notes"].append(
-            {"at": now, "text": f"Still not visible after {age_days}d — likely declined by admins."}
+        append_group_note(
+            entry,
+            f"Still not visible after {age_days}d — likely declined by admins.",
         )
         return "stale_pending"
     return "still_pending"
 
 
-def main() -> None:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check on pending-approval FB group posts")
     parser.add_argument("--only", help="group id to check (digits from URL)")
-    parser.add_argument("--stale-days", type=int, default=5, help="flag as stale after N days")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--stale-days",
+        type=int,
+        default=5,
+        help="flag as stale after N days",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="scan only, don't write the tracker or send reminders",
+    )
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="verify FB session is authenticated and exit",
+    )
+    return parser.parse_args()
 
-    skill_started("fb-pending-posts-check", "checking admin-approval queue")
 
-    if not SESSION_FILE.exists():
-        skill_error("fb-pending-posts-check", "FB session missing — run fb_login.py")
-        return
+def _health_check(session: FbSession) -> int:
+    if not session.is_authenticated():
+        print(
+            f"SESSION_EXPIRED: {session.storage_path}",
+            file=sys.stderr,
+        )
+        return 1
+    print(f"FB session OK (storage: {session.storage_path})")
+    return 0
+
+
+def main(
+    session: FbSession,
+    *,
+    dry_run: bool = False,
+    only: str | None = None,
+    stale_days: int = 5,
+) -> int:
+    skill_started(SKILL_NAME, "checking admin-approval queue")
+
+    if not session.is_authenticated():
+        skill_error(SKILL_NAME, "FB session missing — run fb_login.py")
+        return 1
     if not TRACKER_FILE.exists():
-        skill_error("fb-pending-posts-check", "groups_tracker.json missing")
-        return
+        skill_error(SKILL_NAME, "groups_tracker.json missing")
+        return 1
 
-    tracker = json.loads(TRACKER_FILE.read_text())
+    tracker: list[dict[str, Any]] = json.loads(TRACKER_FILE.read_text())
     pool = [
         e
         for e in tracker
         if e.get("last_post_status") == "pending_approval"
-        and (not args.only or args.only in e.get("group_url", ""))
+        and (not only or only in e.get("group_url", ""))
     ]
     if not pool:
         msg = "no pending posts to check"
         print(msg, flush=True)
-        skill_finished("fb-pending-posts-check", msg)
-        return
+        skill_finished(SKILL_NAME, msg)
+        return 0
 
     print(f"checking {len(pool)} pending post(s)…", flush=True)
 
-    from playwright.sync_api import sync_playwright
-
-    ua = (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    )
-
     posted = still = stale = no_cap = 0
     reminders: list[str] = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=get_runtime_headless())
-        ctx = browser.new_context(
-            storage_state=str(SESSION_FILE),
-            viewport={"width": 1280, "height": 900},
-            user_agent=ua,
-        )
-        page = ctx.new_page()
-        try:
-            for entry in pool:
-                log_step(f"  → {entry['group_name'][:45]}")
-                outcome = _process(page, entry, args.stale_days)
-                print(f"    → {outcome}", flush=True)
-                if outcome == "posted":
-                    posted += 1
-                    permalink = entry.get("last_post_permalink", entry["group_url"])
-                    reminders.append(f"• {entry['group_name']}\n  Add URL comment on: {permalink}")
-                elif outcome == "still_pending":
-                    still += 1
-                elif outcome == "stale_pending":
-                    stale += 1
-                else:
-                    no_cap += 1
-        finally:
-            ctx.storage_state(path=str(SESSION_FILE))
-            ctx.close()
-            browser.close()
+    with session.page() as page:
+        for entry in pool:
+            log_step(f"  → {entry['group_name'][:45]}")
+            outcome = _process(page, entry, stale_days)
+            print(f"    → {outcome}", flush=True)
+            if outcome == "posted":
+                posted += 1
+                permalink = entry.get("last_post_permalink", entry["group_url"])
+                reminders.append(
+                    f"• {entry['group_name']}\n  Add URL comment on: {permalink}"
+                )
+            elif outcome == "still_pending":
+                still += 1
+            elif outcome == "stale_pending":
+                stale += 1
+            else:
+                no_cap += 1
 
-    TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+    if dry_run:
+        print("\n(dry-run — tracker not written, reminders suppressed)", flush=True)
+    else:
+        TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
 
-    if reminders:
-        print("\n⏰ ADD FIRST COMMENT NOW on these approved posts:", flush=True)
-        for r in reminders:
-            print(r, flush=True)
-        send(
-            "⏰ <b>Reel pipeline: approved posts ready for URL comment</b>\n\n"
-            + "\n".join(reminders)[:2000]
-        )
+        if reminders:
+            print("\n⏰ ADD FIRST COMMENT NOW on these approved posts:", flush=True)
+            for r in reminders:
+                print(r, flush=True)
+            send(
+                "⏰ <b>Reel pipeline: approved posts ready for URL comment</b>\n\n"
+                + "\n".join(reminders)[:2000]
+            )
 
     summary = f"posted={posted} still_pending={still} stale={stale} no_caption={no_cap}"
     print(f"\n=== Done === {summary}", flush=True)
-    skill_finished("fb-pending-posts-check", summary)
+    skill_finished(SKILL_NAME, summary)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    fb_session = build_fb_session()
+
+    if args.health_check:
+        sys.exit(_health_check(fb_session))
+
+    try:
+        with SingletonLock(SKILL_NAME):
+            sys.exit(
+                main(
+                    fb_session,
+                    dry_run=args.dry_run,
+                    only=args.only,
+                    stale_days=args.stale_days,
+                )
+            )
+    except LockAcquisitionError as exc:
+        print(f"another instance of {SKILL_NAME!r} is running: {exc}", file=sys.stderr)
+        sys.exit(0)

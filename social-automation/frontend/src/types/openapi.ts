@@ -4,6 +4,75 @@
  */
 
 export interface paths {
+    "/api/v1/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Campaigns
+         * @description Return one summary per folder under campaigns_dir that has a config.
+         *
+         *     Folders without ``campaign_config.json`` are silently skipped — the
+         *     UI only renders runnable campaigns. Invalid configs are also skipped
+         *     (logged at WARN) so a single broken JSON file can't 500 the list.
+         */
+        get: operations["list_campaigns_api_v1_campaigns_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Campaign
+         * @description Return full detail (summary + history) for a single campaign.
+         */
+        get: operations["get_campaign_api_v1_campaigns__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/campaigns/{name}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Campaign
+         * @description Spawn ``scripts.publish_campaign`` as a detached subprocess.
+         *
+         *     Fire-and-forget by design: the publisher writes to ``state.json`` and
+         *     the frontend polls ``GET /campaigns``. Lock conflicts surface there
+         *     as ``last_status="error"`` on the next poll, identical to the cron
+         *     path. Returns immediately with the spawned PID.
+         */
+        post: operations["publish_campaign_api_v1_campaigns__name__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config": {
         parameters: {
             query?: never;
@@ -33,7 +102,7 @@ export interface paths {
         };
         /**
          * List Pending
-         * @description All blog-post pairs + group-join candidates awaiting a decision.
+         * @description All blog-post pairs, group-join candidates, and comments awaiting a decision.
          */
         get: operations["list_pending_api_v1_pending_get"];
         put?: never;
@@ -73,7 +142,7 @@ export interface paths {
         };
         /**
          * Get Item
-         * @description Look up a single item by id. 410 for legacy comments.
+         * @description Look up a single item by id.
          */
         get: operations["get_item_api_v1_items__item_id__get"];
         put?: never;
@@ -153,7 +222,11 @@ export interface paths {
         };
         /**
          * List Facebook Groups
-         * @description List all Facebook groups and their statuses.
+         * @description List all Facebook groups bucketed by status.
+         *
+         *     Merges two sources:
+         *       - groups_tracker.json -> status in {joined, join_requested, rejected}
+         *       - pending_groups.json -> projected with synthetic status="not_joined_yet"
          */
         get: operations["list_facebook_groups_api_v1_facebook_groups_get"];
         put?: never;
@@ -224,6 +297,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/flows/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Flows Guide
+         * @description Static flow descriptions merged with live last-run state.
+         */
+        get: operations["get_flows_guide_api_v1_flows_guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/schedule/{label}/trigger": {
         parameters: {
             query?: never;
@@ -239,9 +332,79 @@ export interface paths {
          *
          *     Label is whitelisted against the ``com.dogfoodandfun.*`` namespace
          *     to keep this from being abused as a generic launchctl runner. All
-         *     subprocess args are list-form; no shell.
+         *     subprocess args are list-form; no shell. Unless ``force=true`` is
+         *     passed, the task's declared inputs in ``schedule.json`` must be
+         *     fresh -- failing a precondition short-circuits with a 200 body
+         *     carrying ``ok=False`` and the human-readable reason.
          */
         post: operations["trigger_schedule_api_v1_schedule__label__trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedule/missing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Missing Flows
+         * @description Return scheduled flows defined in schedule.json that aren't loaded in launchctl.
+         */
+        get: operations["list_missing_flows_api_v1_schedule_missing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedule/{label}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Schedule Log
+         * @description Return the last N lines of the log file for a scheduled job.
+         *
+         *     Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
+         *     Log path is read from the matching plist's ``StandardOutPath`` —
+         *     never user-supplied — so we cannot be coerced into reading arbitrary
+         *     files via path traversal.
+         */
+        get: operations["get_schedule_log_api_v1_schedule__label__log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/schedule/{label}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Schedule Artifact
+         * @description Return the JSON content of the output_file for a scheduled job.
+         *
+         *     Securely reads only files declared in schedule.json as output_file.
+         */
+        get: operations["get_schedule_artifact_api_v1_schedule__label__artifact_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -276,7 +439,7 @@ export interface components {
              * Platform
              * @enum {string}
              */
-            platform: "facebook" | "instagram" | "wordpress";
+            platform: "facebook" | "instagram" | "wordpress" | "system";
             /** Target Name */
             target_name?: string | null;
             /** Target Url */
@@ -384,6 +547,162 @@ export interface components {
             [key: string]: unknown;
         };
         /**
+         * CampaignDetail
+         * @description Detail payload for ``GET /api/v1/campaigns/{name}``.
+         *
+         *     Extends ``CampaignSummary`` with the full run history list so the UI
+         *     can render the timeline view without a second round-trip.
+         */
+        CampaignDetail: {
+            /** Name */
+            name: string;
+            /** Last Run */
+            last_run?: string | null;
+            /**
+             * Current Task Index
+             * @default 0
+             */
+            current_task_index: number;
+            /**
+             * Last Status
+             * @default never
+             * @enum {string}
+             */
+            last_status: "success" | "error" | "never";
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
+            /**
+             * Published Count
+             * @default 0
+             */
+            published_count: number;
+            /**
+             * Has Prepare Tasks
+             * @default false
+             */
+            has_prepare_tasks: boolean;
+            /**
+             * Has Publish Tasks
+             * @default false
+             */
+            has_publish_tasks: boolean;
+            /**
+             * History
+             * @default []
+             */
+            history: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * CampaignListResponse
+         * @description Envelope for ``GET /api/v1/campaigns``.
+         */
+        CampaignListResponse: {
+            /** Campaigns */
+            campaigns: components["schemas"]["CampaignSummary"][];
+        };
+        /**
+         * CampaignSummary
+         * @description Summary row for ``GET /api/v1/campaigns``.
+         *
+         *     Aggregates the on-disk campaign config + state.json + ready/published
+         *     folder counts into a single UI-friendly shape. ``last_status`` is
+         *     derived from ``state.history[-1].status`` and defaults to ``"never"``
+         *     when the campaign has no run history yet.
+         */
+        CampaignSummary: {
+            /** Name */
+            name: string;
+            /** Last Run */
+            last_run?: string | null;
+            /**
+             * Current Task Index
+             * @default 0
+             */
+            current_task_index: number;
+            /**
+             * Last Status
+             * @default never
+             * @enum {string}
+             */
+            last_status: "success" | "error" | "never";
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
+            /**
+             * Published Count
+             * @default 0
+             */
+            published_count: number;
+            /**
+             * Has Prepare Tasks
+             * @default false
+             */
+            has_prepare_tasks: boolean;
+            /**
+             * Has Publish Tasks
+             * @default false
+             */
+            has_publish_tasks: boolean;
+        };
+        /**
+         * CommentItem
+         * @description A Facebook / Instagram / WordPress engagement comment.
+         *
+         *     Legacy schema — engagement comments no longer flow through the web UI,
+         *     but the model is retained so the autonomous pipeline (comment_poster)
+         *     and legacy items in ``comment_queue.json`` can still validate.
+         */
+        CommentItem: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "comment";
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "facebook" | "instagram" | "wordpress" | "system";
+            /** Group Or Hashtag */
+            group_or_hashtag?: string | null;
+            /** Post Url */
+            post_url?: string | null;
+            /**
+             * Post Text
+             * @default
+             */
+            post_text: string;
+            /**
+             * Draft Comment
+             * @default
+             */
+            draft_comment: string;
+            /** Relevance Score */
+            relevance_score?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * DecisionResponse
          * @description Returned on every commit endpoint.
          */
@@ -475,6 +794,35 @@ export interface components {
             total: number;
             /** As Of */
             as_of: string;
+        };
+        /**
+         * FlowGuideEntry
+         * @description A flow description merged with its live last-run state.
+         */
+        FlowGuideEntry: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Jobs
+             * @default []
+             */
+            jobs: components["schemas"]["JobDescription"][];
+            /** Last Run At */
+            last_run_at?: string | null;
+            /** Last Status */
+            last_status?: string | null;
+        };
+        /**
+         * FlowGuideResponse
+         * @description Response shape for ``GET /api/v1/flows/guide``.
+         */
+        FlowGuideResponse: {
+            /** Flows */
+            flows: components["schemas"]["FlowGuideEntry"][];
         };
         /**
          * FlowState
@@ -576,12 +924,83 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * InputStatus
+         * @description Per-input freshness check result for a scheduled task.
+         *
+         *     Emitted by ``check_inputs_satisfied`` in ``api.schedule_config``. The
+         *     ``ok`` flag is the AND of the existence, count, and age checks. A
+         *     failed check writes a human-readable ``reason`` so the UI can render
+         *     it as a tooltip without re-running the check client-side.
+         */
+        InputStatus: {
+            /** Path */
+            path: string;
+            /** Exists */
+            exists: boolean;
+            /** Count */
+            count: number;
+            /** Age Hours */
+            age_hours: number | null;
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
+         * JobDescription
+         * @description One-liner describing a single cron job inside a flow.
+         */
+        JobDescription: {
+            /** Id */
+            id: string;
+            /** Summary */
+            summary: string;
+            /** Category */
+            category?: string | null;
+        };
+        /**
+         * LogTailResponse
+         * @description Envelope for ``GET /api/v1/schedule/{label}/log``.
+         */
+        LogTailResponse: {
+            /** Label */
+            label: string;
+            /** Path */
+            path: string | null;
+            /** Lines */
+            lines: string[];
+            /** Truncated */
+            truncated: boolean;
+        };
+        /**
+         * MissingFlowEntry
+         * @description One scheduled flow that's defined in schedule.json but not loaded in launchctl.
+         */
+        MissingFlowEntry: {
+            /** Label */
+            label: string;
+            /** Plist Path */
+            plist_path?: string | null;
+            /** Command */
+            command: string;
+        };
+        /**
+         * MissingFlowsResponse
+         * @description Envelope for ``GET /api/v1/schedule/missing``.
+         */
+        MissingFlowsResponse: {
+            /** Missing */
+            missing: components["schemas"]["MissingFlowEntry"][];
+            /** As Of */
+            as_of: string;
+        };
+        /**
          * PendingResponse
          * @description Envelope for ``GET /api/v1/pending``.
          */
         PendingResponse: {
             /** Items */
-            items: (components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"])[];
+            items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"])[];
             /** Counts */
             counts: {
                 [key: string]: number;
@@ -618,34 +1037,25 @@ export interface components {
             last_fire_at?: string | null;
             /** Last Exit Code */
             last_exit_code?: number | null;
+            /** Script Path */
+            script_path?: string | null;
+            /** Log Path */
+            log_path?: string | null;
             /** Is Loaded */
             is_loaded: boolean;
             /** Order */
             order?: number | null;
+            /** Output File */
+            output_file?: string | null;
             /** Depends On */
             depends_on?: string[];
-            /** Inputs Satisfied */
-            inputs_satisfied?: boolean;
+            /**
+             * Inputs Satisfied
+             * @default true
+             */
+            inputs_satisfied: boolean;
             /** Input Status */
             input_status?: components["schemas"]["InputStatus"][];
-        };
-        /**
-         * InputStatus
-         * @description One declared input prerequisite for a scheduled task.
-         */
-        InputStatus: {
-            /** Path */
-            path: string;
-            /** Exists */
-            exists: boolean;
-            /** Count */
-            count: number;
-            /** Age Hours */
-            age_hours: number | null;
-            /** Ok */
-            ok: boolean;
-            /** Reason */
-            reason: string | null;
         };
         /**
          * TriggerResponse
@@ -667,6 +1077,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
     };
     responses: never;
@@ -677,6 +1091,88 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_campaigns_api_v1_campaigns_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignListResponse"];
+                };
+            };
+        };
+    };
+    get_campaign_api_v1_campaigns__name__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_campaign_api_v1_campaigns__name__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_config_api_v1_config_get: {
         parameters: {
             query?: never;
@@ -767,7 +1263,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"];
+                    "application/json": components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"];
                 };
             };
             /** @description Validation Error */
@@ -983,7 +1479,113 @@ export interface operations {
             };
         };
     };
+    get_flows_guide_api_v1_flows_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowGuideResponse"];
+                };
+            };
+        };
+    };
     trigger_schedule_api_v1_schedule__label__trigger_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TriggerResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_missing_flows_api_v1_schedule_missing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissingFlowsResponse"];
+                };
+            };
+        };
+    };
+    get_schedule_log_api_v1_schedule__label__log_get: {
+        parameters: {
+            query?: {
+                lines?: number;
+            };
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogTailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_schedule_artifact_api_v1_schedule__label__artifact_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1000,7 +1602,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TriggerResponse"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -1030,21 +1634,8 @@ export type PendingItem = CommentItem | BlogPostItem | GroupItem;
 export type PendingResponse = components["schemas"]["PendingResponse"];
 export type Channel = components["schemas"]["BlogPostItem"]["channel"];
 export type DecisionResponse = components["schemas"]["DecisionResponse"];
-// Fallback for CommentItem
-export type CommentItem = {
-    id: string;
-    type: "comment";
-    platform: Platform;
-    group_or_hashtag?: string;
-    post_url?: string;
-    post_text: string;
-    draft_comment: string;
-    relevance_score?: number;
-    status: string;
-    decided_by?: "telegram" | "web_ui" | "auto" | null;
-    decided_at?: string | null;
-    created_at?: string | null;
-};
+// CommentItem now exists in components["schemas"] — alias it.
+export type CommentItem = components["schemas"]["CommentItem"];
 export type FacebookGroup = components["schemas"]["FacebookGroup"];
 export type FacebookGroupsResponse = components["schemas"]["FacebookGroupsResponse"];
 export type FacebookGroupUpdateBody = components["schemas"]["FacebookGroupUpdateBody"];
