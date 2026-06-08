@@ -1,6 +1,6 @@
 """Recipe prep stage — produces a WP draft + all social assets, no live publish.
 
-Output: ../campaigns/prepared/<seed-id>/
+Output: <BRAND_DIR>/campaigns/recipes/ready/<seed-id>/
     metadata.json        — wp_draft_id, slug, title, captions, tags
     featured.jpg         — main image (also set as WP featured_media)
     slides/slide_N.jpg   — carousel slides for IG (only if carousel JSON exists)
@@ -15,7 +15,7 @@ or lyrics here.
 
 The cron drainer (scripts/publish_prepared.py) reads this folder, promotes
 the WP draft to publish, pushes IG carousel + FB post, then moves the folder
-to ../campaigns/published/<seed-id>/.
+to <BRAND_DIR>/campaigns/recipes/published/<seed-id>/.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -37,14 +38,39 @@ from generators.lyrics_drafter import draft_lyrics, render_lyrics_md
 from generators.recipe import Recipe, generate_recipe
 from generators.reel import ReelCompositionError, compose_reel
 from generators.seeds import load_seeds
-from publishers.wordpress import WPPublishResult, publish_to_wordpress
+from generators.step_images import inject_step_images
+from publishers.wordpress import (
+    WPPublishResult,
+    publish_to_wordpress,
+    upload_image_to_media_library,
+)
+
+# Reuse carousel slides as in-recipe step images: one image under every Nth
+# numbered instruction step. 0 disables (slides stay social-only — their
+# marketing overlays don't belong in the WP recipe body). Hero stays separate.
+_STEP_IMAGE_EVERY_N = 0
 
 logger = logging.getLogger("recipe_publisher.prepare")
 
 SKILL_DIR = Path(__file__).parent
 STATE_DIR = SKILL_DIR / "state"
 PROJECT_ROOT = SKILL_DIR.parent.parent
-PREPARED_ROOT = PROJECT_ROOT / "campaigns" / "prepared"
+
+
+def _prepared_root() -> Path:
+    """Directory the cron drainer (publish_prepared.py) reads from.
+
+    Must match ``settings.paths.campaigns_dir / "recipes" / "ready"`` in
+    scripts/publish_prepared.py, i.e. ``<BRAND_DIR>/campaigns/recipes/ready``.
+    Resolved from the ``BRAND_DIR`` env (the recipe-publisher convention);
+    falls back to the repo-root campaigns layout when unset.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    base = Path(brand_dir) if brand_dir else PROJECT_ROOT
+    return base / "campaigns" / "recipes" / "ready"
+
+
+PREPARED_ROOT = _prepared_root()
 
 
 def _load_brand_campaign() -> dict[str, Any] | None:
@@ -88,6 +114,27 @@ def _maybe_append_campaign_close(fb_caption: str) -> str:
     if not isinstance(teasers, list) or not isinstance(ctas, list):
         return fb_caption
     return append_teaser_and_cta(fb_caption, list(teasers), list(ctas), rotation_path)
+
+
+_BULLET_RE = re.compile(r"^\s*•.*$", re.MULTILINE)
+_HASHTAG_LINE_RE = re.compile(r"^[\s#].*#\w+.*$", re.MULTILINE)
+_BIO_FALLBACK_RE = re.compile(r"^.*link in bio.*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _fb_caption_from_ig(ig_caption: str) -> str:
+    """Derive an FB-adapted post body from the IG caption.
+
+    Keeps: hook (first line), comment CTA line, engagement question.
+    Strips: bullet lines, bio-link fallback, hashtag block.
+    Replaces "I'll DM you" with "I'll send you" for natural FB phrasing.
+    """
+    text = ig_caption.strip()
+    text = _BULLET_RE.sub("", text)
+    text = _BIO_FALLBACK_RE.sub("", text)
+    text = _HASHTAG_LINE_RE.sub("", text)
+    text = text.replace("I'll DM you", "I'll send you")
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    return "\n\n".join(lines).strip()
 
 
 @dataclass
@@ -249,6 +296,28 @@ def prepare(topic: str, *, force: bool = False) -> PrepareResult:
                 logger.warning("lyrics draft failed for %s: %s", recipe.seed_id, exc)
                 result.warnings.append(f"lyrics draft skipped: {exc}")
 
+        # Reuse the carousel slides as in-recipe step images, auto-placed under
+        # every Nth instruction step. Best-effort — a failure here must not
+        # block the WP draft. Only upload as many slides as steps will use.
+        if slides and _STEP_IMAGE_EVERY_N >= 1:
+            try:
+                needed = len(recipe.steps) // _STEP_IMAGE_EVERY_N
+                step_urls: list[str] = []
+                for idx, slide in enumerate(slides[:needed], 1):
+                    _, src = upload_image_to_media_library(
+                        slide, filename=f"{recipe.slug}-step-{idx}.jpg"
+                    )
+                    step_urls.append(src)
+                recipe.body_markdown = inject_step_images(
+                    recipe.body_markdown, step_urls,
+                    every_n=_STEP_IMAGE_EVERY_N,
+                )
+            except Exception as exc:  # noqa: BLE001 — step images best-effort
+                logger.warning(
+                    "step images skipped for %s: %s", recipe.seed_id, exc
+                )
+                result.warnings.append(f"step images skipped: {exc}")
+
         wp = publish_to_wordpress(recipe, image, status="draft")
         result.wp_draft_id = wp.post_id
         result.wp_admin_url = (
@@ -259,9 +328,45 @@ def prepare(topic: str, *, force: bool = False) -> PrepareResult:
 
         # Save reference artifacts
         (folder / "ig_caption.txt").write_text(recipe.ig_caption, encoding="utf-8")
-        fb = getattr(recipe, "fb_caption", "") or ""
+        fb = getattr(recipe, "fb_caption", "") or _fb_caption_from_ig(recipe.ig_caption)
         fb = _maybe_append_campaign_close(fb)
         (folder / "fb_caption.txt").write_text(fb, encoding="utf-8")
+        fb_dm_reply = (
+            f"Woof! Thanks for commenting. \U0001f43e Here's your printable recipe card"
+            f" for the {recipe.title}:\n"
+            f"\U0001f449 {wp.permalink}\n\n"
+            f"(Just look for the download button on the page!) Happy cooking for your pup! \U0001f955\U0001f436"
+        )
+        (folder / "fb_dm_reply.txt").write_text(fb_dm_reply, encoding="utf-8")
+
+        # Inject song teaser when a cooking-song MP3 exists for this recipe
+        _song_mp3 = folder / f"{folder.name}.mp3"
+        if not _song_mp3.exists():
+            # Also check slides/ subfolder
+            _song_candidates = list((folder / "slides").glob("*.mp3")) if (folder / "slides").exists() else []
+            _song_mp3 = _song_candidates[0] if _song_candidates else None
+
+        if _song_mp3:
+            _SONG_TEASER = "\n🎵 I made a full cooking song for this one — come listen on the recipe page."
+
+            # Append to ig_caption.txt — insert BEFORE the hashtag block
+            ig_path = folder / "ig_caption.txt"
+            ig_text = ig_path.read_text(encoding="utf-8")
+            # Find where hashtags start (line beginning with #)
+            ig_lines = ig_text.splitlines()
+            hashtag_idx = next((i for i, l in enumerate(ig_lines) if l.strip().startswith("#")), None)
+            if hashtag_idx is not None:
+                ig_lines.insert(hashtag_idx, _SONG_TEASER.strip())
+                ig_lines.insert(hashtag_idx, "")  # blank line before teaser
+            else:
+                ig_lines.append(_SONG_TEASER)
+            ig_path.write_text("\n".join(ig_lines), encoding="utf-8")
+
+            # Append to fb_caption.txt
+            fb_path = folder / "fb_caption.txt"
+            fb_text = fb_path.read_text(encoding="utf-8")
+            fb_path.write_text(fb_text.rstrip() + _SONG_TEASER + "\n", encoding="utf-8")
+
         (folder / "recipe_body.html").write_text(recipe.body_markdown, encoding="utf-8")
 
         _atomic_write_json(folder / "metadata.json", _build_metadata(recipe, wp, slide_paths))

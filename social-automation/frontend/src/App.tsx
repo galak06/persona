@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Flows from "./pages/Flows";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
+import Recipes from "./pages/Recipes";
 import Schedule from "./pages/Schedule";
 import Explorer from "./pages/Explorer";
 import FlowGuide from "./pages/FlowGuide";
@@ -29,6 +30,7 @@ export default function App() {
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/inbox" element={<Inbox />} />
           <Route path="/groups" element={<Groups />} />
+          <Route path="/recipes" element={<Recipes />} />
           <Route path="/schedule" element={<Schedule />} />
           <Route path="/explorer" element={<Explorer />} />
           <Route path="/flow-guide" element={<FlowGuide />} />

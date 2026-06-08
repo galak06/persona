@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -37,6 +38,68 @@ from recipe_products import (  # noqa: E402  (lib path inserted above)
 )
 
 logger = logging.getLogger(__name__)
+
+# Pure-HTML/CSS recipe styling injected into the post body so recipes render as
+# a designed page via the Astra theme — no Elementor. Scoped to `.dff-recipe`.
+# Toggle off with DFF_RECIPE_STYLE=0 (falls back to plain HTML).
+_STYLED_RECIPE = os.environ.get("DFF_RECIPE_STYLE", "1") != "0"
+_RECIPE_CSS = (
+    ".dff-recipe{max-width:760px;margin:24px auto;padding:30px 36px;"
+    "background:#fff;border-radius:14px;box-shadow:0 1px 6px rgba(0,0,0,.06);"
+    "color:#2b2b2b;line-height:1.72;font-size:17px}"
+    ".dff-recipe figure{margin:0 0 22px}"
+    ".dff-recipe figure img{width:100%;height:auto;border-radius:12px;display:block}"
+    ".dff-recipe h2{font-size:1.5rem;color:#1f2937;margin:2.2rem 0 .8rem;"
+    "padding-bottom:.4rem;border-bottom:3px solid #fbbf24}"
+    ".dff-recipe h3{font-size:1.12rem;color:#374151;margin:1.4rem 0 .4rem}"
+    ".dff-recipe p{margin:.7rem 0}.dff-recipe a{color:#b45309}"
+    ".dff-recipe ul{list-style:none;padding-left:0;margin:.6rem 0}"
+    ".dff-recipe ul li{position:relative;padding:.4rem 0 .4rem 2rem;"
+    "border-bottom:1px solid #f1f1f1}"
+    ".dff-recipe ul li::before{content:'';position:absolute;left:0;top:.6rem;"
+    "width:18px;height:18px;border:2px solid #f59e0b;border-radius:5px;"
+    "background:#fffbeb}"
+    ".dff-recipe ol{counter-reset:step;list-style:none;padding-left:0}"
+    ".dff-recipe ol>li{position:relative;padding:.45rem 0 .9rem 3rem;"
+    "margin-bottom:.2rem;border-bottom:1px solid #f3f4f6}"
+    ".dff-recipe ol>li::before{counter-increment:step;content:counter(step);"
+    "position:absolute;left:0;top:.3rem;width:30px;height:30px;border-radius:50%;"
+    "background:#b45309;color:#fff;font-weight:700;display:flex;"
+    "align-items:center;justify-content:center;font-size:.95rem}"
+    ".dff-recipe table{width:100%;border-collapse:collapse;margin:1rem 0}"
+    ".dff-recipe th,.dff-recipe td{border:1px solid #e5e7eb;padding:.5rem .7rem;"
+    "text-align:left}.dff-recipe th{background:#fff7ed}"
+    ".dff-recipe a[href$='.pdf']{display:inline-block;background:#ea580c;"
+    "color:#fff!important;text-decoration:none;padding:.7rem 1.3rem;"
+    "border-radius:8px;font-weight:600;margin:1.2rem 0}"
+    ".dff-recipe em{color:#6b7280}"
+    ".dff-song-placeholder{margin:0 0 22px;padding:14px 18px;"
+    "border:2px dashed #fcd34d;border-radius:10px;background:#fffbeb;"
+    "color:#92400e;font-size:.95rem;text-align:center}"
+)
+
+# Song slot shown in the post until the reel's song is generated later; the
+# audio-embed step (lib/recipe_card/wp_audio) replaces it with the real player.
+_SONG_PLACEHOLDER = (
+    "<!-- dogfoodandfun:audio-placeholder -->\n"
+    '<div class="dff-song-placeholder">🎵 Recipe song coming soon — the '
+    "Nalla's Dad original for this recipe drops with the reel.</div>"
+)
+
+
+def _style_recipe_body(inner_html: str) -> str:
+    """Wrap recipe HTML in the styled container + scoped stylesheet.
+
+    Also strips literal markdown task markers (``[ ]``) from ingredient list
+    items — the CSS renders a checkbox bullet instead. Honors DFF_RECIPE_STYLE=0.
+    """
+    inner_html = re.sub(r"(<li>)\s*\[[ xX]\]\s*", r"\1", inner_html)
+    if not _STYLED_RECIPE:
+        return inner_html
+    return (
+        f"<style>{_RECIPE_CSS}</style>\n"
+        f'<div class="dff-recipe">\n{inner_html}\n</div>'
+    )
 
 
 @dataclass
@@ -151,11 +214,12 @@ def _compose_body(recipe: Recipe, image_url: str, alt_text: str) -> str:
         extensions=["extra", "sane_lists", "smarty"],
     )
     html = _maybe_attach_affiliate_block(html, recipe)
+    body = _style_recipe_body(f"{hero}\n\n{_SONG_PLACEHOLDER}\n\n{html}")
     schema_blocks = [_jsonld_block(_recipe_jsonld(recipe, image_url=image_url))]
     faq_schema = _faq_jsonld(recipe)
     if faq_schema is not None:
         schema_blocks.append(_jsonld_block(faq_schema))
-    return f"{hero}\n\n{html}\n\n" + "\n\n".join(schema_blocks) + "\n"
+    return f"{body}\n\n" + "\n\n".join(schema_blocks) + "\n"
 
 
 def _maybe_attach_affiliate_block(html: str, recipe: Recipe) -> str:

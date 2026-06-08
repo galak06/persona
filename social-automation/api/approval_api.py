@@ -43,12 +43,10 @@ from api.schemas import (
     ActivityResponse,
     ApproveBody,
     BlogPostItem,
+    CampaignVerifyItem,
     CommentItem,
     DecisionResponse,
     EditBody,
-    GroupItem,
-    PendingResponse,
-    RejectBody,
     FacebookGroup,
     FacebookGroupsResponse,
     FacebookGroupUpdateBody,
@@ -56,10 +54,16 @@ from api.schemas import (
     FlowGuideResponse,
     FlowsStateResponse,
     FlowState,
+    GroupItem,
+    IdeaItem,
     LogTailResponse,
     MissingFlowEntry,
     MissingFlowsResponse,
+    PendingItem,
+    PendingResponse,
+    RejectBody,
     ScheduleEntry,
+    SeedItem,
     TriggerResponse,
 )
 
@@ -94,6 +98,7 @@ _load_secrets()
 from api import routes_helpers as rh
 from api.campaigns_api import router as _campaigns_router
 from api.recipe_card_api import router as _recipe_card_router
+from api.recipes_api import router as _recipes_router
 from lib import activity_log
 from lib.config import settings
 
@@ -113,6 +118,7 @@ app.add_middleware(
 
 app.include_router(_campaigns_router, prefix="/api/v1/campaigns", tags=["campaigns"])
 app.include_router(_recipe_card_router, prefix="/api/v1")
+app.include_router(_recipes_router, prefix="/api/v1")
 
 
 @app.get("/api/v1/config")
@@ -125,14 +131,19 @@ def get_config():
         "mascot": settings.site.mascot_name,
     }
 
+
 @app.get("/api/v1/pending", response_model=PendingResponse)
 def list_pending() -> PendingResponse:
-    """All blog-post pairs, group-join candidates, and comments awaiting a decision."""
+    """All blog-post pairs, group-join candidates, ideas, seeds, campaign-verify items, and comments awaiting a decision."""
+    from lib import groups_queue
+
     blog_posts_raw = rh.pending_only(state.read_queue(rh.BLOG_POST_QUEUE_PATH))
     comments_raw = rh.pending_only(state.read_queue(rh.COMMENT_QUEUE_PATH))
-    from lib import groups_queue
-    items: list[CommentItem | BlogPostItem | GroupItem] = []
-    
+    ideas_raw = rh.pending_only(state.read_queue(rh.IDEATOR_QUEUE_PATH))
+    campaigns_raw = rh.pending_only(state.read_queue(rh.CAMPAIGN_VERIFY_QUEUE_PATH))
+
+    items: list[CommentItem | BlogPostItem | GroupItem | IdeaItem | SeedItem | CampaignVerifyItem] = []
+
     for raw in comments_raw:
         try:
             items.append(rh.to_comment(raw))
@@ -144,13 +155,32 @@ def list_pending() -> PendingResponse:
             items.append(rh.to_blog_post(raw))
         except (ValueError, TypeError) as exc:
             _log.warning("skipping malformed blog_post %s: %s", raw.get("id"), exc)
-            
+
     items.extend(groups_queue.read_pending_groups())
-    
+
+    for raw in ideas_raw:
+        try:
+            item_type = raw.get("type", "idea")
+            if item_type == "seed":
+                items.append(rh.to_seed(raw))
+            else:
+                items.append(rh.to_idea(raw))
+        except (ValueError, TypeError) as exc:
+            _log.warning("skipping malformed idea/seed %s: %s", raw.get("id"), exc)
+
+    for raw in campaigns_raw:
+        try:
+            items.append(rh.to_campaign_verify(raw))
+        except (ValueError, TypeError) as exc:
+            _log.warning("skipping malformed campaign_verify %s: %s", raw.get("id"), exc)
+
     counts = {
         "comments": sum(1 for i in items if isinstance(i, CommentItem)),
         "blog_posts": sum(1 for i in items if isinstance(i, BlogPostItem)),
         "groups_to_join": sum(1 for i in items if isinstance(i, GroupItem)),
+        "ideas": sum(1 for i in items if isinstance(i, IdeaItem)),
+        "seeds": sum(1 for i in items if isinstance(i, SeedItem)),
+        "campaigns_to_verify": sum(1 for i in items if isinstance(i, CampaignVerifyItem)),
         "total": len(items),
     }
     return PendingResponse(items=items, counts=counts, as_of=rh.now_iso())
@@ -176,7 +206,7 @@ def list_activity(
 
 
 @app.get("/api/v1/items/{item_id}")
-def get_item(item_id: str) -> CommentItem | BlogPostItem | GroupItem:
+def get_item(item_id: str) -> PendingItem:
     """Look up a single item by id."""
     located = rh.queue_for_id(item_id)
     if located is None:
@@ -186,6 +216,12 @@ def get_item(item_id: str) -> CommentItem | BlogPostItem | GroupItem:
         return rh.to_comment(raw)
     if kind == "blog_post":
         return rh.to_blog_post(raw)
+    if kind == "idea":
+        return rh.to_idea(raw)
+    if kind == "seed":
+        return rh.to_seed(raw)
+    if kind == "campaign_verify":
+        return rh.to_campaign_verify(raw)
     return GroupItem.model_validate(raw)
 
 
@@ -202,19 +238,22 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+        assert path is not None  # noqa: S101
         payload = body or ApproveBody()
         return rh.approve_comment(
             path, item_id, decision_status="approved", text=payload.text
         )
     if kind == "blog_post":
-        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+        assert path is not None  # noqa: S101
         payload = body or ApproveBody()
         return rh.approve_blog_post(
             path, item_id, channel=channel, text=payload.text,
             fb_caption=payload.fb_caption, ig_caption=payload.ig_caption,
             decision_status="approved",
         )
+    if kind in ("idea", "seed", "campaign_verify"):
+        assert path is not None  # noqa: S101
+        return rh.approve_generic(path, item_id, decision_status="approved")
     return rh.approve_group(raw, status_value="approved", background_tasks=background_tasks)
 
 
@@ -232,16 +271,19 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+        assert path is not None  # noqa: S101
         return rh.approve_comment(
             path, item_id, decision_status="USER_SKIPPED", text=None
         )
     if kind == "blog_post":
-        assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+        assert path is not None  # noqa: S101
         return rh.approve_blog_post(
             path, item_id, channel=None, text=None,
             fb_caption=None, ig_caption=None, decision_status="USER_SKIPPED",
         )
+    if kind in ("idea", "seed", "campaign_verify"):
+        assert path is not None  # noqa: S101
+        return rh.approve_generic(path, item_id, decision_status="USER_SKIPPED")
     return rh.approve_group(
         raw, status_value="USER_SKIPPED", background_tasks=background_tasks,
     )
@@ -264,7 +306,7 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
-    assert path is not None  # noqa: S101 - narrowed by queue_for_id return contract
+    assert path is not None  # noqa: S101
     if kind == "comment":
         return rh.approve_comment(
             path, item_id, decision_status="edited", text=body.text
@@ -285,6 +327,7 @@ def list_facebook_groups() -> FacebookGroupsResponse:
       - pending_groups.json -> projected with synthetic status="not_joined_yet"
     """
     from lib.io.jsonio import read_json
+
     assert settings.paths is not None  # noqa: S101
     groups: list[FacebookGroup] = []
 
@@ -296,7 +339,7 @@ def list_facebook_groups() -> FacebookGroupsResponse:
         pass
     except Exception as exc:
         _log.error("Failed to read groups tracker: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to read groups tracker")
+        raise HTTPException(status_code=500, detail="Failed to read groups tracker") from exc
 
     try:
         pending_data = read_json(settings.paths.pending_groups, default=[])
@@ -305,11 +348,12 @@ def list_facebook_groups() -> FacebookGroupsResponse:
                 if not isinstance(p, dict):
                     continue
                 mc = p.get("member_count")
+                priv = p.get("privacy")
                 groups.append(FacebookGroup(
-                    group_name=p.get("name", ""),
-                    group_url=p.get("url", ""),
+                    group_name=str(p.get("name", "")),
+                    group_url=str(p.get("url", "")),
                     status="not_joined_yet",
-                    privacy=p.get("privacy"),
+                    privacy=str(priv) if priv is not None else None,
                     member_count=str(mc) if mc is not None else None,
                 ))
     except FileNotFoundError:
@@ -319,16 +363,18 @@ def list_facebook_groups() -> FacebookGroupsResponse:
 
     return FacebookGroupsResponse(groups=groups, total=len(groups), as_of=rh.now_iso())
 
+
 @app.put("/api/v1/facebook/groups/{group_name}", response_model=FacebookGroup)
 def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> FacebookGroup:
     """Update a Facebook group's status."""
+    import json
+
     assert settings.paths is not None  # noqa: S101
     groups_file = settings.paths.groups_tracker
     if not groups_file.exists():
         raise HTTPException(status_code=404, detail="groups tracker not found")
-    import json
     data = json.loads(groups_file.read_text(encoding="utf-8"))
-    
+
     for g in data:
         if g.get("group_name") == group_name:
             if body.status is not None:
@@ -337,7 +383,7 @@ def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> Fac
                 g["posting_mode"] = body.posting_mode
             groups_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
             return FacebookGroup.model_validate(g)
-            
+
     raise HTTPException(status_code=404, detail=f"group {group_name} not found")
 
 
@@ -351,6 +397,7 @@ def health() -> Response:
 def get_flows_state() -> FlowsStateResponse:
     """Aggregate per-flow health + launchd schedule snapshot for the UI."""
     from api.flow_state import collect_flow_states, collect_schedule_state
+
     return FlowsStateResponse(
         flows=[FlowState(**f) for f in collect_flow_states()],
         schedule=[ScheduleEntry(**s) for s in collect_schedule_state()],
@@ -361,6 +408,7 @@ def get_flows_state() -> FlowsStateResponse:
 def get_flows_guide() -> FlowGuideResponse:
     """Static flow descriptions merged with live last-run state."""
     from api.flow_descriptions import FLOW_DESCRIPTIONS
+
     try:
         from api.flow_state import collect_flow_states
         state_by_id: dict[str, dict[str, Any]] = {
@@ -396,6 +444,7 @@ def trigger_schedule(label: str, force: bool = Query(default=False)) -> TriggerR
     carrying ``ok=False`` and the human-readable reason.
     """
     import subprocess
+
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
     if not force:
@@ -417,7 +466,7 @@ def trigger_schedule(label: str, force: bool = Query(default=False)) -> TriggerR
                     label=label,
                 )
     try:
-        result = subprocess.run(  # noqa: S603 - launchctl is a trusted system binary
+        result = subprocess.run(  # noqa: S603
             ["/bin/launchctl", "start", label],
             capture_output=True, text=True, check=False, timeout=10,
         )
@@ -437,7 +486,8 @@ def list_missing_flows() -> MissingFlowsResponse:
     """Return scheduled flows defined in schedule.json that aren't loaded in launchctl."""
     import json
     import subprocess
-    assert settings.paths is not None  # noqa: S101 - BRAND_DIR-bound at startup
+
+    assert settings.paths is not None  # noqa: S101
 
     schedule_file = settings.paths.schedule_file
     if not schedule_file.exists():
@@ -483,7 +533,7 @@ def list_missing_flows() -> MissingFlowsResponse:
     # Query launchctl
     loaded_labels: set[str] = set()
     try:
-        result = subprocess.run(  # noqa: S603 - launchctl is a trusted system binary
+        result = subprocess.run(
             ["/bin/launchctl", "list"],
             capture_output=True, text=True, check=False, timeout=10,
         )
@@ -530,8 +580,8 @@ def get_schedule_log(
     try:
         with plist_path.open("rb") as f:
             plist = plistlib.load(f)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"label {label} not found")
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"label {label} not found") from exc
 
     log_path_str = plist.get("StandardOutPath")
     if not log_path_str:
@@ -568,7 +618,8 @@ def get_schedule_artifact(label: str) -> dict[str, Any]:
 
     Securely reads only files declared in schedule.json as output_file.
     """
-    from api.schedule_config import task_for_label, load_schedule_config
+    from api.schedule_config import load_schedule_config, task_for_label
+    from lib.io.jsonio import read_json
 
     config = load_schedule_config()
     task = task_for_label(label, config)
@@ -579,21 +630,24 @@ def get_schedule_artifact(label: str) -> dict[str, Any]:
     if not output_file:
         raise HTTPException(status_code=404, detail=f"No output_file defined for {label}")
 
-    path = (rh.paths().brand_dir / output_file).resolve()
+    if settings.paths is None:
+        raise HTTPException(status_code=500, detail="BRAND_DIR not resolved")
+    brand_dir = settings.paths.brand_dir
+    path = (brand_dir / output_file).resolve()
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"Artifact {output_file} not found on disk")
 
     # Safety: ensure path is inside brand_dir
-    if rh.paths().brand_dir not in path.parents:
+    if brand_dir not in path.parents:
         raise HTTPException(status_code=403, detail="Forbidden: path traversal detected")
 
     try:
-        data = rh.read_json(path)
+        data = read_json(path, default=None)
         if data is None:
-             raise HTTPException(status_code=500, detail=f"Could not parse {output_file} as JSON")
+            raise HTTPException(status_code=500, detail=f"Could not parse {output_file} as JSON")
         return {"label": label, "path": output_file, "data": data}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error reading artifact: {exc}")
+        raise HTTPException(status_code=500, detail=f"Error reading artifact: {exc}") from exc
 
 
 if __name__ == "__main__":  # pragma: no cover - manual run path

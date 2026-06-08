@@ -73,6 +73,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webhooks/recipe-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recipe Card Webhook
+         * @description Accept a WordPress publish event and queue PDF generation.
+         */
+        post: operations["recipe_card_webhook_api_v1_webhooks_recipe_card_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recipes
+         * @description List stored recipes (alphabetical) with optional filters.
+         */
+        get: operations["list_recipes_api_v1_recipes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recipe
+         * @description Full detail for one recipe, including ingredients and steps.
+         */
+        get: operations["get_recipe_api_v1_recipes__recipe_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/sync-publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Publish
+         * @description Refresh each recipe's publish status from the publish records.
+         *
+         *     Reads the brand's ``campaigns/**\/metadata.json`` and
+         *     ``published_recipes.json`` and writes per-channel status onto matching
+         *     recipe rows. Idempotent and safe to call repeatedly.
+         */
+        post: operations["sync_publish_api_v1_recipes_sync_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config": {
         parameters: {
             query?: never;
@@ -102,7 +186,7 @@ export interface paths {
         };
         /**
          * List Pending
-         * @description All blog-post pairs, group-join candidates, and comments awaiting a decision.
+         * @description All blog-post pairs, group-join candidates, ideas, seeds, campaign-verify items, and comments awaiting a decision.
          */
         get: operations["list_pending_api_v1_pending_get"];
         put?: never;
@@ -652,6 +736,51 @@ export interface components {
             has_publish_tasks: boolean;
         };
         /**
+         * CampaignVerifyItem
+         * @description A campaign awaiting final human verification before publish.
+         */
+        CampaignVerifyItem: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "campaign_verify";
+            /**
+             * Seed Id
+             * @default
+             */
+            seed_id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Wp Draft Url
+             * @default
+             */
+            wp_draft_url: string;
+            /** Audio Size Kb */
+            audio_size_kb?: number | null;
+            /** Slide Count */
+            slide_count?: number | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * CommentItem
          * @description A Facebook / Instagram / WordPress engagement comment.
          *
@@ -924,6 +1053,59 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * IdeaItem
+         * @description A recipe/content idea from the ideator queue awaiting approval.
+         */
+        IdeaItem: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "idea";
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Why Now
+             * @default
+             */
+            why_now: string;
+            /**
+             * Evidence
+             * @default
+             */
+            evidence: string;
+            /** Seasonal Relevance */
+            seasonal_relevance?: number | null;
+            /**
+             * Search Demand Estimate
+             * @default
+             */
+            search_demand_estimate: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * InputStatus
          * @description Per-input freshness check result for a scheduled task.
          *
@@ -1000,13 +1182,275 @@ export interface components {
          */
         PendingResponse: {
             /** Items */
-            items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"])[];
+            items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"])[];
             /** Counts */
             counts: {
                 [key: string]: number;
             };
             /** As Of */
             as_of: string;
+        };
+        /**
+         * PublishChannel
+         * @description Publish state for one channel (wp / pdf / ig / fb).
+         */
+        PublishChannel: {
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
+            /**
+             * At
+             * @default
+             */
+            at: string;
+        };
+        /** RecipeCardWebhookPayload */
+        RecipeCardWebhookPayload: {
+            /** Post Id */
+            post_id: number;
+            /** Post Status */
+            post_status: string;
+            /**
+             * Post Type
+             * @default post
+             */
+            post_type: string;
+        };
+        /**
+         * RecipeDetail
+         * @description Full recipe payload for ``GET /api/v1/recipes/{id}``.
+         */
+        RecipeDetail: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Artifacts Path
+             * @default
+             */
+            artifacts_path: string;
+            /**
+             * Wp Url
+             * @default
+             */
+            wp_url: string;
+            /**
+             * Ig Url
+             * @default
+             */
+            ig_url: string;
+            /**
+             * Fb Url
+             * @default
+             */
+            fb_url: string;
+            /**
+             * Published At
+             * @default
+             */
+            published_at: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Dog Safe
+             * @default false
+             */
+            dog_safe: boolean;
+            /** Toxic Flags */
+            toxic_flags?: string[];
+            /** Status */
+            status: string;
+            /**
+             * Source Url
+             * @default
+             */
+            source_url: string;
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * Prep Minutes
+             * @default 0
+             */
+            prep_minutes: number;
+            /**
+             * Cook Minutes
+             * @default 0
+             */
+            cook_minutes: number;
+            /**
+             * Total Minutes
+             * @default 0
+             */
+            total_minutes: number;
+            /**
+             * Servings
+             * @default
+             */
+            servings: string;
+            /** Publish Status */
+            publish_status?: {
+                [key: string]: components["schemas"]["PublishChannel"];
+            };
+            /** Ingredients */
+            ingredients?: components["schemas"]["RecipeIngredient"][];
+            /** Steps */
+            steps?: string[];
+            /** Nutrition */
+            nutrition?: {
+                [key: string]: string;
+            };
+            /** Tags */
+            tags?: string[];
+            /**
+             * Hero Image Url
+             * @default
+             */
+            hero_image_url: string;
+        };
+        /**
+         * RecipeIngredient
+         * @description A single ingredient line from a scraped recipe.
+         */
+        RecipeIngredient: {
+            /** Item */
+            item: string;
+            /**
+             * Qty
+             * @default
+             */
+            qty: string;
+            /**
+             * Unit
+             * @default
+             */
+            unit: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
+        /**
+         * RecipeSummary
+         * @description List-row view of a stored recipe (no ingredients/steps).
+         */
+        RecipeSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Artifacts Path
+             * @default
+             */
+            artifacts_path: string;
+            /**
+             * Wp Url
+             * @default
+             */
+            wp_url: string;
+            /**
+             * Ig Url
+             * @default
+             */
+            ig_url: string;
+            /**
+             * Fb Url
+             * @default
+             */
+            fb_url: string;
+            /**
+             * Published At
+             * @default
+             */
+            published_at: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Dog Safe
+             * @default false
+             */
+            dog_safe: boolean;
+            /** Toxic Flags */
+            toxic_flags?: string[];
+            /** Status */
+            status: string;
+            /**
+             * Source Url
+             * @default
+             */
+            source_url: string;
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * Prep Minutes
+             * @default 0
+             */
+            prep_minutes: number;
+            /**
+             * Cook Minutes
+             * @default 0
+             */
+            cook_minutes: number;
+            /**
+             * Total Minutes
+             * @default 0
+             */
+            total_minutes: number;
+            /**
+             * Servings
+             * @default
+             */
+            servings: string;
+            /** Publish Status */
+            publish_status?: {
+                [key: string]: components["schemas"]["PublishChannel"];
+            };
+        };
+        /**
+         * RecipesResponse
+         * @description Envelope for ``GET /api/v1/recipes``.
+         */
+        RecipesResponse: {
+            /** Recipes */
+            recipes: components["schemas"]["RecipeSummary"][];
+            /** Total */
+            total: number;
         };
         /**
          * RejectBody
@@ -1056,6 +1500,76 @@ export interface components {
             inputs_satisfied: boolean;
             /** Input Status */
             input_status?: components["schemas"]["InputStatus"][];
+        };
+        /**
+         * SeedItem
+         * @description A recipe seed awaiting approval before full campaign generation.
+         */
+        SeedItem: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "seed";
+            /**
+             * Seed Id
+             * @default
+             */
+            seed_id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Ingredients
+             * @default []
+             */
+            ingredients: string[];
+            /** Prep Minutes */
+            prep_minutes?: number | null;
+            /** Cook Minutes */
+            cook_minutes?: number | null;
+            /**
+             * Yield Servings
+             * @default
+             */
+            yield_servings: string;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Dog Safety Notes
+             * @default
+             */
+            dog_safety_notes: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * SyncResponse
+         * @description Result of POST /api/v1/recipes/sync-publish.
+         */
+        SyncResponse: {
+            /** Updated */
+            updated: number;
+            /** Total */
+            total: number;
         };
         /**
          * TriggerResponse
@@ -1173,6 +1687,126 @@ export interface operations {
             };
         };
     };
+    recipe_card_webhook_api_v1_webhooks_recipe_card_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeCardWebhookPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_recipes_api_v1_recipes_get: {
+        parameters: {
+            query?: {
+                /** @description filter by pipeline status */
+                status?: string | null;
+                /** @description filter by safety verdict */
+                dog_safe?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_recipe_api_v1_recipes__recipe_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_publish_api_v1_recipes_sync_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResponse"];
+                };
+            };
+        };
+    };
     get_config_api_v1_config_get: {
         parameters: {
             query?: never;
@@ -1263,7 +1897,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"];
+                    "application/json": components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"];
                 };
             };
             /** @description Validation Error */
@@ -1619,56 +2253,3 @@ export interface operations {
         };
     };
 }
-
-// ----------------------------------------------------------------------
-// Manual type aliases (re-appended after openapi-typescript regen).
-// Mirrors the original hand-rolled tail; keep in sync with backend.
-// ----------------------------------------------------------------------
-export type ActivityAction = components["schemas"]["ActivityEntry"]["action"];
-export type ActivityEntry = components["schemas"]["ActivityEntry"];
-export type ActivityResponse = components["schemas"]["ActivityResponse"];
-export type Platform = components["schemas"]["ActivityEntry"]["platform"];
-export type BlogPostItem = components["schemas"]["BlogPostItem"];
-export type GroupItem = components["schemas"]["GroupItem"];
-export type PendingItem = CommentItem | BlogPostItem | GroupItem;
-export type PendingResponse = components["schemas"]["PendingResponse"];
-export type Channel = components["schemas"]["BlogPostItem"]["channel"];
-export type DecisionResponse = components["schemas"]["DecisionResponse"];
-// CommentItem now exists in components["schemas"] — alias it.
-export type CommentItem = components["schemas"]["CommentItem"];
-export type FacebookGroup = components["schemas"]["FacebookGroup"];
-export type FacebookGroupsResponse = components["schemas"]["FacebookGroupsResponse"];
-export type FacebookGroupUpdateBody = components["schemas"]["FacebookGroupUpdateBody"];
-
-// ----------------------------------------------------------------------
-// Hand-written types — backend exposes these but openapi.json hasn't
-// been regenerated yet. Mirror the pydantic models in api/schemas.py.
-// ----------------------------------------------------------------------
-export interface LogTailResponse {
-    label: string;
-    path: string | null;
-    lines: string[];
-    truncated: boolean;
-}
-
-export interface MissingFlowEntry {
-    label: string;
-    plist_path: string | null;
-    command: string;
-}
-
-export interface MissingFlowsResponse {
-    missing: MissingFlowEntry[];
-    as_of: string;
-}
-
-/** Extension of components["schemas"]["ScheduleEntry"] with fields not yet
- *  reflected in openapi.json. Backend already returns these per the
- *  Phase-6 server changes. */
-export type ScheduleEntry = components["schemas"]["ScheduleEntry"] & {
-    script_path?: string | null;
-    log_path?: string | null;
-    output_file?: string | null;
-};
-
-export type InputStatus = components["schemas"]["InputStatus"];

@@ -23,6 +23,7 @@ const TABS: readonly TabSpec[] = [
   { to: "/campaigns", label: "Campaigns" },
   { to: "/inbox", label: "Inbox" },
   { to: "/groups", label: "FB Groups" },
+  { to: "/recipes", label: "Recipes" },
   { to: "/schedule", label: "Schedule" },
   { to: "/explorer", label: "Explorer" },
   { to: "/flow-guide", label: "Flow Guide" },
