@@ -1193,6 +1193,10 @@ export interface components {
         /**
          * PublishChannel
          * @description Publish state for one channel (wp / pdf / ig / fb).
+         *
+         *     IG-only extras (``caption`` / ``reel_url`` / ``post_url``) carry the
+         *     Instagram single-image post + reel split surfaced in the UI popup. They
+         *     stay empty for the other channels.
          */
         PublishChannel: {
             /**
@@ -1215,6 +1219,21 @@ export interface components {
              * @default
              */
             at: string;
+            /**
+             * Caption
+             * @default
+             */
+            caption: string;
+            /**
+             * Reel Url
+             * @default
+             */
+            reel_url: string;
+            /**
+             * Post Url
+             * @default
+             */
+            post_url: string;
         };
         /** RecipeCardWebhookPayload */
         RecipeCardWebhookPayload: {

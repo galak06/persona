@@ -50,10 +50,17 @@ def build_publish_status(
     fb_url = _s("fb_page_post_permalink") or _s("fb_reel_permalink")
     fb_ref = _s("fb_page_post_id") or _s("fb_reel_post_id")
     fb_pub = bool(fb_url or fb_ref)
+    # IG is a single-image post + a reel sharing one drafted caption. The reel
+    # publishes today; the image post is wired later, so post_url stays empty.
+    # caption is kept even when nothing is live yet (badge grey, popup shows it).
+    ig = _channel(ig_pub, ig_url, ig_ref, at)
+    ig["caption"] = _s("ig_caption")
+    ig["reel_url"] = ig_url
+    ig["post_url"] = _s("ig_post_permalink") or _s("ig_post_url")
     return {
         "wp": _channel(wp_pub, wp_url, wp_ref, at),
         "pdf": _channel(wp_pub, wp_url, wp_ref, at),  # tied to WP recipe card
-        "ig": _channel(ig_pub, ig_url, ig_ref, at),
+        "ig": ig,
         "fb": _channel(fb_pub, fb_url, fb_ref, at),
     }
 

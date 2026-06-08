@@ -130,15 +130,17 @@ def _publish_status(
     at = str(meta.get("published_at") or "")
     link = post.get("link", "")
     pid = post.get("id", "")
-    ig_pub = bool(meta.get("ig_reel_media_id") or meta.get("ig_reel_permalink"))
+    ig_reel = str(meta.get("ig_reel_permalink") or "")
+    ig_pub = bool(meta.get("ig_reel_media_id") or ig_reel)
     fb_pub = bool(meta.get("fb_page_post_id") or meta.get("fb_page_post_permalink"))
+    ig = _channel(ig_pub, ig_reel, str(meta.get("ig_reel_media_id") or ""), at)
+    ig["caption"] = str(meta.get("ig_caption") or "")
+    ig["reel_url"] = ig_reel
+    ig["post_url"] = str(meta.get("ig_post_permalink") or "")
     return {
         "wp": _channel(True, link, pid, at),
         "pdf": _channel(pdf, link, pid, at),
-        "ig": _channel(
-            ig_pub, str(meta.get("ig_reel_permalink") or ""),
-            str(meta.get("ig_reel_media_id") or ""), at,
-        ),
+        "ig": ig,
         "fb": _channel(
             fb_pub, str(meta.get("fb_page_post_permalink") or ""),
             str(meta.get("fb_page_post_id") or ""), at,

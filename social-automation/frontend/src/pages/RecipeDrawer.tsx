@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CHANNEL_LABELS,
   PUBLISH_CHANNELS,
@@ -17,11 +18,23 @@ export function SafetyBadge({ safe }: { safe: boolean }) {
   );
 }
 
-/** Four small per-channel publish pills (WP / PDF / IG / FB). */
+/** True when an IG channel has anything worth showing in the popup. */
+function hasIgContent(c?: PublishChannel): boolean {
+  return !!c && !!(c.caption || c.reel_url || c.post_url || c.url);
+}
+
+/**
+ * Four small per-channel publish pills (WP / PDF / IG / FB).
+ *
+ * The IG pill opens a popup (image post + caption + reel) via `onIgClick`
+ * instead of a plain link; the other channels link straight to their URL.
+ */
 export function PublishBadges({
   status,
+  onIgClick,
 }: {
   status?: { [key: string]: PublishChannel };
+  onIgClick?: (ig: PublishChannel) => void;
 }) {
   return (
     <div className="flex gap-1">
@@ -29,7 +42,11 @@ export function PublishBadges({
         const c = status?.[ch];
         const published = c?.state === "published";
         const label = CHANNEL_LABELS[ch];
-        const clickable = published && !!c?.url;
+        const isIg = ch === "ig";
+        const igInteractive = isIg && !!onIgClick && hasIgContent(c);
+        const linkClickable =
+          published && !!c?.url && !(isIg && !!onIgClick);
+        const clickable = igInteractive || linkClickable;
         const pill = (
           <span
             className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
@@ -41,12 +58,28 @@ export function PublishBadges({
             {label}
           </span>
         );
+        if (igInteractive && c) {
+          return (
+            <button
+              key={ch}
+              type="button"
+              title={`${label} — view post, caption & reel`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onIgClick?.(c);
+              }}
+              className="appearance-none border-0 bg-transparent p-0"
+            >
+              {pill}
+            </button>
+          );
+        }
         return (
           <span
             key={ch}
             title={`${label} ${published ? "published" : "not published"}`}
           >
-            {published && c?.url ? (
+            {linkClickable && c?.url ? (
               <a
                 href={c.url}
                 target="_blank"
@@ -65,6 +98,85 @@ export function PublishBadges({
   );
 }
 
+/** A single link/placeholder row inside the IG popup. */
+function IgLink({
+  icon,
+  label,
+  url,
+}: {
+  icon: string;
+  label: string;
+  url: string;
+}) {
+  if (url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="flex items-center gap-2 rounded-md bg-pink-50 px-3 py-2 text-sm text-pink-700 hover:bg-pink-100"
+      >
+        <span>{icon}</span>
+        {label} ↗
+      </a>
+    );
+  }
+  return (
+    <span className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-400">
+      <span>{icon}</span>
+      {label} — not posted yet
+    </span>
+  );
+}
+
+/** Popup showing the IG image post + reel links and the drafted caption. */
+export function IgModal({
+  ig,
+  onClose,
+}: {
+  ig: PublishChannel;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden />
+      <div
+        className="relative z-[61] m-4 w-full max-w-md max-h-[85vh] overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 font-semibold text-slate-800">
+            <span>📸</span> Instagram
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-2">
+          <IgLink icon="🖼️" label="Image post" url={ig.post_url} />
+          <IgLink icon="🎬" label="Reel" url={ig.reel_url || ig.url} />
+        </div>
+
+        <div className="text-xs font-medium text-slate-500 mb-1">Caption</div>
+        {ig.caption ? (
+          <pre className="whitespace-pre-wrap rounded bg-slate-50 p-3 font-sans text-sm text-slate-700">
+            {ig.caption}
+          </pre>
+        ) : (
+          <div className="text-sm text-slate-400">No caption drafted yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RecipeDrawer({
   recipe,
   loading,
@@ -74,6 +186,7 @@ export function RecipeDrawer({
   loading: boolean;
   onClose: () => void;
 }) {
+  const [igModal, setIgModal] = useState<PublishChannel | null>(null);
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div
@@ -107,7 +220,10 @@ export function RecipeDrawer({
 
             <h3 className="font-medium text-slate-700 mb-1">Publishing</h3>
             <div className="mb-2">
-              <PublishBadges status={recipe.publish_status} />
+              <PublishBadges
+                status={recipe.publish_status}
+                onIgClick={setIgModal}
+              />
             </div>
             <ul className="text-xs text-slate-500 mb-4 space-y-0.5">
               {PUBLISH_CHANNELS.map((ch) => {
@@ -189,6 +305,9 @@ export function RecipeDrawer({
           </div>
         )}
       </div>
+      {igModal && (
+        <IgModal ig={igModal} onClose={() => setIgModal(null)} />
+      )}
     </div>
   );
 }

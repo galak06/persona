@@ -3,11 +3,17 @@ import {
   fetchRecipe,
   fetchRecipes,
   syncPublishStatus,
+  type PublishChannel,
   type RecipeDetail,
   type RecipeSummary,
 } from "../api/recipes";
 import { getErrorMessage } from "../api/client";
-import { PublishBadges, RecipeDrawer, SafetyBadge } from "./RecipeDrawer";
+import {
+  IgModal,
+  PublishBadges,
+  RecipeDrawer,
+  SafetyBadge,
+} from "./RecipeDrawer";
 
 type SafetyFilter = "all" | "safe" | "flagged";
 
@@ -26,6 +32,7 @@ export default function Recipes() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [igModal, setIgModal] = useState<PublishChannel | null>(null);
 
   useEffect(() => {
     void load();
@@ -183,7 +190,10 @@ export default function Recipes() {
                   )}
                 </td>
                 <td className="px-4 py-2">
-                  <PublishBadges status={r.publish_status} />
+                  <PublishBadges
+                    status={r.publish_status}
+                    onIgClick={setIgModal}
+                  />
                   {r.published_at && (
                     <span className="block text-xs text-slate-400 mt-0.5">
                       {r.published_at.slice(0, 10)}
@@ -209,6 +219,10 @@ export default function Recipes() {
           loading={detailLoading}
           onClose={() => setSelected(null)}
         />
+      )}
+
+      {igModal && (
+        <IgModal ig={igModal} onClose={() => setIgModal(null)} />
       )}
     </div>
   );

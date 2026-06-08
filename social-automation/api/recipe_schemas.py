@@ -19,12 +19,20 @@ class RecipeIngredient(BaseModel):
 
 
 class PublishChannel(BaseModel):
-    """Publish state for one channel (wp / pdf / ig / fb)."""
+    """Publish state for one channel (wp / pdf / ig / fb).
+
+    IG-only extras (``caption`` / ``reel_url`` / ``post_url``) carry the
+    Instagram single-image post + reel split surfaced in the UI popup. They
+    stay empty for the other channels.
+    """
 
     state: str = ""  # "published" | "" (not published)
     url: str = ""
     ref: str = ""
     at: str = ""
+    caption: str = ""  # IG: drafted caption text
+    reel_url: str = ""  # IG: reel permalink
+    post_url: str = ""  # IG: single-image post permalink (empty until posted)
 
 
 class SyncResponse(BaseModel):
