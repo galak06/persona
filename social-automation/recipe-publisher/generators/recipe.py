@@ -202,11 +202,6 @@ def _validate(recipe: Recipe) -> None:
             "ig_caption missing comment-gated CTA like 'Comment RECIPE' "
             "(uppercase keyword after 'Comment ')"
         )
-    if "link in bio" not in recipe.ig_caption.lower():
-        raise ValueError(
-            "ig_caption missing bio-link fallback line "
-            "(expected '\U0001f517 Full guide: link in bio' between question and hashtags)"
-        )
     for tag in ("#nallasdad", "#dogfoodandfun"):
         if tag not in recipe.ig_caption:
             raise ValueError(f"ig_caption missing required branded hashtag {tag!r}")

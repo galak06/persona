@@ -93,8 +93,7 @@ Strict structure — every section is there to drive either a **new follow** or 
 2. **Three bullet facts**, each starting with `•`. Time, macros, ingredient count, or specific behavior. Concrete wins, not opinions.
 3. **Comment-gated CTA** — one line, keyword in UPPERCASE: `Comment RECIPE and I'll DM you the link to the printable card.` (or `Comment BAKE` / `Comment CHEWS`, etc. — pick a verb that fits.)
 4. **One specific question** — not "what do you think?". Substitutions, reactions, memories.
-5. **Bio-link fallback** — exactly this line on its own: `🔗 Full guide: link in bio`. Fallback path for non-commenters; goes after the question, before the hashtags.
-6. **Blank line, then 8–12 hashtags** mixing broad (`#doglife`) / niche (`#dogrecipes`) / branded. Must include `#nallasdad` and `#dogfoodandfun`.
+5. **Blank line, then 8–12 hashtags** mixing broad (`#doglife`) / niche (`#dogrecipes`) / branded. Must include `#nallasdad` and `#dogfoodandfun`.
 
 Match the post's warmth; IG is not a different brand.
 

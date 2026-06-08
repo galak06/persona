@@ -304,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--prepare",
         action="store_true",
-        help="prepare-only: WP draft + carousel + captions + templates → campaigns/prepared/<seed-id>/, no IG/FB push",
+        help="prepare-only: WP draft + carousel + captions + templates → campaigns/recipes/ready/<seed-id>/, no IG/FB push",
     )
     parser.add_argument(
         "--force",

@@ -15,11 +15,20 @@ import LoadingState from "../../components/ui/LoadingState";
 import Spinner from "../../components/ui/Spinner";
 import { endpoints } from "../../api/endpoints";
 import { useApiQuery } from "../../hooks/useApiQuery";
-import type { PendingItem, PendingResponse } from "../../types/openapi";
+import type {
+  CampaignVerifyItem,
+  IdeaItem,
+  PendingItem,
+  PendingResponse,
+  SeedItem,
+} from "../../types/openapi";
 
 import BlogPostCard from "./BlogPostCard";
+import { CampaignVerifyCard } from "./CampaignVerifyCard";
 import CommentCard from "./CommentCard";
 import GroupCard from "./GroupCard";
+import { IdeaCard } from "./IdeaCard";
+import { SeedCard } from "./SeedCard";
 import { relativeTime } from "./shared";
 
 const POLL_MS = 3000;
@@ -78,7 +87,14 @@ export default function PendingTab(): React.JSX.Element {
     );
   }
 
-  const counts = data?.counts ?? { comments: 0, blog_posts: 0, groups_to_join: 0 };
+  const counts = data?.counts ?? {
+    comments: 0,
+    blog_posts: 0,
+    groups_to_join: 0,
+    ideas: 0,
+    seeds: 0,
+    campaigns_to_verify: 0,
+  };
   const totalPending = visibleItems.length;
   const asOf = data?.as_of ?? null;
 
@@ -86,9 +102,12 @@ export default function PendingTab(): React.JSX.Element {
     <div className="space-y-4">
       <Header
         total={totalPending}
-        comments={counts.comments}
-        blogPosts={counts.blog_posts}
-        groups={counts.groups_to_join}
+        comments={counts.comments ?? 0}
+        blogPosts={counts.blog_posts ?? 0}
+        groups={counts.groups_to_join ?? 0}
+        ideas={counts.ideas ?? 0}
+        seeds={counts.seeds ?? 0}
+        campaignsToVerify={counts.campaigns_to_verify ?? 0}
         asOf={asOf}
         refreshing={loading}
         onRefresh={handleManualRefresh}
@@ -135,6 +154,30 @@ export default function PendingTab(): React.JSX.Element {
                     onResolved={markResolved}
                   />
                 );
+              case "idea":
+                return (
+                  <IdeaCard
+                    key={item.id}
+                    item={item as IdeaItem}
+                    onDecision={markResolved}
+                  />
+                );
+              case "seed":
+                return (
+                  <SeedCard
+                    key={item.id}
+                    item={item as SeedItem}
+                    onDecision={markResolved}
+                  />
+                );
+              case "campaign_verify":
+                return (
+                  <CampaignVerifyCard
+                    key={item.id}
+                    item={item as CampaignVerifyItem}
+                    onDecision={markResolved}
+                  />
+                );
             }
           })}
         </div>
@@ -148,6 +191,9 @@ interface HeaderProps {
   comments: number;
   blogPosts: number;
   groups: number;
+  ideas: number;
+  seeds: number;
+  campaignsToVerify: number;
   asOf: string | null;
   refreshing: boolean;
   onRefresh: () => void;
@@ -158,10 +204,22 @@ function Header({
   comments,
   blogPosts,
   groups,
+  ideas,
+  seeds,
+  campaignsToVerify,
   asOf,
   refreshing,
   onRefresh,
 }: HeaderProps): React.JSX.Element {
+  const parts: string[] = [
+    `${comments} ${comments === 1 ? "comment" : "comments"}`,
+    `${blogPosts} blog ${blogPosts === 1 ? "post" : "posts"}`,
+    `${groups} ${groups === 1 ? "group" : "groups"}`,
+    `${ideas} ${ideas === 1 ? "idea" : "ideas"}`,
+    `${seeds} ${seeds === 1 ? "seed" : "seeds"}`,
+    `${campaignsToVerify} ${campaignsToVerify === 1 ? "campaign" : "campaigns"} to verify`,
+  ];
+
   return (
     <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card px-5 py-4 flex flex-wrap items-center justify-between gap-3">
       <div className="flex items-baseline gap-3 min-w-0">
@@ -172,8 +230,7 @@ function Header({
           pending
           <span className="text-slate-400">
             {" "}
-            ({comments} {comments === 1 ? "comment" : "comments"}, {blogPosts} blog {blogPosts === 1 ? "post" : "posts"}, {groups}{" "}
-            {groups === 1 ? "group" : "groups"})
+            ({parts.join(", ")})
           </span>
         </span>
       </div>

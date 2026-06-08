@@ -57,6 +57,8 @@ from notifier import (
     skill_started,
 )
 
+if settings.paths is None:
+    raise RuntimeError("Brand paths not resolved — check config.json")
 QUEUE_FILE = settings.paths.comment_queue
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 SESSION_FB = settings.paths.facebook_session
@@ -126,10 +128,10 @@ def _setup_phoenix_tracing() -> bool:
         project = os.environ.get("PHOENIX_PROJECT_NAME", "comment-composer")
         tracer_provider = register(project_name=project, endpoint=endpoint, auto_instrument=False)
         LangChainInstrumentor().instrument(tracer_provider=tracer_provider, skip_dep_check=True)
-        print(f"[phoenix] tracing → {endpoint} (project: {project})")
+        log.info("[phoenix] tracing -> %s (project: %s)", endpoint, project)
         return True
     except Exception as e:
-        print(f"[phoenix] tracing setup failed: {e} — continuing without traces")
+        log.warning("[phoenix] tracing setup failed: %s — continuing without traces", e)
         return False
 
 
@@ -179,9 +181,9 @@ def _stream_graph(graph, stream_input, cfg) -> tuple[dict, dict | None]:
             for node_name, delta in payload.items():
                 if node_name == "__interrupt__":
                     interrupt_payload = _extract_interrupt(payload)
-                    print("  · __interrupt__: paused awaiting approval")
+                    log.info("  · __interrupt__: paused awaiting approval")
                 else:
-                    print(f"  · {prefix}{node_name}: {_summarize_delta(delta)}")
+                    log.info("  · %s%s: %s", prefix, node_name, _summarize_delta(delta))
         else:  # values
             if not ns:
                 final_state = payload
@@ -216,7 +218,7 @@ def main() -> None:
     queue = json.loads(QUEUE_FILE.read_text()) if QUEUE_FILE.exists() else []
     pending = [q for q in queue if q.get("status") == "pending"]
     if not pending:
-        print("no pending items")
+        log.info("no pending items")
         return
 
     ctx = Context(previously_posted=posted_targets(), dry_run=args.dry_run)
@@ -252,10 +254,10 @@ def main() -> None:
                     rec["offset"], rec["draft"], max_seconds=APPROVAL_POLL_SECONDS_RESUME
                 )
                 if not reply:
-                    print(f"  [{thread_id}] no reply yet — staying paused")
+                    log.info("  [%s] no reply yet — staying paused", thread_id)
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
                     continue
-                print(f"  [{thread_id}] reply received: {reply['action']} — resuming")
+                log.info("  [%s] reply received: %s — resuming", thread_id, reply["action"])
                 final_state, _ = _stream_graph(graph, Command(resume=reply), cfg)
                 # Find the queue item for this thread and apply
                 pid = thread_id.removeprefix("queue-")
@@ -264,7 +266,7 @@ def main() -> None:
                     decision = _apply_decision(qitem, final_state)
                     counts[decision] = counts.get(decision, 0) + 1
                     target = qitem.get("group_name") or qitem.get("hashtag", "?")
-                    print(f"  [{decision}] {target}\n")
+                    log.info("  [%s] %s", decision, target)
                 pending_approvals.pop(thread_id, None)
                 _save_pending_approvals(pending_approvals)
                 QUEUE_FILE.write_text(json.dumps(queue, indent=2))
@@ -288,8 +290,10 @@ def main() -> None:
                     relevance_score=interrupt_payload["relevance_score"],
                 )
                 if not send_result.get("sent"):
-                    print(
-                        f"  [{thread_id}] approval send failed ({send_result.get('reason')}) — keeping pending"
+                    log.warning(
+                        "  [%s] approval send failed (%s) — keeping pending",
+                        thread_id,
+                        send_result.get("reason"),
                     )
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
                     continue
@@ -310,8 +314,10 @@ def main() -> None:
                     }
                     if not args.dry_run:
                         _save_pending_approvals(pending_approvals)
-                    print(
-                        f"  [{thread_id}] no reply within {APPROVAL_POLL_SECONDS_FRESH}s — paused for next run"
+                    log.info(
+                        "  [%s] no reply within %ss — paused for next run",
+                        thread_id,
+                        APPROVAL_POLL_SECONDS_FRESH,
                     )
                     counts["approval_pending"] = counts.get("approval_pending", 0) + 1
                     continue
@@ -319,12 +325,12 @@ def main() -> None:
             decision = _apply_decision(item, final_state)
             counts[decision] = counts.get(decision, 0) + 1
             target = item.get("group_name") or item.get("hashtag", "?")
-            print(f"  [{decision}] {target}\n")
+            log.info("  [%s] %s", decision, target)
             if not args.dry_run:
                 QUEUE_FILE.write_text(json.dumps(queue, indent=2))
 
     summary = " ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-    print(f"=== done === {summary}")
+    log.info("=== done === %s", summary)
     skill_finished("comment-composer-graph", summary)
 
 

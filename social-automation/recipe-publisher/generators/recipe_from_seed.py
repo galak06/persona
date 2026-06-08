@@ -109,10 +109,7 @@ VOICE_TOOL = {
                     "e.g. 'Comment RECIPE and I'll DM you the link to the printable "
                     "card.' (Verb can also be BAKE, CHEWS, etc. — match the recipe.) "
                     "(4) One specific question — not 'what do you think?'. "
-                    "(5) Bio-link fallback line on its own: "
-                    "'\U0001f517 Full guide: link in bio' — required, fallback path for "
-                    "non-commenters, goes between the question and the hashtags. "
-                    "(6) Blank line, then 8-12 hashtags mixing broad/niche/branded; "
+                    "(5) Blank line, then 8-12 hashtags mixing broad/niche/branded; "
                     "must include #nallasdad and #dogfoodandfun."
                 ),
             },

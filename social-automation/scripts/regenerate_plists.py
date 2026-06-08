@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import os
 import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -58,6 +59,25 @@ def _resolve_brand_dir() -> str:
     return str(fallback)
 
 
+def _split_script(script: str) -> list[str]:
+    """Shell-split a schedule ``script`` string into argv tokens.
+
+    The schedule stores invocations as a single string that may embed CLI
+    flags (``scripts/content_pipeline.py --stage publish``) or a module
+    invocation (``python -m ideator.main``). launchd's ProgramArguments wants
+    each token as its own element, so split with ``shlex`` semantics.
+
+    A leading interpreter token (``python``/``python3``) is dropped because the
+    plist already supplies the absolute venv interpreter as argv[0]; the
+    remaining ``-m module ...`` (or bare script + args) tokens are appended
+    after it.
+    """
+    tokens = shlex.split(script.strip())
+    if tokens and tokens[0] in {"python", "python3"}:
+        tokens = tokens[1:]
+    return tokens
+
+
 def build_plist(
     task: Any,
     *,
@@ -84,11 +104,12 @@ def build_plist(
     script_args = extra.get("script_args") or []
 
     if script:
+        script_tokens = _split_script(script)
         if requires_browser:
-            program_args = [python3, "scripts/run_with_watchdog.py", script,
+            program_args = [python3, "scripts/run_with_watchdog.py", *script_tokens,
                             "--timeout", str(timeout_seconds)]
         else:
-            program_args = [python3, script, *[str(a) for a in script_args]]
+            program_args = [python3, *script_tokens, *[str(a) for a in script_args]]
     elif task.skill:
         if not claude_bin:
             raise SystemExit(

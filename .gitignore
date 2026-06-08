@@ -42,6 +42,12 @@ social-automation/recipe-publisher/pytest-cache-files-*/
 
 # Campaign work-directories (per-campaign scratch space — keep local)
 campaigns/
+# …but the campaigns library module is source code, not scratch
+!social-automation/lib/campaigns/
+!social-automation/lib/campaigns/**
+# …same for the tests covering it
+!social-automation/tests/lib/campaigns/
+!social-automation/tests/lib/campaigns/**
 
 # Test artifacts
 .coverage

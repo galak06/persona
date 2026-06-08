@@ -17,14 +17,24 @@ from typing import Any, Literal
 from fastapi import BackgroundTasks, HTTPException, status
 
 from api import state
-from api.schemas import BlogPostItem, CommentItem, DecisionResponse
+from api.schemas import (
+    BlogPostItem,
+    CampaignVerifyItem,
+    CommentItem,
+    DecisionResponse,
+    IdeaItem,
+    SeedItem,
+)
 from lib import groups_queue
 from lib.config import settings
 
 __all__ = [
     "BLOG_POST_QUEUE_PATH",
+    "CAMPAIGN_VERIFY_QUEUE_PATH",
     "COMMENT_QUEUE_PATH",
+    "IDEATOR_QUEUE_PATH",
     "approve_blog_post",
+    "approve_generic",
     "approve_group",
     "classify",
     "dispatch_join_request",
@@ -32,12 +42,17 @@ __all__ = [
     "pending_only",
     "queue_for_id",
     "to_blog_post",
+    "to_campaign_verify",
     "to_comment",
+    "to_idea",
+    "to_seed",
 ]
 
 _REPO_ROOT: Path = Path(__file__).resolve().parent.parent
 COMMENT_QUEUE_PATH: Path = settings.paths.comment_queue
 BLOG_POST_QUEUE_PATH: Path = settings.paths.state_dir / "blog_post_queue.json"
+IDEATOR_QUEUE_PATH: Path = settings.paths.ideator_queue
+CAMPAIGN_VERIFY_QUEUE_PATH: Path = settings.paths.campaign_verify_queue
 
 _log = logging.getLogger("approval_api")
 
@@ -77,13 +92,34 @@ def to_comment(item: dict[str, Any]) -> CommentItem:
     return CommentItem.model_validate(payload)
 
 
+def to_idea(item: dict[str, Any]) -> IdeaItem:
+    """Coerce a raw idea queue dict into the pydantic model."""
+    payload = dict(item)
+    payload.setdefault("type", "idea")
+    return IdeaItem.model_validate(payload)
+
+
+def to_seed(item: dict[str, Any]) -> SeedItem:
+    """Coerce a raw seed queue dict into the pydantic model."""
+    payload = dict(item)
+    payload.setdefault("type", "seed")
+    return SeedItem.model_validate(payload)
+
+
+def to_campaign_verify(item: dict[str, Any]) -> CampaignVerifyItem:
+    """Coerce a raw campaign-verify queue dict into the pydantic model."""
+    payload = dict(item)
+    payload.setdefault("type", "campaign_verify")
+    return CampaignVerifyItem.model_validate(payload)
+
+
 def queue_for_id(item_id: str) -> tuple[str, Path | None, dict[str, Any]] | None:
-    """Locate an item across blog-post + comment + groups queues.
+    """Locate an item across blog-post, comment, ideator, campaign-verify, and groups queues.
 
     Returns ``(kind, path, raw)`` where ``path`` is the on-disk JSON file
-    for blog/comment queues. For group items ``path`` is ``None`` — commits
-    go through ``lib.groups_queue.commit_group_decision``. Returns ``None``
-    if no queue has the id.
+    for blog/comment/ideator/campaign-verify queues. For group items ``path``
+    is ``None`` — commits go through ``lib.groups_queue.commit_group_decision``.
+    Returns ``None`` if no queue has the id.
     """
     for path, kind in (
         (BLOG_POST_QUEUE_PATH, "blog_post"),
@@ -92,10 +128,48 @@ def queue_for_id(item_id: str) -> tuple[str, Path | None, dict[str, Any]] | None
         found = state.find_item(path, item_id)
         if found is not None:
             return kind, path, found
+    found = state.find_item(IDEATOR_QUEUE_PATH, item_id)
+    if found is not None:
+        kind = found.get("type", "idea")  # "idea" or "seed"
+        return kind, IDEATOR_QUEUE_PATH, found
+    found = state.find_item(CAMPAIGN_VERIFY_QUEUE_PATH, item_id)
+    if found is not None:
+        return "campaign_verify", CAMPAIGN_VERIFY_QUEUE_PATH, found
     for group in groups_queue.read_pending_groups():
         if group.id == item_id:
             return "group_to_join", None, group.model_dump()
     return None
+
+
+def approve_generic(
+    path: Path,
+    item_id: str,
+    *,
+    decision_status: Literal["approved", "USER_SKIPPED"],
+) -> DecisionResponse:
+    """Generic commit path for idea / seed / campaign_verify approve or reject."""
+    decided_at = now_iso()
+    result = state.commit_decision(
+        path,
+        item_id,
+        status=decision_status,
+        decided_by="web_ui",
+        decided_at=decided_at,
+    )
+    if result == "not_found":
+        raise HTTPException(status_code=404, detail=f"item {item_id} not found")
+    if result == "already_decided":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"item {item_id} was already decided by another channel",
+        )
+    _log.info(
+        '{"event": "generic_decision", "id": "%s", "status": "%s"}',
+        item_id, decision_status,
+    )
+    return DecisionResponse(
+        id=item_id, status=decision_status, decided_by="web_ui", decided_at=decided_at,
+    )
 
 
 def pending_only(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

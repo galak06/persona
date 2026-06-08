@@ -66,11 +66,17 @@ def _execute_custom_hook(
     if not callable(func):
         return False, f"function {task.function!r} not callable in {script_p}"
     try:
-        result = (
-            func(**task.params)
-            if task.function == "main"
-            else func(campaign_dir, **task.params)
-        )
+        if task.function == "main":
+            # CLI entry points often use argparse, which reads sys.argv.
+            # We isolate them from the parent's CLI args (e.g. --campaign).
+            old_argv = sys.argv
+            sys.argv = [str(script_p)]
+            try:
+                result = func(**task.params)
+            finally:
+                sys.argv = old_argv
+        else:
+            result = func(campaign_dir, **task.params)
     except Exception as exc:  # noqa: BLE001 — surface hook execution errors
         log.exception(
             "custom_hook_raised",
@@ -80,6 +86,13 @@ def _execute_custom_hook(
         )
         return False, f"hook {task.function} raised: {exc}"
 
-    if result is None or bool(result):
+    if result is None:
+        return True, None
+    if task.function == "main":
+        # For main functions, 0 is success, non-zero is failure
+        if result == 0:
+            return True, None
+        return False, f"hook {task.function} returned exit code {result}"
+    if bool(result):
         return True, None
     return False, f"hook {task.function} returned falsy"

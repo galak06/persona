@@ -163,6 +163,8 @@ class BrandPaths(BaseModel):
 
     # State paths
     comment_queue: Path
+    ideator_queue: Path
+    campaign_verify_queue: Path
     dedup_cache: Path
     rate_limit_tracker: Path
     last_run: Path
@@ -208,6 +210,8 @@ def _resolve_paths(brand_dir: Path) -> BrandPaths:
         post_templates=data_dir / "post_templates.json",
         recipe_products=data_dir / "recipe_products.json",
         comment_queue=state_dir / "comment_queue.json",
+        ideator_queue=state_dir / "ideator_queue.json",
+        campaign_verify_queue=state_dir / "campaign_verify_queue.json",
         dedup_cache=state_dir / "dedup_cache.json",
         rate_limit_tracker=state_dir / "rate_limit_tracker.json",
         last_run=state_dir / "last_run.json",

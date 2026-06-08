@@ -53,11 +53,13 @@ import notifier  # noqa: E402
 
 logger = logging.getLogger("publish_prepared")
 
-# Campaigns live one level up — at /Users/gilcohen/Projects/dogfoodandfun/campaigns/,
-# not under social-automation/. Matches what prepare.py writes to.
+# Campaigns live one level up — at /Users/gilcohen/Projects/dogfoodandfun/campaigns/.
+# Recipe campaigns use the campaign-runner layout:
+#   campaigns/recipes/ready/   ← PREPARED_ROOT (awaiting_audio → verified)
+#   campaigns/recipes/published/ ← PUBLISHED_ROOT (after cron publish)
 CAMPAIGNS_ROOT: Final[Path] = settings.paths.campaigns_dir  # type: ignore[union-attr]
-PREPARED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "prepared"
-PUBLISHED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "published"
+PREPARED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "recipes" / "ready"
+PUBLISHED_ROOT: Final[Path] = CAMPAIGNS_ROOT / "recipes" / "published"
 LAST_RUN_FILE: Final[Path] = PROJECT_ROOT / "recipe-publisher" / "state" / "last_publish_prepared.json"
 
 
@@ -190,8 +192,63 @@ def _promote_wp_draft(client, post_id: int) -> str:
     return r.json()["link"]
 
 
+def _append_to_verify_queue(item: dict[str, Any]) -> None:
+    """Append a pending verify item to campaign_verify_queue.json (creates if missing)."""
+    path = settings.paths.campaign_verify_queue  # type: ignore[union-attr]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            data: list[Any] = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            data = []
+    else:
+        data = []
+    data.append(item)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _finalize_verify_queue_item(item_id: str, decided_by: str) -> None:
+    """Stamp the verify queue item with its final status."""
+    from api import state as _state  # noqa: PLC0415
+
+    path = settings.paths.campaign_verify_queue  # type: ignore[union-attr]
+    _state.commit_decision(
+        path,
+        item_id,
+        status="approved",
+        decided_by=decided_by,  # type: ignore[arg-type]
+        decided_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+def _check_verify_queue(item_id: str) -> str | None:
+    """Return 'yes' or 'skip' if the web_ui has stamped the item; else None."""
+    path = settings.paths.campaign_verify_queue  # type: ignore[union-attr]
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(data, list):
+        return None
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if item.get("id") == item_id and item.get("decided_by"):
+            status = item.get("status", "")
+            return "yes" if status == "approved" else "skip"
+    return None
+
+
 def verify_seed(seed_id: str) -> int:
-    """Telegram-preview a prepared campaign and flip state to 'verified'."""
+    """Telegram-preview a prepared campaign and flip state to 'verified'.
+
+    Also writes a pending item to campaign_verify_queue.json so the web UI
+    can approve/skip in parallel with the Telegram gate.
+    """
     folder = PREPARED_ROOT / seed_id
     if not folder.exists():
         print(f"❌ no prepared folder: {folder}")  # noqa: T201
@@ -201,14 +258,35 @@ def verify_seed(seed_id: str) -> int:
         print(f"❌ {seed_id}: audio.mp3 not found in {folder}")  # noqa: T201
         return 1
 
+    audio_path = _resolve_audio_path(folder)
+    audio_size_kb = audio_path.stat().st_size // 1024 if audio_path else 0
+    slide_count = len(meta.get("carousel_slides", []))
+    wp_admin_url = meta.get("wp_admin_url", "?")
+
+    verify_item_id = f"verify-{seed_id}"
+    _append_to_verify_queue(
+        {
+            "id": verify_item_id,
+            "type": "campaign_verify",
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "seed_id": seed_id,
+            "title": meta.get("title", seed_id),
+            "wp_draft_url": wp_admin_url,
+            "audio_size_kb": audio_size_kb,
+            "slide_count": slide_count,
+        }
+    )
+    logger.info("verify item queued: %s (id=%s)", seed_id, verify_item_id)
+
     msg = (
         f"📋 <b>Recipe campaign — verify</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"<b>Seed:</b> <code>{seed_id}</code>\n"
         f"<b>Title:</b> {meta.get('title', '?')}\n"
-        f"<b>WP draft:</b> {meta.get('wp_admin_url', '?')}\n"
-        f"<b>Audio:</b> ✅ present ({(folder / 'audio.mp3').stat().st_size // 1024} KB)\n"
-        f"<b>Slides:</b> {len(meta.get('carousel_slides', []))}\n"
+        f"<b>WP draft:</b> {wp_admin_url}\n"
+        f"<b>Audio:</b> ✅ present ({audio_size_kb} KB)\n"
+        f"<b>Slides:</b> {slide_count}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Reply <b>yes</b> to mark verified (queues for next cron publish)\n"
         f"Reply <b>skip</b> to leave in audio_ready state."
@@ -221,6 +299,7 @@ def verify_seed(seed_id: str) -> int:
     if not token or not chat_id:
         print("⚠️  no telegram — auto-verifying without confirmation.")  # noqa: T201
         _write_status(folder, "verified", by="cli_no_telegram")
+        _finalize_verify_queue_item(verify_item_id, "auto")
         return 0
 
     offset = notifier._get_latest_offset(token)
@@ -231,6 +310,7 @@ def verify_seed(seed_id: str) -> int:
             text = (u.get("message", {}).get("text") or "").strip().lower()
             if text in ("yes", "y", "approve"):
                 _write_status(folder, "verified", by="cli_user")
+                _finalize_verify_queue_item(verify_item_id, "telegram")
                 notifier.send(f"✅ verified: <code>{seed_id}</code>", silent=True)
                 print(f"✅ verified: {seed_id}")  # noqa: T201
                 return 0
@@ -238,6 +318,19 @@ def verify_seed(seed_id: str) -> int:
                 notifier.send(f"⏭ skipped verify: <code>{seed_id}</code>", silent=True)
                 print(f"⏭ skip: {seed_id}")  # noqa: T201
                 return 0
+
+        # Also check web_ui queue channel
+        web_decision = _check_verify_queue(verify_item_id)
+        if web_decision == "yes":
+            _write_status(folder, "verified", by="web_ui")
+            notifier.send(f"✅ verified (web UI): <code>{seed_id}</code>", silent=True)
+            print(f"✅ verified (web UI): {seed_id}")  # noqa: T201
+            return 0
+        if web_decision == "skip":
+            notifier.send(f"⏭ skipped verify (web UI): <code>{seed_id}</code>", silent=True)
+            print(f"⏭ skip (web UI): {seed_id}")  # noqa: T201
+            return 0
+
     print("⏰ timed out — left as audio_ready")  # noqa: T201
     return 1
 
@@ -264,7 +357,7 @@ def _short_fb_message_from_ig(ig_caption: str) -> str:
     """
     text = ig_caption.strip()
     text = _BULLET_RE.sub("", text)
-    text = _CTA_LINE_RE.sub("", text)
+    # NOTE: _CTA_LINE_RE.sub removed — the comment CTA must survive into the FB post body
     text = _BIO_FALLBACK_RE.sub("", text)
     text = _HASHTAG_LINE_RE.sub("", text)
     # Collapse blank-run noise left behind
@@ -434,6 +527,26 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
                 logger.info("Post %d: no parseable recipe — skipping card.", wp_id)
         except Exception as exc:
             logger.warning("Recipe card generation failed for WP %d: %s", wp_id, exc)
+
+    # Step 2.6: Embed audio player in WP post (best-effort, non-blocking)
+    # Use the slug-named .mp3 (the cooking song) — not audio.mp3 which is the
+    # video mux track. E.g. gut-supportive-broth-turmeric-squares.mp3
+    _audio_path = folder / f"{folder.name}.mp3"
+    if not _audio_path.exists():
+        _audio_path = None
+    if _audio_path:
+        try:
+            from lib.recipe_card.wp_audio import (  # noqa: PLC0415
+                inject_audio_player,
+                upload_audio,
+            )
+            _media_id, _source_url = upload_audio(
+                _audio_path.read_bytes(), _audio_path.name
+            )
+            if inject_audio_player(meta["wp_draft_id"], _media_id, _source_url):
+                logger.info("audio player embedded (media_id=%d)", _media_id)
+        except Exception as _exc:
+            logger.warning("audio embed failed (non-blocking): %s", _exc)
 
     recipe = _build_recipe_stub(meta, ig_caption)
 

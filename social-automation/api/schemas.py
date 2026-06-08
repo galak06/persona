@@ -125,8 +125,45 @@ class GroupItem(_ItemBase):
     added_to_pending: str  # ISO-8601 date
 
 
+class IdeaItem(_ItemBase):
+    """A recipe/content idea from the ideator queue awaiting approval."""
+
+    type: Literal["idea"] = "idea"
+    title: str = ""
+    category: str = ""
+    why_now: str = ""
+    evidence: str = ""
+    seasonal_relevance: int | None = None
+    search_demand_estimate: str = ""
+
+
+class SeedItem(_ItemBase):
+    """A recipe seed awaiting approval before full campaign generation."""
+
+    type: Literal["seed"] = "seed"
+    seed_id: str = ""
+    title: str = ""
+    ingredients: list[str] = []
+    prep_minutes: int | None = None
+    cook_minutes: int | None = None
+    yield_servings: str = ""
+    tags: list[str] = []
+    dog_safety_notes: str = ""
+
+
+class CampaignVerifyItem(_ItemBase):
+    """A campaign awaiting final human verification before publish."""
+
+    type: Literal["campaign_verify"] = "campaign_verify"
+    seed_id: str = ""
+    title: str = ""
+    wp_draft_url: str = ""
+    audio_size_kb: int | None = None
+    slide_count: int | None = None
+
+
 PendingItem = Annotated[
-    CommentItem | BlogPostItem | GroupItem,
+    CommentItem | BlogPostItem | GroupItem | IdeaItem | SeedItem | CampaignVerifyItem,
     Field(discriminator="type"),
 ]
 
@@ -134,7 +171,7 @@ PendingItem = Annotated[
 # /pending endpoint now only surfaces blog posts and group-join items;
 # CommentItem is read by comment_poster directly, never via the API union.
 QueueItem = Annotated[
-    CommentItem | BlogPostItem | GroupItem,
+    CommentItem | BlogPostItem | GroupItem | IdeaItem | SeedItem | CampaignVerifyItem,
     Field(discriminator="type"),
 ]
 

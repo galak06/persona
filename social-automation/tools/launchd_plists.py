@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -191,15 +192,31 @@ def _log_basename(task: Flow) -> str:
     return f"cron_{str(skill).replace('-', '_')}.log"
 
 
+def _split_script(script: str) -> list[str]:
+    """Shell-split a schedule ``script`` string into argv tokens.
+
+    The schedule stores invocations as a single string that may embed CLI
+    flags (``scripts/content_pipeline.py --stage publish``) or a module
+    invocation (``python -m ideator.main``). launchd's ProgramArguments wants
+    each token as its own element, so split with ``shlex`` semantics and drop a
+    leading ``python``/``python3`` token (the plist already supplies the
+    absolute venv interpreter as argv[0]).
+    """
+    tokens = shlex.split(script.strip())
+    if tokens and tokens[0] in {"python", "python3"}:
+        tokens = tokens[1:]
+    return tokens
+
+
 def _program_arguments(task: Flow, paths: PlistPaths) -> list[str]:
     """Build the ProgramArguments list for a task.
 
     Three flavours, matching the installed plists:
     1. Script + watchdog wrapper: `[python, watchdog, script.py, --timeout, 300]`
        Used for simple Playwright/REST scripts with no CLI args.
-    2. Script with embedded args: `[python, "script.py --stage ideate"]`
-       Used when the script string already contains CLI args (matches the
-       current installed shape — a single arg that bash would re-split).
+    2. Script with embedded args: `[python, "script.py", "--stage", "ideate"]`
+       Each shell token is its own ProgramArguments element so launchd doesn't
+       try to open a path that includes the flags. `python -m mod` -> `-m mod`.
     3. Claude-CLI skill: `[claude, --dangerously-skip-permissions, /<skill>]`
        Used when task.script is missing or null (skill runs via Claude Code).
     """
@@ -207,14 +224,14 @@ def _program_arguments(task: Flow, paths: PlistPaths) -> list[str]:
     if not isinstance(script, str) or not script.strip():
         skill = task.get("skill") or _task_short_name(task["id"], "")
         return [paths["claude_cli"], "--dangerously-skip-permissions", f"/{skill}"]
-    script = script.strip()
-    if " " in script:
-        # Pass through as one arg (matches installed convention for content_pipeline).
-        return [paths["python"], script]
+    tokens = _split_script(script)
+    if len(tokens) > 1:
+        # Embedded args (or `-m module`): emit each token separately.
+        return [paths["python"], *tokens]
     return [
         paths["python"],
         paths["watchdog_script"],
-        script,
+        *tokens,
         "--timeout",
         paths["watchdog_timeout"],
     ]
