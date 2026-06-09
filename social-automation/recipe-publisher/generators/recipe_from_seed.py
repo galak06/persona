@@ -14,6 +14,7 @@ from pathlib import Path
 from anthropic import Anthropic
 
 from .seeds import RecipeSeed, seed_to_body_sections
+from .text_normalize import unwrap_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +93,14 @@ VOICE_TOOL = {
             "image_brief": {
                 "type": "string",
                 "description": (
-                    "One-paragraph brief for the image generator. Natural food "
-                    "photography, overhead, warm light. No dogs, no text, no cutlery."
+                    "One-paragraph brief for the image generator. Candid, "
+                    "everyday-life feel in a real home kitchen with natural "
+                    "light; treats shown in a dog's bowl or on a board/parchment "
+                    "as served to a dog. NOT staged studio photography, NOT a "
+                    "human meal: no plates, no place settings, no forks/knives. "
+                    "A dog casually in frame is welcome — it is Nalla, a "
+                    "medium-sized fluffy shepherd mix (tan-and-black coat, alert "
+                    "ears), not a golden retriever. No text."
                 ),
             },
             "ig_caption": {
@@ -194,7 +201,7 @@ def assemble_body_markdown(
     faq_md = "\n\n".join(
         f"### {p['question']}\n\n{p['answer']}" for p in voice["faq"]
     )
-    return (
+    assembled = (
         f"{voice['intro']}\n\n"
         f"## Ingredients\n\n{s['ingredients']}\n\n"
         f"## Instructions\n\n{s['instructions']}\n\n"
@@ -204,3 +211,4 @@ def assemble_body_markdown(
         f"## Storage\n\n{s['storage']}\n\n"
         f"## Safety note\n\n{s['safety_note']}\n"
     )
+    return unwrap_paragraphs(assembled)
