@@ -13,13 +13,19 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from api.recipe_schemas import (
+    AffiliateProduct,
+    AnalyticsResponse,
+    ArtifactItem,
+    ArtifactsResponse,
     PublishChannel,
     RecipeDetail,
     RecipeIngredient,
     RecipesResponse,
     RecipeSummary,
+    StatusChangeResponse,
     SyncResponse,
 )
 from lib.config import settings
@@ -31,6 +37,9 @@ _RECIPE_PUBLISHER = Path(__file__).resolve().parent.parent / "recipe-publisher"
 if str(_RECIPE_PUBLISHER) not in sys.path:
     sys.path.insert(0, str(_RECIPE_PUBLISHER))
 
+from pipeline import seasons
+from pipeline.analytics import AnalyticsTracker
+from pipeline.approval import ApprovalError, ApprovalService
 from recipe_db import db, publish_sync
 from recipe_db.models import RecipeRow
 from recipe_db.repository import RecipeRepository
@@ -67,6 +76,33 @@ def _abs_artifacts(rel_path: str) -> str:
     return str(settings.paths.brand_dir / rel_path)
 
 
+def _artifacts_dir(recipe_id: str) -> Path:
+    """Resolve a recipe's artifact folder (row ``artifacts_path``, or convention)."""
+    if settings.paths is None:
+        raise HTTPException(
+            status_code=500, detail="settings.paths unset; BRAND_DIR not resolved"
+        )
+    conn = _open_readonly()
+    try:
+        row = RecipeRepository(conn).get_recipe(recipe_id)
+    finally:
+        conn.close()
+    rel = (row.artifacts_path if row else "") or f"data/recipe_artifacts/{recipe_id}"
+    return settings.paths.brand_dir / rel
+
+
+def _artifact_kind(name: str) -> str:
+    """Classify an artifact file by extension for the UI."""
+    suffix = Path(name).suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+        return "image"
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix == ".json":
+        return "json"
+    return "other"
+
+
 def _publish_date(row: RecipeRow) -> str:
     """Newest publish date (ISO) across channels, or '' when unpublished."""
     dates = [c.get("at", "") for c in row.publish_status.values()]
@@ -79,6 +115,8 @@ def _to_summary(row: RecipeRow) -> RecipeSummary:
         name=row.name,
         display_name=row.display_name,
         artifacts_path=_abs_artifacts(row.artifacts_path),
+        card_path=_abs_artifacts(row.card_path),
+        card_created_at=row.card_created_at,
         wp_url=row.wp_url,
         ig_url=row.ig_url,
         fb_url=row.fb_url,
@@ -86,6 +124,11 @@ def _to_summary(row: RecipeRow) -> RecipeSummary:
         category=row.category,
         dog_safe=row.dog_safe,
         toxic_flags=row.toxic_flags,
+        season_tags=row.season_tags,
+        affiliate_products=[
+            AffiliateProduct(**p) for p in row.affiliate_products
+        ],
+        content_status=row.content_status,
         status=row.status,
         source_url=row.source_url,
         source_name=row.source_name,
@@ -104,6 +147,12 @@ def _to_summary(row: RecipeRow) -> RecipeSummary:
 def list_recipes(
     status: str | None = Query(None, description="filter by pipeline status"),
     dog_safe: bool | None = Query(None, description="filter by safety verdict"),
+    season: str | None = Query(
+        None, description="filter to recipes in-season for this season"
+    ),
+    content_status: str | None = Query(
+        None, description="filter by publish-content lifecycle state"
+    ),
 ) -> RecipesResponse:
     """List stored recipes (alphabetical) with optional filters."""
     conn = _open_readonly()
@@ -113,12 +162,82 @@ def list_recipes(
         conn.close()
     if dog_safe is not None:
         rows = [r for r in rows if r.dog_safe == dog_safe]
+    if content_status is not None:
+        rows = [r for r in rows if r.content_status == content_status]
+    if season is not None:
+        try:
+            target = seasons.normalize_season(season)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Prefer stored season_tags; fall back to on-the-fly inference so the
+        # filter works even before the seasonal-selection phase has persisted.
+        rows = [
+            r
+            for r in rows
+            if seasons.in_season(
+                r.season_tags
+                or seasons.infer_seasons(r.name, r.tags, r.category),
+                target,
+            )
+        ]
     # Newest published first; unpublished (no date) fall to the bottom, by name.
     rows.sort(key=lambda r: r.name.lower())
     rows.sort(key=_publish_date, reverse=True)
     return RecipesResponse(
         recipes=[_to_summary(r) for r in rows], total=len(rows)
     )
+
+
+def _open_writable() -> sqlite3.Connection:
+    """Open recipes.db read-write (for approval transitions)."""
+    path = _db_path()
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"recipe DB not found at {path}")
+    conn = db.connect(path)
+    db.migrate(conn)
+    return conn
+
+
+@router.get("/recipes/analytics", response_model=AnalyticsResponse)
+def recipes_analytics() -> AnalyticsResponse:
+    """Aggregated publish outcomes across all recipes (phase 10, local log)."""
+    conn = _open_readonly()
+    try:
+        report = AnalyticsTracker(RecipeRepository(conn)).run()
+    finally:
+        conn.close()
+    return AnalyticsResponse(
+        recipes=report.recipes,
+        attempts=report.attempts,
+        by_platform=report.by_platform,
+        by_status=report.by_status,
+    )
+
+
+@router.post("/recipes/{recipe_id}/approve", response_model=StatusChangeResponse)
+def approve_recipe(recipe_id: str) -> StatusChangeResponse:
+    """Promote a pending recipe to approved (the human gate, phase 5)."""
+    conn = _open_writable()
+    try:
+        ApprovalService(RecipeRepository(conn)).approve(recipe_id)
+    except ApprovalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        conn.close()
+    return StatusChangeResponse(id=recipe_id, content_status="approved")
+
+
+@router.post("/recipes/{recipe_id}/reject", response_model=StatusChangeResponse)
+def reject_recipe(recipe_id: str) -> StatusChangeResponse:
+    """Reject a pending recipe so it is never published (phase 5)."""
+    conn = _open_writable()
+    try:
+        ApprovalService(RecipeRepository(conn)).reject(recipe_id)
+    except ApprovalError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        conn.close()
+    return StatusChangeResponse(id=recipe_id, content_status="rejected")
 
 
 @router.get("/recipes/{recipe_id}", response_model=RecipeDetail)
@@ -174,3 +293,39 @@ def sync_publish() -> SyncResponse:
     finally:
         conn.close()
     return SyncResponse(updated=updated, total=total)
+
+
+@router.get("/recipes/{recipe_id}/artifacts", response_model=ArtifactsResponse)
+def list_artifacts(recipe_id: str) -> ArtifactsResponse:
+    """List every file in the recipe's artifact folder, for the UI viewer."""
+    base = _artifacts_dir(recipe_id)
+    items: list[ArtifactItem] = []
+    if base.is_dir():
+        for f in sorted(base.rglob("*")):
+            if f.is_file() and not f.name.startswith("."):
+                items.append(
+                    ArtifactItem(
+                        name=f.name,
+                        path=f.relative_to(base).as_posix(),
+                        kind=_artifact_kind(f.name),
+                        size=f.stat().st_size,
+                    )
+                )
+    return ArtifactsResponse(
+        recipe_id=recipe_id, artifacts=items, total=len(items)
+    )
+
+
+@router.get("/recipes/{recipe_id}/artifact")
+def get_artifact(
+    recipe_id: str,
+    path: str = Query(..., description="path relative to the artifact folder"),
+) -> FileResponse:
+    """Serve a single artifact file (path-traversal guarded)."""
+    base = _artifacts_dir(recipe_id).resolve()
+    target = (base / path).resolve()
+    if not target.is_relative_to(base):
+        raise HTTPException(status_code=400, detail="invalid artifact path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(target)

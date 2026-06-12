@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 """Pydantic models for the read-only recipe-DB browse API.
 
 Mirrors the `recipe_db` SQLite rows (scraped recipes + ratings + dog-safety
@@ -35,6 +36,14 @@ class PublishChannel(BaseModel):
     post_url: str = ""  # IG: single-image post permalink (empty until posted)
 
 
+class AffiliateProduct(BaseModel):
+    """One matched Amazon-Associates product (from the affiliate-matching phase)."""
+
+    key: str
+    asin: str
+    display: str
+
+
 class SyncResponse(BaseModel):
     """Result of POST /api/v1/recipes/sync-publish."""
 
@@ -49,6 +58,8 @@ class RecipeSummary(BaseModel):
     name: str
     display_name: str = ""
     artifacts_path: str = ""  # absolute local path to the artifact folder
+    card_path: str = ""  # absolute local path to the rendered recipe card, or ""
+    card_created_at: str = ""  # when the card was generated (ISO), or ""
     wp_url: str = ""
     ig_url: str = ""
     fb_url: str = ""
@@ -56,6 +67,9 @@ class RecipeSummary(BaseModel):
     category: str = ""
     dog_safe: bool = False
     toxic_flags: list[str] = Field(default_factory=list)
+    season_tags: list[str] = Field(default_factory=list)  # [] = all-season
+    affiliate_products: list[AffiliateProduct] = Field(default_factory=list)
+    content_status: str = "none"  # publish-content lifecycle (models.ContentStatus)
     status: str
     source_url: str = ""
     source_name: str = ""
@@ -81,3 +95,36 @@ class RecipesResponse(BaseModel):
 
     recipes: list[RecipeSummary]
     total: int
+
+
+class StatusChangeResponse(BaseModel):
+    """Result of an approval/rejection transition."""
+
+    id: str
+    content_status: str
+
+
+class AnalyticsResponse(BaseModel):
+    """Aggregated publish outcomes (phase 10, local outcome log)."""
+
+    recipes: int
+    attempts: int
+    by_platform: dict[str, dict[str, int]] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+
+
+class ArtifactItem(BaseModel):
+    """One file in a recipe's artifact folder, listed for the UI."""
+
+    name: str  # file name, e.g. "recipe_card.png"
+    path: str  # path relative to the recipe's artifact folder, e.g. "images/recipe_card.png"
+    kind: str  # "image" | "pdf" | "json" | "other"
+    size: int = 0  # bytes
+
+
+class ArtifactsResponse(BaseModel):
+    """Envelope for ``GET /api/v1/recipes/{id}/artifacts``."""
+
+    recipe_id: str
+    artifacts: list[ArtifactItem] = Field(default_factory=list)
+    total: int = 0

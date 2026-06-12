@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     name           TEXT,
     display_name   TEXT DEFAULT '',
     artifacts_path TEXT DEFAULT '',
+    card_path      TEXT DEFAULT '',
+    card_created_at TEXT DEFAULT '',
     wp_url         TEXT DEFAULT '',
     ig_url         TEXT DEFAULT '',
     fb_url         TEXT DEFAULT '',
@@ -39,6 +41,11 @@ CREATE TABLE IF NOT EXISTS recipes (
     dog_safe       INTEGER DEFAULT 0,
     override       INTEGER DEFAULT 0,
     publish_status TEXT DEFAULT '{}',
+    season_tags    TEXT DEFAULT '[]',
+    affiliate_products TEXT DEFAULT '[]',
+    generated_content TEXT DEFAULT '{}',
+    content_status TEXT NOT NULL DEFAULT 'none',
+    publish_results TEXT DEFAULT '[]',
     created_at     TEXT,
     updated_at     TEXT
 );

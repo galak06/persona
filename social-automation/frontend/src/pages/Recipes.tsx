@@ -9,11 +9,17 @@ import {
 } from "../api/recipes";
 import { getErrorMessage } from "../api/client";
 import {
+  ArtifactsModal,
   IgModal,
   PublishBadges,
   RecipeDrawer,
   SafetyBadge,
 } from "./RecipeDrawer";
+import {
+  AnalyticsBar,
+  ApprovalActions,
+  ContentStatusBadge,
+} from "./RecipeLifecycle";
 
 type SafetyFilter = "all" | "safe" | "flagged";
 
@@ -23,26 +29,39 @@ const SAFETY_TABS: { id: SafetyFilter; label: string }[] = [
   { id: "flagged", label: "Flagged" },
 ];
 
+// "" = no season filter (all). Values match pipeline.seasons.SEASONS.
+const SEASON_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "All seasons" },
+  { value: "spring", label: "Spring" },
+  { value: "summer", label: "Summer" },
+  { value: "fall", label: "Fall" },
+  { value: "winter", label: "Winter" },
+];
+
 export default function Recipes() {
   const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [safety, setSafety] = useState<SafetyFilter>("all");
+  const [season, setSeason] = useState<string>("");
   const [selected, setSelected] = useState<RecipeDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
   const [igModal, setIgModal] = useState<PublishChannel | null>(null);
+  const [artifactsFor, setArtifactsFor] = useState<RecipeSummary | null>(null);
 
   useEffect(() => {
     void load();
-  }, []);
+    // Re-fetch from the server whenever the season filter changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [season]);
 
   async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchRecipes();
+      const res = await fetchRecipes({ season: season || undefined });
       setRecipes(res.recipes);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load recipes"));
@@ -121,7 +140,7 @@ export default function Recipes() {
         <span className="text-sm text-slate-500">
           {counts.total} recipes ·{" "}
           <span className="text-green-700">{counts.published} published</span> ·{" "}
-          {counts.safe} dog-safe · {counts.flagged} flagged
+          {counts.safe} dog-safe · {counts.flagged} flagged <AnalyticsBar />
         </span>
       </div>
 
@@ -141,6 +160,18 @@ export default function Recipes() {
             </button>
           ))}
         </div>
+        <select
+          value={season}
+          onChange={(e) => setSeason(e.target.value)}
+          className="px-3 py-1.5 rounded-md text-sm border border-slate-200 text-slate-600 bg-white"
+          aria-label="Filter by season"
+        >
+          {SEASON_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <div className="ml-auto flex items-center gap-2">
           {syncMsg && <span className="text-xs text-slate-400">{syncMsg}</span>}
           <button
@@ -160,6 +191,7 @@ export default function Recipes() {
               <th className="px-4 py-2 font-medium">Recipe</th>
               <th className="px-4 py-2 font-medium">Safety</th>
               <th className="px-4 py-2 font-medium">Published</th>
+              <th className="px-4 py-2 font-medium">Artifacts</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -180,6 +212,21 @@ export default function Recipes() {
                       source: {r.name}
                     </span>
                   )}
+                  {r.affiliate_products && r.affiliate_products.length > 0 && (
+                    <span
+                      className="block text-xs text-amber-600"
+                      title={r.affiliate_products.map((p) => p.display).join(", ")}
+                    >
+                      🔗 {r.affiliate_products.length} affiliate
+                      {r.affiliate_products.length === 1 ? " product" : " products"}
+                    </span>
+                  )}
+                  <ContentStatusBadge status={r.content_status} />
+                  <ApprovalActions
+                    recipeId={r.id}
+                    status={r.content_status}
+                    onDone={load}
+                  />
                 </td>
                 <td className="px-4 py-2">
                   <SafetyBadge safe={r.dog_safe === true} />
@@ -200,11 +247,22 @@ export default function Recipes() {
                     </span>
                   )}
                 </td>
+                <td className="px-4 py-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setArtifactsFor(r);
+                    }}
+                    className="text-xs text-cyan-700 hover:underline"
+                  >
+                    📁 view
+                  </button>
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-slate-400">
+                <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
                   No recipes match these filters.
                 </td>
               </tr>
@@ -223,6 +281,14 @@ export default function Recipes() {
 
       {igModal && (
         <IgModal ig={igModal} onClose={() => setIgModal(null)} />
+      )}
+
+      {artifactsFor && (
+        <ArtifactsModal
+          recipeId={artifactsFor.id}
+          recipeName={artifactsFor.display_name || artifactsFor.name}
+          onClose={() => setArtifactsFor(null)}
+        />
       )}
     </div>
   );

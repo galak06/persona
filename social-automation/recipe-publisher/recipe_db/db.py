@@ -53,9 +53,16 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "publish_status": "TEXT DEFAULT '{}'",
         "display_name": "TEXT DEFAULT ''",
         "artifacts_path": "TEXT DEFAULT ''",
+        "card_path": "TEXT DEFAULT ''",
+        "card_created_at": "TEXT DEFAULT ''",
         "wp_url": "TEXT DEFAULT ''",
         "ig_url": "TEXT DEFAULT ''",
         "fb_url": "TEXT DEFAULT ''",
+        "season_tags": "TEXT DEFAULT '[]'",
+        "affiliate_products": "TEXT DEFAULT '[]'",
+        "generated_content": "TEXT DEFAULT '{}'",
+        "content_status": "TEXT NOT NULL DEFAULT 'none'",
+        "publish_results": "TEXT DEFAULT '[]'",
     },
 }
 

@@ -1,83 +1,71 @@
-# Current Focus — Recipe rendering fixes, DB cleanup, publishing
+# Current Focus — recipe-pipeline extension (10 phases)
 
-_Last updated: 2026-06-09 (session)_
+_Last updated: 2026-06-12 (session)_
 
-## System status (live site)
+Built the full **recipe content/publish pipeline** as 10 sequential vertical
+slices on top of `recipes.db`, each with DB schema updates, structured JSON
+logging (`lib.observability`), and a checkpoint-validation gate
+(`pipeline/checkpoint.py`). Everything publish-related is **dry-run / draft
+gated** — nothing goes live. Nothing committed yet.
 
-All recipe posts on dogfoodandfun.com are rendering correctly. Recent session
-work fixed a layout bug, cleaned the recipe DB, and published one new recipe.
+## Phases (all complete + tested)
+New package `recipe-publisher/pipeline/`; one module per phase + reusable
+`checkpoint.py` gate and `_cli.py` (path-bridge + structlog).
 
-### Recipe posts
-- 30 posts in the **recipes** category — all have working PDF cards.
-- Recipe-DB viewer chips reflect reality after a `publish_status` sync pass.
+1. **seasonal_selection.py** — `current_season`/`infer_seasons`/`in_season`; picks
+   season-appropriate recipes. DB: `season_tags`.
+2. **affiliate_matching.py** — reuses `lib.recipe_products.pick_products` (Amazon
+   Associates), matches on name+ingredients. DB: `affiliate_products`.
+3. **content_generation.py** — injected `DraftProducer` (prod adapter wraps
+   `generators.recipe.generate_recipe`); dry-run skips API calls. DB:
+   `generated_content`, `content_status`.
+4. **pending_review.py** — stages complete `generated` drafts → `pending`.
+5. **approval.py** — human gate `pending`→`approved`/`rejected` (API + UI buttons).
+6. **dedup_check.py** — rejects approved recipes whose slug is already published
+   (external `state/published_recipes.json` ∪ DB `published`). NOTE: keys off
+   external history, not the table's unique id/content_hash (which can't collide).
+7. **rate_limiting.py** — pure per-platform daily-cap gate (ig=5, fb=10, pin=10).
+8. **publishing.py** — orchestrates dedup→rate→retry→publish to IG/FB/Pinterest;
+   `dry_run=True` default; live `PlatformPublisher` adapter intentionally NOT wired
+   (inject one for real sends). DB: `publish_results`.
+9. **retry.py** — `retry_call` transient-retry helper used by phase 8.
+10. **analytics.py** — rolls up `publish_results` into platform/status counts
+    (local outcome log only). API: `GET /recipes/analytics`.
 
-## What this session did
+## Layers touched (per slice)
+- DB: `recipe_db/schema.sql` + `db.py:_ADDED_COLUMNS` (5 new columns) +
+  `models.RecipeRow` (+`ContentStatus`) + `repository` setters/queries.
+- API: `recipes_api` season/content_status filters, `approve`/`reject`,
+  `analytics`; `recipe_schemas` new models. `/recipes/analytics` declared BEFORE
+  `/recipes/{id}` to avoid path capture.
+- Frontend: `api/recipes.ts` (filters + approve/reject/analytics clients);
+  `Recipes.tsx` season dropdown + affiliate/lifecycle badges; new
+  `RecipeLifecycle.tsx` (status badge, approve/reject buttons, analytics bar).
 
-### 1. Fixed collapsed-layout bug on 4 live posts
-**Symptom:** content crushed into a ~250px column, comments flung to the right.
-**Cause:** WordPress `wpautop` emits a stray `</div>` from **naked inline JSON-LD**
-in post content that is NOT wrapped in `<div class="dff-recipe">`. That kicks the
-post-nav + comments out of `#primary`. (Elementor `_elementor_edit_mode=builder`
-was a RED HERRING — cleared it, but it wasn't the cause.)
-**Fix:** re-wrapped each post's body in `dff-recipe` + moved JSON-LD to the end
-(wording preserved). Verified via headless render (`#primary` back to 1160px).
-- Fixed: `blueberry-yogurt-frozen-bites` (3640), `dehydrated-turkey-carrot-jerky-chews`
-  (3702), `gut-supportive-bone-broth-turmeric-gelatin-squares` (3708),
-  `chicken-bone-broth-for-dogs` (3647).
-- Scanned all posts; these 4 were the only genuinely broken ones.
-- **New posts are already safe** — the current publisher wraps in `dff-recipe`.
-- Memory: `feedback_elementor_builder_hijack.md` (renamed concept:
-  collapsed-layout / wpautop). See also `feedback_astra_figure_framing`.
+## Verification
+- **75 pipeline+recipe_db tests pass**; **8 API route tests pass**. ruff clean on
+  all new/changed py; frontend `tsc` 0 errors. All 5 runnable phase CLIs
+  (`--dry-run`/`--health-check`) exit 0 with checkpoint + structured logs.
+- Full recipe-publisher suite: 149 passed, **7 pre-existing failures** in
+  `test_drafter`/`test_instagram`/`test_text_overlay` (LLM-SDK & respx mocks, PIL
+  pixels) — outside this work's diff, environment-dependent.
 
-### 2. Line-break forward fix (KEPT, uncommitted)
-LLM prose was hard-wrapped → `wpautop` turned newlines into `<br>` → ragged
-paragraphs. Added `generators/text_normalize.py` `unwrap_paragraphs()`, applied
-in `generators/recipe_from_seed.py:assemble_body_markdown`. Tests:
-`tests/test_text_normalize.py` (5, green). Also `scripts/repair_post_linebreaks.py`
-(in-place WP cleanup, --dry-run default).
-
-### 3. Recipe-DB cleanup (`${BRAND_DIR}/data/recipes.db`, backed up)
-The safety scanner (`recipe_db/safety.py`) over-flags **negated** toxin mentions
-("xylitol-free", "no garlic/onion") — 5 of 6 flags were FALSE POSITIVES.
-- Deleted 1 genuinely-toxic row: `flea-terminator-dog-treats` (real garlic powder).
-- Cleared 5 false-positive flags → `dog_safe=1` (verified by ingredient text).
-- 0 rows wrongly flagged now. Backup: `recipes.db.bak-20260609-172016`.
-- Scanner left AS-IS per user (false-positive bias is the safe default for a
-  toxin gate). Memory: `feedback_safety_gate_false_positives.md`.
-
-### 4. Published / synced 2 recipes
-- **Dehydrated Turkey** — already live (3702); only synced DB `publish_status`
-  (no duplicate).
-- **Chicken/Rice/Veggie Stew** — NEW, published live:
-  https://dogfoodandfun.com/lucky-and-rippys-favorite-dog-food/ (post 3972) +
-  PDF card attached; DB synced. IG/FB intentionally skipped. Layout verified.
-  Pipeline used: `recipe_db.cli export` → `prepare.py` → promote → `generate_recipe_card.py`.
-
-## Open items / decisions for next session
-
-1. **Title rename (post 3972):** currently "Lucky and Rippy's Favorite Dog Food"
-   (source name, weak SEO). Consider on-brand title + slug, e.g.
-   "Chicken & Rice Stew for Dogs (4 Ingredients)".
-2. **Nothing committed.** Kept code changes to commit when ready:
-   `generators/text_normalize.py`, `generators/recipe_from_seed.py` (unwrap),
-   `tests/test_text_normalize.py`, `scripts/repair_post_linebreaks.py`.
-   (Other modified files — `image.py`, `recipe.py`, `recipe_system.md`,
-   `publishers/wordpress.py:set_featured_image`, `scripts/regen_hero_images.py`,
-   `scripts/publish_wp_pdf_batch.py` — were pre-existing, not from this session.)
-3. **`lucky-and-rippy-s-favorite-dog-food`** could be pushed to IG/FB (was scoped
-   to WP+PDF only this round).
-4. **Cleanup:** `prepare` left `${BRAND_DIR}/campaigns/recipes/ready/lucky-and-rippy-s-favorite-dog-food/`
-   (assets) — normally the drainer moves it to `published/`. Move or leave.
-5. **Stray scratch dirs** (untracked junk from subagent runs): literal
-   `$CLAUDE_SCRATCHPAD_DIR/` folders at repo root and under `recipe-publisher/`.
-   Safe to delete.
-6. **PostToolUse hook noise:** flags `B101 assert` in tests + "import could not be
-   resolved" (no venv) on every edit — false positives; worth tightening.
+## Open items / next session
+1. **Commit** (all uncommitted; on branch `recipe-linebreak-fix`). Consider a
+   dedicated branch + PR per the vertical-slice rule.
+2. **Wire a live `PlatformPublisher`** for phase 8 (assemble Recipe + carousel/
+   image assets from `generated_content`; reuse `publishers/instagram|facebook|
+   pinterest`). Keep behind explicit `--no-dry-run`. Pinterest API still
+   Trial-blocked (see memory).
+3. **Content producer**: `SeedDraftProducer` needs DB rows to map to seeds; verify
+   seed_id↔recipe.id coverage or add a non-seed drafter path.
+4. Per-platform caps + analytics could move to config.json (currently constants).
 
 ## Useful facts
-- WP creds: `WP_URL`/`WP_USER`/`WP_APP_PASSWORD` via `lib.local_env.load_local_env()`
-  (from settings.local.json). Never inline secrets.
-- SureRank REST meta returns 403 (free-plan REST-auth paywall) — non-blocking.
-- Headless render check (`playwright`): healthy post = `#primary` ~1160px,
-  `.ast-container` has 1 child. Broken = ~250px, 3 children.
-- recipes.db at `${BRAND_DIR}/data/recipes.db`; back up before edits.
+- New phase code in `recipe-publisher/pipeline/`; bridges to `lib.*` via
+  `pipeline/_cli.py` (same pattern as `api/recipes_api.py`).
+- PostToolUse hook type-checks a /tmp copy w/o project venv → spurious
+  import/isort/`S101` errors; the **project** ruff/pytest are authoritative. Keep
+  `# pyright: reportMissingImports=false` on cross-root modules and
+  `# ruff: noqa: S101` on `recipe-publisher/tests/*` (kept for the hook).
+- See memory `project_recipe_pipeline_infra` for the lib/ reuse map.

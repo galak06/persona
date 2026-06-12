@@ -24,6 +24,27 @@ class RecipeStatus:
     )
 
 
+class ContentStatus:
+    """Allowed values for `RecipeRow.content_status` (publish-content lifecycle).
+
+    Distinct from `RecipeStatus` (the scrape pipeline). Drives the
+    generation → review → approval → publish phases:
+        none -> generated -> pending -> approved -> published
+                                     \\-> rejected
+    """
+
+    NONE: str = "none"
+    GENERATED: str = "generated"
+    PENDING: str = "pending"
+    APPROVED: str = "approved"
+    REJECTED: str = "rejected"
+    PUBLISHED: str = "published"
+
+    ALL: frozenset[str] = frozenset(
+        {"none", "generated", "pending", "approved", "rejected", "published"}
+    )
+
+
 def slugify(name: str) -> str:
     """Lowercase, hyphenate, strip non-alphanumerics.
 
@@ -99,6 +120,10 @@ class RecipeRow:
     # Local artifact folder (images/reels/audio/meta), relative to BRAND_DIR.
     # Empty until the recipe has generated/imported assets on disk.
     artifacts_path: str = ""
+    # Rendered static recipe-card image (BRAND_DIR-relative) + when it was
+    # generated. Empty until the card template has been created for this recipe.
+    card_path: str = ""
+    card_created_at: str = ""
     # Flat published URLs, denormalized from publish_status for direct queries.
     wp_url: str = ""
     ig_url: str = ""
@@ -107,6 +132,24 @@ class RecipeRow:
     toxic_flags: list[str] = field(default_factory=list)
     dog_safe: bool = False
     override: bool = False
+    # Seasons this recipe suits (subset of pipeline.seasons.SEASONS). Empty =
+    # all-season (eligible year-round). Populated by the seasonal-selection
+    # phase; see pipeline/seasonal_selection.py.
+    season_tags: list[str] = field(default_factory=list)
+    # Matched affiliate products: list of {key, asin, display}. Populated by the
+    # affiliate-matching phase; see pipeline/affiliate_matching.py.
+    affiliate_products: list[dict[str, str]] = field(default_factory=list)
+    # Generated draft content: {title, body_markdown, ig_caption, image_brief,
+    # generated_at}. Written by the content-generation phase (pipeline/
+    # content_generation.py). Empty until generated.
+    generated_content: dict[str, str] = field(default_factory=dict)
+    # Publish-content lifecycle state (see ContentStatus). Advances through the
+    # generation/review/approval/publish phases.
+    content_status: str = ContentStatus.NONE
+    # Per-attempt publish outcomes: list of {platform, status, ref, url, at,
+    # attempts, error}. Written by the publishing/retry phases; read by the
+    # analytics phase. Doubles as the local outcome log.
+    publish_results: list[dict[str, str]] = field(default_factory=list)
     # Per-channel publish status: {channel: {state, url, ref, at}} where
     # channel is one of wp / pdf / ig / fb. Synced from publish records.
     publish_status: dict[str, dict[str, str]] = field(default_factory=dict)
