@@ -1,10 +1,14 @@
+# ruff: noqa: T201, S110, S112, BLE001
+# pyright: reportMissingImports=false
+# Pre-existing print()-based step logging and broad except-continue/pass
+# patterns for Playwright/openpyxl resilience; structured log migration and
+# narrowing of exception types is deferred to a dedicated refactor.
 """State I/O + logging for fb-group-scout."""
 
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
+from datetime import UTC, date, datetime
 
 from lib.config import settings
 
@@ -55,11 +59,6 @@ def _count_join_requests_since(cutoff_iso_date: str) -> int:
     return count
 
 
-def join_requests_this_week() -> int:
-    week_ago = (date.today() - timedelta(days=7)).isoformat()
-    return _count_join_requests_since(week_ago)
-
-
 def join_requests_today() -> int:
     return _count_join_requests_since(date.today().isoformat())
 
@@ -87,6 +86,9 @@ def load_known_groups() -> set[str]:
 
             wb = openpyxl.load_workbook(str(TRACKER_FILE), read_only=True, data_only=True)
             ws = wb.active
+            if ws is None:
+                wb.close()
+                return known
             headers = [
                 str(c.value).lower().strip() if c.value else "" for c in next(ws.iter_rows())
             ]
@@ -98,6 +100,19 @@ def load_known_groups() -> set[str]:
                 if name_col is not None and row[name_col]:
                     known.add(str(row[name_col]).lower())
             wb.close()
+        except Exception:
+            pass
+    if JSON_TRACKER_FILE.exists():
+        try:
+            entries = json.loads(JSON_TRACKER_FILE.read_text())
+            for entry in entries:
+                if entry.get("status") in ("joined", "join_requested"):
+                    u = entry.get("group_url", "").lower()
+                    n = entry.get("group_name", "").lower()
+                    if u:
+                        known.add(u)
+                    if n:
+                        known.add(n)
         except Exception:
             pass
     return known
@@ -209,6 +224,8 @@ def append_to_tracker(group: dict, status: str = "join_requested") -> None:
 
         wb = openpyxl.load_workbook(str(TRACKER_FILE))
         ws = wb.active
+        if ws is None:
+            return
         last_row = ws.max_row + 1
         ws.cell(last_row, 1, group["name"])
         ws.cell(last_row, 2, group["url"])

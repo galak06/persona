@@ -1,8 +1,11 @@
 # pyright: reportMissingImports=false
-"""Read/write helpers for ``.claude/state/pending_groups.json`` (the
+"""Read/write helpers for the brand-dir ``state/pending_groups.json`` (the
 producer-side file the ``fb-group-scout`` scanner writes) plus a join-cap
-gate that reads ``logs/engagement_log.jsonl`` to enforce the 5/day, 15/week
-rate limit.
+gate that reads the brand-dir ``engagement_log.jsonl`` to enforce the
+10/day rate limit.
+
+Both paths resolve through ``settings.paths`` so they honour ``BRAND_DIR``
+(the brand state lives under ``$BRAND_DIR/state``, not the engine repo).
 
 Why this lives in ``lib/``: the approval API (``api/approval_api.py``)
 needs typed access to the pending groups queue and a per-call cap check
@@ -23,7 +26,7 @@ import json
 import logging
 import os
 import sys
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -35,25 +38,31 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from api.schemas import GroupItem
+from lib.config import settings
 
 __all__ = [
     "DAILY_JOIN_CAP",
     "ENGAGEMENT_LOG_PATH",
     "PENDING_GROUPS_PATH",
-    "WEEKLY_JOIN_CAP",
     "commit_group_decision",
     "read_pending_groups",
     "under_join_cap",
 ]
 
-PENDING_GROUPS_PATH: Path = _REPO_ROOT / ".claude" / "state" / "pending_groups.json"
-ENGAGEMENT_LOG_PATH: Path = _REPO_ROOT / "logs" / "engagement_log.jsonl"
+# ``settings.paths`` is typed Optional but is always populated by
+# ``load_config()`` (config.py) before this module is imported.
+_paths = settings.paths
+if _paths is None:  # pragma: no cover - guaranteed by load_config()
+    raise RuntimeError("settings.paths not resolved (is BRAND_DIR set?)")
+PENDING_GROUPS_PATH: Path = _paths.pending_groups
+ENGAGEMENT_LOG_PATH: Path = (
+    _paths.brand_dir / settings.file_paths.engagement_log
+)
 
 # Rate caps come from social-automation/CLAUDE.md
-# (facebook.group_join_requests_per_{day,week}). Hard-coded here because
+# (facebook.group_join_requests_per_day). Hard-coded here because
 # the cap is the contract; config.json is for tunable knobs.
-DAILY_JOIN_CAP: int = 5
-WEEKLY_JOIN_CAP: int = 15
+DAILY_JOIN_CAP: int = 10
 
 # Actions that count toward the join cap in engagement_log.jsonl. The
 # scout writes ``group_join_request`` today; the spec calls it
@@ -246,19 +255,14 @@ def _count_joins_since(cutoff_iso_date: str) -> int:
 def under_join_cap() -> tuple[bool, str]:
     """Gate before approving a group-join.
 
-    Returns ``(allowed, reason)``. Caps come from CLAUDE.md:
-    5 join-requests/day, 15 join-requests/week. ``reason`` is empty when
-    allowed; otherwise it's a short human-readable string the API layer
-    surfaces in the 429 body.
+    Returns ``(allowed, reason)``. Cap comes from CLAUDE.md:
+    10 join-requests/day. ``reason`` is empty when allowed; otherwise it's
+    a short human-readable string the API layer surfaces in the 429 body.
     """
     today_iso = date.today().isoformat()
-    week_ago_iso = (date.today() - timedelta(days=7)).isoformat()
     today_count = _count_joins_since(today_iso)
     if today_count >= DAILY_JOIN_CAP:
         return False, f"daily cap reached ({today_count}/{DAILY_JOIN_CAP})"
-    week_count = _count_joins_since(week_ago_iso)
-    if week_count >= WEEKLY_JOIN_CAP:
-        return False, f"weekly cap reached ({week_count}/{WEEKLY_JOIN_CAP})"
     return True, ""
 
 

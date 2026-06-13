@@ -113,7 +113,7 @@ def search_groups(page, query: str) -> list[dict]:
 
 def pace_between_queries() -> None:
     """Random 3–6s delay between FB searches to look human."""
-    time.sleep(random.uniform(3, 6))
+    time.sleep(random.uniform(3, 6))  # noqa: S311
 
 
 def try_join(page, url: str) -> str:
@@ -126,9 +126,9 @@ def try_join(page, url: str) -> str:
 
 
 def pace_between_joins(is_last: bool = False) -> float:
-    """Random 60–180s delay between join requests. Returns the chosen delay."""
+    """Random 5–20s delay between join requests. Returns the chosen delay."""
     if is_last:
         return 0.0
-    delay = random.uniform(60, 180)
+    delay = random.uniform(5, 20)  # noqa: S311
     time.sleep(delay)
     return delay

@@ -1,3 +1,8 @@
+# ruff: noqa: T201
+# pyright: reportMissingImports=false
+# Pre-existing print()-based step logging throughout this script; structured
+# log migration is deferred to a dedicated refactor (sys.path-based imports
+# also force the pyright suppression — bootstrap rewires sys.path at runtime).
 """Facebook Group Scout — find dog groups to join from niche keywords +
 content-competitor names (data/competitors.json). Reuses the brand FB session.
 
@@ -32,7 +37,6 @@ from group_discovery.fb_search import pace_between_queries, search_groups
 from group_discovery.scoring import parse_member_count, score_group
 from group_discovery.state import (
     add_to_pending,
-    join_requests_this_week,
     join_requests_today,
     load_known_groups,
     load_last_run,
@@ -49,8 +53,7 @@ from notifier import skill_finished, skill_skipped, skill_started
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-JOIN_LIMIT_PER_WEEK = 15
-JOIN_LIMIT_PER_DAY = 5  # ~5x prior cap, still ~5x under FB's ~25/day ceiling
+JOIN_LIMIT_PER_DAY = 10  # ~2.5x under FB's ~25/day ceiling
 MIN_SCORE = 40
 
 SEARCH_QUERIES = [
@@ -60,24 +63,23 @@ SEARCH_QUERIES = [
 ]
 
 
-def compute_budget(bypass_daily: bool = False) -> tuple[int, int, int]:
-    """Return (effective, weekly_remaining, daily_remaining). bypass_daily skips daily cap; weekly always enforced."""
-    w = max(0, JOIN_LIMIT_PER_WEEK - join_requests_this_week())
+def compute_budget(bypass_daily: bool = False) -> tuple[int, int]:
+    """Return (effective, daily_remaining). bypass_daily ignores the daily cap."""
     d = max(0, JOIN_LIMIT_PER_DAY - join_requests_today())
-    return (w if bypass_daily else min(w, d)), w, d
+    return (JOIN_LIMIT_PER_DAY if bypass_daily else d), d
 
 
 def check_rerun_guard(last_run: dict[str, dict[str, Any]]) -> bool:
-    """True if scout should skip (ran successfully in last 7d, no --force)."""
+    """True if scout should skip (ran successfully today, no --force)."""
     last_at = str(last_run.get("fb_group_scout", {}).get("last_run_at") or "")[:10]
     if not last_at:
         return False
     days = (date.today() - date.fromisoformat(last_at)).days
-    if days < 7 and last_run["fb_group_scout"].get("status") == "success":
-        print(f"SKIP: Already ran successfully {days} day(s) ago ({last_at}).")
+    if days < 1 and last_run["fb_group_scout"].get("status") == "success":
+        print(f"SKIP: Already ran successfully today ({last_at}).")
         if "--force" not in sys.argv:
             print("Use --force to override.")
-            skill_skipped("fb-group-scout", f"Already ran {days} day(s) ago")
+            skill_skipped("fb-group-scout", f"Already ran today ({last_at})")
             return True
         print("--force detected, re-running.\n")
     return False
@@ -150,17 +152,66 @@ def main(
     if check_rerun_guard(last_run):
         return
 
-    budget, weekly, daily = compute_budget(bypass_daily=bypass_daily)
-    caps = f"weekly {weekly}/{JOIN_LIMIT_PER_WEEK}, daily {daily}/{JOIN_LIMIT_PER_DAY}"
+    budget, daily = compute_budget(bypass_daily=bypass_daily)
+    caps = f"daily {daily}/{JOIN_LIMIT_PER_DAY}"
     print(f"Budget — {caps}, effective: {budget}")
+
+    # --- Join pre-approved groups first ---
+    known_groups = load_known_groups()
+    pre_approved = [g for g in load_pending() if g.get("status") == "approved"]
+    pre_approved = [g for g in pre_approved if g["url"].lower() not in known_groups]
+    if pre_approved:
+        print(f"Pre-approved queue: {len(pre_approved)} group(s) waiting to join.")
+        if budget <= 0 and not dry_run:
+            print("ABORT: Daily limit already reached — pre-approved groups will join tomorrow.")
+            skill_skipped("fb-group-scout", "Daily limit reached — pre-approved groups queued for tomorrow")
+            return
+        to_join = pre_approved[:budget]
+        print(f"Joining {len(to_join)} pre-approved group(s) (cap: {budget}).")
+        skill_started("fb-group-scout", f"Joining {len(to_join)} pre-approved group(s) — budget: {budget} ({caps})")
+        if not session.is_authenticated():
+            print("ERROR: No saved Facebook session found. Run: python scripts/fb_login.py")
+            return
+        with session.page() as page:
+            print("\nChecking Facebook session...")
+            page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
+            time.sleep(3)
+            if "login" in page.url.lower():
+                print("ABORT: Facebook session expired. Re-run fb_login.py")
+                log_error("SESSION_EXPIRED")
+                return
+            print("Facebook session OK.\n")
+            if dry_run:
+                print("[dry-run] Would join pre-approved groups (skipping actual requests):")
+                for g in to_join:
+                    print(f"  - {g['name']} [{g.get('privacy','?').upper()}]")
+                join_requests_sent = 0
+            else:
+                join_requests_sent = send_join_requests(page, to_join, known_groups)
+        if not dry_run:
+            remove_from_pending([g["url"] for g in to_join])
+        last_run["fb_group_scout"] = _success_record(
+            found=0, approved=len(to_join), sent=join_requests_sent, mode="pre-approved"
+        )
+        save_last_run(last_run)
+        _, daily_after = compute_budget()
+        print(
+            f"\n=== Pre-approved join complete: {join_requests_sent} joined "
+            f"({daily_after}/{JOIN_LIMIT_PER_DAY} daily remaining) ==="
+        )
+        skill_finished("fb-group-scout", (
+            f"Pre-approved: joined {join_requests_sent} group(s)\n"
+            f"Daily remaining: {daily_after}/{JOIN_LIMIT_PER_DAY}"
+        ))
+        return  # skip search phase this run
+
     if budget <= 0 and not dry_run:
-        reason = "Weekly limit reached" if weekly <= 0 else "Daily limit reached — try again tomorrow"
-        print(f"ABORT: {reason}.")
-        skill_skipped("fb-group-scout", reason)
+        print("ABORT: Daily limit reached — try again tomorrow.")
+        skill_skipped("fb-group-scout", "Daily limit reached — try again tomorrow")
         return
+
     skill_started("fb-group-scout", f"Searching for new dog groups — budget: {budget} ({caps})")
 
-    known_groups = load_known_groups()
     print(f"Known groups to skip: {len(known_groups)}")
 
     pending = load_pending()
@@ -222,7 +273,7 @@ def main(
             combined = candidates
 
         approved = get_user_approval(
-            combined, budget, JOIN_LIMIT_PER_WEEK, JOIN_LIMIT_PER_DAY, preselected=preselected
+            combined, budget, JOIN_LIMIT_PER_DAY, preselected=preselected
         )
         if not approved:
             print("\nNo groups approved.")
@@ -243,8 +294,8 @@ def main(
     save_last_run(last_run)
 
     pending_remaining = len(load_pending())
-    _, weekly_after, daily_after = compute_budget()
-    caps_after = f"weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK}, daily {daily_after}/{JOIN_LIMIT_PER_DAY}"
+    _, daily_after = compute_budget()
+    caps_after = f"daily {daily_after}/{JOIN_LIMIT_PER_DAY}"
     print(
         f"\n=== Scout Complete: {len(queries)} queries → {len(all_candidates)} raw → "
         f"{len(candidates)} surfaced → {join_requests_sent} joined "
@@ -252,7 +303,7 @@ def main(
     )
     skill_finished("fb-group-scout", (
         f"🔍 {len(queries)} queries → {len(candidates)} candidates\n"
-        f"✅ Joined: {join_requests_sent} (weekly {weekly_after}/{JOIN_LIMIT_PER_WEEK} remaining)"
+        f"✅ Joined: {join_requests_sent} ({daily_after}/{JOIN_LIMIT_PER_DAY} daily remaining)"
     ))
 
 

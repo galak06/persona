@@ -289,16 +289,16 @@
       "order": 100,
       "output_file": ".claude/state/pending_groups.json",
       "rate_limits": {
-        "join_requests_per_week": 3
+        "join_requests_per_day": 10
       },
-      "re_run_cadence": "weekly",
+      "re_run_cadence": "daily",
       "re_run_guard": true,
       "requires_approval": true,
       "requires_browser": true,
       "schedule": {
-        "cadence": "weekly",
-        "cron": "3 15 * * 0",
-        "next_run": "2026-05-17"
+        "cadence": "daily",
+        "cron": "3 15 * * *",
+        "next_run": "2026-06-14"
       },
       "script": "scripts/fb_group_scout.py",
       "skill": "fb-group-scout",

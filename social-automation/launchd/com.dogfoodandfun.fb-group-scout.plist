@@ -16,8 +16,6 @@
 	<string>/Users/gilcohen/Projects/dogfoodandfun/social-automation</string>
 	<key>StartCalendarInterval</key>
 	<dict>
-		<key>Weekday</key>
-		<integer>0</integer>
 		<key>Hour</key>
 		<integer>15</integer>
 		<key>Minute</key>
