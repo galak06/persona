@@ -162,7 +162,9 @@ class BrandPaths(BaseModel):
     recipe_products: Path
 
     # State paths
-    comment_queue: Path
+    comment_queue: Path  # legacy shared queue — retained for migration/back-compat
+    instagram_comment_queue: Path  # IG loop owns its own queue
+    facebook_comment_queue: Path  # FB loop owns its own queue
     ideator_queue: Path
     campaign_verify_queue: Path
     dedup_cache: Path
@@ -199,17 +201,19 @@ def _resolve_paths(brand_dir: Path) -> BrandPaths:
         backups_dir=brand_dir / "backups",
         campaigns_dir=brand_dir / "campaigns",
         schedule_file=brand_dir / "schedule.json",
-        brand_voice_guide=data_dir / "brand_voice_guide.md",
-        campaigns=data_dir / "campaigns.json",
-        citation_sources=data_dir / "citation_sources.json",
-        competitors=data_dir / "competitors.json",
-        content_rules=data_dir / "content_rules.json",
-        groups_tracker=data_dir / "groups_tracker.json",
-        instagram_accounts=data_dir / "instagram_accounts.csv",
-        keyword_clusters=data_dir / "keyword_clusters.json",
-        post_templates=data_dir / "post_templates.json",
-        recipe_products=data_dir / "recipe_products.json",
+        brand_voice_guide=data_dir / "config" / "brand_voice_guide.md",
+        campaigns=data_dir / "config" / "campaigns.json",
+        citation_sources=data_dir / "config" / "citation_sources.json",
+        competitors=data_dir / "config" / "competitors.json",
+        content_rules=data_dir / "config" / "content_rules.json",
+        groups_tracker=data_dir / "trackers" / "groups_tracker.json",
+        instagram_accounts=data_dir / "config" / "instagram_accounts.csv",
+        keyword_clusters=data_dir / "config" / "keyword_clusters.json",
+        post_templates=data_dir / "config" / "post_templates.json",
+        recipe_products=data_dir / "config" / "recipe_products.json",
         comment_queue=state_dir / "comment_queue.json",
+        instagram_comment_queue=state_dir / "instagram_comment_queue.json",
+        facebook_comment_queue=state_dir / "facebook_comment_queue.json",
         ideator_queue=state_dir / "ideator_queue.json",
         campaign_verify_queue=state_dir / "campaign_verify_queue.json",
         dedup_cache=state_dir / "dedup_cache.json",

@@ -4,8 +4,9 @@ Branded "recipe card" images (4:5, **1080×1350**) for Instagram / Facebook imag
 posts, in the **Nalla's Dad** voice for [dogfoodandfun.com](https://dogfoodandfun.com).
 
 This is a **template exploration** step: three distinct styles to choose from.
-It is self-contained — nothing in `prepare.py` / `publish_prepared.py` is wired up
-yet. Integration comes after a style is picked.
+The carousel pipeline (`prepare.py` / `publish_prepared.py`) is still not wired to
+these cards. However, a **DB-backed render path now exists** and is the supported
+way to produce a card today (see "Rendering from the recipe DB" below).
 
 ## Engine / brand split
 
@@ -28,7 +29,7 @@ sibling `dogfoodandfun/` dir.
 BRAND_DIR=/path/to/dogfoodandfun python recipe-publisher/templates/recipe_card/render.py
 ```
 
-Renders the three example PNGs into `<BRAND_DIR>/data/recipe_card_templates/examples/`.
+Renders the example PNGs into `<BRAND_DIR>/data/recipe_card_templates/examples/`.
 Each card is rendered with
 Playwright/chromium at 2× device-scale for crisp type, then downscaled to the
 exact 1080×1350 spec. Templates load local fonts and photos via absolute
@@ -37,12 +38,15 @@ backgrounds are blocked under `page.set_content`).
 
 If chromium is missing: `python -m playwright install chromium`.
 
-## The three styles
+## The two styles
+
+> **Template A (split collage) was removed** — it needs three distinct photos and
+> repeats the single hero when a recipe has no generated slides, and its ingredient
+> panel overflows the URL pill on longer lists. **B** is the default.
 
 | Style | File | Layout | Accent |
 |---|---|---|---|
-| **A** split collage | `template_a_split_collage.html` | Top: cream text panel (title + paw divider + ingredients + URL pill) beside a hero photo. Bottom: 2-up photo grid. Brown footer ribbon. | purple `#5b4b8a` |
-| **B** photo top | `template_b_photo_top.html` | Full-bleed hero on top ~58%. Bottom cream panel: hand-lettered title, prep/cook/makes chips, circular cut-out + "you will need…" label with squiggly arrow, paw-bulleted ingredients (with parenthetical prep notes). | terracotta `#c2683d` |
+| **B** photo top (default) | `template_b_photo_top.html` | Full-bleed hero on top ~58%. Bottom cream panel: hand-lettered title, prep/cook/makes chips, circular cut-out + "you will need…" label with squiggly arrow, paw-bulleted ingredients (with parenthetical prep notes). | terracotta `#c2683d` |
 | **C** framed overlay (original) | `template_c_framed_overlay.html` | Full-bleed hero photo with a floating translucent cream recipe-card: eyebrow, two-tone title, paw divider, two columns (Ingredients · numbered Method), bottom URL tagline. Magazine-clean. | green `#3f7a6b` |
 
 Shared brand palette: cream `#f5efe5`, dark brown `#3a221a`, near-black `#1a1a1a`,
@@ -83,6 +87,34 @@ uses `steps`. Long ingredient/step lists are capped gracefully (first N, then a
 To render a different recipe/style, edit the `JOBS` list in `render.py` or call
 `render(RenderJob(style, seed_id, out_name), out_dir)` directly.
 
+## Rendering from the recipe DB (supported path)
+
+`scripts/render_card_from_db.py` renders a card straight from a `recipes.db` row —
+no seed export or `ready/` campaign folder required:
+
+```bash
+BRAND_DIR=/path/to/dogfoodandfun \
+  python recipe-publisher/scripts/render_card_from_db.py --id <recipe-slug> [--style a|b|c]
+```
+
+It builds a `RecipeCardData` from the DB (title from `display_name`/`name`,
+ingredients with decimal→fraction cleanup), reuses the recipe's local
+`images/featured.jpg` artifact as the hero (downloading `hero_image_url` only if
+absent), then calls `render_card(job, out_dir, card)` — the data-driven entrypoint
+split out of `render()` for exactly this purpose.
+
+Output + DB side effects (so the web frontend lists it):
+
+- writes `<BRAND_DIR>/data/recipe_artifacts/<id>/images/recipe_card.png`
+- sets `recipes.artifacts_path`, `recipes.card_path`, `recipes.card_created_at`
+  (via `RecipeRepository.set_artifacts_path` / `set_card`)
+
+The browse API then exposes `card_path` + `card_created_at` on the recipe, and the
+artifacts viewer (`GET /api/v1/recipes/{id}/artifacts`) lists the rendered card.
+
+Default style is **B** (single hero, no photo-grid repetition). For a recipe with
+no generated slides, B's circular cut-out falls back to the hero image.
+
 ## Files
 
 **ENGINE** (`recipe-publisher/templates/recipe_card/`):
@@ -92,9 +124,9 @@ To render a different recipe/style, edit the `JOBS` list in `render.py` or call
 
 **BRAND** (`<BRAND_DIR>/data/recipe_card_templates/`):
 
-- `template_*.html` — the three styles (string-substitution placeholders, no Jinja).
-- `examples/` — the three rendered example PNGs.
-- `review/` — standalone, browser-previewable refinements of the three styles (see below).
+- `template_*.html` — the two styles (string-substitution placeholders, no Jinja).
+- `examples/` — the rendered example PNGs.
+- `review/` — standalone, browser-previewable refinements of the styles (see below).
 
 ## `review/` — browser preview & design tweaking
 

@@ -14,6 +14,9 @@ which renders the three example PNGs into ``examples/``. See README.md for the
 data contract used to wire this into prepare.py later.
 """
 
+# pyright: reportMissingImports=false, reportMissingModuleSource=false
+# (mirrors social-automation/pyrightconfig.json; the PostToolUse hook type-checks
+#  a /tmp copy where the project venv + config don't apply, so resolve inline.)
 from __future__ import annotations
 
 import html
@@ -51,7 +54,7 @@ def _brand_dir() -> Path:
 
 
 # Brand-owned templates + rendered examples live under the brand dir.
-TEMPLATES_DIR = _brand_dir() / "data" / "recipe_card_templates"
+TEMPLATES_DIR = _brand_dir() / "data" / "templates" / "recipe_card_templates"
 
 WIDTH = 1080
 HEIGHT = 1350
@@ -63,7 +66,7 @@ MAX_STEPS = 6
 
 # One tasteful warm accent per template.
 # TODO: move accents/byline/domain to brand.json visual block when design is locked
-ACCENTS = {"a": "#5b4b8a", "b": "#c2683d", "c": "#3f7a6b"}
+ACCENTS = {"b": "#c2683d", "c": "#3f7a6b"}
 
 
 @dataclass
@@ -137,7 +140,7 @@ def _short_yield(text: str) -> str:
 
 
 def build_html(job: RenderJob, data: RecipeCardData) -> str:
-    template = TEMPLATES_DIR / f"template_{ {'a':'a_split_collage','b':'b_photo_top','c':'c_framed_overlay'}[job.style] }.html"
+    template = TEMPLATES_DIR / f"template_{ {'b':'b_photo_top','c':'c_framed_overlay'}[job.style] }.html"
     markup = template.read_text(encoding="utf-8")
 
     hero_uri = data.hero_path.as_uri()
@@ -148,19 +151,7 @@ def build_html(job: RenderJob, data: RecipeCardData) -> str:
         "{{hero_url}}": hero_uri,
     }
 
-    if job.style == "a":
-        slides = data.slide_paths
-        photo1 = (slides[0] if len(slides) > 0 else data.hero_path).as_uri()
-        photo2 = (slides[1] if len(slides) > 1 else data.hero_path).as_uri()
-        repl.update(
-            {
-                "{{title_html}}": _two_tone_title(data.title),
-                "{{ingredients_html}}": _ingredients_html(data.ingredients, with_notes=False),
-                "{{photo_1}}": photo1,
-                "{{photo_2}}": photo2,
-            }
-        )
-    elif job.style == "b":
+    if job.style == "b":
         cutout = (data.slide_paths[2] if len(data.slide_paths) > 2 else data.hero_path).as_uri()
         repl.update(
             {
@@ -198,12 +189,17 @@ def verify_assets(data: RecipeCardData) -> list[str]:
 
 
 def render(job: RenderJob, out_dir: Path) -> Path:
-    data = load_recipe_card(job.seed_id)
-    missing = verify_assets(data)
+    """Render ``job`` from its seed/campaign folder (the seeds.json path)."""
+    return render_card(job, out_dir, load_recipe_card(job.seed_id))
+
+
+def render_card(job: RenderJob, out_dir: Path, card: RecipeCardData) -> Path:
+    """Render ``job`` from already-resolved card data (e.g. a DB-backed source)."""
+    missing = verify_assets(card)
     if missing:
         for m in missing:
             logger.warning("missing asset: %s", m)
-    markup = build_html(job, data)
+    markup = build_html(job, card)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / job.out_name
@@ -229,12 +225,11 @@ def render(job: RenderJob, out_dir: Path) -> Path:
         if img.size != (WIDTH, HEIGHT):
             img.resize((WIDTH, HEIGHT), Image.Resampling.LANCZOS).save(out_path)
 
-    logger.info("rendered %s (%s)", out_path, data.seed_id)
+    logger.info("rendered %s (%s)", out_path, card.seed_id)
     return out_path
 
 
 JOBS = [
-    RenderJob("a", "salmon-sweet-potato-omega-bites", "example_a_split_collage.png"),
     RenderJob("b", "hearty-spring-beef-veggie-bowl", "example_b_photo_top.png"),
     RenderJob("c", "raw-beef-organ-patties-barf", "example_c_framed_overlay.png"),
 ]

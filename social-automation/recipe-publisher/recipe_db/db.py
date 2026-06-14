@@ -19,15 +19,15 @@ _SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 def resolve_db_path() -> Path:
     """Return the recipes.db path, creating its parent dir if needed.
 
-    Prefers `${BRAND_DIR}/data/recipes.db`. Falls back to a path under the
+    Prefers `${BRAND_DIR}/data/db/recipes.db`. Falls back to a path under the
     recipe-publisher package dir when `BRAND_DIR` is unset (logs a warning).
     """
     brand_dir = os.environ.get("BRAND_DIR")
     if brand_dir:
-        db_path = Path(brand_dir) / "data" / "recipes.db"
+        db_path = Path(brand_dir) / "data" / "db" / "recipes.db"
     else:
         fallback_root = Path(__file__).resolve().parent.parent
-        db_path = fallback_root / "data" / "recipes.db"
+        db_path = fallback_root / "data" / "db" / "recipes.db"
         logger.warning(
             "BRAND_DIR unset; falling back to %s for recipe DB", db_path
         )
@@ -63,6 +63,17 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "generated_content": "TEXT DEFAULT '{}'",
         "content_status": "TEXT NOT NULL DEFAULT 'none'",
         "publish_results": "TEXT DEFAULT '[]'",
+        "html_exported_at": "TEXT DEFAULT NULL",
+        # Decoupled-worker artifact markers. Each worker owns one (or two) of
+        # these and polls on "(prerequisite filled) AND (my output empty)" — see
+        # recipe-publisher/workers/. Additive, worker-written-only.
+        "wp_post_id": "INTEGER DEFAULT NULL",
+        "pdf_url": "TEXT DEFAULT ''",
+        "slides_created_at": "TEXT DEFAULT ''",
+        "slides_count": "INTEGER DEFAULT 0",
+        "reel_created_at": "TEXT DEFAULT ''",
+        "audio_ready_at": "TEXT DEFAULT ''",
+        "social_published_at": "TEXT DEFAULT ''",
     },
 }
 

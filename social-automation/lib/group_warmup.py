@@ -12,11 +12,12 @@ when a join is detected. This module is read-only.
 
 from __future__ import annotations
 
-import json
-from lib.config import settings
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
+
+from lib import groups_db
+from lib.config import settings
 
 GROUPS_TRACKER_PATH: Final[Path] = settings.paths.groups_tracker
 
@@ -30,14 +31,7 @@ def _normalize_url(url: str) -> str:
 
 
 def _load_tracker() -> list[dict]:
-    if not GROUPS_TRACKER_PATH.exists():
-        return []
-    try:
-        with GROUPS_TRACKER_PATH.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-    except (json.JSONDecodeError, OSError):
-        return []
-    return data if isinstance(data, list) else []
+    return groups_db.load_all()
 
 
 def _parse_iso(value: str) -> datetime | None:
@@ -66,9 +60,9 @@ def is_group_warm(group_url: str, hours: int, now: datetime | None = None) -> bo
     joined = joined_at(group_url)
     if joined is None:
         return True
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     if joined.tzinfo is None:
-        joined = joined.replace(tzinfo=timezone.utc)
+        joined = joined.replace(tzinfo=UTC)
     return current - joined >= timedelta(hours=hours)
 
 
@@ -77,9 +71,9 @@ def hours_until_warm(group_url: str, hours: int, now: datetime | None = None) ->
     joined = joined_at(group_url)
     if joined is None:
         return 0.0
-    current = now or datetime.now(timezone.utc)
+    current = now or datetime.now(UTC)
     if joined.tzinfo is None:
-        joined = joined.replace(tzinfo=timezone.utc)
+        joined = joined.replace(tzinfo=UTC)
     elapsed = current - joined
     remaining = timedelta(hours=hours) - elapsed
     return max(0.0, remaining.total_seconds() / 3600)

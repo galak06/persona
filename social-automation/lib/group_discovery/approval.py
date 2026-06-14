@@ -1,8 +1,6 @@
-"""User-facing prompts + candidate display + join execution for fb-group-scout."""
+"""Candidate display + join execution for fb-group-scout (no interactive prompts)."""
 
 from __future__ import annotations
-
-import sys
 
 from group_discovery.fb_search import pace_between_joins, try_join
 from group_discovery.state import (
@@ -10,14 +8,6 @@ from group_discovery.state import (
     log_error,
     log_join_request,
 )
-
-
-def parse_approve_arg() -> str | None:
-    """Return the value after --approve in sys.argv, or None if not present."""
-    if "--approve" not in sys.argv:
-        return None
-    i = sys.argv.index("--approve")
-    return sys.argv[i + 1] if i + 1 < len(sys.argv) else None
 
 
 def print_candidate(i: int, g: dict) -> None:
@@ -40,30 +30,23 @@ def print_candidate(i: int, g: dict) -> None:
 def get_user_approval(
     candidates: list[dict],
     budget: int,
-    weekly_cap: int,
-    daily_cap: int,
-    preselected: str | None = None,
+    selection: str = "all",
 ) -> list[dict]:
-    """Prompt user for approval, or use `preselected` (same syntax) if provided.
+    """Select which candidates to join from ``selection`` (NON-interactive).
 
-    `preselected` accepts 'all', 'none', or whitespace/comma-separated indices
-    like '1 3 5' or '1,3,5'. When set, no stdin prompt is shown.
+    The interactive stdin approval prompt was removed — the scout auto-approves
+    up to the daily cap. ``selection`` accepts 'all', 'none', or whitespace/
+    comma-separated 1-based indices like '1 3 5'. Returns at most ``budget``.
     """
     print("\n" + "=" * 60)
-    print(f"Facebook Group Scout — {len(candidates)} candidates")
-    print(f"Budget: {budget} (weekly cap {weekly_cap}, daily cap {daily_cap})")
+    print(f"Facebook Group Scout — {len(candidates)} candidates (auto-approve)")
     print("=" * 60)
     for i, g in enumerate(candidates, 1):
         print_candidate(i, g)
     print("\n" + "-" * 60)
-    if preselected is not None:
-        response = preselected.strip().lower()
-        print(f"[--approve {preselected!r}]")
-    else:
-        print(f"Approve which groups to join/request? (max {budget} now)")
-        print("  Enter: 'all'  |  numbers like '1 3'  |  'none' to skip")
-        response = input("Your choice: ").strip().lower()
-    if response == "none" or not response:
+    response = (selection or "all").strip().lower()
+    print(f"[approve {response!r}]")
+    if response == "none":
         return []
     if response == "all":
         return candidates[:budget]

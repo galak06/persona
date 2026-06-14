@@ -219,19 +219,31 @@ def _program_arguments(task: Flow, paths: PlistPaths) -> list[str]:
        try to open a path that includes the flags. `python -m mod` -> `-m mod`.
     3. Claude-CLI skill: `[claude, --dangerously-skip-permissions, /<skill>]`
        Used when task.script is missing or null (skill runs via Claude Code).
+
+    An optional ``args`` list on the flow is appended in every flavour, so a
+    per-platform loop can pass ``["--platform", "instagram"]`` (forwarded to the
+    child by the watchdog) or a skill positional like ``["instagram"]`` while
+    keeping the watchdog wrapper intact.
     """
+    extra_args = [str(a) for a in task.get("args", []) if str(a).strip()]
     script = task.get("script")
     if not isinstance(script, str) or not script.strip():
         skill = task.get("skill") or _task_short_name(task["id"], "")
-        return [paths["claude_cli"], "--dangerously-skip-permissions", f"/{skill}"]
+        return [
+            paths["claude_cli"],
+            "--dangerously-skip-permissions",
+            f"/{skill}",
+            *extra_args,
+        ]
     tokens = _split_script(script)
     if len(tokens) > 1:
         # Embedded args (or `-m module`): emit each token separately.
-        return [paths["python"], *tokens]
+        return [paths["python"], *tokens, *extra_args]
     return [
         paths["python"],
         paths["watchdog_script"],
         *tokens,
+        *extra_args,
         "--timeout",
         paths["watchdog_timeout"],
     ]

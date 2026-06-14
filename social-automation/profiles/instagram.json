@@ -2,7 +2,7 @@
   "platform": "instagram",
   "rate_limits": {
     "feed_posts_per_day": 2,
-    "likes_per_day": 8,
+    "likes_per_day": 20,
     "comments_per_day": 10,
     "follows_per_day": 22,
     "delay_between_likes": "10-45s random",
@@ -19,14 +19,14 @@
         "cron": "3 19 * * *",
         "cadence": "daily"
       },
-      "output_file": ".claude/state/comment_queue.json",
+      "output_file": "state/instagram_comment_queue.json",
       "re_run_guard": true,
       "requires_browser": true,
       "requires_approval": false,
       "telegram_notify": true,
       "rate_limits": {
-        "likes_per_day": 8,
-        "comments_per_day": 2
+        "likes_per_day": 20,
+        "comments_per_day": 10
       },
       "order": 30,
       "depends_on": [
@@ -40,6 +40,48 @@
           "produced_by": "site-analyzer"
         }
       ]
+    },
+    {
+      "id": "ig-comment-approver",
+      "skill": "comment-composer",
+      "script": "scripts/comment_approver.py",
+      "args": ["--platform", "instagram"],
+      "description": "IG loop: auto-approve drafted Instagram comments from the Instagram queue (Phase-3 autonomous, no Telegram round-trip)",
+      "schedule": {
+        "cron": "0 8-22 * * *",
+        "cadence": "hourly"
+      },
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_browser": false,
+      "requires_approval": false,
+      "telegram_notify": false,
+      "order": 51,
+      "depends_on": [
+        "ig-scanner"
+      ],
+      "inputs": []
+    },
+    {
+      "id": "ig-comment-poster",
+      "skill": "comment-composer",
+      "script": "scripts/comment_poster.py",
+      "args": ["--platform", "instagram"],
+      "description": "IG loop: post approved Instagram comments (max 10/day) from the Instagram queue",
+      "schedule": {
+        "cron": "0 9 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "order": 52,
+      "depends_on": [
+        "ig-comment-approver"
+      ],
+      "inputs": []
     },
     {
       "id": "ig-own-comments",
@@ -61,5 +103,5 @@
       "inputs": []
     }
   ],
-  "_notes": "comments_per_day bumped from 2 to 10 in slice 3 (ADR-0002); reflected here as canonical. Slice B added flows[]."
+  "_notes": "comments_per_day bumped from 2 to 10 in slice 3 (ADR-0002); reflected here as canonical. likes_per_day bumped from 8 to 20 (IG-loop split); ig-scanner flow override raised to 20 likes / 10 comments. Slice B added flows[]."
 }

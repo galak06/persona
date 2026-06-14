@@ -452,7 +452,7 @@ def _build_recipe_stub(meta: dict[str, Any], ig_caption: str) -> Any:
     )
 
 
-def publish_one(folder: Path, *, dry_run: bool) -> bool:
+def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     seed_id = folder.name
     meta = _read_metadata(folder)
     wp_id = meta.get("wp_draft_id")
@@ -501,9 +501,11 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
         live_url = _promote_wp_draft(client, int(wp_id))
     logger.info("WP %d promoted to publish: %s", wp_id, live_url)
 
-    # Step 2.5: recipe card PDF — best-effort; never blocks the publish flow
+    # Step 2.5: recipe card PDF — best-effort; never blocks the publish flow.
+    # Skipped when the caller (Worker D) already owns the PDF (set via
+    # workers.worker_wp_pdf) to avoid a duplicate media-library upload.
     rc = settings.recipe_card
-    if rc.enabled:
+    if rc.enabled and not skip_pdf:
         try:
             from lib.recipe_card import content_parser, pdf_generator, wp_sync as rc_wp  # noqa: E402
             _post = rc_wp.fetch_post_data(int(wp_id))
@@ -527,6 +529,34 @@ def publish_one(folder: Path, *, dry_run: bool) -> bool:
                 logger.info("Post %d: no parseable recipe — skipping card.", wp_id)
         except Exception as exc:
             logger.warning("Recipe card generation failed for WP %d: %s", wp_id, exc)
+
+    # Step 2.55: render recipe_page.html — best-effort; never blocks the publish flow
+    try:
+        import os as _os
+        from recipe_db import db as _rdb  # noqa: PLC0415
+        from recipe_db.repository import RecipeRepository as _RecipeRepository  # noqa: PLC0415
+        from pipeline.html_export import can_export as _can_export, export_html as _export_html  # noqa: PLC0415
+
+        _brand_dir_env = _os.environ.get("BRAND_DIR")
+        _brand_dir = Path(_brand_dir_env) if _brand_dir_env else PROJECT_ROOT
+        _db_path = _brand_dir / "data" / "db" / "recipes.db"
+        if not _db_path.exists():
+            _db_path = PROJECT_ROOT / "recipe-publisher" / "data" / "db" / "recipes.db"
+        _recipe_slug = meta.get("slug", "") or seed_id
+        if _recipe_slug and _db_path.exists():
+            _conn = _rdb.connect(_db_path)
+            try:
+                _repo = _RecipeRepository(_conn)
+                _row = _repo.get_recipe(_recipe_slug)
+                if _row and _can_export(_row, _brand_dir):
+                    _html_path = _export_html(_row, _brand_dir, _repo)
+                    logger.info("HTML page exported for %s: %s", _recipe_slug, _html_path)
+                else:
+                    logger.info("HTML export skipped for %s (can_export=False or row missing)", _recipe_slug)
+            finally:
+                _conn.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("HTML page export failed for %s: %s", seed_id, exc)
 
     # Step 2.6: Embed audio player in WP post (best-effort, non-blocking)
     # Use the slug-named .mp3 (the cooking song) — not audio.mp3 which is the

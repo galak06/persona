@@ -26,8 +26,8 @@ import sys
 from pathlib import Path
 
 # Path bridge: import recipe-publisher packages (publishers / generators) AND
-# social-automation packages (lib.*) regardless of cwd. Mirrors
-# scripts/publish_wp_pdf_batch.py.
+# social-automation packages (lib.*) regardless of cwd. Same pattern as
+# workers/__init__.py.
 _RP = Path(__file__).resolve().parent.parent
 _SA = _RP.parent
 for _p in (str(_SA), str(_RP)):

@@ -120,6 +120,9 @@ class RecipeRow:
     # Local artifact folder (images/reels/audio/meta), relative to BRAND_DIR.
     # Empty until the recipe has generated/imported assets on disk.
     artifacts_path: str = ""
+    # ISO-8601 timestamp set when the HTML page export phase completes.
+    # Empty until the HTML export phase has run for this recipe.
+    html_exported_at: str | None = None
     # Rendered static recipe-card image (BRAND_DIR-relative) + when it was
     # generated. Empty until the card template has been created for this recipe.
     card_path: str = ""
@@ -153,6 +156,17 @@ class RecipeRow:
     # Per-channel publish status: {channel: {state, url, ref, at}} where
     # channel is one of wp / pdf / ig / fb. Synced from publish records.
     publish_status: dict[str, dict[str, str]] = field(default_factory=dict)
+    # --- Decoupled-worker artifact markers (recipe-publisher/workers/). Each is
+    # written by exactly one worker; a worker's poll predicate is
+    # "(prerequisite filled) AND (my output empty)". Worker-written-only:
+    # never set on insert/upsert, so DB defaults apply on scrape.
+    wp_post_id: int | None = None          # Worker A: numeric WP draft/post id
+    pdf_url: str = ""                      # Worker A: uploaded recipe-card PDF url
+    slides_created_at: str = ""            # Worker B: ISO ts when slides saved
+    slides_count: int = 0                  # Worker B: number of slides saved
+    reel_created_at: str = ""              # Worker C: ISO ts when source.mp4 made
+    audio_ready_at: str = ""               # Worker D: ISO ts when audio detected
+    social_published_at: str = ""          # Worker D: ISO ts when IG/FB/Pin done
 
     def ensure_id(self) -> str:
         """Populate `id` from the recipe name slug if not already set."""

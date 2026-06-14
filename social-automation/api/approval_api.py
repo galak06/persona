@@ -238,13 +238,13 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        assert path is not None  # noqa: S101
+        assert path is not None
         payload = body or ApproveBody()
         return rh.approve_comment(
             path, item_id, decision_status="approved", text=payload.text
         )
     if kind == "blog_post":
-        assert path is not None  # noqa: S101
+        assert path is not None
         payload = body or ApproveBody()
         return rh.approve_blog_post(
             path, item_id, channel=channel, text=payload.text,
@@ -252,7 +252,7 @@ def approve_item(
             decision_status="approved",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_generic(path, item_id, decision_status="approved")
     return rh.approve_group(raw, status_value="approved", background_tasks=background_tasks)
 
@@ -271,18 +271,18 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_comment(
             path, item_id, decision_status="USER_SKIPPED", text=None
         )
     if kind == "blog_post":
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_blog_post(
             path, item_id, channel=None, text=None,
             fb_caption=None, ig_caption=None, decision_status="USER_SKIPPED",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_generic(path, item_id, decision_status="USER_SKIPPED")
     return rh.approve_group(
         raw, status_value="USER_SKIPPED", background_tasks=background_tasks,
@@ -306,7 +306,7 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
-    assert path is not None  # noqa: S101
+    assert path is not None
     if kind == "comment":
         return rh.approve_comment(
             path, item_id, decision_status="edited", text=body.text
@@ -326,13 +326,14 @@ def list_facebook_groups() -> FacebookGroupsResponse:
       - groups_tracker.json -> status in {joined, join_requested, rejected}
       - pending_groups.json -> projected with synthetic status="not_joined_yet"
     """
+    from lib import groups_db
     from lib.io.jsonio import read_json
 
-    assert settings.paths is not None  # noqa: S101
+    assert settings.paths is not None
     groups: list[FacebookGroup] = []
 
     try:
-        tracker_data = read_json(settings.paths.groups_tracker, default=[])
+        tracker_data = groups_db.load_all()
         if isinstance(tracker_data, list):
             groups.extend(FacebookGroup.model_validate(g) for g in tracker_data)
     except FileNotFoundError:
@@ -366,25 +367,21 @@ def list_facebook_groups() -> FacebookGroupsResponse:
 
 @app.put("/api/v1/facebook/groups/{group_name}", response_model=FacebookGroup)
 def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> FacebookGroup:
-    """Update a Facebook group's status."""
-    import json
+    """Update a Facebook group's status / posting_mode in the groups DB."""
+    from lib import groups_db
 
-    assert settings.paths is not None  # noqa: S101
-    groups_file = settings.paths.groups_tracker
-    if not groups_file.exists():
-        raise HTTPException(status_code=404, detail="groups tracker not found")
-    data = json.loads(groups_file.read_text(encoding="utf-8"))
+    group = groups_db.get_by_name(group_name)
+    if group is None:
+        raise HTTPException(status_code=404, detail=f"group {group_name} not found")
 
-    for g in data:
-        if g.get("group_name") == group_name:
-            if body.status is not None:
-                g["status"] = body.status
-            if body.posting_mode is not None:
-                g["posting_mode"] = body.posting_mode
-            groups_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            return FacebookGroup.model_validate(g)
+    url = str(group["group_url"])
+    if body.status is not None:
+        groups_db.set_status(url, body.status)
+    if body.posting_mode is not None:
+        groups_db.set_posting_mode(url, body.posting_mode)
 
-    raise HTTPException(status_code=404, detail=f"group {group_name} not found")
+    updated = groups_db.get_by_name(group_name)
+    return FacebookGroup.model_validate(updated)
 
 
 @app.get("/api/v1/health")
@@ -466,7 +463,7 @@ def trigger_schedule(label: str, force: bool = Query(default=False)) -> TriggerR
                     label=label,
                 )
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             ["/bin/launchctl", "start", label],
             capture_output=True, text=True, check=False, timeout=10,
         )
@@ -487,7 +484,7 @@ def list_missing_flows() -> MissingFlowsResponse:
     import json
     import subprocess
 
-    assert settings.paths is not None  # noqa: S101
+    assert settings.paths is not None
 
     schedule_file = settings.paths.schedule_file
     if not schedule_file.exists():

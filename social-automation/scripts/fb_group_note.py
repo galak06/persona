@@ -29,7 +29,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,7 +36,7 @@ from pathlib import Path
 from lib.groups.notes import append_group_note
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TRACKER_FILE = settings.paths.groups_tracker
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 
 _VALID_MODES = {
     "direct",
@@ -50,11 +49,11 @@ _VALID_MODES = {
 
 
 def _load() -> list[dict]:
-    return json.loads(TRACKER_FILE.read_text()) if TRACKER_FILE.exists() else []
+    return groups_db.load_all()
 
 
 def _save(data: list[dict]) -> None:
-    TRACKER_FILE.write_text(json.dumps(data, indent=2))
+    groups_db.save_all(data)
 
 
 def _ensure_fields(entry: dict) -> None:

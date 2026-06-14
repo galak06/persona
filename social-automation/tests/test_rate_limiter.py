@@ -96,7 +96,7 @@ class TestGetDailyStatus:
         rate_limiter.record_action("instagram", "like")
         status = rate_limiter.get_daily_status()
         assert status["instagram:like"]["used"] == 2
-        assert status["instagram:like"]["remaining"] == 6
+        assert status["instagram:like"]["remaining"] == 18
 
 
 class TestDailyLimits:
@@ -110,7 +110,7 @@ class TestDailyLimits:
         assert rate_limiter.DAILY_LIMITS["facebook:group_post"] == 10
         assert rate_limiter.DAILY_LIMITS["facebook:group_join"] == 5
         assert rate_limiter.DAILY_LIMITS["facebook:page_post"] == 3
-        assert rate_limiter.DAILY_LIMITS["instagram:like"] == 8
+        assert rate_limiter.DAILY_LIMITS["instagram:like"] == 20
         assert rate_limiter.DAILY_LIMITS["instagram:comment"] == 10
         assert rate_limiter.DAILY_LIMITS["instagram:follow"] == 22
         assert rate_limiter.DAILY_LIMITS["instagram:feed_post"] == 2

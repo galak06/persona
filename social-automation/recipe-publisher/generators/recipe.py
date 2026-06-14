@@ -18,9 +18,16 @@ from dataclasses import dataclass, field
 from .caption_validator import validate_hook
 from .drafter import Drafter, get_drafter
 from .recipe_from_seed import assemble_body_markdown
-from .seeds import NoSeedMatchError, match_seed
+from .seeds import NoSeedMatchError, load_seeds, match_seed
 
 logger = logging.getLogger(__name__)
+
+
+def _seed_by_id(seed_id: str):  # noqa: ANN202 — RecipeSeed; avoid circular import
+    """Return the seed with this exact id, or None. Deterministic counterpart
+    to ``match_seed`` for callers that already know the precise recipe (e.g.
+    batch publishing a specific DB row, not a fuzzy topic)."""
+    return next((s for s in load_seeds() if s.id == seed_id), None)
 
 
 @dataclass
@@ -54,6 +61,7 @@ def generate_recipe(
     *,
     drafter: Drafter | None = None,
     hook_blocklist: list[str] | None = None,
+    seed_id: str | None = None,
 ) -> Recipe:
     """Match topic to a seed and produce a voice-wrapped recipe. Raises if no seed fits.
 
@@ -67,14 +75,15 @@ def generate_recipe(
             without brand context). On first failure, the drafter is re-prompted
             once with an explicit anti-pattern hint; second failure raises.
     """
-    seed = match_seed(topic)
+    seed = _seed_by_id(seed_id) if seed_id else match_seed(topic)
     if seed is None:
+        target = f"id {seed_id!r}" if seed_id else f"topic {topic!r}"
         raise NoSeedMatchError(
-            f"No seed matches topic {topic!r}. "
+            f"No seed matches {target}. "
             f"Add a seed to seeds/seeds.json — we do not invent recipes."
         )
 
-    logger.info("topic=%r matched seed=%s", topic, seed.id)
+    logger.info("topic=%r seed=%s (by_id=%s)", topic, seed.id, bool(seed_id))
 
     voice_drafter = drafter or get_drafter()
     voice = _draft_with_hook_retry(voice_drafter, topic, seed, hook_blocklist)
@@ -184,6 +193,40 @@ _VAGUE_TIME = (
 
 _NUMBER_RE = re.compile(r"\d")
 
+_WORD_NUMBERS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+# A number (digit or word) within two words of "ingredient(s)", e.g.
+# "4 simple ingredients", "three ingredients", "5 main ingredients".
+_INGREDIENT_COUNT_RE = re.compile(
+    r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b"
+    r"(?:\s+\w+){0,2}\s+ingredients?\b",
+    re.IGNORECASE,
+)
+
+
+def _claimed_ingredient_count(caption: str) -> int | None:
+    """Extract an explicit ingredient count asserted in the caption, or None.
+
+    Catches both digit ("4 simple ingredients") and spelled ("three
+    ingredients") forms so a caption can't under/over-count vs the recipe.
+    """
+    m = _INGREDIENT_COUNT_RE.search(caption)
+    if m is None:
+        return None
+    token = m.group(1).lower()
+    return int(token) if token.isdigit() else _WORD_NUMBERS[token]
+
 
 def _validate(recipe: Recipe) -> None:
     if not 120 <= len(recipe.meta_description) <= 165:
@@ -207,6 +250,12 @@ def _validate(recipe: Recipe) -> None:
             raise ValueError(f"ig_caption missing required branded hashtag {tag!r}")
     if len(recipe.ingredients) < 1:
         raise ValueError("recipe must have at least one ingredient")
+    claimed = _claimed_ingredient_count(recipe.ig_caption)
+    if claimed is not None and claimed != len(recipe.ingredients):
+        raise ValueError(
+            f"ig_caption claims {claimed} ingredients but recipe has "
+            f"{len(recipe.ingredients)} — counts must match the recipe card"
+        )
     if len(recipe.steps) < 3:
         raise ValueError(f"too few steps: {len(recipe.steps)} (min 3)")
 
@@ -296,9 +345,11 @@ def _validate(recipe: Recipe) -> None:
         # AND only look near the start of the step so narrative references to
         # cooking ("during the long simmer") don't count as imperative actions.
         first_clause = low[:60]
+        # NB: kneading/rolling/shaping are prep verbs with no doneness state —
+        # only true cooking verbs require a time/temp/visual cue here.
         is_action = bool(
             re.search(
-                r"\b(bake|simmer|boil|roast|cook|fry|saut[eé]|whisking until|knead|dehydrate)\b",
+                r"\b(bake|simmer|boil|roast|cook|fry|saut[eé]|whisking until|dehydrate)\b",
                 first_clause,
             )
         )

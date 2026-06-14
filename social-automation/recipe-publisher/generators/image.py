@@ -31,14 +31,21 @@ _IMAGEN_FAST = "imagen-4.0-fast-generate-001"
 _IMAGEN_STANDARD = "imagen-4.0-generate-001"
 _NANO_PRO = "gemini-3-pro-image-preview"
 
+# Positive, dog-context everyday styling. We deliberately do NOT enumerate
+# forbidden objects ("no forks/knives") — diffusion models invert negation and
+# naming cutlery pulls it INTO the frame. Instead we describe a homemade
+# dog-treat scene that has no place for human dining ware.
 _STYLE_SUFFIX = (
-    " Natural food photography, overhead angle, warm afternoon window light, "
-    "soft shadows, home-kitchen feel on a weathered wooden surface, shallow depth of field."
+    " Photographed like a candid, everyday smartphone snapshot in a real "
+    "lived-in home: the homemade dog treats piled in a dog's bowl or scattered "
+    "on a wooden board or parchment on the kitchen counter, soft natural window "
+    "daylight, warm and authentic, slightly imperfect and unstaged, cozy "
+    "domestic background gently out of focus. Food made for a dog, not a human "
+    "meal — no plating, no place setting. If a dog is in the scene it is Nalla — "
+    "a medium-sized fluffy shepherd mix with a soft tan-and-black coat and alert "
+    "ears, never a golden retriever or other breed."
 )
-_NEGATIVES = (
-    " Do not include: any text, labels, watermarks, logos, brand marks, hands, "
-    "people, dogs, cats, cutlery, spoons, forks, knives, straws, or packaging."
-)
+_NEGATIVES = " No text, labels, watermarks, logos, or packaging."
 
 
 @dataclass

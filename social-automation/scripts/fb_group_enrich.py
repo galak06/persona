@@ -22,7 +22,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -31,15 +30,15 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
 from lib.local_env import get_runtime_headless
 from lib.logger import log_step
 from notifier import skill_error, skill_finished, skill_started
 
-
 SESSION_FILE = settings.paths.facebook_session
-TRACKER_FILE = settings.paths.groups_tracker
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 
 
 def _enrich_group(page, url: str) -> dict:
@@ -47,15 +46,15 @@ def _enrich_group(page, url: str) -> dict:
     # Try the main page first for header info
     page.goto(url, wait_until="domcontentloaded", timeout=30000)
     time.sleep(4)
-    
+
     data = page.evaluate(
         """() => {
         const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
         const BLACKLIST = ['notifications', 'facebook', 'home', 'messages', 'watch', 'marketplace', 'groups'];
-        
+
         let h1 = document.querySelector('div[role="main"] h1');
         if (!h1) h1 = document.querySelector('h1');
-        
+
         let name = '';
         if (h1) {
             const candidate = norm(h1.textContent);
@@ -89,19 +88,19 @@ def _enrich_group(page, url: str) -> dict:
     about_url = url.rstrip('/') + '/about'
     page.goto(about_url, wait_until="domcontentloaded", timeout=30000)
     time.sleep(4)
-    
+
     rules_data = page.evaluate(
         """() => {
         const norm = (s) => (s || '').replace(/\\s+/g, ' ').trim();
         let rules = 'unknown';
-        
+
         // Rules are often in a section with 'Group rules' heading
         const allEls = Array.from(document.querySelectorAll('h2, h3, div[role="heading"], span'));
         const rulesHeader = allEls.find(el => {
             const t = norm(el.textContent).toLowerCase();
             return t === 'group rules' || t === 'rules' || t.startsWith('group rules from');
         });
-        
+
         if (rulesHeader) {
             const parent = rulesHeader.closest('[role="article"], div, section') || rulesHeader.parentElement;
             if (parent) {
@@ -111,7 +110,7 @@ def _enrich_group(page, url: str) -> dict:
                 if (body.length > 20) rules = body;
             }
         }
-        
+
         // Fallback: look for "About this group" or similar and grab first paragraph
         if (rules === 'unknown') {
             const aboutHeader = allEls.find(el => norm(el.textContent).toLowerCase().includes('about this group'));
@@ -120,11 +119,11 @@ def _enrich_group(page, url: str) -> dict:
                 if (parent) rules = norm(parent.textContent).slice(0, 500);
             }
         }
-        
+
         return rules;
     }"""
     )
-    
+
     data['rules'] = rules_data
     return data
 
@@ -135,16 +134,12 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true", help="print findings without saving")
     args = parser.parse_args()
 
-    skill_started("fb-group-enrich", "enriching groups tracker")
-
-    if not TRACKER_FILE.exists():
-        skill_error("fb-group-enrich", "tracker file missing — run fb_notification_scan first")
-        return
+    skill_started("fb-group-enrich", "enriching groups in the DB")
     if not SESSION_FILE.exists():
         skill_error("fb-group-enrich", "FB session not found — run fb_login.py")
         return
 
-    tracker = json.loads(TRACKER_FILE.read_text())
+    tracker = groups_db.load_all()
     targets = [g for g in tracker if not args.only or g.get("group_url") == args.only]
     if not targets:
         print(f"No matching groups for --only={args.only!r}", flush=True)
@@ -178,11 +173,11 @@ def main() -> None:
                 name = data.get("name")
                 if not name or name.lower() in ['notifications', 'facebook', 'home', 'unknown']:
                     name = group.get("group_name", "")
-                
+
                 privacy = data.get("privacy", "unknown")
                 if privacy == "unknown":
                     privacy = group.get("privacy", "unknown")
-                    
+
                 member_count = data.get("member_count") or group.get("member_count")
                 rules = data.get("rules", "unknown")
                 if rules == "unknown":
@@ -206,8 +201,8 @@ def main() -> None:
             browser.close()
 
     if not args.dry_run and updated:
-        TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
-        print(f"\nTracker updated: {updated} entries → {TRACKER_FILE}", flush=True)
+        groups_db.save_all(tracker)
+        print(f"\nTracker updated: {updated} entries → groups.db", flush=True)
     elif args.dry_run:
         print("\n(dry-run — tracker not written)", flush=True)
 

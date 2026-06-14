@@ -22,7 +22,7 @@
         "cron": "33 15 * * *",
         "cadence": "daily"
       },
-      "output_file": ".claude/state/comment_queue.json",
+      "output_file": "state/facebook_comment_queue.json",
       "re_run_guard": true,
       "requires_browser": true,
       "requires_approval": false,
@@ -43,6 +43,48 @@
           "produced_by": "site-analyzer"
         }
       ]
+    },
+    {
+      "id": "fb-comment-approver",
+      "skill": "comment-composer",
+      "script": "scripts/comment_approver.py",
+      "args": ["--platform", "facebook"],
+      "description": "FB loop: auto-approve drafted Facebook comments from the Facebook queue (Phase-3 autonomous, no Telegram round-trip)",
+      "schedule": {
+        "cron": "0 8-22 * * *",
+        "cadence": "hourly"
+      },
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_browser": false,
+      "requires_approval": false,
+      "telegram_notify": false,
+      "order": 21,
+      "depends_on": [
+        "fb-scanner"
+      ],
+      "inputs": []
+    },
+    {
+      "id": "fb-comment-poster",
+      "skill": "comment-composer",
+      "script": "scripts/comment_poster.py",
+      "args": ["--platform", "facebook"],
+      "description": "FB loop: post approved Facebook comments (max 5/day) from the Facebook queue",
+      "schedule": {
+        "cron": "0 10 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "order": 22,
+      "depends_on": [
+        "fb-comment-approver"
+      ],
+      "inputs": []
     },
     {
       "id": "fb-group-scout",

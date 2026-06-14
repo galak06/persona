@@ -5,8 +5,8 @@ For each published recipe campaign folder this:
      title search). Recipes NOT found in WP are reported and skipped/removed.
   2. Imports it into recipes.db as a full row (recipe data from seeds.json,
      publish_status from the verified WP post + metadata.json).
-  3. Copies artifacts into data/recipe_artifacts/<id>/{images,reels,carousels,audio}.
-  4. Moves the original campaign folder to data/_migrated_backup/ (reversible).
+  3. Copies artifacts into data/media/recipe_artifacts/<id>/{images,reels,carousels,audio}.
+  4. Moves the original campaign folder to data/media/_migrated_backup/ (reversible).
 
 Dry-run by default; pass --apply to write. WP credentials and BRAND_DIR are
 read from the environment (loaded via lib.local_env) — never inlined.
@@ -171,7 +171,7 @@ def _seed_to_row(
         source_name="dogfoodandfun.com",
         content_hash=digest,
         id=seed["id"],
-        artifacts_path=f"data/recipe_artifacts/{seed['id']}",
+        artifacts_path=f"data/media/recipe_artifacts/{seed['id']}",
         status=RecipeStatus.SEED_EXPORTED,
         toxic_flags=flags,
         dog_safe=dog_safe,
@@ -232,8 +232,8 @@ def main(argv: list[str] | None = None) -> int:
             (Path(__file__).parent.parent / "seeds" / "seeds.json").read_text()
         )["seeds"]
     }
-    backup_root = brand / "data" / "_migrated_backup"
-    art_root = brand / "data" / "recipe_artifacts"
+    backup_root = brand / "data" / "media" / "_migrated_backup"
+    art_root = brand / "data" / "media" / "recipe_artifacts"
     wp = WP()
 
     conn = db.connect()

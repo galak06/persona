@@ -454,10 +454,7 @@ export default function Schedule(): React.JSX.Element {
 
   return (
     <section className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-slate-900">Schedule</h1>
-        <p className="text-sm text-slate-500">Cron / launchd job state.</p>
-      </header>
+      <p className="text-sm text-slate-500">Cron / launchd job state.</p>
 
       {missingData && <MissingBanner data={missingData} />}
 

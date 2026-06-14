@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   CHANNEL_LABELS,
   PUBLISH_CHANNELS,
+  artifactUrl,
+  fetchArtifacts,
+  type ArtifactItem,
   type PublishChannel,
   type RecipeDetail,
 } from "../api/recipes";
+import { getErrorMessage } from "../api/client";
+import { AffiliateProductsSection } from "./RecipeLifecycle";
+import { PagePreviewModal } from "./RecipePagePreview";
+import { RecipeMediaSection } from "./RecipeMediaSection";
 
 export function SafetyBadge({ safe }: { safe: boolean }) {
   return safe ? (
@@ -177,6 +184,101 @@ export function IgModal({
   );
 }
 
+/** Popup listing every artifact file for a recipe, each linked (image = thumb). */
+export function ArtifactsModal({
+  recipeId,
+  recipeName,
+  onClose,
+}: {
+  recipeId: string;
+  recipeName: string;
+  onClose: () => void;
+}) {
+  const [items, setItems] = useState<ArtifactItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchArtifacts(recipeId)
+      .then((r) => live && setItems(r.artifacts))
+      .catch((e) => live && setError(getErrorMessage(e)));
+    return () => {
+      live = false;
+    };
+  }, [recipeId]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/40" aria-hidden />
+      <div
+        className="relative z-[61] m-4 w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="flex items-center gap-2 font-semibold text-slate-800">
+            <span>📁</span> Artifacts — {recipeName}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        </div>
+
+        {error && <div className="text-sm text-rose-600">{error}</div>}
+        {!items && !error && (
+          <div className="text-sm text-slate-400">Loading…</div>
+        )}
+        {items && items.length === 0 && (
+          <div className="text-sm text-slate-400">
+            No artifacts on disk for this recipe yet.
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          {items?.map((a) => {
+            const url = artifactUrl(recipeId, a.path);
+            return (
+              <a
+                key={a.path}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded border border-slate-200 p-2 hover:border-cyan-400"
+              >
+                {a.kind === "image" ? (
+                  <img
+                    src={url}
+                    alt={a.name}
+                    className="h-28 w-full rounded object-cover"
+                  />
+                ) : (
+                  <div className="flex h-28 items-center justify-center rounded bg-slate-50 text-3xl">
+                    {a.kind === "pdf" ? "📄" : a.kind === "json" ? "🧾" : "📦"}
+                  </div>
+                )}
+                <div
+                  className="mt-1 truncate text-xs text-slate-600"
+                  title={a.path}
+                >
+                  {a.path}
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {(a.size / 1024).toFixed(0)} KB
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RecipeDrawer({
   recipe,
   loading,
@@ -187,6 +289,7 @@ export function RecipeDrawer({
   onClose: () => void;
 }) {
   const [igModal, setIgModal] = useState<PublishChannel | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div
@@ -213,10 +316,20 @@ export function RecipeDrawer({
                 source title: {recipe.name}
               </div>
             )}
-            <div className="flex items-center gap-3 mt-1 mb-4 text-sm text-slate-500">
+            <div className="flex items-center gap-3 mt-1 mb-3 text-sm text-slate-500">
               <SafetyBadge safe={recipe.dog_safe === true} />
               {recipe.category && <span>{recipe.category}</span>}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPreview(true)}
+              className="mb-4 inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+            >
+              🔍 Preview page
+            </button>
+
+            <RecipeMediaSection recipeId={recipe.id} media={recipe.media} />
 
             <h3 className="font-medium text-slate-700 mb-1">Publishing</h3>
             <div className="mb-2">
@@ -253,6 +366,8 @@ export function RecipeDrawer({
               })}
             </ul>
 
+            <AffiliateProductsSection products={recipe.affiliate_products} />
+
             {recipe.toxic_flags && recipe.toxic_flags.length > 0 && (
               <div className="mb-4 bg-red-50 text-red-700 text-sm p-2 rounded">
                 ⚠️ Toxic for dogs: {recipe.toxic_flags.join(", ")}
@@ -272,6 +387,26 @@ export function RecipeDrawer({
                 >
                   {recipe.artifacts_path}
                 </a>
+              </div>
+            )}
+
+            {recipe.card_path && (
+              <div className="text-xs mb-4 break-all">
+                <span className="inline-block px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                  🖼️ recipe card created
+                </span>{" "}
+                <a
+                  href={`file://${recipe.card_path}`}
+                  className="text-cyan-700 hover:underline"
+                >
+                  open file
+                </a>
+                {recipe.card_created_at && (
+                  <span className="text-slate-400">
+                    {" "}
+                    · {recipe.card_created_at.slice(0, 16)}
+                  </span>
+                )}
               </div>
             )}
 
@@ -307,6 +442,13 @@ export function RecipeDrawer({
       </div>
       {igModal && (
         <IgModal ig={igModal} onClose={() => setIgModal(null)} />
+      )}
+      {showPreview && recipe && (
+        <PagePreviewModal
+          recipeId={recipe.id}
+          recipeName={recipe.display_name || recipe.name}
+          onClose={() => setShowPreview(false)}
+        />
       )}
     </div>
   );

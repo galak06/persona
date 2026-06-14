@@ -316,6 +316,15 @@ class RecipeRepository:
         )
         self._conn.commit()
 
+    def set_html_exported_at(self, recipe_id: str, ts: str) -> None:
+        """Record the ISO timestamp when recipe_page.html was last written."""
+        self._conn.execute(
+            "UPDATE recipes SET html_exported_at = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (ts, recipe_id),
+        )
+        self._conn.commit()
+
     def set_card(self, recipe_id: str, card_path: str) -> None:
         """Record that the static recipe card was created, with its file path.
 
@@ -326,6 +335,62 @@ class RecipeRepository:
             "UPDATE recipes SET card_path = ?, card_created_at = CURRENT_TIMESTAMP, "
             "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (card_path, recipe_id),
+        )
+        self._conn.commit()
+
+    # ------------------------------------------------- worker artifact markers
+    def set_wp_post_id(self, recipe_id: str, wp_post_id: int) -> None:
+        """Record the numeric WP post id (Worker A). Promotes it out of the
+        folder metadata.json so downstream workers need no filesystem read."""
+        self._conn.execute(
+            "UPDATE recipes SET wp_post_id = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (wp_post_id, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_pdf_url(self, recipe_id: str, pdf_url: str) -> None:
+        """Record the uploaded recipe-card PDF url (Worker A's PDF arm)."""
+        self._conn.execute(
+            "UPDATE recipes SET pdf_url = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (pdf_url, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_slides(self, recipe_id: str, slides_count: int, ts: str) -> None:
+        """Record that the carousel post slides were saved (Worker B)."""
+        self._conn.execute(
+            "UPDATE recipes SET slides_count = ?, slides_created_at = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (slides_count, ts, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_reel(self, recipe_id: str, ts: str) -> None:
+        """Record that the silent reel (source.mp4) was composed (Worker C)."""
+        self._conn.execute(
+            "UPDATE recipes SET reel_created_at = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (ts, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_audio_ready(self, recipe_id: str, ts: str) -> None:
+        """Record that the operator's audio.mp3 was detected (Worker D gate)."""
+        self._conn.execute(
+            "UPDATE recipes SET audio_ready_at = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (ts, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_social_published(self, recipe_id: str, ts: str) -> None:
+        """Record that IG/FB/Pinterest publishing completed (Worker D)."""
+        self._conn.execute(
+            "UPDATE recipes SET social_published_at = ?, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (ts, recipe_id),
         )
         self._conn.commit()
 
@@ -449,4 +514,45 @@ class RecipeRepository:
                 )
                 or "[]"
             ),
+            wp_post_id=(
+                sql_row["wp_post_id"]
+                if "wp_post_id" in sql_row.keys()  # noqa: SIM118
+                else None
+            ),
+            pdf_url=(
+                sql_row["pdf_url"]
+                if "pdf_url" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
+            slides_created_at=(
+                sql_row["slides_created_at"]
+                if "slides_created_at" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
+            slides_count=(
+                sql_row["slides_count"]
+                if "slides_count" in sql_row.keys()  # noqa: SIM118
+                else 0
+            )
+            or 0,
+            reel_created_at=(
+                sql_row["reel_created_at"]
+                if "reel_created_at" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
+            audio_ready_at=(
+                sql_row["audio_ready_at"]
+                if "audio_ready_at" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
+            social_published_at=(
+                sql_row["social_published_at"]
+                if "social_published_at" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
         )

@@ -80,6 +80,20 @@ class RecipeSummary(BaseModel):
     publish_status: dict[str, PublishChannel] = Field(default_factory=dict)
 
 
+class RecipeMedia(BaseModel):
+    """On-disk media for a recipe, as BRAND_DIR-relative paths.
+
+    Sourced from the row's ``generated_content.media`` manifest (links only —
+    the bytes stay on disk). The UI turns each path into a serving URL via the
+    ``/recipes/{id}/media-file`` endpoint.
+    """
+
+    images: list[str] = Field(default_factory=list)
+    reels: list[str] = Field(default_factory=list)  # video files
+    audio: list[str] = Field(default_factory=list)
+    featured_image: str | None = None  # best image path, or None
+
+
 class RecipeDetail(RecipeSummary):
     """Full recipe payload for ``GET /api/v1/recipes/{id}``."""
 
@@ -88,6 +102,7 @@ class RecipeDetail(RecipeSummary):
     nutrition: dict[str, str] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
     hero_image_url: str = ""
+    media: RecipeMedia | None = None  # reels/photos/audio links, when present
 
 
 class RecipesResponse(BaseModel):

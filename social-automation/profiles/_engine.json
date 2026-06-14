@@ -20,44 +20,11 @@
       "inputs": []
     },
     {
-      "id": "comment-composer",
-      "skill": "comment-composer",
-      "script": null,
-      "description": "Draft, validate, and post queued comments. Sends approvals via Telegram bot",
-      "schedule": {
-        "cron": "0 22 * * *",
-        "cadence": "daily"
-      },
-      "output_file": "logs/engagement_log.jsonl",
-      "re_run_guard": true,
-      "requires_browser": true,
-      "requires_approval": true,
-      "approval_channel": "telegram",
-      "approval_timeout_hours": 12,
-      "telegram_notify": true,
-      "rate_limits": {
-        "fb_comments_per_day": 5,
-        "ig_comments_per_day": 2
-      },
-      "order": 50,
-      "depends_on": [
-        "fb-scanner",
-        "ig-scanner"
-      ],
-      "inputs": [
-        {
-          "path": "state/comment_queue.json",
-          "min_count": 1,
-          "max_age_hours": 14,
-          "produced_by": "fb-scanner"
-        }
-      ]
-    },
-    {
       "id": "comment-approver",
       "skill": "comment-composer",
       "script": "scripts/comment_approver.py",
-      "description": "Hourly Telegram-approval checker for queued comments (subordinate to comment-composer)",
+      "args": ["--platform", "wordpress"],
+      "description": "Auto-approve queued WordPress replies from the legacy queue. IG and FB run their own per-platform approver loops (see instagram.json / facebook.json)",
       "schedule": {
         "cron": "0 8-22 * * *",
         "cadence": "hourly"
@@ -68,18 +35,17 @@
       "requires_approval": false,
       "telegram_notify": false,
       "order": 51,
-      "depends_on": [
-        "comment-composer"
-      ],
+      "depends_on": [],
       "inputs": []
     },
     {
       "id": "comment-poster",
       "skill": "comment-composer",
       "script": "scripts/comment_poster.py",
-      "description": "Daily poster for approved comments (subordinate to comment-composer)",
+      "args": ["--platform", "wordpress"],
+      "description": "Post approved WordPress replies from the legacy queue. IG and FB run their own per-platform poster loops (see instagram.json / facebook.json)",
       "schedule": {
-        "cron": "0 9 * * *",
+        "cron": "0 11 * * *",
         "cadence": "daily"
       },
       "output_file": "logs/engagement_log.jsonl",

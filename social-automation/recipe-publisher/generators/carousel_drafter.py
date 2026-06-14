@@ -5,8 +5,8 @@ narrative arc (hero → pivot → ingredients → process → proof → final), 
 slide with a cinematic photography prompt + an on-image text overlay.
 
 Drafts are marked `_auto_drafted: true` so the operator knows to review/edit
-before treating as final. Re-running prepare with --force regenerates from
-the (possibly edited) seed.
+before treating as final. ``ensure_carousel_json(force=True)`` (e.g. from
+workers.worker_post_images) regenerates from the (possibly edited) seed.
 """
 
 from __future__ import annotations

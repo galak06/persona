@@ -90,7 +90,7 @@ Include exactly these sections in this order:
 Strict structure — every section is there to drive either a **new follow** or a **site click**:
 
 1. **Hook** (≤125 chars, first line). Feed-truncation-safe. No hashtag/emoji/"POV:" at the start. **Open with a question or a surprising specific** ("Would your dog trade their kibble for this?", "Three ingredients. Nalla lost her mind.") — not a flat dish-name statement. The first line's job is to stop the scroll and earn a comment.
-2. **Three bullet facts**, each starting with `•`. Time, macros, ingredient count, or specific behavior. Concrete wins, not opinions.
+2. **Three bullet facts**, each starting with `•`. Time, macros, ingredient count, or specific behavior. Concrete wins, not opinions. If you state an ingredient count, it MUST equal the exact number of ingredient lines in this recipe — count every listed ingredient (including water, oil, and seasonings); do not say "main ingredients" to justify a smaller number. The caption and the recipe card must show the same count.
 3. **Comment-gated CTA** — one line, keyword in UPPERCASE: `Comment RECIPE and I'll DM you the link to the printable card.` (or `Comment BAKE` / `Comment CHEWS`, etc. — pick a verb that fits.)
 4. **One specific question** — not "what do you think?". Substitutions, reactions, memories.
 5. **Blank line, then 8–12 hashtags** mixing broad (`#doglife`) / niche (`#dogrecipes`) / branded. Must include `#nallasdad` and `#dogfoodandfun`.
@@ -99,7 +99,7 @@ Match the post's warmth; IG is not a different brand.
 
 ### `image_brief`
 
-One paragraph describing the image you want generated. Natural food photography, overhead, warm light. No dogs in the image unless the recipe specifically features Nalla eating/interacting with it. No text in the image.
+One paragraph describing the image you want generated. Aim for a candid, everyday-life feel — a real home kitchen, natural window light, the finished treats sitting in a dog's bowl or on a board/parchment as you'd actually serve them to a dog. NOT staged studio food photography, NOT a human meal: no plates, no place settings, no forks/knives or other human dining ware (these are dog treats). A dog (Nalla — a medium-sized fluffy shepherd mix with a soft tan-and-black coat and alert ears, not a golden retriever) casually in the scene is welcome and on-brand. No text in the image.
 
 ## Legal / compliance
 

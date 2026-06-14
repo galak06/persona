@@ -98,7 +98,7 @@ def apply_overlay(
         x = (w - line_w) // 2
         y = head_y + i * line_spacing
         draw.text(
-            (x, y), line, font=head_font, fill=_CREAM + (255,),
+            (x, y), line, font=head_font, fill=(*_CREAM, 255),
             stroke_width=head_stroke, stroke_fill=(0, 0, 0, 255),
         )
 
@@ -108,7 +108,7 @@ def apply_overlay(
     sw = sb[2] - sb[0]
     draw.text(
         ((w - sw) // 2, sub_y), spec.subcopy, font=sub_font,
-        fill=_CREAM + (245,),
+        fill=(*_CREAM, 245),
         stroke_width=sub_stroke, stroke_fill=(0, 0, 0, 220),
     )
 
@@ -165,12 +165,52 @@ def apply_follow_badge(
         (x0 + pad_x, y0 + pad_y - bbox[1]),
         handle,
         font=font,
-        fill=_CREAM + (255,),
+        fill=(*_CREAM, 255),
     )
 
     out = Image.alpha_composite(img, layer)
     buf = io.BytesIO()
     out.convert("RGB").save(buf, "JPEG", quality=output_quality)
+    return buf.getvalue()
+
+
+def apply_image_badge(
+    image_bytes: bytes,
+    badge_path: str,
+    *,
+    corner: str = "top_right",
+    width_pct: float = 0.14,
+    margin_pct: float = 0.035,
+    output_quality: int = 92,
+) -> bytes:
+    """Composite a transparent PNG badge (e.g. the Nalla-approved seal) into a corner.
+
+    Used on the carousel POST hero to stamp each recipe with the seal in place
+    of the drawn @handle pill. The badge keeps its aspect ratio; ``width_pct`` is
+    its width as a fraction of the slide width. ``corner`` is one of
+    top_right/top_left/bottom_right/bottom_left. Reels intentionally do NOT get
+    this badge \u2014 the post/reel split lives in
+    ``carousel.generate_post_and_reel_slides`` (consumed by workers.worker_post_images).
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    w, h = img.size
+    badge = Image.open(badge_path).convert("RGBA")
+    bw = max(1, int(w * width_pct))
+    bh = max(1, int(badge.height * bw / badge.width))
+    badge = badge.resize((bw, bh), Image.Resampling.LANCZOS)
+    margin = int(min(w, h) * margin_pct)
+
+    positions = {
+        "top_right": (w - margin - bw, margin),
+        "top_left": (margin, margin),
+        "bottom_right": (w - margin - bw, h - margin - bh),
+        "bottom_left": (margin, h - margin - bh),
+    }
+    x0, y0 = positions.get(corner, positions["top_right"])
+
+    img.alpha_composite(badge, (x0, y0))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=output_quality)
     return buf.getvalue()
 
 
@@ -195,7 +235,7 @@ def apply_site_cta_ribbon(
 
     layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ldraw = ImageDraw.Draw(layer)
-    ldraw.rectangle([0, ribbon_top, w, h], fill=ribbon_color + (245,))
+    ldraw.rectangle([0, ribbon_top, w, h], fill=(*ribbon_color, 245))
 
     ref = min(w, h)
     font_size = int(ref * 0.044)
@@ -205,7 +245,7 @@ def apply_site_cta_ribbon(
     th = bbox[3] - bbox[1]
     text_x = (w - tw) // 2
     text_y = ribbon_top + (ribbon_h - th) // 2 - bbox[1]
-    ldraw.text((text_x, text_y), cta_text, font=font, fill=_CREAM + (255,))
+    ldraw.text((text_x, text_y), cta_text, font=font, fill=(*_CREAM, 255))
 
     out = Image.alpha_composite(img, layer)
     buf = io.BytesIO()

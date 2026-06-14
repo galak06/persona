@@ -46,6 +46,14 @@ CREATE TABLE IF NOT EXISTS recipes (
     generated_content TEXT DEFAULT '{}',
     content_status TEXT NOT NULL DEFAULT 'none',
     publish_results TEXT DEFAULT '[]',
+    -- Decoupled-worker artifact markers (see recipe-publisher/workers/).
+    wp_post_id     INTEGER DEFAULT NULL,
+    pdf_url        TEXT DEFAULT '',
+    slides_created_at TEXT DEFAULT '',
+    slides_count   INTEGER DEFAULT 0,
+    reel_created_at TEXT DEFAULT '',
+    audio_ready_at TEXT DEFAULT '',
+    social_published_at TEXT DEFAULT '',
     created_at     TEXT,
     updated_at     TEXT
 );

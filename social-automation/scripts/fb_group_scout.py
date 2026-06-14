@@ -1,4 +1,3 @@
-# ruff: noqa: T201
 # pyright: reportMissingImports=false
 # Pre-existing print()-based step logging throughout this script; structured
 # log migration is deferred to a dedicated refactor (sys.path-based imports
@@ -27,7 +26,6 @@ settings, log = init_script(__name__)
 
 from group_discovery.approval import (
     get_user_approval,
-    parse_approve_arg,
     print_candidate,
     send_join_requests,
 )
@@ -272,9 +270,7 @@ def main(
         else:
             combined = candidates
 
-        approved = get_user_approval(
-            combined, budget, JOIN_LIMIT_PER_DAY, preselected=preselected
-        )
+        approved = get_user_approval(combined, budget, preselected or "all")
         if not approved:
             print("\nNo groups approved.")
             add_to_pending(candidates, known_groups)
@@ -332,6 +328,8 @@ if __name__ == "__main__":
         main(
             fb_session,
             dry_run=args.dry_run,
-            preselected=args.approve if args.approve is not None else parse_approve_arg(),
+            # Approval gate removed: with no explicit --approve, auto-approve all
+            # discovered groups up to the daily/weekly cap (the remaining limit).
+            preselected=args.approve if args.approve is not None else "all",
             bypass_daily=args.bypass_daily_cap,
         )

@@ -6,12 +6,20 @@ import type { components } from "../types/openapi";
 // optional here until openapi.ts is regenerated, so the UI can read them
 // without editing the generated file.
 export type AffiliateProduct = { key: string; asin: string; display: string };
+/** On-disk media for a recipe (BRAND_DIR-relative paths; see mediaUrl). */
+export type RecipeMedia = {
+  images: string[];
+  reels: string[]; // video files
+  audio: string[];
+  featured_image?: string | null;
+};
 type RecipeCardFields = {
   card_path?: string;
   card_created_at?: string;
   season_tags?: string[];
   affiliate_products?: AffiliateProduct[];
   content_status?: string; // none|generated|pending|approved|rejected|published
+  media?: RecipeMedia | null; // populated on detail responses only
 };
 export type RecipeSummary = components["schemas"]["RecipeSummary"] &
   RecipeCardFields;
@@ -108,4 +116,25 @@ export function artifactUrl(id: string, path: string): string {
   return `${base}/recipes/${encodeURIComponent(id)}/artifact?path=${encodeURIComponent(
     path,
   )}`;
+}
+
+/**
+ * Absolute URL to fetch a media file from the recipe's media manifest
+ * (`<video>`/`<img>`/`<audio>` src). Accepts BRAND_DIR-relative paths in either
+ * the recipe_artifacts or _migrated_backup folder, unlike artifactUrl.
+ */
+export function mediaUrl(id: string, path: string): string {
+  const base = apiClient.defaults.baseURL ?? "";
+  return `${base}/recipes/${encodeURIComponent(id)}/media-file?path=${encodeURIComponent(
+    path,
+  )}`;
+}
+
+/**
+ * Absolute URL to the rendered recipe PAGE (HTML built from DB fields + image
+ * artifacts). Loads in an <iframe>/tab; its image refs resolve via artifactUrl.
+ */
+export function recipePageUrl(id: string): string {
+  const base = apiClient.defaults.baseURL ?? "";
+  return `${base}/recipes/${encodeURIComponent(id)}/page`;
 }

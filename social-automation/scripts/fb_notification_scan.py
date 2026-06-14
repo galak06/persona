@@ -16,7 +16,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from datetime import UTC, datetime
@@ -42,7 +41,7 @@ SKILL_NAME = "fb-notification-scan"
 
 if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
-TRACKER_FILE = settings.paths.groups_tracker
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 
 _APPROVAL_KEYWORDS = (
     "approved your request to join",
@@ -55,15 +54,11 @@ _APPROVAL_KEYWORDS = (
 
 
 def _load_tracker() -> list[dict[str, Any]]:
-    if TRACKER_FILE.exists():
-        loaded: list[dict[str, Any]] = json.loads(TRACKER_FILE.read_text())
-        return loaded
-    return []
+    return groups_db.load_all()
 
 
 def _save_tracker(data: list[dict[str, Any]]) -> None:
-    TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TRACKER_FILE.write_text(json.dumps(data, indent=2))
+    groups_db.save_all(data)
 
 
 def _scan_notifications(page: Page) -> list[dict[str, str]]:
@@ -200,7 +195,7 @@ def main(session: FbSession, *, dry_run: bool = False) -> int:
     elif added or updated:
         _save_tracker(tracker)
         print(
-            f"\nTracker updated: +{added} added, {updated} updated → {TRACKER_FILE}",
+            f"\nTracker updated: +{added} added, {updated} updated → groups.db",
             flush=True,
         )
     else:

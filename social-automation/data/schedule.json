@@ -34,7 +34,7 @@
         }
       ],
       "order": 20,
-      "output_file": ".claude/state/comment_queue.json",
+      "output_file": "state/facebook_comment_queue.json",
       "rate_limits": {
         "comments_per_day": 5,
         "group_visits_per_day": 6
@@ -48,6 +48,54 @@
       },
       "script": "scripts/fb_scan.py",
       "skill": "fb-scanner",
+      "telegram_notify": true
+    },
+    {
+      "args": [
+        "--platform",
+        "facebook"
+      ],
+      "depends_on": [
+        "fb-scanner"
+      ],
+      "description": "FB loop: auto-approve drafted Facebook comments from the Facebook queue (Phase-3 autonomous, no Telegram round-trip)",
+      "id": "fb-comment-approver",
+      "inputs": [],
+      "order": 21,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "hourly",
+        "cron": "0 8-22 * * *"
+      },
+      "script": "scripts/comment_approver.py",
+      "skill": "comment-composer",
+      "telegram_notify": false
+    },
+    {
+      "args": [
+        "--platform",
+        "facebook"
+      ],
+      "depends_on": [
+        "fb-comment-approver"
+      ],
+      "description": "FB loop: post approved Facebook comments (max 5/day) from the Facebook queue",
+      "id": "fb-comment-poster",
+      "inputs": [],
+      "order": 22,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 10 * * *"
+      },
+      "script": "scripts/comment_poster.py",
+      "skill": "comment-composer",
       "telegram_notify": true
     },
     {
@@ -65,10 +113,10 @@
         }
       ],
       "order": 30,
-      "output_file": ".claude/state/comment_queue.json",
+      "output_file": "state/instagram_comment_queue.json",
       "rate_limits": {
-        "comments_per_day": 2,
-        "likes_per_day": 8
+        "comments_per_day": 10,
+        "likes_per_day": 20
       },
       "re_run_guard": true,
       "requires_approval": false,
@@ -101,44 +149,12 @@
       "telegram_notify": true
     },
     {
-      "approval_channel": "telegram",
-      "approval_timeout_hours": 12,
-      "depends_on": [
-        "fb-scanner",
-        "ig-scanner"
+      "args": [
+        "--platform",
+        "wordpress"
       ],
-      "description": "Draft, validate, and post queued comments. Sends approvals via Telegram bot",
-      "id": "comment-composer",
-      "inputs": [
-        {
-          "max_age_hours": 14,
-          "min_count": 1,
-          "path": "state/comment_queue.json",
-          "produced_by": "fb-scanner"
-        }
-      ],
-      "order": 50,
-      "output_file": "logs/engagement_log.jsonl",
-      "rate_limits": {
-        "fb_comments_per_day": 5,
-        "ig_comments_per_day": 2
-      },
-      "re_run_guard": true,
-      "requires_approval": true,
-      "requires_browser": true,
-      "schedule": {
-        "cadence": "daily",
-        "cron": "0 22 * * *"
-      },
-      "script": null,
-      "skill": "comment-composer",
-      "telegram_notify": true
-    },
-    {
-      "depends_on": [
-        "comment-composer"
-      ],
-      "description": "Hourly Telegram-approval checker for queued comments (subordinate to comment-composer)",
+      "depends_on": [],
+      "description": "Auto-approve queued WordPress replies from the legacy queue. IG and FB run their own per-platform approver loops (see instagram.json / facebook.json)",
       "id": "comment-approver",
       "inputs": [],
       "order": 51,
@@ -155,11 +171,63 @@
       "telegram_notify": false
     },
     {
+      "args": [
+        "--platform",
+        "instagram"
+      ],
+      "depends_on": [
+        "ig-scanner"
+      ],
+      "description": "IG loop: auto-approve drafted Instagram comments from the Instagram queue (Phase-3 autonomous, no Telegram round-trip)",
+      "id": "ig-comment-approver",
+      "inputs": [],
+      "order": 51,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "hourly",
+        "cron": "0 8-22 * * *"
+      },
+      "script": "scripts/comment_approver.py",
+      "skill": "comment-composer",
+      "telegram_notify": false
+    },
+    {
+      "args": [
+        "--platform",
+        "wordpress"
+      ],
       "depends_on": [
         "comment-approver"
       ],
-      "description": "Daily poster for approved comments (subordinate to comment-composer)",
+      "description": "Post approved WordPress replies from the legacy queue. IG and FB run their own per-platform poster loops (see instagram.json / facebook.json)",
       "id": "comment-poster",
+      "inputs": [],
+      "order": 52,
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 11 * * *"
+      },
+      "script": "scripts/comment_poster.py",
+      "skill": "comment-composer",
+      "telegram_notify": true
+    },
+    {
+      "args": [
+        "--platform",
+        "instagram"
+      ],
+      "depends_on": [
+        "ig-comment-approver"
+      ],
+      "description": "IG loop: post approved Instagram comments (max 10/day) from the Instagram queue",
+      "id": "ig-comment-poster",
       "inputs": [],
       "order": 52,
       "output_file": "logs/engagement_log.jsonl",
@@ -289,16 +357,16 @@
       "order": 100,
       "output_file": ".claude/state/pending_groups.json",
       "rate_limits": {
-        "join_requests_per_day": 10
+        "join_requests_per_week": 3
       },
-      "re_run_cadence": "daily",
+      "re_run_cadence": "weekly",
       "re_run_guard": true,
       "requires_approval": true,
       "requires_browser": true,
       "schedule": {
-        "cadence": "daily",
-        "cron": "3 15 * * *",
-        "next_run": "2026-06-14"
+        "cadence": "weekly",
+        "cron": "3 15 * * 0",
+        "next_run": "2026-05-17"
       },
       "script": "scripts/fb_group_scout.py",
       "skill": "fb-group-scout",

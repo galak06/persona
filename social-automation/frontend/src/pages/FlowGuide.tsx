@@ -14,7 +14,6 @@ import {
 } from "../api/flowGuide";
 import { getErrorMessage } from "../api/client";
 
-const PAGE_TITLE = "Flow Guide";
 const PAGE_SUBTITLE =
   "Audit your flows. Identify dead or low-value flows to remove. Stale and never-run flows are sorted to the top.";
 
@@ -246,10 +245,7 @@ export default function FlowGuide(): React.JSX.Element {
 
   return (
     <section className="flex flex-col gap-4">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold text-slate-900">{PAGE_TITLE}</h1>
-        <p className="text-sm text-slate-500">{PAGE_SUBTITLE}</p>
-      </header>
+      <p className="text-sm text-slate-500">{PAGE_SUBTITLE}</p>
 
       {sortedFlows.length === 0 ? (
         <div className="text-slate-500 text-center py-12 bg-white rounded-md border border-slate-200">

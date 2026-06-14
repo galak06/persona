@@ -1,4 +1,3 @@
-# ruff: noqa: T201, S110, S112, BLE001
 # pyright: reportMissingImports=false
 # Pre-existing print()-based step logging and broad except-continue/pass
 # patterns for Playwright/openpyxl resilience; structured log migration and
@@ -10,6 +9,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, date, datetime
 
+from lib import groups_db
 from lib.config import settings
 
 SESSION_FILE = settings.paths.facebook_session
@@ -104,7 +104,7 @@ def load_known_groups() -> set[str]:
             pass
     if JSON_TRACKER_FILE.exists():
         try:
-            entries = json.loads(JSON_TRACKER_FILE.read_text())
+            entries = groups_db.load_all()
             for entry in entries:
                 if entry.get("status") in ("joined", "join_requested"):
                     u = entry.get("group_url", "").lower()
@@ -173,7 +173,7 @@ def _upsert_json_tracker(group: dict, status: str) -> str:
     tracker: list[dict] = []
     if JSON_TRACKER_FILE.exists():
         try:
-            tracker = json.loads(JSON_TRACKER_FILE.read_text())
+            tracker = groups_db.load_all()
         except json.JSONDecodeError:
             tracker = []
 
@@ -186,7 +186,7 @@ def _upsert_json_tracker(group: dict, status: str) -> str:
             if status == "joined" and existing.get("status") != "joined":
                 existing["status"] = "joined"
                 existing.setdefault("joined_at", now)
-                JSON_TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+                groups_db.save_all(tracker)
                 return "updated"
             return "unchanged"
 
@@ -203,7 +203,7 @@ def _upsert_json_tracker(group: dict, status: str) -> str:
     if status == "joined":
         entry["joined_at"] = now
     tracker.append(entry)
-    JSON_TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+    groups_db.save_all(tracker)
     return "added"
 
 

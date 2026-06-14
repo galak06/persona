@@ -11,7 +11,6 @@ DOM constants live in facebook_dom.py; page-level helpers in _facebook_helpers.p
 from __future__ import annotations
 
 import hashlib
-import json
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -167,12 +166,10 @@ class FacebookGroupAdapter:
     # ---------- OutboundAdapter Protocol methods ----------
 
     def list_sources(self) -> list[Source]:
-        """Joined groups from the tracker (status='joined', self-promo allowed)."""
-        if not self._tracker_path.exists():
-            raise FileNotFoundError(f"groups tracker not found at {self._tracker_path}")
+        """Joined groups from the groups DB (status='joined', self-promo allowed)."""
+        from lib import groups_db
 
-        with self._tracker_path.open() as f:
-            records = json.load(f)
+        records = groups_db.load_all()
 
         sources: list[Source] = []
         for row in records:

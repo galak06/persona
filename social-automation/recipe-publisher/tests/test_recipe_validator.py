@@ -16,7 +16,7 @@ def _make(**overrides) -> recipe_mod.Recipe:
             "the only currency Nalla actually works for. Pantry-easy, freezer-friendly."
         ),
         body_markdown="intro\n## Ingredients\n- x\n## Instructions\n1. x\n",
-        ingredients=["2 lb beef liver"],
+        ingredients=["2 lb beef liver", "1 cup oat flour", "1 large egg"],
         steps=["trim liver", "slice thin", "bake at 300F for 2 hours"],
         prep_minutes=10,
         cook_minutes=15,

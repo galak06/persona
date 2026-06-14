@@ -43,9 +43,16 @@ from notifier import (
 )
 from rate_limiter import can_act, print_status, record_action
 
+from lib.comment_queue_routing import guard_key_for, parse_platform_arg, queue_path_for
+
+# Per-platform loop: `--platform instagram|facebook` drains only that queue;
+# absent (or `--platform wordpress`) drains the legacy shared queue.
+PLATFORM = parse_platform_arg(sys.argv)
+GUARD_KEY = guard_key_for(PLATFORM)
+
 SESSION_FILE = settings.paths.facebook_session
 IG_SESSION_FILE = settings.paths.instagram_session
-QUEUE_FILE = settings.paths.comment_queue
+QUEUE_FILE = queue_path_for(PLATFORM)
 LAST_RUN_FILE = settings.paths.last_run
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 ERROR_LOG = (settings.paths.logs_dir / "errors.log")
@@ -254,9 +261,9 @@ def run() -> None:
     print("=== Comment Poster ===\n", flush=True)
     log_trace("system", "Started Comment Poster")
 
-    # Re-run guard
+    # Re-run guard (per-platform key so the IG loop never blocks the FB loop)
     last_run = load_json(LAST_RUN_FILE, {})
-    cc = last_run.get("comment_composer", {})
+    cc = last_run.get(GUARD_KEY, {})
     cc_date = (cc.get("last_run_at") or "")[:10]
     if cc_date == date.today().isoformat() and cc.get("status") == "success":
         msg = f"Already ran today — posted {cc.get('comments_posted', 0)}"
@@ -267,9 +274,15 @@ def run() -> None:
             return
         print("--force detected, re-running.\n", flush=True)
 
-    # Load queue
+    # Load queue. When scoped to a platform, act only on that platform's items
+    # (a no-op for the per-platform queue files; for the legacy/WordPress queue
+    # it prevents touching migrated IG/FB copies that now live in their own queues).
     queue = load_json(QUEUE_FILE, [])
-    approved_raw = [q for q in queue if q.get("status") == "approved" and q.get("draft_comment")]
+    approved_raw = [
+        q for q in queue
+        if q.get("status") == "approved" and q.get("draft_comment")
+        and (PLATFORM is None or q.get("platform") == PLATFORM)
+    ]
 
     if not approved_raw:
         print("Nothing to post — no approved items in queue.")
@@ -364,7 +377,7 @@ def run() -> None:
     # If everything was WP, skip Playwright launch entirely.
     if not (fb_approved or ig_approved):
         save_json(QUEUE_FILE, queue)
-        last_run["comment_composer"] = {
+        last_run[GUARD_KEY] = {
             "last_run_at": datetime.now(UTC).isoformat(),
             "comments_posted": posted,
             "comments_failed": failed,
@@ -518,7 +531,7 @@ def run() -> None:
     # Save final state
     save_json(QUEUE_FILE, queue)
 
-    last_run["comment_composer"] = {
+    last_run[GUARD_KEY] = {
         "last_run_at": datetime.now(UTC).isoformat(),
         "comments_posted": posted,
         "comments_failed": failed,

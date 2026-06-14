@@ -49,7 +49,12 @@ from lib.queue_state import (  # type: ignore[unused-ignore,import-not-found]
     write_pending,
 )
 
-QUEUE_FILE = settings.paths.comment_queue
+from lib.comment_queue_routing import parse_platform_arg, queue_path_for
+
+# Per-platform loop: `--platform instagram|facebook` drains only that queue;
+# absent (or `--platform wordpress`) drains the legacy shared queue.
+PLATFORM = parse_platform_arg(sys.argv)
+QUEUE_FILE = queue_path_for(PLATFORM)
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
 
@@ -70,7 +75,11 @@ def run() -> None:
     log_trace("system", "Started Comment Approver (Auto)")
 
     queue: list[dict[str, Any]] = load_json(QUEUE_FILE, [])
-    pending: list[dict[str, Any]] = [q for q in queue if q.get("status") == "pending"]
+    pending: list[dict[str, Any]] = [
+        q for q in queue
+        if q.get("status") == "pending"
+        and (PLATFORM is None or q.get("platform") == PLATFORM)
+    ]
 
     log(f"Pending (auto-approve): {len(pending)}")
 

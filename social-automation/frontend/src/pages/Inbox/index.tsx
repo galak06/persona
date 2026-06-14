@@ -1,5 +1,5 @@
 /**
- * Approval Inbox page. The route body — TopBar lives in `App.tsx`.
+ * Approval Inbox page. The route body — SideNav lives in `App.tsx`.
  *
  * Phase 5: a single `PendingTab` (history/decided tab is out of scope
  * for the MVP; everything in this UI is "pending right now"). Future

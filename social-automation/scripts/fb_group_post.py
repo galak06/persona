@@ -1,4 +1,3 @@
-# ruff: noqa: T201
 # pyright: reportMissingImports=false
 # Pre-existing print()-based step logging throughout this script; structured
 # log migration is deferred to a dedicated refactor (sys.path-based imports
@@ -60,7 +59,8 @@ from rate_limiter import can_act, record_action
 
 if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
-TRACKER_FILE = settings.paths.groups_tracker
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
+
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
 # Daily cap on group posts is enforced via lib.rate_limiter.can_act —
@@ -203,7 +203,7 @@ def verify_post_visible(
 
     try:
         page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"    verify: navigation failed ({e})", flush=True)
         return False, None
     time.sleep(3)
@@ -627,7 +627,7 @@ def main(session: FbSession) -> int:
         # Default uses the system temp dir (per CLI convention for smoke-test
         # artifacts); operator can override via the flag. S108 ignored for
         # this specific CLI default — it's never a write target by accident.
-        default=Path(tempfile.gettempdir()) / "slice5-fix",  # noqa: S108
+        default=Path(tempfile.gettempdir()) / "slice5-fix",
         help="Where to save --no-submit composer screenshots (one per group).",
     )
     parser.add_argument(
@@ -664,7 +664,7 @@ def main(session: FbSession) -> int:
 
     skill_started("fb-group-post", f"sharing {args.title[:40]}")
 
-    tracker = json.loads(TRACKER_FILE.read_text())
+    tracker = groups_db.load_all()
     joined = [g for g in tracker if g.get("status") == "joined"]
 
     # Skip groups that aren't post-able: only attempt posting_mode=direct
@@ -847,7 +847,7 @@ def main(session: FbSession) -> int:
             if reel_mode:
                 group["last_reel_post_at"] = now
                 group["last_reel_caption"] = final
-            TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+            groups_db.save_all(tracker)
             record_action("facebook", "group_post")
             posted += 1
             print(
@@ -882,7 +882,7 @@ def main(session: FbSession) -> int:
                 already = note_text in str(existing_notes)
             if not already:
                 append_group_note(group, note_text)
-            TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+            groups_db.save_all(tracker)
             skipped += 1
             print(
                 "    ⏳ Pending admin approval — no live post yet; "
@@ -917,7 +917,7 @@ def main(session: FbSession) -> int:
                 already = unverified_note in str(existing_notes)
             if not already:
                 append_group_note(group, unverified_note)
-            TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+            groups_db.save_all(tracker)
             skipped += 1
             print(
                 "    ⚠ Submit unverified — post not visible in "

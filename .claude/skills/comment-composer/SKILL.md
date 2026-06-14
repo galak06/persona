@@ -90,8 +90,24 @@ print_status()
 
 ## Load Comment Queue
 
+> **IG and FB run as independent loops.** Each platform owns its own queue and its
+> own automated launchd chain (`<platform>-comment-approver` → `<platform>-comment-poster`,
+> both `scripts/comment_*.py --platform <platform>`). That Phase-3 autonomous path is
+> primary. This skill is the manual/Telegram fallback — pass a platform to target
+> one loop's queue:
+>
+> - `/comment-composer instagram` → `state/instagram_comment_queue.json`
+> - `/comment-composer facebook`  → `state/facebook_comment_queue.json`
+> - no argument (or `wordpress`)  → legacy `state/comment_queue.json`
+
 ```python
-queue_file = Path('../.claude/state/comment_queue.json')
+# Resolve the queue from the platform argument (mirrors lib/comment_queue_routing.py).
+platform_arg = (sys.argv[1].strip().lower() if len(sys.argv) > 1 else None)
+queue_name = {
+    'instagram': 'instagram_comment_queue.json',
+    'facebook': 'facebook_comment_queue.json',
+}.get(platform_arg, 'comment_queue.json')
+queue_file = Path(f'../.claude/state/{queue_name}')
 if not queue_file.exists():
     print("Queue is empty. Run fb-scanner or ig-scanner first.")
     exit(0)
@@ -99,7 +115,12 @@ if not queue_file.exists():
 with queue_file.open() as f:
     queue = json.load(f)
 
-pending = [item for item in queue if item['status'] == 'pending']
+# When scoped to a platform, act only on that platform's items.
+pending = [
+    item for item in queue
+    if item['status'] == 'pending'
+    and (platform_arg in (None, 'wordpress') or item.get('platform') == platform_arg)
+]
 print(f"\nPending comments: {len(pending)}")
 ```
 
@@ -384,5 +405,5 @@ Posted:
 - NEVER post a Facebook comment with a URL without explicit user approval
 - ALL Instagram comments require user approval before posting
 - ALWAYS wait random delay between posts (never back-to-back)
-- Max 5 FB comments/day, 2 IG comments/day — hard stops
+- Max 5 FB comments/day, 10 IG comments/day — hard stops
 - Reference site content naturally when relevant, never force it

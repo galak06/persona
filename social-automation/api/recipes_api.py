@@ -8,12 +8,15 @@ Strictly read-only: the SQLite file is opened in ``mode=ro`` and never mutated.
 
 from __future__ import annotations
 
+import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from api.recipe_schemas import (
     AffiliateProduct,
@@ -23,6 +26,7 @@ from api.recipe_schemas import (
     PublishChannel,
     RecipeDetail,
     RecipeIngredient,
+    RecipeMedia,
     RecipesResponse,
     RecipeSummary,
     StatusChangeResponse,
@@ -34,9 +38,13 @@ from lib.config import settings
 # an importable package name — add it to sys.path so we can reuse the existing
 # repository layer instead of re-implementing row deserialization here.
 _RECIPE_PUBLISHER = Path(__file__).resolve().parent.parent / "recipe-publisher"
-if str(_RECIPE_PUBLISHER) not in sys.path:
-    sys.path.insert(0, str(_RECIPE_PUBLISHER))
+_RECIPE_PAGE_DIR = _RECIPE_PUBLISHER / "templates" / "recipe_page"
+for _p in (_RECIPE_PUBLISHER, _RECIPE_PAGE_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
+from page_from_db import page_data_from_row
+from page_render import build_page_html
 from pipeline import seasons
 from pipeline.analytics import AnalyticsTracker
 from pipeline.approval import ApprovalError, ApprovalService
@@ -54,7 +62,7 @@ def _db_path() -> Path:
             status_code=500,
             detail="settings.paths is unset; BRAND_DIR not resolved",
         )
-    return settings.paths.data_dir / "recipes.db"
+    return settings.paths.data_dir / "db" / "recipes.db"
 
 
 def _open_readonly() -> sqlite3.Connection:
@@ -87,7 +95,7 @@ def _artifacts_dir(recipe_id: str) -> Path:
         row = RecipeRepository(conn).get_recipe(recipe_id)
     finally:
         conn.close()
-    rel = (row.artifacts_path if row else "") or f"data/recipe_artifacts/{recipe_id}"
+    rel = (row.artifacts_path if row else "") or f"data/media/recipe_artifacts/{recipe_id}"
     return settings.paths.brand_dir / rel
 
 
@@ -107,6 +115,29 @@ def _publish_date(row: RecipeRow) -> str:
     """Newest publish date (ISO) across channels, or '' when unpublished."""
     dates = [c.get("at", "") for c in row.publish_status.values()]
     return max(dates) if dates else ""
+
+
+def _media_from_row(row: RecipeRow) -> RecipeMedia | None:
+    """Parse the row's ``generated_content.media`` manifest into RecipeMedia.
+
+    The manifest is stored as a JSON *string* (so ``generated_content`` keeps
+    its ``dict[str, str]`` shape). Paths are BRAND_DIR-relative; the UI turns
+    them into URLs via the ``/recipes/{id}/media-file`` endpoint. Returns None
+    when no media has been catalogued for the recipe.
+    """
+    raw = row.generated_content.get("media")
+    if not raw:
+        return None
+    try:
+        manifest = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return RecipeMedia(
+        images=list(manifest.get("images", [])),
+        reels=list(manifest.get("reels", [])),
+        audio=list(manifest.get("audio", [])),
+        featured_image=manifest.get("featured_image"),
+    )
 
 
 def _to_summary(row: RecipeRow) -> RecipeSummary:
@@ -264,7 +295,36 @@ def get_recipe(recipe_id: str) -> RecipeDetail:
         nutrition=row.nutrition,
         tags=row.tags,
         hero_image_url=row.hero_image_url,
+        media=_media_from_row(row),
     )
+
+
+@router.get("/recipes/{recipe_id}/page", response_class=HTMLResponse)
+def recipe_page(recipe_id: str) -> HTMLResponse:
+    """Render the recipe as a standalone HTML page (DB fields + image artifacts).
+
+    Image refs point at the artifact endpoint so photos resolve inside an
+    ``<iframe>`` preview. Re-rendered per call to reflect current DB state — the
+    same markup the publisher emits, viewable before anything goes live.
+    """
+    conn = _open_readonly()
+    try:
+        row = RecipeRepository(conn).get_recipe(recipe_id)
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"no recipe with id '{recipe_id}'")
+
+    def _artifact_ref(rel: str) -> str:
+        return f"/api/v1/recipes/{quote(recipe_id)}/artifact?path={quote(rel)}"
+
+    data = page_data_from_row(
+        row,
+        _artifacts_dir(recipe_id) / "images",
+        _artifact_ref,
+        associates_tag=os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip(),
+    )
+    return HTMLResponse(build_page_html(data))
 
 
 @router.post("/recipes/sync-publish", response_model=SyncResponse)
@@ -328,4 +388,33 @@ def get_artifact(
         raise HTTPException(status_code=400, detail="invalid artifact path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="artifact not found")
+    return FileResponse(target)
+
+
+@router.get("/recipes/{recipe_id}/media-file")
+def get_media_file(
+    recipe_id: str,
+    path: str = Query(..., description="BRAND_DIR-relative media path from the manifest"),
+) -> FileResponse:
+    """Serve a media file referenced by a recipe's media manifest.
+
+    Paths are BRAND_DIR-relative and may live under either the live
+    ``recipe_artifacts`` folder or the ``_migrated_backup`` folder, so this
+    guards to *both* of the recipe's own media dirs (path-traversal safe) rather
+    than the single artifacts dir used by ``get_artifact``.
+    """
+    if settings.paths is None:
+        raise HTTPException(
+            status_code=500, detail="settings.paths unset; BRAND_DIR not resolved"
+        )
+    brand_dir = settings.paths.brand_dir.resolve()
+    target = (brand_dir / path).resolve()
+    allowed = (
+        (brand_dir / "data" / "media" / "recipe_artifacts" / recipe_id).resolve(),
+        (brand_dir / "data" / "media" / "_migrated_backup" / recipe_id).resolve(),
+    )
+    if not any(target.is_relative_to(folder) for folder in allowed):
+        raise HTTPException(status_code=400, detail="invalid media path")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="media file not found")
     return FileResponse(target)

@@ -3,6 +3,7 @@ import {
   approveRecipe,
   fetchAnalytics,
   rejectRecipe,
+  type AffiliateProduct,
   type RecipeAnalytics,
 } from "../api/recipes";
 import { getErrorMessage } from "../api/client";
@@ -76,6 +77,38 @@ export function ApprovalActions({
         Reject
       </button>
     </span>
+  );
+}
+
+/** Lists the matched Amazon affiliate products (phase-2) in the detail drawer. */
+export function AffiliateProductsSection({
+  products,
+}: {
+  products?: AffiliateProduct[];
+}) {
+  if (!products || products.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <h3 className="font-medium text-slate-700 mb-1">
+        Affiliate products{" "}
+        <span className="text-xs font-normal text-slate-400">(Amazon)</span>
+      </h3>
+      <ul className="text-sm space-y-1">
+        {products.map((p) => (
+          <li key={p.key} className="flex items-baseline justify-between gap-2">
+            <span className="text-slate-700">{p.display}</span>
+            <a
+              href={`https://www.amazon.com/dp/${p.asin}`}
+              target="_blank"
+              rel="sponsored nofollow noreferrer"
+              className="text-xs text-cyan-700 hover:underline whitespace-nowrap"
+            >
+              {p.asin} ↗
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

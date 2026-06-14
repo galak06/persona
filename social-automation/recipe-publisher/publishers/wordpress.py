@@ -377,6 +377,35 @@ def upload_image_to_media_library(
     return media_id, src
 
 
+def set_featured_image(
+    post_id: int, image: GeneratedImage, *, filename: str
+) -> str:
+    """Replace an existing post's featured image with ``image``.
+
+    Uploads to the media library, then sets ``featured_media`` PLUS the FIFU
+    meta the active theme actually renders from (core ``featured_media`` alone
+    shows nothing on this site). The post body/content is left untouched —
+    this only swaps the hero image. Returns the new media source_url.
+    """
+    media_id, src = upload_image_to_media_library(image, filename=filename)
+    with _client() as client:
+        resp = client.post(
+            f"/wp-json/wp/v2/posts/{post_id}",
+            json={
+                "featured_media": media_id,
+                "meta": {
+                    "fifu_image_url": src,
+                    "fifu_image_alt": image.alt_text,
+                },
+            },
+        )
+        if resp.status_code >= 400:
+            raise WordPressError(
+                f"set featured image failed: {resp.status_code} {resp.text[:300]}"
+            )
+    return src
+
+
 def upload_video_to_media_library(
     video_path: Path,
     *,

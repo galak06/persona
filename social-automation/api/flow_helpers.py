@@ -142,54 +142,54 @@ def read_engagement_comment() -> dict[str, Any]:
 def read_brand_campaigns() -> dict[str, Any]:
     p = paths()
     campaigns_dir = p.campaigns_dir
-    
+
     total_campaigns = 0
     total_published_runs = 0
     last_run_at = None
     last_status = "never"
     error_message = None
     sample = []
-    
+
     if campaigns_dir.exists():
         for campaign_dir_path in sorted(campaigns_dir.iterdir(), key=lambda d: d.name):
             if not campaign_dir_path.is_dir():
                 continue
-            
+
             state_file = campaign_dir_path / "state.json"
             if not state_file.exists():
                 continue
-                
+
             total_campaigns += 1
             state_data = read_json(state_file) or {}
             if not isinstance(state_data, dict):
                 continue
-                
+
             history = state_data.get("history", [])
             if not isinstance(history, list):
                 history = []
-                
+
             runs_success = sum(1 for h in history if isinstance(h, dict) and h.get("status") == "success")
             total_published_runs += runs_success
-            
+
             campaign_last_run = state_data.get("last_run")
             if campaign_last_run:
                 # Keep the absolute latest run time across all campaigns
                 if not last_run_at or campaign_last_run > last_run_at:
                     last_run_at = campaign_last_run
-                    
+
                 # If any campaign failed recently, mark the overall flow as error
                 if history:
                     last_event = history[-1]
                     if isinstance(last_event, dict) and last_event.get("status") == "error":
                         last_status = "error"
                         error_message = f"Error in campaign: {campaign_dir_path.name}"
-                        
+
             sample.append({
                 "campaign": campaign_dir_path.name,
                 "last_run": campaign_last_run,
                 "successful_runs": runs_success
             })
-            
+
     if total_campaigns > 0 and last_status != "error":
         last_status = "ok"
 
@@ -249,10 +249,10 @@ def read_blog_campaign() -> dict[str, Any]:
 
 
 def read_community_growth() -> dict[str, Any]:
+    from lib import groups_db
+
     p = paths()
-    groups_data = read_json(p.groups_tracker)
-    if not isinstance(groups_data, list):
-        groups_data = read_json(p.state_dir / "groups_tracker.json") or []
+    groups_data: Any = groups_db.load_all()
     if not isinstance(groups_data, list):
         groups_data = []
 

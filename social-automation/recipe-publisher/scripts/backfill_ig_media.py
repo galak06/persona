@@ -1,7 +1,7 @@
 """Backfill IG caption + reel/post split onto already-migrated recipes.
 
 The publish migration (``migrate_published_recipes``) moved each campaign
-folder to ``data/_migrated_backup/<id>/`` AFTER importing the recipe row, so
+folder to ``data/media/_migrated_backup/<id>/`` AFTER importing the recipe row, so
 the live ``sync_publish_status`` (which scans ``campaigns/**``) can no longer
 see those records. This one-off reads the backup ``metadata.json`` for every
 recipe already in ``recipes.db`` and MERGES the IG fields the UI popup needs
@@ -64,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     brand = Path(os.environ["BRAND_DIR"]).resolve()
-    backup_root = brand / "data" / "_migrated_backup"
+    backup_root = brand / "data" / "media" / "_migrated_backup"
 
     conn = db.connect()
     db.migrate(conn)

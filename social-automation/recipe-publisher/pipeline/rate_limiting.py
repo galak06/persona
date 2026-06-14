@@ -15,7 +15,7 @@ from __future__ import annotations
 PHASE = "rate_limiting"
 
 # Per-platform daily publish caps for the recipe pipeline.
-DEFAULT_DAILY_CAPS: dict[str, int] = {"ig": 5, "fb": 10, "pinterest": 10}
+DEFAULT_DAILY_CAPS: dict[str, int] = {"ig": 1, "fb": 1, "pinterest": 1}
 
 
 class RateLimitGate:

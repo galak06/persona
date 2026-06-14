@@ -1,41 +1,50 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import TopBar from "./components/layout/TopBar";
+import SideNav from "./components/layout/SideNav";
 import Activity from "./pages/Activity";
 import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
-import Flows from "./pages/Flows";
+import Operations from "./pages/Operations";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
 import Recipes from "./pages/Recipes";
-import Schedule from "./pages/Schedule";
 import Explorer from "./pages/Explorer";
-import FlowGuide from "./pages/FlowGuide";
 import NotFound from "./pages/NotFound";
 
 /**
- * Root shell. Six routes — Dashboard, Activity, Flows, Inbox, Groups,
- * Schedule — plus a 404 fallback. No auth gate, no tenant context: this
+ * Root shell. A grouped left sidebar (SideNav) plus the routed content
+ * area: ten destinations organised into Home / Review / Engagement /
+ * Operations, plus a 404 fallback. No auth gate, no tenant context: this
  * SPA only runs against a localhost backend on a trusted machine.
  */
 export default function App() {
   return (
-    <div className="min-h-screen bg-brand-bg flex flex-col">
-      <TopBar />
-      <main className="flex-1 mx-auto w-full max-w-5xl px-4 sm:px-6 py-6">
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/activity" element={<Activity />} />
-          <Route path="/flows" element={<Flows />} />
-          <Route path="/campaigns" element={<Campaigns />} />
-          <Route path="/inbox" element={<Inbox />} />
-          <Route path="/groups" element={<Groups />} />
-          <Route path="/recipes" element={<Recipes />} />
-          <Route path="/schedule" element={<Schedule />} />
-          <Route path="/explorer" element={<Explorer />} />
-          <Route path="/flow-guide" element={<FlowGuide />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+    <div className="min-h-screen bg-brand-bg flex">
+      <SideNav />
+      <main className="flex-1 min-w-0">
+        <div className="mx-auto w-full max-w-5xl px-5 sm:px-8 py-8">
+          <Routes>
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/activity" element={<Activity />} />
+            <Route path="/campaigns" element={<Campaigns />} />
+            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/recipes" element={<Recipes />} />
+            <Route path="/explorer" element={<Explorer />} />
+            <Route path="/operations" element={<Operations />} />
+            {/* Deep-link aliases — old tabs now open the matching segment. */}
+            <Route path="/flows" element={<Operations initialView="health" />} />
+            <Route
+              path="/schedule"
+              element={<Operations initialView="schedule" />}
+            />
+            <Route
+              path="/flow-guide"
+              element={<Operations initialView="audit" />}
+            />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </div>
       </main>
     </div>
   );

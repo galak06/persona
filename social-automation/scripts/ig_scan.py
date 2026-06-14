@@ -33,7 +33,7 @@ from lib.engagement.post import Post
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status
 
-QUEUE_FILE = settings.paths.comment_queue
+QUEUE_FILE = settings.paths.instagram_comment_queue
 LAST_RUN_FILE = settings.paths.last_run
 SESSION_FILE = settings.paths.instagram_session
 CONFIG_FILE = settings.paths.brand_dir / "config.json"

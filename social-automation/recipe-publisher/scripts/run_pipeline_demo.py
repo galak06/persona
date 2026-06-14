@@ -108,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
 
     log = get_phase_logger("pipeline_demo", args.log_level)
     brand = _brand_dir()
-    src_db = brand / "data" / "recipes.db"
-    catalog_path = brand / "data" / "recipe_products.json"
+    src_db = brand / "data" / "db" / "recipes.db"
+    catalog_path = brand / "data" / "config" / "recipe_products.json"
     if not src_db.exists():
         raise SystemExit(f"brand recipes.db not found: {src_db}")
 

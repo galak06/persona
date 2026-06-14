@@ -205,14 +205,10 @@ export default function Flows(): React.JSX.Element {
   const flows = data?.flows ?? [];
 
   return (
-    <section className="space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-2xl font-bold text-slate-900">Flows</h1>
-        <p className="text-sm text-slate-500">
-          Live state of every documented flow.
-        </p>
+    <section className="space-y-4">
+      <div className="flex items-center justify-end">
         <RefreshedIndicator asOf={asOf} />
-      </header>
+      </div>
 
       {error && data && (
         <Alert status="warning" title="Polling error">

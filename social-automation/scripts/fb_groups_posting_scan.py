@@ -20,7 +20,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import time
 from pathlib import Path
@@ -46,7 +45,7 @@ SKILL_NAME = "fb-groups-posting-scan"
 
 if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
-TRACKER_FILE = settings.paths.groups_tracker
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 
 
 def _classify(page: Page) -> dict[str, Any]:
@@ -146,7 +145,7 @@ def main(
         skill_error(SKILL_NAME, "FB session not found — run fb_login.py")
         return 1
 
-    tracker: list[dict[str, Any]] = json.loads(TRACKER_FILE.read_text())
+    tracker: list[dict[str, Any]] = groups_db.load_all()
     targets = [g for g in tracker if not only or only in g.get("group_url", "")]
     print(f"scanning {len(targets)} group(s)…", flush=True)
 
@@ -191,7 +190,7 @@ def main(
     if dry_run:
         print("\n(dry-run — tracker not written)", flush=True)
     else:
-        TRACKER_FILE.write_text(json.dumps(tracker, indent=2))
+        groups_db.save_all(tracker)
     skill_finished(SKILL_NAME, f"classified {updated}/{len(targets)} groups")
     print(f"\n=== Done === classified {updated}/{len(targets)} groups", flush=True)
     return 0
