@@ -96,18 +96,30 @@ def _already_ran_today(spec: CommenterSpec, last_run: dict[str, Any]) -> bool:
 def _pending_items(spec: CommenterSpec, queue: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Queue items still needing a comment, skipping posts already commented on.
 
-    The scanner pre-marks every queued/liked post in the dedup cache, so we gate
-    on ``already_commented`` (a real prior comment) — not bare presence — and
-    stamp the ones we skip so they don't sit pending forever.
+    Two duplicate guards (a post is skipped if EITHER fires):
+      - ``deduplication.already_commented`` — the 60-day dedup cache.
+      - ``engagements_db.posted_comment_post_ids`` — the durable DB record, which
+        still blocks a second comment even if the dedup cache was cleared.
+    The scanner pre-marks queued/liked posts in the cache, so we gate on a real
+    prior *comment*, never bare presence. Skipped items are stamped so they don't
+    sit pending forever.
     """
+    candidates = [
+        item
+        for item in queue
+        if item.get("platform") == spec.platform and item.get("status") == "pending"
+    ]
+    pids = [str(item.get("post_id") or "") for item in candidates]
+    posted_in_db = engagements_db.posted_comment_post_ids(spec.platform, pids)
+
     out: list[dict[str, Any]] = []
-    for item in queue:
-        if item.get("platform") != spec.platform or item.get("status") != "pending":
-            continue
+    for item in candidates:
         pid = str(item.get("post_id") or "")
-        if pid and deduplication.already_commented(spec.platform, pid):
+        if pid and (
+            pid in posted_in_db or deduplication.already_commented(spec.platform, pid)
+        ):
             item["status"] = "already_commented"
-            item["_blocked_reason"] = "already commented on this post (dedup_cache)"
+            item["_blocked_reason"] = "already commented on this post (dedup_cache/engagements.db)"
             continue
         out.append(item)
     return out

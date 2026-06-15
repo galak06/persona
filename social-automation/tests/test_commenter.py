@@ -18,7 +18,14 @@ if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
 import deduplication
+from lib import engagements_db
 from lib.engagement.commenter import CommenterSpec, _pending_items
+
+
+@pytest.fixture(autouse=True)
+def _no_db_dups(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default: the engagements.db duplicate guard finds nothing (tests override)."""
+    monkeypatch.setattr(engagements_db, "posted_comment_post_ids", lambda *_a: set())
 
 
 def _spec(platform: str = "facebook", target_field: str = "group_name") -> CommenterSpec:
@@ -77,3 +84,17 @@ def test_pending_skips_only_already_commented(monkeypatch: pytest.MonkeyPatch) -
     assert [i["post_id"] for i in pending] == ["fresh"]
     assert queue[0]["status"] == "already_commented"
     assert "_blocked_reason" in queue[0]
+
+
+def test_pending_skips_db_posted_even_when_cache_clear(monkeypatch: pytest.MonkeyPatch) -> None:
+    # dedup cache is empty, but engagements.db already has a posted comment for
+    # the post → it must still be skipped (the durable DB guard).
+    monkeypatch.setattr(deduplication, "already_commented", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        engagements_db, "posted_comment_post_ids", lambda _p, pids: {"in_db"} & set(pids)
+    )
+    queue = [_item("in_db"), _item("fresh")]
+    pending = _pending_items(_spec(), queue)
+
+    assert [i["post_id"] for i in pending] == ["fresh"]
+    assert queue[0]["status"] == "already_commented"

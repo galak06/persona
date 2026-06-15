@@ -29,6 +29,7 @@ __all__ = [
     "counts",
     "list_engagements",
     "migrate",
+    "posted_comment_post_ids",
     "record_publish",
     "resolve_engagements_db_path",
 ]
@@ -105,5 +106,14 @@ def counts() -> dict[str, int]:
     conn, repo = _repo()
     try:
         return repo.counts()
+    finally:
+        conn.close()
+
+
+def posted_comment_post_ids(platform: str, post_ids: list[str]) -> set[str]:
+    """Of ``post_ids``, which already have a POSTED comment recorded (dedup guard)."""
+    conn, repo = _repo()
+    try:
+        return repo.posted_comment_post_ids(platform, post_ids)
     finally:
         conn.close()

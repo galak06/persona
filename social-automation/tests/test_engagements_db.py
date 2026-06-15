@@ -70,6 +70,19 @@ def test_filters_and_counts(repo: EngagementsRepository) -> None:
     }
 
 
+def test_posted_comment_post_ids_is_the_dup_guard(repo: EngagementsRepository) -> None:
+    repo.record(
+        {"platform": "instagram", "kind": "comment", "ref": "p1", "status": "posted"}
+    )
+    repo.record(
+        {"platform": "instagram", "kind": "comment", "ref": "p2", "status": "failed"}
+    )
+    got = repo.posted_comment_post_ids("instagram", ["p1", "p2", "p3"])
+    assert got == {"p1"}  # only the POSTED one; failed/absent don't block
+    # platform-scoped: same ref on FB doesn't count for IG
+    assert repo.posted_comment_post_ids("facebook", ["p1"]) == set()
+
+
 def test_record_requires_platform_and_kind(repo: EngagementsRepository) -> None:
     with pytest.raises(ValueError):
         repo.record({"platform": "facebook"})

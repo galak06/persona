@@ -106,6 +106,26 @@ class EngagementsRepository:
         ).fetchone()
         return dict(row) if row is not None else None
 
+    def posted_comment_post_ids(self, platform: str, post_ids: list[str]) -> set[str]:
+        """Of ``post_ids``, which already have a POSTED comment recorded here.
+
+        The durable duplicate-comment guard: a posted-comment row blocks a second
+        comment on the same post even if the dedup cache was cleared. Comment rows
+        are keyed by ``dedup_id(platform, "comment", post_id)``.
+        """
+        out: set[str] = set()
+        for pid in post_ids:
+            if not pid:
+                continue
+            eid = dedup_id(platform, "comment", pid)
+            row = self._conn.execute(
+                "SELECT 1 FROM engagements WHERE id=? AND status='posted' LIMIT 1",
+                (eid,),
+            ).fetchone()
+            if row is not None:
+                out.add(pid)
+        return out
+
     def counts(self) -> dict[str, int]:
         """Totals by ``{platform}:{kind}`` for posted rows (for UI summaries)."""
         rows = self._conn.execute(
