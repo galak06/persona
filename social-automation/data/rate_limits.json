@@ -4,7 +4,7 @@
     "facebook:comment": "30-120s random",
     "facebook:group_visit": "3-5s random",
     "facebook:like": "30-90s random",
-    "instagram:comment": "120-180s random",
+    "instagram:comment": "3-10s random",
     "instagram:follow": "60-180s random",
     "instagram:like": "10-45s random",
     "wordpress:reply": "15-45s random"

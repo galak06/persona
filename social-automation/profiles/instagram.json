@@ -6,7 +6,7 @@
     "comments_per_day": 15,
     "follows_per_day": 22,
     "delay_between_likes": "10-45s random",
-    "delay_between_comments": "120-180s random",
+    "delay_between_comments": "3-10s random",
     "delay_between_follows": "60-180s random"
   },
   "flows": [
