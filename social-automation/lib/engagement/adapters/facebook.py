@@ -245,6 +245,7 @@ class FacebookGroupAdapter:
         post_text: str = str(raw.get("text", ""))
         post_url: str = str(raw.get("url", "") or "")
         comment_count: int = int(cast(int, raw.get("comment_count", 0) or 0))
+        comments_disabled: bool = bool(raw.get("comments_disabled", False))
 
         if post_url:
             post_id = extract_post_id(post_url)
@@ -266,11 +267,17 @@ class FacebookGroupAdapter:
             source_id=source.id,
             source_name=source.name,
             source_url=source.url,
-            platform_extra={"comment_count": comment_count, "category": category},
+            platform_extra={
+                "comment_count": comment_count,
+                "category": category,
+                "comments_disabled": comments_disabled,
+            },
         )
 
     def pre_filter(self, post: Post) -> str | None:
-        """FB has no platform-level pre-filters today."""
+        """Skip posts where FB turned commenting off — a comment would fail."""
+        if post.platform_extra.get("comments_disabled"):
+            return "comments_disabled"
         return None
 
     def adjust_score(self, post: Post, base: float) -> float:

@@ -92,6 +92,7 @@ EXTRACT_POSTS_JS = """
                 url: findPostUrl(container),
                 comment_count: getCommentCount(container),
                 timestamp: '',
+                comments_disabled: (container?.innerText || '').toLowerCase().includes('commenting has been turned off'),
             });
         } catch(e) {}
     });
@@ -122,6 +123,7 @@ EXTRACT_POSTS_JS = """
                     url: findPostUrl(article),
                     comment_count: getCommentCount(article),
                     timestamp: '',
+                    comments_disabled: (article?.innerText || '').toLowerCase().includes('commenting has been turned off'),
                 });
             } catch(e) {}
         });

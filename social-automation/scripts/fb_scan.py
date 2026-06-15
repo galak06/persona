@@ -174,6 +174,16 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
             group_or_hashtag=str(rec.get("group_name") or ""),
         )
 
+    # Permanently mark comments-disabled posts so future scans skip them at the
+    # dedup gate — FB turned commenting off, so a comment would always fail.
+    for post_id, reason in report.pre_filtered_posts:
+        if reason == "comments_disabled":
+            deduplication.mark_engaged(
+                "facebook", str(post_id),
+                action="comments_disabled",
+                group_or_hashtag="",
+            )
+
     last_run["fb_scanner"] = {
         "last_run_at": datetime.now(UTC).isoformat(),
         "groups_scanned": report.sources_visited,
@@ -184,15 +194,18 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     LAST_RUN_FILE.write_text(json.dumps(last_run, indent=2))
 
     quota = policy.daily_comment_quota.get("facebook", 5)
+    disabled = report.pre_filtered.get("comments_disabled", 0)
     skill_finished(
         "fb-scanner",
         f"Groups: {report.sources_visited} | "
-        f"Candidates: {report.candidates} | Queued: {report.queued}/{quota}",
+        f"Candidates: {report.candidates} | Queued: {report.queued}/{quota}"
+        f" | Comments-off skipped: {disabled}",
     )
     print_status()
     log_trace(
         "facebook",
-        f"Scan complete: {report.sources_visited} groups, {report.queued} queued",
+        f"Scan complete: {report.sources_visited} groups, "
+        f"{report.queued} queued, {disabled} comments-off skipped",
     )
     return report
 

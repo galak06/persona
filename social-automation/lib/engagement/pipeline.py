@@ -25,6 +25,8 @@ class ScanReport:
 
     `pre_filtered` maps adapter rejection reason (e.g. "competitor",
     "own_account", "too_old") to count of posts dropped for that reason.
+    `pre_filtered_posts` lists the (post_id, reason) pairs for those drops so
+    callers can act on individual posts (e.g. permanently dedup-mark them).
     """
 
     platform: str
@@ -35,6 +37,8 @@ class ScanReport:
     likes_succeeded: int
     queued: int
     pre_filtered: dict[str, int] = field(default_factory=dict)
+    # (post_id, reason) pairs for each pre-filtered drop.
+    pre_filtered_posts: list[tuple[str, str]] = field(default_factory=list)
 
 
 # Structural collaborator protocols so production singleton modules satisfy
@@ -103,6 +107,7 @@ def run_outbound_scan(
     platform = adapter.platform
     candidates: list[tuple[Post, float]] = []
     pre_filtered: dict[str, int] = {}
+    pre_filtered_posts: list[tuple[str, str]] = []
     sources_visited = 0
     posts_scanned = 0
     likes_attempted = 0
@@ -129,6 +134,7 @@ def run_outbound_scan(
                 if outcome.pre_filter_reason is not None:
                     reason = outcome.pre_filter_reason
                     pre_filtered[reason] = pre_filtered.get(reason, 0) + 1
+                    pre_filtered_posts.append((post.post_id, reason))
                     continue
                 if outcome.like_attempted:
                     likes_attempted += 1
@@ -162,6 +168,7 @@ def run_outbound_scan(
         likes_succeeded=likes_succeeded,
         queued=queued,
         pre_filtered=pre_filtered,
+        pre_filtered_posts=pre_filtered_posts,
     )
 
 
