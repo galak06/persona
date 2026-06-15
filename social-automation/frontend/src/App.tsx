@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Operations from "./pages/Operations";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
+import Published from "./pages/Published";
 import Recipes from "./pages/Recipes";
 import Explorer from "./pages/Explorer";
 import NotFound from "./pages/NotFound";
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/groups" element={<Groups />} />
+            <Route path="/published" element={<Published />} />
             <Route path="/recipes" element={<Recipes />} />
             <Route path="/explorer" element={<Explorer />} />
             <Route path="/operations" element={<Operations />} />

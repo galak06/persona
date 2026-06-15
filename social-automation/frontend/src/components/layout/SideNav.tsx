@@ -40,6 +40,7 @@ const SECTIONS: readonly NavSection[] = [
     title: "Engagement",
     items: [
       { to: "/activity", label: "Activity", icon: "📊" },
+      { to: "/published", label: "Published", icon: "📤" },
       { to: "/groups", label: "FB Groups", icon: "👥" },
     ],
   },

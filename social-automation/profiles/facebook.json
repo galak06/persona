@@ -3,13 +3,13 @@
   "rate_limits": {
     "page_posts_per_day": 3,
     "group_posts_per_day": 10,
-    "comments_per_day": 5,
+    "comments_per_day": 15,
     "likes_per_day": 5,
-    "group_visits_per_day": 6,
+    "group_visits_per_day": 15,
     "group_join_requests_per_week": 15,
     "group_join_requests_per_day": 5,
     "delay_between_comments": "30-120s random",
-    "delay_between_group_visits": "45-180s random",
+    "delay_between_group_visits": "3-5s random",
     "delay_between_likes": "30-90s random"
   },
   "flows": [
@@ -28,8 +28,8 @@
       "requires_approval": false,
       "telegram_notify": true,
       "rate_limits": {
-        "group_visits_per_day": 6,
-        "comments_per_day": 5
+        "group_visits_per_day": 15,
+        "comments_per_day": 15
       },
       "order": 20,
       "depends_on": [
@@ -45,32 +45,10 @@
       ]
     },
     {
-      "id": "fb-comment-approver",
-      "skill": "comment-composer",
-      "script": "scripts/comment_approver.py",
-      "args": ["--platform", "facebook"],
-      "description": "FB loop: auto-approve drafted Facebook comments from the Facebook queue (Phase-3 autonomous, no Telegram round-trip)",
-      "schedule": {
-        "cron": "0 8-22 * * *",
-        "cadence": "hourly"
-      },
-      "output_file": null,
-      "re_run_guard": false,
-      "requires_browser": false,
-      "requires_approval": false,
-      "telegram_notify": false,
-      "order": 21,
-      "depends_on": [
-        "fb-scanner"
-      ],
-      "inputs": []
-    },
-    {
-      "id": "fb-comment-poster",
-      "skill": "comment-composer",
-      "script": "scripts/comment_poster.py",
-      "args": ["--platform", "facebook"],
-      "description": "FB loop: post approved Facebook comments (max 5/day) from the Facebook queue",
+      "id": "fb-comment",
+      "skill": "fb-comment",
+      "script": "scripts/fb_comment.py",
+      "description": "FB loop: draft one short reply per queued post and post it (max 5/day) from the Facebook queue",
       "schedule": {
         "cron": "0 10 * * *",
         "cadence": "daily"
@@ -80,9 +58,12 @@
       "requires_browser": true,
       "requires_approval": false,
       "telegram_notify": true,
-      "order": 22,
+      "rate_limits": {
+        "comments_per_day": 15
+      },
+      "order": 21,
       "depends_on": [
-        "fb-comment-approver"
+        "fb-scanner"
       ],
       "inputs": []
     },

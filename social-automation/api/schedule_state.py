@@ -38,7 +38,9 @@ def _paths() -> BrandPaths:
 # map maps to None and renders unparented in the UI.
 _LABEL_TO_FLOW: dict[str, str] = {
     "fb-scanner": "engagement-comment",
+    "fb-comment": "engagement-comment",
     "ig-scanner": "engagement-comment",
+    "ig-comment": "engagement-comment",
     "comment-approver": "engagement-comment",
     "comment-poster": "engagement-comment",
     "content-pipeline": "blog-campaign",
@@ -63,7 +65,9 @@ _LABEL_TO_FLOW: dict[str, str] = {
 # Map plist short-name → cron log filename (in settings.paths.logs_dir).
 _LABEL_TO_LOG: dict[str, str] = {
     "fb-scanner": "cron_fb_scan.log",
+    "fb-comment": "cron_fb_comment.log",
     "ig-scanner": "cron_ig_scan.log",
+    "ig-comment": "cron_ig_comment.log",
     "comment-approver": "cron_comment_approver.log",
     "comment-poster": "cron_comment_poster.log",
     "content-pipeline": "cron_content_pipeline.log",
@@ -108,7 +112,7 @@ def _run_launchctl_list() -> dict[str, tuple[int | None, int | None]]:
     """Return ``{label: (pid, exit_code)}`` for every ``com.dogfoodandfun.*``
     label currently loaded into launchd."""
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [_LAUNCHCTL_BIN, "list"],
             capture_output=True, text=True, check=False, timeout=10,
         )

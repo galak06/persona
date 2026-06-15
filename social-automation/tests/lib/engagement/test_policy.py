@@ -160,7 +160,8 @@ class TestFromProfiles:
     def test_from_profiles_reads_quotas(self) -> None:
         policy = EngagementPolicy.from_profiles(_PROFILES_DIR)
 
-        assert policy.daily_comment_quota == {"facebook": 5, "instagram": 10}
+        # FB + IG comment quotas bumped to 15 (2026-06-14/15, user request).
+        assert policy.daily_comment_quota == {"facebook": 15, "instagram": 15}
         assert policy.daily_like_quota == {"facebook": 5, "instagram": 20}
 
     def test_from_profiles_omits_wp_from_quota_dicts(self) -> None:

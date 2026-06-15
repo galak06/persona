@@ -182,7 +182,9 @@ def test_fb_scan_record_shape(fb_environment: dict[str, Path]) -> None:
     assert rec["group_url"] == "https://www.facebook.com/groups/666"
     assert rec["category"] == "food"
     assert isinstance(rec["requires_approval"], bool)
-    assert rec["draft_comment"].startswith("DRAFT for")
+    # Scan-only: the FB scanner no longer drafts — comments are drafted at post
+    # time by scripts/fb_comment.py, so the queued record carries an empty draft.
+    assert rec["draft_comment"] == ""
 
 
 def test_fb_scan_pre_filter_rejection(fb_environment: dict[str, Path]) -> None:

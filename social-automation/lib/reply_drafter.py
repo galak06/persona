@@ -146,7 +146,12 @@ BRAND VOICE — Nalla's Dad from dogfoodandfun.com:
 - No emojis at the start; 0-1 emoji max total
 - End with one specific question tied to what they said — not "what do you think?"
 - 1-3 sentences, under 450 chars total
-- If referencing our own experience, be specific with numbers ("3 weeks in", "tracked for a month")
+- NEVER invent facts about Nalla or us — no made-up diets, durations, ages, gear,
+  or experiences ("we've fed raw for a year", "3 weeks to implement"). Only state
+  things that are actually true (see NALLA FACTS if provided).
+- When you have no true specific to share, stay first-person but general
+  ("in our experience", "we've noticed with Nalla") and lead with genuine
+  curiosity about THEIR experience instead of fabricating a story.
 """
 
 
@@ -259,9 +264,9 @@ def _strip_meta_chrome(text: str) -> str:
 # the HTTP payload shape or the brand-voice text. The leading underscore is
 # preserved to signal "internal — don't import from outside lib/".
 __all__ = [
-    "SitePost",
-    "draft_reply",
-    "draft_comment",
-    "_call_gemini",
     "_VOICE_RULES",
+    "SitePost",
+    "_call_gemini",
+    "draft_comment",
+    "draft_reply",
 ]

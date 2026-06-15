@@ -1,8 +1,156 @@
-# Current Focus — FB groups moved to a DB; recipe flow decoupled into DB-polling workers
+# Current Focus — comment-draft grounding (no fabrication) + FB/IG flows live
 
-_Last updated: 2026-06-14 (session)_
+_Last updated: 2026-06-15 (session)_
 
-## Latest: FB groups JSON → `groups.db` (brand→groups table) + live scout run
+## Latest (2026-06-15): grounded comment drafts + both platforms run live
+
+- **Fabrication fix (brand accuracy).** Engagement comments were inventing false
+  specifics (e.g. "we've fed raw for over a year") because `_VOICE_RULES` told the
+  model to "be specific with numbers" and it had no true facts. Two-part fix:
+  (A) **no-fabrication guardrail** in `_VOICE_RULES` (`lib/reply_drafter.py`) — forbids
+  invented diets/durations/ages/gear, fall back to general + curious; applies to ALL
+  drafting. (B) **facts grounding** — `lib/draft_helper.py` `_nalla_facts()` loads
+  `${BRAND_DIR}/data/config/nalla_facts.md` (lru_cached) and injects it as a "NALLA
+  FACTS" block. **Owner must fill** the diet/gear/experience TODOs in that file to
+  make comments specific; until then they stay correctly general. Covers BOTH FB +
+  IG (shared `draft_helper`). See memory [[project_nalla_facts_grounding]].
+  - NOT yet wired into `reply_drafter`'s own prompts (reply-follower/auto-drafter) —
+    they get the guardrail but not the facts block. Open follow-up.
+- **Caps → 15.** FB and IG `comments_per_day` both bumped 10→15 (profiles + regenerated
+  `data/rate_limits.json`); `test_policy` updated. FB `group_visit` is 15 too.
+- **Operations + Flow Explorer fully reflect fb-comment/ig-comment** — `_LABEL_TO_FLOW`
+  + `_LABEL_TO_LOG` (`api/schedule_state.py`), `flow_descriptions.py`, and the
+  installed `~/Library/LaunchAgents` plists (added `{fb,ig}-comment`, removed 4 stale
+  `*-approver/poster`; all unloaded, crons still disabled).
+- **Live runs done:** FB — joined 30 groups, scanned, posted 3 comments (2 box-not-found
+  failures = selector brittleness, still open). IG — scanned (26 hashtags, 20 likes, 10
+  queued), posted comments (Submit button works on IG, unlike FB's Enter fallback). A
+  `ig_comment.py --force` run for the remaining ~9 was in flight at session end.
+- **Known issues / next:** (1) FB `lib/fb/comment_post.py` submit selector often falls
+  back to Enter + 2 "comment box not found" — harden it. (2) fill `nalla_facts.md`.
+  (3) optionally wire facts into reply_drafter.
+
+---
+
+## IG comment flow → 2 single actions (shared core with FB)
+
+Applied the FB scanner+commenter split to Instagram, and — to avoid duplicating
+the ~250-line drain loop — extracted the shared core into
+**`lib/engagement/commenter.py`** (`CommenterSpec` + `run_commenter`/`main_for`).
+Both `fb_comment.py` and `ig_comment.py` are now ~60-line thin specs.
+
+- **`lib/engagement/commenter.py`** — platform-agnostic drain loop: re-run guard,
+  pending filter (`already_commented` only), draft-at-post-time, Playwright post,
+  dedup + rate + engagements.db record, pacing. Parameterized by `CommenterSpec`
+  (platform, session/queue/log paths, guard key, home_url, login markers,
+  target_field, `draft_fn`, `post_fn`).
+- **`scripts/ig_scan.py`** → scan-only (`drafter=None`); IG queue records carry an
+  empty draft. **`scripts/ig_comment.py`** (NEW) → drafts at post time
+  (`draft_comment_for_post`, normal length) + posts via `lib/ig/comment_post.py`
+  (extracted `post_comment_ig`). Cap 10/day, guard `comment_composer_instagram`.
+- **`scripts/fb_comment.py`** rewritten as a thin spec on the shared core (same
+  behavior; FB uses `draft_short_comment_for_post`, `lib/fb/comment_post`).
+- **`scripts/comment_poster.py`** → now **WP-only** (FB + IG branches removed,
+  `post_comment_ig` moved out, no browser launch). `comment_approver.py` likewise
+  WP-only in the flow.
+- **Profiles/schedule:** `profiles/instagram.json` `ig-comment-approver` +
+  `ig-comment-poster` → one `ig-comment` (deps `ig-scanner`); regenerated
+  `schedule.json`/`rate_limits.json` (DAG 19 flows, engine `--check` exit 0).
+- **Flow Explorer:** updated all 3 sources it reads — `api/flow_descriptions.py`
+  (guide), `api/schedule_state.py` `_LABEL_TO_FLOW` (added fb-comment + ig-comment →
+  engagement-comment), and the installed launchd plists. Regenerated brand plists
+  (`profiles_build build --brand-dir <brand>`), then synced `~/Library/LaunchAgents`:
+  **added** `com.dogfoodandfun.{fb,ig}-comment.plist`, **removed** the 4 stale
+  `{fb,ig}-comment-{approver,poster}.plist` (from LaunchAgents + brand dir). All
+  plists remain **disabled/unloaded** (0 in `launchctl list`) — file sync only.
+  `/flows/state` now lists fb-scanner→fb-comment, ig-scanner→ig-comment under the
+  Engagement-Comment flow.
+- **No duplication:** `post_comment_fb`/`post_comment_ig` defined once each
+  (lib/fb, lib/ig); commenter core defined once.
+- **Verified:** new `tests/test_commenter.py` (shared filter/dedup) +
+  `test_ig_comment.py` + rewritten `test_fb_comment.py` (spec + draft delegation) +
+  updated `test_ig_scan` record shape; **156 scoped tests pass; ruff clean; drift
+  guard passes**; API restarted, `/flows/guide` shows all 6 jobs.
+
+---
+
+## engagements.db — published posts + comments, DB→API→UI
+
+Full vertical slice: a queryable history of every published post + comment
+(previously only in `engagement_log.jsonl` + the queue JSON). New
+`lib/engagements_db/` (mirrors `groups_db`): `engagements` table at
+`${BRAND_DIR}/data/db/engagements.db` — one row per publish (platform, kind,
+status, target, permalink, content, source_ref, posted_at), upsert-keyed by
+`dedup_id(platform, kind, ref)` so retries/failures collapse. `record_publish()`
+is **defensive** (swallows DB errors so logging never breaks a publish).
+
+- **Writers wired:** `scripts/fb_comment.py` (comment posted + both failure
+  paths), `scripts/fb_group_post.py` (FB group link_post/reel after last_post),
+  `scripts/publish_prepared.py` (IG reel, FB reel, FB page_post — recipe pipeline,
+  still dormant/dry-run so no live rows yet).
+- **API:** new `api/engagements_api.py` router → `GET /api/v1/engagements`
+  (`?platform=&kind=&status=&limit=`) + posted-only `counts`; included in
+  `approval_api.py`. API restarted on :5001.
+- **UI:** `frontend/src/pages/Published.tsx` (platform filter tabs, counts chips,
+  table with outbound links) + `api/engagements.ts` (manual types — openapi still
+  bypassed) + route `/published` + SideNav "Published" entry (Engagement section).
+- **Backfilled** 48 FB comment rows from the queue (23 posted incl. today's 3, 25
+  failed). Live API confirmed serving them.
+- **Verified:** `tests/test_engagements_db.py` (5: round-trip, idempotent-by-ref,
+  filters+counts, validation, API handler) + 13 scoped pass; ruff clean; **frontend
+  tsc 0 errors** (the old stale-openapi redness is gone).
+
+### Next session (engagements)
+1. The IG/FB-page writers in `publish_prepared.py` only fire on a real (non-dry-run)
+   recipe publish — exercise once that pipeline goes live.
+2. Optional: dedupe `engagement_log.jsonl` writers to read from the DB instead.
+
+---
+
+## FB comment flow → 2 single actions (scanner + commenter)
+
+Broke the FB outbound-comment flow from scan-and-draft-in-one + auto-approver +
+poster into **two single-responsibility actions**, drafting at POST time, per the
+user's ask (_"break to single action FB scanner, FB comment; the comment must be
+short and based on the post"_). Likes stay in the scanner; comments are **one
+sentence (~15-25 words)** grounded in the live post.
+
+- **Action 1 · `fb-scanner` (scan only)** — `scripts/fb_scan.py` now passes
+  `drafter=None` to the shared pipeline; FB queue records carry an empty
+  `draft_comment`. `lib/engagement/pipeline.py` made `drafter` Optional (skip draft
+  when None). **IG/WP scanners keep drafting inline — untouched.**
+- **Action 2 · `fb-comment` (new `scripts/fb_comment.py`)** — drains the FB queue's
+  `status="pending"` items: drafts a short reply at post time, posts via Playwright,
+  records dedup/rate/log/queue-status. Drops the separate FB approver. Re-run guard
+  `comment_composer_facebook`, cap 5/day, `wait_random_delay` pacing. CLI:
+  `--dry-run/--force/--limit/--health-check`. 292 lines.
+- **Short, post-grounded draft** — `lib/draft_helper.py` refactored: shared
+  call→validate→retry core (`_draft_validated`) + new `draft_short_comment_for_post`
+  (one sentence; `validate_voice` still enforces a trailing `?`, ≥40 chars,
+  specificity, first-person, so the sentence must carry all three).
+- **No duplication** — extracted the Playwright `post_comment_fb` into
+  `lib/fb/comment_post.py`; removed it + the whole FB branch from
+  `scripts/comment_poster.py` (now IG + WP only, 548→404 lines).
+- **Wiring** — `profiles/facebook.json`: replaced `fb-comment-approver` +
+  `fb-comment-poster` with one `fb-comment` flow (daily 10:00, depends_on
+  `fb-scanner`). Regenerated `data/schedule.json` + `data/rate_limits.json` via
+  `python -m tools.profiles_build build` (engine artifacts only; brand plists NOT
+  touched — all crons still disabled). DAG valid (20 flows).
+- **Tests** — `tests/test_draft_helper.py` (short variant: validated text, prompt
+  asks for one sentence, retry-once, empty-after-2-fails, missing-key raises) +
+  `tests/test_fb_comment.py` (`_pending_items` filter + dedup stamping, `_draft_for`
+  delegation); updated `test_fb_scan_record_shape` (FB draft now empty). **112 + 151
+  scoped tests pass; ruff clean; engine `profiles_build --check` exit 0.** No live FB
+  comment posted yet (browser action, awaiting user go-ahead).
+
+### Next session (FB comment)
+1. Live smoke: `BRAND_DIR=… python scripts/fb_scan.py --force` (queue targets) →
+   `python scripts/fb_comment.py --dry-run` (review drafts) → `--limit 1` live.
+2. Add a `fb-comment` launchd plist when crons are re-enabled (held off; all disabled).
+
+---
+
+## FB groups JSON → `groups.db` (brand→groups table) + live scout run
 
 Moved FB groups out of `groups_tracker.json` (flat `list[dict]`) into a real
 brand→groups SQLite DB and **fully cut over** all ~12 consumers, so the DB is the

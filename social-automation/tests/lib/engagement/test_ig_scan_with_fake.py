@@ -237,7 +237,8 @@ def test_ig_scan_queue_record_shape(ig_environment: dict[str, Any]) -> None:
     assert rec["author"] == "@trainer_jane"
     assert rec["like_count"] == 342
     assert rec["status"] == "pending"
-    assert rec["draft_comment"].startswith("DRAFT-")
+    # Scan-only: IG scanner no longer drafts — ig_comment.py drafts at post time.
+    assert rec["draft_comment"] == ""
     assert rec["post_id"] == "p1"
 
 

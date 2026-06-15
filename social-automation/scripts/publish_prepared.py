@@ -34,7 +34,7 @@ import shutil
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -43,13 +43,14 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
-from lib.local_env import get_brand_campaign, load_local_env  # noqa: E402
-from lib.sessions import wp_client  # noqa: E402
-
-import notifier  # noqa: E402
+import notifier
+from lib import engagements_db
+from lib.local_env import get_brand_campaign, load_local_env
+from lib.sessions import wp_client
 
 logger = logging.getLogger("publish_prepared")
 
@@ -85,7 +86,7 @@ def _write_status(folder: Path, state: str, by: str = "publish_prepared") -> Non
     cur = _read_status(folder)
     cur["state"] = state
     cur.setdefault("history", []).append(
-        {"at": datetime.now(timezone.utc).isoformat(), "to": state, "by": by}
+        {"at": datetime.now(UTC).isoformat(), "to": state, "by": by}
     )
     tmp = folder / "status.json.tmp"
     tmp.write_text(json.dumps(cur, indent=2, ensure_ascii=False))
@@ -165,14 +166,14 @@ def _hours_since_last_success() -> float:
     except ValueError:
         return float("inf")
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - ts).total_seconds() / 3600.0
+        ts = ts.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - ts).total_seconds() / 3600.0
 
 
 def _record_last_run(seed_id: str, status: str, error: str = "") -> None:
     LAST_RUN_FILE.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": datetime.now(UTC).isoformat(),
         "seed_id": seed_id,
         "status": status,
         "error": error,
@@ -199,7 +200,7 @@ def _append_to_verify_queue(item: dict[str, Any]) -> None:
     if path.exists():
         try:
             data: list[Any] = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001
+        except Exception:
             data = []
     else:
         data = []
@@ -211,7 +212,7 @@ def _append_to_verify_queue(item: dict[str, Any]) -> None:
 
 def _finalize_verify_queue_item(item_id: str, decided_by: str) -> None:
     """Stamp the verify queue item with its final status."""
-    from api import state as _state  # noqa: PLC0415
+    from api import state as _state
 
     path = settings.paths.campaign_verify_queue  # type: ignore[union-attr]
     _state.commit_decision(
@@ -219,7 +220,7 @@ def _finalize_verify_queue_item(item_id: str, decided_by: str) -> None:
         item_id,
         status="approved",
         decided_by=decided_by,  # type: ignore[arg-type]
-        decided_at=datetime.now(timezone.utc).isoformat(),
+        decided_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -230,7 +231,7 @@ def _check_verify_queue(item_id: str) -> str | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
     if not isinstance(data, list):
         return None
@@ -251,11 +252,11 @@ def verify_seed(seed_id: str) -> int:
     """
     folder = PREPARED_ROOT / seed_id
     if not folder.exists():
-        print(f"❌ no prepared folder: {folder}")  # noqa: T201
+        print(f"❌ no prepared folder: {folder}")
         return 1
     meta = _read_metadata(folder)
     if not _audio_present(folder):
-        print(f"❌ {seed_id}: audio.mp3 not found in {folder}")  # noqa: T201
+        print(f"❌ {seed_id}: audio.mp3 not found in {folder}")
         return 1
 
     audio_path = _resolve_audio_path(folder)
@@ -269,7 +270,7 @@ def verify_seed(seed_id: str) -> int:
             "id": verify_item_id,
             "type": "campaign_verify",
             "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "seed_id": seed_id,
             "title": meta.get("title", seed_id),
             "wp_draft_url": wp_admin_url,
@@ -297,7 +298,7 @@ def verify_seed(seed_id: str) -> int:
     token = cfg.get("bot_token", "")
     chat_id = cfg.get("chat_id", "")
     if not token or not chat_id:
-        print("⚠️  no telegram — auto-verifying without confirmation.")  # noqa: T201
+        print("⚠️  no telegram — auto-verifying without confirmation.")
         _write_status(folder, "verified", by="cli_no_telegram")
         _finalize_verify_queue_item(verify_item_id, "auto")
         return 0
@@ -312,11 +313,11 @@ def verify_seed(seed_id: str) -> int:
                 _write_status(folder, "verified", by="cli_user")
                 _finalize_verify_queue_item(verify_item_id, "telegram")
                 notifier.send(f"✅ verified: <code>{seed_id}</code>", silent=True)
-                print(f"✅ verified: {seed_id}")  # noqa: T201
+                print(f"✅ verified: {seed_id}")
                 return 0
             if text in ("skip", "no", "n"):
                 notifier.send(f"⏭ skipped verify: <code>{seed_id}</code>", silent=True)
-                print(f"⏭ skip: {seed_id}")  # noqa: T201
+                print(f"⏭ skip: {seed_id}")
                 return 0
 
         # Also check web_ui queue channel
@@ -324,14 +325,14 @@ def verify_seed(seed_id: str) -> int:
         if web_decision == "yes":
             _write_status(folder, "verified", by="web_ui")
             notifier.send(f"✅ verified (web UI): <code>{seed_id}</code>", silent=True)
-            print(f"✅ verified (web UI): {seed_id}")  # noqa: T201
+            print(f"✅ verified (web UI): {seed_id}")
             return 0
         if web_decision == "skip":
             notifier.send(f"⏭ skipped verify (web UI): <code>{seed_id}</code>", silent=True)
-            print(f"⏭ skip (web UI): {seed_id}")  # noqa: T201
+            print(f"⏭ skip (web UI): {seed_id}")
             return 0
 
-    print("⏰ timed out — left as audio_ready")  # noqa: T201
+    print("⏰ timed out — left as audio_ready")
     return 1
 
 
@@ -393,7 +394,7 @@ def _mux_source_with_audio(source_mp4: Path, audio: Path, muxed: Path) -> Path:
         m_mtime = muxed.stat().st_mtime
         if m_mtime >= source_mp4.stat().st_mtime and m_mtime >= audio.stat().st_mtime:
             return muxed
-    from content_pipeline import _mux_audio  # noqa: E402  (local import, optional dep)
+    from content_pipeline import _mux_audio
 
     _mux_audio(source_mp4, audio, muxed)
     return muxed
@@ -406,7 +407,7 @@ def _load_slides_from_folder(folder: Path) -> list[Any]:
     we set url empty (publisher uses slide_urls= explicitly) and reuse the
     recipe title for alt text (good enough for Pin alt; can be tuned later).
     """
-    from generators.image import GeneratedImage  # noqa: E402
+    from generators.image import GeneratedImage
 
     slides_dir = folder / "slides"
     if not slides_dir.exists():
@@ -433,7 +434,7 @@ def _build_recipe_stub(meta: dict[str, Any], ig_caption: str) -> Any:
     Recipe dataclass instance with sensible defaults so dataclass identity
     checks and isinstance() guards still pass.
     """
-    from generators.recipe import Recipe  # noqa: E402
+    from generators.recipe import Recipe
 
     return Recipe(
         title=meta.get("title", ""),
@@ -473,7 +474,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     fb_caption = (folder / "fb_caption.txt").read_text(encoding="utf-8").strip() if (folder / "fb_caption.txt").exists() else ""
 
     if dry_run:
-        print(  # noqa: T201
+        print(
             f"[dry-run] would mux ({source_mp4.name} + {audio_path.name}) → muxed.mp4, "
             f"promote WP {wp_id} → publish, push IG reel + FB reel for {seed_id}"
         )
@@ -489,7 +490,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     try:
         _mux_source_with_audio(source_mp4, audio_path, muxed_path)
         logger.info("muxed reel ready: %s", muxed_path)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("mux failed")
         warnings.append(f"mux failed: {exc}")
         notifier.send(f"❌ <code>{seed_id}</code> — mux failed: {exc}", silent=False)
@@ -507,7 +508,8 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     rc = settings.recipe_card
     if rc.enabled and not skip_pdf:
         try:
-            from lib.recipe_card import content_parser, pdf_generator, wp_sync as rc_wp  # noqa: E402
+            from lib.recipe_card import content_parser, pdf_generator
+            from lib.recipe_card import wp_sync as rc_wp
             _post = rc_wp.fetch_post_data(int(wp_id))
             _recipe = content_parser.parse_recipe(_post["title"], _post["content"])
             if _recipe.ingredients or _recipe.instructions:
@@ -533,9 +535,11 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     # Step 2.55: render recipe_page.html — best-effort; never blocks the publish flow
     try:
         import os as _os
-        from recipe_db import db as _rdb  # noqa: PLC0415
-        from recipe_db.repository import RecipeRepository as _RecipeRepository  # noqa: PLC0415
-        from pipeline.html_export import can_export as _can_export, export_html as _export_html  # noqa: PLC0415
+
+        from pipeline.html_export import can_export as _can_export
+        from pipeline.html_export import export_html as _export_html
+        from recipe_db import db as _rdb
+        from recipe_db.repository import RecipeRepository as _RecipeRepository
 
         _brand_dir_env = _os.environ.get("BRAND_DIR")
         _brand_dir = Path(_brand_dir_env) if _brand_dir_env else PROJECT_ROOT
@@ -555,7 +559,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
                     logger.info("HTML export skipped for %s (can_export=False or row missing)", _recipe_slug)
             finally:
                 _conn.close()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("HTML page export failed for %s: %s", seed_id, exc)
 
     # Step 2.6: Embed audio player in WP post (best-effort, non-blocking)
@@ -566,7 +570,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
         _audio_path = None
     if _audio_path:
         try:
-            from lib.recipe_card.wp_audio import (  # noqa: PLC0415
+            from lib.recipe_card.wp_audio import (
                 inject_audio_player,
                 upload_audio,
             )
@@ -595,6 +599,11 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
         if ig_result.warnings:
             warnings.extend(f"IG: {w}" for w in ig_result.warnings)
         logger.info("IG reel published: %s (media_id=%s)", ig_permalink, ig_media_id)
+        engagements_db.record_publish(
+            platform="instagram", kind="reel", status="posted",
+            target_name="instagram", permalink=ig_permalink, content=ig_caption,
+            source_ref=meta.get("slug", ""), ref=ig_media_id or meta.get("slug", ""),
+        )
 
         # First-comment funnel: reinforces the comment-CTA keyword from the
         # caption AND nudges non-commenters toward the bio link. Engagement
@@ -603,10 +612,10 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
             comment_text = _build_first_comment(ig_caption)
             cid = post_first_comment_to_instagram(ig_result.media_id, comment_text)
             logger.info("IG first-comment posted: media=%s comment=%s", ig_result.media_id, cid)
-        except Exception as exc:  # noqa: BLE001 — first-comment is cosmetic
+        except Exception as exc:
             logger.warning("IG first-comment failed: %s", exc)
             warnings.append(f"IG first-comment failed: {exc}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("IG reel push failed")
         warnings.append(f"IG reel failed: {exc}")
 
@@ -629,7 +638,12 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
             "FB reel published: permalink=%s post_id=%s video_id=%s",
             fb_permalink, fb_post_id, fb_video_id,
         )
-    except Exception as exc:  # noqa: BLE001
+        engagements_db.record_publish(
+            platform="facebook", kind="reel", status="posted",
+            target_name="facebook_page", permalink=fb_permalink, content=fb_description,
+            source_ref=meta.get("slug", ""), ref=fb_post_id or meta.get("slug", ""),
+        )
+    except Exception as exc:
         logger.exception("FB reel push failed")
         warnings.append(f"FB reel failed: {exc}")
 
@@ -656,6 +670,12 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
         )
         fb_page_post_id = fb_page.post_id or ""
         fb_page_post_permalink = fb_page.permalink or ""
+        engagements_db.record_publish(
+            platform="facebook", kind="page_post", status="posted",
+            target_name="facebook_page", target_url=live_url,
+            permalink=fb_page_post_permalink, content=fb_message,
+            source_ref=meta.get("slug", ""), ref=fb_page_post_id or meta.get("slug", ""),
+        )
         if fb_page.warnings:
             warnings.extend(f"FB-page: {w}" for w in fb_page.warnings)
         logger.info(
@@ -678,7 +698,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
                 "FB Page first-comment result: post_id=%s comment_id=%s warnings=%d",
                 fb_page_post_id, fb_page_comment_id, len(comment_warnings),
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("FB Page link post failed")
         warnings.append(f"FB Page post failed: {exc}")
 
@@ -703,7 +723,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
     except PinterestSkipped as exc:
         logger.warning("Pinterest skipped: %s", exc)
         warnings.append(f"Pinterest skipped: {exc}")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("Pinterest push failed")
         warnings.append(f"Pinterest failed: {exc}")
 
@@ -729,7 +749,7 @@ def publish_one(folder: Path, *, dry_run: bool, skip_pdf: bool = False) -> bool:
             "pinterest_permalinks": pinterest_permalinks,
             "fb_page_post_id": fb_page_post_id,
             "fb_page_post_permalink": fb_page_post_permalink,
-            "published_at": datetime.now(timezone.utc).isoformat(),
+            "published_at": datetime.now(UTC).isoformat(),
         }
     )
     (target / "metadata.json.tmp").write_text(
@@ -770,13 +790,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.list:
         rows = _list_prepared()
         if not rows:
-            print("(no prepared campaigns)")  # noqa: T201
+            print("(no prepared campaigns)")
             return 0
-        print(f"{'seed_id':<48} {'state':<18} {'audio?':<8}")  # noqa: T201
-        print("-" * 80)  # noqa: T201
+        print(f"{'seed_id':<48} {'state':<18} {'audio?':<8}")
+        print("-" * 80)
         for r in rows:
             audio = "✅" if _audio_present(r.path) else "—"
-            print(f"{r.seed_id:<48} {r.state:<18} {audio:<8}")  # noqa: T201
+            print(f"{r.seed_id:<48} {r.state:<18} {audio:<8}")
         return 0
 
     if args.verify and args.seed:
@@ -784,7 +804,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.min_gap_hours > 0 and _hours_since_last_success() < args.min_gap_hours:
         elapsed = _hours_since_last_success()
-        print(f"skip: last publish was {elapsed:.1f}h ago, below min-gap {args.min_gap_hours:.1f}h")  # noqa: T201
+        print(f"skip: last publish was {elapsed:.1f}h ago, below min-gap {args.min_gap_hours:.1f}h")
         return 0
 
     rows = _list_prepared()
@@ -798,17 +818,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.seed:
         rows = [r for r in rows if r.seed_id == args.seed]
         if not rows:
-            print(f"❌ no prepared folder for seed: {args.seed}")  # noqa: T201
+            print(f"❌ no prepared folder for seed: {args.seed}")
             return 1
     else:
         rows = [r for r in rows if r.state in eligible_states]
 
     if not rows:
-        print("(nothing to publish — no campaigns in eligible state)")  # noqa: T201
+        print("(nothing to publish — no campaigns in eligible state)")
         return 0
 
     target = rows[0]
-    print(f"publishing: {target.seed_id} (state={target.state})")  # noqa: T201
+    print(f"publishing: {target.seed_id} (state={target.state})")
     ok = publish_one(target.path, dry_run=args.dry_run)
     _record_last_run(target.seed_id, "success" if ok else "failed")
     return 0 if ok else 1

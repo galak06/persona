@@ -36,8 +36,8 @@
       "order": 20,
       "output_file": "state/facebook_comment_queue.json",
       "rate_limits": {
-        "comments_per_day": 5,
-        "group_visits_per_day": 6
+        "comments_per_day": 15,
+        "group_visits_per_day": 15
       },
       "re_run_guard": true,
       "requires_approval": false,
@@ -51,42 +51,17 @@
       "telegram_notify": true
     },
     {
-      "args": [
-        "--platform",
-        "facebook"
-      ],
       "depends_on": [
         "fb-scanner"
       ],
-      "description": "FB loop: auto-approve drafted Facebook comments from the Facebook queue (Phase-3 autonomous, no Telegram round-trip)",
-      "id": "fb-comment-approver",
+      "description": "FB loop: draft one short reply per queued post and post it (max 5/day) from the Facebook queue",
+      "id": "fb-comment",
       "inputs": [],
       "order": 21,
-      "output_file": null,
-      "re_run_guard": false,
-      "requires_approval": false,
-      "requires_browser": false,
-      "schedule": {
-        "cadence": "hourly",
-        "cron": "0 8-22 * * *"
-      },
-      "script": "scripts/comment_approver.py",
-      "skill": "comment-composer",
-      "telegram_notify": false
-    },
-    {
-      "args": [
-        "--platform",
-        "facebook"
-      ],
-      "depends_on": [
-        "fb-comment-approver"
-      ],
-      "description": "FB loop: post approved Facebook comments (max 5/day) from the Facebook queue",
-      "id": "fb-comment-poster",
-      "inputs": [],
-      "order": 22,
       "output_file": "logs/engagement_log.jsonl",
+      "rate_limits": {
+        "comments_per_day": 15
+      },
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": true,
@@ -94,8 +69,8 @@
         "cadence": "daily",
         "cron": "0 10 * * *"
       },
-      "script": "scripts/comment_poster.py",
-      "skill": "comment-composer",
+      "script": "scripts/fb_comment.py",
+      "skill": "fb-comment",
       "telegram_notify": true
     },
     {
@@ -115,7 +90,7 @@
       "order": 30,
       "output_file": "state/instagram_comment_queue.json",
       "rate_limits": {
-        "comments_per_day": 10,
+        "comments_per_day": 15,
         "likes_per_day": 20
       },
       "re_run_guard": true,
@@ -171,28 +146,27 @@
       "telegram_notify": false
     },
     {
-      "args": [
-        "--platform",
-        "instagram"
-      ],
       "depends_on": [
         "ig-scanner"
       ],
-      "description": "IG loop: auto-approve drafted Instagram comments from the Instagram queue (Phase-3 autonomous, no Telegram round-trip)",
-      "id": "ig-comment-approver",
+      "description": "IG loop: draft a reply per queued post at post time and post it (max 10/day) from the Instagram queue",
+      "id": "ig-comment",
       "inputs": [],
       "order": 51,
-      "output_file": null,
-      "re_run_guard": false,
-      "requires_approval": false,
-      "requires_browser": false,
-      "schedule": {
-        "cadence": "hourly",
-        "cron": "0 8-22 * * *"
+      "output_file": "logs/engagement_log.jsonl",
+      "rate_limits": {
+        "comments_per_day": 15
       },
-      "script": "scripts/comment_approver.py",
-      "skill": "comment-composer",
-      "telegram_notify": false
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 9 * * *"
+      },
+      "script": "scripts/ig_comment.py",
+      "skill": "ig-comment",
+      "telegram_notify": true
     },
     {
       "args": [
@@ -213,30 +187,6 @@
       "schedule": {
         "cadence": "daily",
         "cron": "0 11 * * *"
-      },
-      "script": "scripts/comment_poster.py",
-      "skill": "comment-composer",
-      "telegram_notify": true
-    },
-    {
-      "args": [
-        "--platform",
-        "instagram"
-      ],
-      "depends_on": [
-        "ig-comment-approver"
-      ],
-      "description": "IG loop: post approved Instagram comments (max 10/day) from the Instagram queue",
-      "id": "ig-comment-poster",
-      "inputs": [],
-      "order": 52,
-      "output_file": "logs/engagement_log.jsonl",
-      "re_run_guard": true,
-      "requires_approval": false,
-      "requires_browser": true,
-      "schedule": {
-        "cadence": "daily",
-        "cron": "0 9 * * *"
       },
       "script": "scripts/comment_poster.py",
       "skill": "comment-composer",

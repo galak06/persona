@@ -87,7 +87,7 @@ def run_outbound_scan(
     *,
     dedup: _Dedup,
     rate_tracker: _RateTracker,
-    drafter: _Drafter,
+    drafter: _Drafter | None,
     queue_io: _QueueIO,
     log: _Log,
     now_iso: Callable[[], str],
@@ -260,12 +260,17 @@ def _cherry_pick_and_queue(
     platform: str,
     candidates: list[tuple[Post, float]],
     policy: EngagementPolicy,
-    drafter: _Drafter,
+    drafter: _Drafter | None,
     queue_io: _QueueIO,
     now_iso: Callable[[], str],
     log: _Log,
 ) -> int:
-    """Sort by score desc, take top-N within today's quota, draft + queue."""
+    """Sort by score desc, take top-N within today's quota, draft + queue.
+
+    When ``drafter`` is ``None`` the scan only enqueues the target post with an
+    empty ``draft_comment`` (scan-only mode); drafting happens later, at post
+    time, in the platform's dedicated commenter (e.g. ``scripts/fb_comment.py``).
+    """
     quota = policy.daily_comment_quota.get(platform, 0)
     existing = queue_io.existing_today(platform)
     budget = max(0, quota - existing)
@@ -275,13 +280,17 @@ def _cherry_pick_and_queue(
     selected = sorted(candidates, key=lambda c: c[1], reverse=True)[:budget]
     queued = 0
     for post, score in selected:
-        draft = drafter.draft_comment_for_post(
-            platform=platform,
-            post_text=post.text,
-            group_or_hashtag=post.source_name,
-            post_url=post.post_url,
+        draft = (
+            drafter.draft_comment_for_post(
+                platform=platform,
+                post_text=post.text,
+                group_or_hashtag=post.source_name,
+                post_url=post.post_url,
+            )
+            if drafter is not None
+            else ""
         )
-        if not draft:
+        if not draft and drafter is not None:
             log.info(
                 "draft_inline_empty platform=%s post_url=%s",
                 platform,

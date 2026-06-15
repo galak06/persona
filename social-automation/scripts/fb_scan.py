@@ -23,7 +23,6 @@ from lib.bootstrap import init_script
 settings, log = init_script(__name__)
 
 import deduplication
-import draft_helper
 import rate_limiter
 from comment_generator import score_relevance as _score_relevance
 from group_warmup import COMMENT_WARMUP_HOURS, is_group_warm
@@ -153,7 +152,9 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     try:
         report = run_outbound_scan(
             _WarmFiltered(active), policy,
-            dedup=deduplication, rate_tracker=rate_limiter, drafter=draft_helper,
+            # Scan-only: no drafter. Comments are drafted at post time by
+            # scripts/fb_comment.py, so the queue holds bare target posts.
+            dedup=deduplication, rate_tracker=rate_limiter, drafter=None,
             queue_io=queue_io, log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,

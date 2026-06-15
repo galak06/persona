@@ -52,10 +52,32 @@ def _purge_expired(cache: dict) -> dict:
 
 
 def is_duplicate(platform: Platform, post_id: str) -> bool:
-    """Returns True if this post has already been engaged with in the last 60 days."""
+    """Returns True if this post has already been engaged with in the last 60 days.
+
+    Presence-only: True for ANY prior interaction (queued, liked, commented). Use
+    this at scan time to avoid re-processing a post. For "did we already COMMENT
+    here?" use :func:`already_commented` — a liked-or-queued post is not yet
+    commented, so the commenter must not treat it as a duplicate.
+    """
     cache = _load_cache()
     cache = _purge_expired(cache)
     return post_id in cache.get(platform, {})
+
+
+def already_commented(platform: Platform, post_id: str) -> bool:
+    """Returns True only if we have SUCCESSFULLY commented on this post before.
+
+    Distinct from :func:`is_duplicate`: the scanner pre-marks every queued post
+    (``action="comment_queued"``) and liked post (``action="like"``), so a plain
+    presence check would make the commenter skip everything it just queued. Here
+    we match only a recorded ``comment`` engagement (``status="engaged"``).
+    """
+    cache = _load_cache()
+    cache = _purge_expired(cache)
+    entry = cache.get(platform, {}).get(post_id)
+    if not entry:
+        return False
+    return entry.get("action") == "comment" and entry.get("status") == "engaged"
 
 
 def mark_engaged(

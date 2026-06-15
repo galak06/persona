@@ -15,27 +15,37 @@ FLOW_DESCRIPTIONS: list[FlowDescription] = [
         id="engagement-comment",
         title="Engagement Comment",
         summary=(
-            "OUTBOUND engagement. Scans Facebook groups and Instagram hashtags for "
-            "relevant posts by other people, drafts a comment inline at scan time, "
-            "auto-approves without a human gate, and posts the comment to drive "
-            "traffic to dogfoodandfun.com."
+            "OUTBOUND engagement. Finds relevant posts by other people and comments to "
+            "drive traffic to dogfoodandfun.com. Facebook and Instagram each run as two "
+            "single actions — a scanner (scan + queue only) then a commenter (draft a "
+            "reply at post time + post) — with no separate approver. Only WordPress "
+            "still drafts inline + auto-approves (REST replies to our own visitor "
+            "comments). Every posted comment is recorded to engagements.db (Published view)."
         ),
         jobs=[
             JobDescription(
                 id="fb-scanner",
-                summary="Scans joined FB groups for relevant posts; drafts comments inline and appends to comment_queue.json.",
+                summary="FB scan-only: scans joined groups for relevant posts, likes qualifying ones, and queues targets (no draft).",
+            ),
+            JobDescription(
+                id="fb-comment",
+                summary="FB draft-at-post-time: drafts one short (~15-25 word) post-grounded reply per queued post and posts it via Playwright (max 15/day). Replaces the old FB approver + poster.",
             ),
             JobDescription(
                 id="ig-scanner",
-                summary="Scans IG hashtags, likes posts, drafts comments inline, queues them.",
+                summary="IG scan-only: scans hashtags, likes posts, and queues question ('?') posts as targets (no draft).",
+            ),
+            JobDescription(
+                id="ig-comment",
+                summary="IG draft-at-post-time: drafts a reply per queued post and posts it via Playwright (max 10/day). Replaces the old IG approver + poster.",
             ),
             JobDescription(
                 id="comment-approver",
-                summary="Phase 3 — auto-approves pending queued comments (no Telegram round-trip).",
+                summary="WordPress only — auto-approves pending queued visitor-comment replies (no Telegram round-trip).",
             ),
             JobDescription(
                 id="comment-poster",
-                summary="Posts approved comments to FB/IG via Playwright/Graph API.",
+                summary="WordPress only — posts approved Nalla's-Dad replies to our own site's visitor comments via REST.",
             ),
         ],
     ),

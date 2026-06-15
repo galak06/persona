@@ -59,7 +59,10 @@ from rate_limiter import can_act, record_action
 
 if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
-from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
+from lib import (
+    engagements_db,  # published-post history (engagements.db)
+    groups_db,  # FB groups live in groups.db (was groups_tracker.json)
+)
 
 LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
 
@@ -848,6 +851,18 @@ def main(session: FbSession) -> int:
                 group["last_reel_post_at"] = now
                 group["last_reel_caption"] = final
             groups_db.save_all(tracker)
+            engagements_db.record_publish(
+                platform="facebook",
+                kind="reel" if reel_mode else "link_post",
+                status="posted",
+                target_name=group.get("group_name", ""),
+                target_url=group.get("group_url", ""),
+                permalink=permalink or "",
+                content=final,
+                source_ref=args.url,
+                ref=f"{group.get('group_url', '')}|{args.url}",
+                posted_at=now,
+            )
             record_action("facebook", "group_post")
             posted += 1
             print(
