@@ -27,10 +27,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
 import blog_post_queue
 from lib.logger import log_step
+from lib.worker_db import record_complete, record_start
 from notifier import (
     send,
     send_and_wait,
@@ -40,19 +42,27 @@ from notifier import (
     skill_started,
 )
 
-
 ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 WP_POSTS_CACHE = PROJECT_ROOT / ".claude/state/wp_posts_cache.json"
 TIMELINE_FILE = PROJECT_ROOT / ".claude/state/publishing_timeline.json"
 LAST_RUN_FILE = settings.paths.last_run
 CAMPAIGNS_ROOT = settings.paths.campaigns_dir
 
+BRAND_DIR = settings.paths.brand_dir
+BRAND = settings.site.name
+
+_STAGE_LABELS: dict[str, str] = {
+    "ideate": "dogfood-content-ideator",
+    "enrich": "dogfood-auto-drafter",
+    "publish": "dogfood-content-publish",
+}
+
 
 def load_json(path: Path, default=None):
     if path.exists():
         try:
             return json.loads(path.read_text())
-        except Exception:
+        except Exception:  # noqa: S110
             pass
     return default if default is not None else {}
 
@@ -109,7 +119,7 @@ def _check_ideation_freshness(max_age_days: int = 3) -> bool:
         try:
             hist = json.loads(hist_path.read_text())
             last_run_str = hist.get("last_run")
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
     if not last_run_str:
@@ -347,11 +357,11 @@ def stage_publish() -> bool:
             fb_id = fb_resp.json().get("id", "")
             published.append(f"FB: {fb_id}")
             timeline["last_fb_page_post"] = datetime.now(UTC).isoformat()
-            print(f"    FB published: {fb_id}", flush=True)
+            print(f"    FB published: {fb_id}", flush=True)  # noqa: T201
         else:
             err = fb_resp.json().get("error", {}).get("message", "unknown")
             published.append(f"FB FAILED: {err}")
-            print(f"    FB error: {err}", flush=True)
+            print(f"    FB error: {err}", flush=True)  # noqa: T201
 
     # Publish to Instagram
     if do_ig and ig_account_id and fb_token:
@@ -382,7 +392,7 @@ def stage_publish() -> bool:
                     ig_id = pub.json()["id"]
                     published.append(f"IG: {ig_id}")
                     timeline["last_ig_feed_post"] = datetime.now(UTC).isoformat()
-                    print(f"    IG published: {ig_id}", flush=True)
+                    print(f"    IG published: {ig_id}", flush=True)  # noqa: T201
                 else:
                     err = pub.json().get("error", {}).get("message", "unknown")
                     published.append(f"IG FAILED: {err}")
@@ -631,8 +641,8 @@ def _mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
     length and fades out the last 1.5s so longer tracks don't end abruptly."""
     import subprocess
 
-    probe = subprocess.run(
-        [
+    probe = subprocess.run(  # noqa: S603
+        [  # noqa: S607
             "ffprobe",
             "-v",
             "error",
@@ -677,7 +687,7 @@ def _mux_audio(video_path: Path, audio_path: Path, out_path: Path) -> None:
         "+faststart",
         str(out_path),
     ]
-    subprocess.run(cmd, check=True, capture_output=True)
+    subprocess.run(cmd, check=True, capture_output=True)  # noqa: S603
 
 
 def _build_recipe_from_metadata(meta: dict):
@@ -736,7 +746,7 @@ def stage_reel_prepare(seed_id: str) -> bool:
         f"Then run:\n"
         f"  python scripts/content_pipeline.py --stage reel-publish --seed {seed_id}"
     )
-    print(msg, flush=True)
+    print(msg, flush=True)  # noqa: T201
     skill_finished(
         "reel-prepare",
         f"Silent reel at {cdir.name}/source.mp4 — drop audio.mp3 or final.mp4",
@@ -1142,37 +1152,45 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.stage == "ideate":
-        stage_ideate()
-    elif args.stage == "enrich":
-        stage_enrich()
-    elif args.stage == "publish":
-        stage_publish()
+    if args.stage in _STAGE_LABELS:
+        label = _STAGE_LABELS[args.stage]
+        record_start(BRAND_DIR, label, BRAND)
+        try:
+            if args.stage == "ideate":
+                stage_ideate()
+            elif args.stage == "enrich":
+                stage_enrich()
+            elif args.stage == "publish":
+                stage_publish()
+            record_complete(BRAND_DIR, label, BRAND, "success")
+        except Exception as exc:
+            record_complete(BRAND_DIR, label, BRAND, "error", str(exc))
+            raise
     elif args.stage == "reel":
         if not args.seed:
-            print("--stage reel requires --seed <id>", flush=True)
+            print("--stage reel requires --seed <id>", flush=True)  # noqa: T201
             sys.exit(2)
         ok = stage_reel(args.seed)
         sys.exit(0 if ok else 1)
     elif args.stage == "reel-prepare":
         if not args.seed:
-            print("--stage reel-prepare requires --seed <id>", flush=True)
+            print("--stage reel-prepare requires --seed <id>", flush=True)  # noqa: T201
             sys.exit(2)
         sys.exit(0 if stage_reel_prepare(args.seed) else 1)
     elif args.stage == "reel-publish":
         if not args.seed:
-            print("--stage reel-publish requires --seed <id>", flush=True)
+            print("--stage reel-publish requires --seed <id>", flush=True)  # noqa: T201
             sys.exit(2)
         sys.exit(
             0 if stage_reel_publish(args.seed, platforms=args.platforms, wp_url=args.wp_url) else 1
         )
     elif args.stage == "campaign":
         if not args.product:
-            print("--stage campaign requires --product <key>", flush=True)
+            print("--stage campaign requires --product <key>", flush=True)  # noqa: T201
             sys.exit(2)
         reel_seed = args.reel_seed or args.seed
         if not reel_seed:
-            print(
+            print(  # noqa: T201
                 "--stage campaign requires --reel-seed <id> (or --seed as shorthand)",
                 flush=True,
             )

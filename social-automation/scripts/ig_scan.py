@@ -18,6 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
+from lib.worker_db import record_complete, record_start
+
+WORKER_LABEL = "dogfood-ig-scanner"
 
 settings, log = init_script(__name__)
 
@@ -163,4 +166,12 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
 
 
 if __name__ == "__main__":
-    run_ig_scan()
+    _brand_dir = settings.paths.brand_dir
+    _brand = _brand_dir.name
+    record_start(_brand_dir, WORKER_LABEL, _brand)
+    try:
+        run_ig_scan()
+        record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
+    except Exception as _exc:
+        record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
+        raise

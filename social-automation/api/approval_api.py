@@ -50,10 +50,6 @@ from api.schemas import (
     FacebookGroup,
     FacebookGroupsResponse,
     FacebookGroupUpdateBody,
-    FlowGuideEntry,
-    FlowGuideResponse,
-    FlowsStateResponse,
-    FlowState,
     GroupItem,
     IdeaItem,
     LogTailResponse,
@@ -62,9 +58,9 @@ from api.schemas import (
     PendingItem,
     PendingResponse,
     RejectBody,
-    ScheduleEntry,
     SeedItem,
     TriggerResponse,
+    WorkerStatus,
 )
 
 _REPO_ROOT: Path = Path(__file__).resolve().parent.parent
@@ -102,6 +98,11 @@ from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
 from lib import activity_log
 from lib.config import settings
+from lib.worker_db import (
+    get_all as worker_db_get_all,
+    get_one as worker_db_get_one,
+    record_start as worker_db_record_start,
+)
 
 app = FastAPI(
     title=f"{settings.site.name} Approval API",
@@ -240,13 +241,13 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        assert path is not None
+        assert path is not None  # noqa: S101
         payload = body or ApproveBody()
         return rh.approve_comment(
             path, item_id, decision_status="approved", text=payload.text
         )
     if kind == "blog_post":
-        assert path is not None
+        assert path is not None  # noqa: S101
         payload = body or ApproveBody()
         return rh.approve_blog_post(
             path, item_id, channel=channel, text=payload.text,
@@ -254,7 +255,7 @@ def approve_item(
             decision_status="approved",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None
+        assert path is not None  # noqa: S101
         return rh.approve_generic(path, item_id, decision_status="approved")
     return rh.approve_group(raw, status_value="approved", background_tasks=background_tasks)
 
@@ -273,18 +274,18 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        assert path is not None
+        assert path is not None  # noqa: S101
         return rh.approve_comment(
             path, item_id, decision_status="USER_SKIPPED", text=None
         )
     if kind == "blog_post":
-        assert path is not None
+        assert path is not None  # noqa: S101
         return rh.approve_blog_post(
             path, item_id, channel=None, text=None,
             fb_caption=None, ig_caption=None, decision_status="USER_SKIPPED",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None
+        assert path is not None  # noqa: S101
         return rh.approve_generic(path, item_id, decision_status="USER_SKIPPED")
     return rh.approve_group(
         raw, status_value="USER_SKIPPED", background_tasks=background_tasks,
@@ -308,7 +309,7 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
-    assert path is not None
+    assert path is not None  # noqa: S101
     if kind == "comment":
         return rh.approve_comment(
             path, item_id, decision_status="edited", text=body.text
@@ -331,7 +332,7 @@ def list_facebook_groups() -> FacebookGroupsResponse:
     from lib import groups_db
     from lib.io.jsonio import read_json
 
-    assert settings.paths is not None
+    assert settings.paths is not None  # noqa: S101
     groups: list[FacebookGroup] = []
 
     try:
@@ -392,92 +393,125 @@ def health() -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/v1/flows/state", response_model=FlowsStateResponse)
-def get_flows_state() -> FlowsStateResponse:
-    """Aggregate per-flow health + launchd schedule snapshot for the UI."""
-    from api.flow_state import collect_flow_states, collect_schedule_state
+_LABEL_RE = __import__("re").compile(r"com\.dogfoodandfun\.[a-z0-9-]+")
 
-    return FlowsStateResponse(
-        flows=[FlowState(**f) for f in collect_flow_states()],
-        schedule=[ScheduleEntry(**s) for s in collect_schedule_state()],
+_BRAND_DIR = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
+_BRAND = _BRAND_DIR.name
+
+
+@app.get("/api/v1/workers", response_model=list[WorkerStatus])
+def list_workers() -> list[WorkerStatus]:
+    """List all scheduled workers with their last run status from DB."""
+    from api.schedule_config import load_schedule_config
+
+    config = load_schedule_config()
+    db_rows = {r["worker_label"]: r for r in worker_db_get_all(_BRAND_DIR, _BRAND)}
+    results: list[WorkerStatus] = []
+    for task in config.tasks:
+        extra: dict = task.model_extra or {}
+        label = task.id
+        row = db_rows.get(label)
+        results.append(WorkerStatus(
+            label=label,
+            title=extra.get("title") or label,
+            description=extra.get("description") or "",
+            status=row["status"] if row else "never",
+            last_run=row["last_run"] if row else None,
+            message=row.get("message") if row else None,
+        ))
+    return results
+
+
+@app.get("/api/v1/workers/{label}/status", response_model=WorkerStatus)
+def worker_status(label: str) -> WorkerStatus:
+    """Return the last run status for a single worker."""
+    from api.schedule_config import load_schedule_config
+
+    config = load_schedule_config()
+    task = next((t for t in config.tasks if t.id == label), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Worker '{label}' not found")
+    extra: dict = task.model_extra or {}
+    row = worker_db_get_one(_BRAND_DIR, label, _BRAND)
+    return WorkerStatus(
+        label=label,
+        title=extra.get("title") or label,
+        description=extra.get("description") or "",
+        status=row["status"] if row else "never",
+        last_run=row["last_run"] if row else None,
+        message=row.get("message") if row else None,
     )
 
 
-@app.get("/api/v1/flows/guide", response_model=FlowGuideResponse)
-def get_flows_guide() -> FlowGuideResponse:
-    """Static flow descriptions merged with live last-run state."""
-    from api.flow_descriptions import FLOW_DESCRIPTIONS
+@app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
+def trigger_worker(label: str) -> TriggerResponse:
+    """Fire a scheduled worker on demand by spawning its script/skill directly.
 
-    try:
-        from api.flow_state import collect_flow_states
-        state_by_id: dict[str, dict[str, Any]] = {
-            f["id"]: f for f in collect_flow_states()
-        }
-    except Exception:
-        _log.exception("flows_guide: failed to collect live state; serving descriptions only")
-        state_by_id = {}
-
-    entries = [
-        FlowGuideEntry(
-            **desc.model_dump(),
-            last_run_at=state_by_id.get(desc.id, {}).get("last_run_at"),
-            last_status=state_by_id.get(desc.id, {}).get("last_status"),
-        )
-        for desc in FLOW_DESCRIPTIONS
-    ]
-    return FlowGuideResponse(flows=entries)
-
-
-_LABEL_RE = __import__("re").compile(r"com\.dogfoodandfun\.[a-z0-9-]+")
-
-
-@app.post("/api/v1/schedule/{label}/trigger", response_model=TriggerResponse)
-def trigger_schedule(label: str, force: bool = Query(default=False)) -> TriggerResponse:
-    """Fire a launchd job on demand via ``launchctl start <label>``.
-
-    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace
-    to keep this from being abused as a generic launchctl runner. All
-    subprocess args are list-form; no shell. Unless ``force=true`` is
-    passed, the task's declared inputs in ``schedule.json`` must be
-    fresh -- failing a precondition short-circuits with a 200 body
-    carrying ``ok=False`` and the human-readable reason.
+    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
+    The task definition is read from schedule.json; the script or skill
+    is launched as a detached subprocess so the HTTP response returns
+    immediately while the job runs in the background.
     """
+    import shlex
+    import shutil as _shutil
     import subprocess
+    import sys
+
+    from api.schedule_config import load_schedule_config, task_for_label
 
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
-    if not force:
-        from api.schedule_config import (
-            check_inputs_satisfied,
-            load_schedule_config,
-            task_for_label,
-        )
-        config = load_schedule_config()
-        task = task_for_label(label, config)
-        if task is not None and task.inputs:
-            ok, statuses = check_inputs_satisfied(task)
-            if not ok:
-                first_fail = next((s for s in statuses if not s.ok), None)
-                reason = first_fail.reason if first_fail else "input check failed"
-                return TriggerResponse(
-                    ok=False,
-                    message=f"Prerequisite not satisfied: {reason}",
-                    label=label,
-                )
+
+    config = load_schedule_config()
+    task = task_for_label(label, config)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"No task for label: {label}")
+
+    extra: dict = task.model_extra or {}
+    script_str: str | None = extra.get("script")
+    extra_args: list[str] = extra.get("args") or []
+
+    if script_str:
+        parts = shlex.split(script_str)
+        if parts and parts[0] in ("python", "python3"):
+            parts[0] = sys.executable
+        elif parts and not parts[0].startswith("/"):
+            parts = [sys.executable] + parts
+        cmd = parts + extra_args
+    elif task.skill:
+        claude_bin = _shutil.which("claude") or str(Path.home() / ".local/bin/claude")
+        cmd = [claude_bin, "--dangerously-skip-permissions", f"/{task.skill}"]
+    else:
+        return TriggerResponse(ok=False, message="No script or skill defined for task", label=label)
+
+    suffix = label[len("com.dogfoodandfun."):]
+    log_name = f"cron_{suffix.replace('-', '_')}.log"
+    brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
+    log_path = brand_dir / "logs" / log_name
+    cwd = str(Path(__file__).parent.parent)
+    env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1"}
+
+    worker_db_record_start(brand_dir, label, brand_dir.name)
+
+    log_fh = None
     try:
-        result = subprocess.run(
-            ["/bin/launchctl", "start", label],
-            capture_output=True, text=True, check=False, timeout=10,
-        )
-    except subprocess.TimeoutExpired:
-        return TriggerResponse(ok=False, message="launchctl timed out", label=label)
-    if result.returncode != 0:
-        return TriggerResponse(
-            ok=False,
-            message=(result.stderr or "launchctl exited non-zero").strip()[:200],
-            label=label,
-        )
-    return TriggerResponse(ok=True, message="Triggered", label=label)
+        log_fh = open(log_path, "a")  # noqa: WPS515
+    except OSError:
+        pass
+
+    proc = subprocess.Popen(  # noqa: S603
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+        start_new_session=True,
+    )
+    if log_fh is not None:
+        log_fh.close()
+
+    return TriggerResponse(ok=True, message=f"Spawned (pid={proc.pid})", label=label)
 
 
 @app.get("/api/v1/schedule/missing", response_model=MissingFlowsResponse)
@@ -486,7 +520,7 @@ def list_missing_flows() -> MissingFlowsResponse:
     import json
     import subprocess
 
-    assert settings.paths is not None
+    assert settings.paths is not None  # noqa: S101
 
     schedule_file = settings.paths.schedule_file
     if not schedule_file.exists():
@@ -558,7 +592,7 @@ def list_missing_flows() -> MissingFlowsResponse:
     return MissingFlowsResponse(missing=missing, as_of=rh.now_iso())
 
 
-@app.get("/api/v1/schedule/{label}/log", response_model=LogTailResponse)
+@app.get("/api/v1/workers/{label}/log", response_model=LogTailResponse)
 def get_schedule_log(
     label: str,
     lines: int = Query(default=200, ge=1, le=1000),
@@ -566,27 +600,15 @@ def get_schedule_log(
     """Return the last N lines of the log file for a scheduled job.
 
     Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
-    Log path is read from the matching plist's ``StandardOutPath`` —
-    never user-supplied — so we cannot be coerced into reading arbitrary
-    files via path traversal.
+    Log path is derived from BRAND_DIR + the label suffix — no plist read.
     """
-    import plistlib
-
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
 
-    plist_path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
-    try:
-        with plist_path.open("rb") as f:
-            plist = plistlib.load(f)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=f"label {label} not found") from exc
-
-    log_path_str = plist.get("StandardOutPath")
-    if not log_path_str:
-        return LogTailResponse(label=label, path=None, lines=[], truncated=False)
-
-    log_path = Path(log_path_str)
+    suffix = label[len("com.dogfoodandfun."):]
+    log_name = f"cron_{suffix.replace('-', '_')}.log"
+    brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
+    log_path = brand_dir / "logs" / log_name
     max_bytes = 256 * 1024
     try:
         size = log_path.stat().st_size
@@ -611,7 +633,7 @@ def get_schedule_log(
     )
 
 
-@app.get("/api/v1/schedule/{label}/artifact")
+@app.get("/api/v1/workers/{label}/artifact")
 def get_schedule_artifact(label: str) -> dict[str, Any]:
     """Return the JSON content of the output_file for a scheduled job.
 

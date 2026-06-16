@@ -301,6 +301,15 @@ class FacebookGroupUpdateBody(BaseModel):
     posting_mode: str | None = None
 
 
+class WorkerStatus(BaseModel):
+    label: str
+    title: str
+    description: str
+    status: str          # "never" | "running" | "success" | "error"
+    last_run: str | None = None
+    message: str | None = None
+
+
 FlowStatusLiteral = Literal["ok", "error", "never", "stale", "manual"]
 
 

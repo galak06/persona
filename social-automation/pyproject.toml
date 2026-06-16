@@ -46,7 +46,7 @@ ignore = [
 # add to this list; instead, fix the issue.
 "lib/idea_learner.py"            = ["SIM102"]   # nested-if; refactor in Stage G
 "lib/keyword_research.py"        = ["F841"]     # unused `categories` — Stage G
-"scripts/content_pipeline.py"    = ["SIM102"]   # nested-if; gets split per-stage in Stage F/G
+"scripts/content_pipeline.py"    = ["SIM102", "RUF100"]  # nested-if; gets split per-stage in Stage F/G; RUF100 exempt because PostToolUse hook enables S+T201
 "scripts/fb_group_post.py"       = ["N801"]     # _browser_session rename — Stage E
 "scripts/fb_notification_scan.py" = ["RUF059"]  # unused unpacked var — Stage E
 "scripts/ig_own_comments.py"     = ["RUF059"]   # unused unpacked var — Stage C

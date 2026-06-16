@@ -26,6 +26,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+from lib.worker_db import record_complete, record_start
+
+WORKER_LABEL = "dogfood-ig-comment"
 
 settings, log = init_script(__name__)
 
@@ -68,4 +71,13 @@ SPEC = CommenterSpec(
 
 
 if __name__ == "__main__":
-    sys.exit(main_for(SPEC))
+    _brand_dir = settings.paths.brand_dir
+    _brand = _brand_dir.name
+    record_start(_brand_dir, WORKER_LABEL, _brand)
+    try:
+        _exit_code = main_for(SPEC)
+        record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
+        sys.exit(_exit_code)
+    except Exception as _exc:
+        record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
+        raise

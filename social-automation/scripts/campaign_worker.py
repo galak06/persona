@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pyright: reportMissingImports=false
 """Background worker that dispatches scheduled campaigns.
 
 Thin scheduler: iterates every campaign under ``settings.paths.campaigns_dir``,
@@ -28,6 +29,11 @@ settings, logger = init_script(__name__)
 
 from api.campaign_schemas import CampaignConfig, CampaignState
 from lib.campaigns import LockHeldError, run_campaign
+from lib.worker_db import record_complete, record_start
+
+_WORKER_LABEL = "dogfood-campaign-worker"
+_BRAND_DIR = settings.paths.brand_dir
+_BRAND = settings.site.name
 
 
 def _should_run(cron_expr: str, last_run_iso: str | None, now: datetime) -> bool:
@@ -80,8 +86,8 @@ def _load_campaign(campaign_dir: Path) -> tuple[CampaignConfig, CampaignState] |
     return config, state
 
 
-def main() -> None:
-    argparse.ArgumentParser(description="Run scheduled campaigns").parse_args()
+def _run_campaigns() -> None:
+    """Core dispatch loop — iterate campaigns and run any that are due."""
     if settings.paths is None:
         logger.error("settings.paths is not configured; aborting campaign worker.")
         return
@@ -111,6 +117,17 @@ def main() -> None:
             continue
         if not result.ok:
             _notify_telegram_failure(campaign_dir.name, result.error or "unknown")
+
+
+def main() -> None:
+    argparse.ArgumentParser(description="Run scheduled campaigns").parse_args()
+    record_start(_BRAND_DIR, _WORKER_LABEL, _BRAND)
+    try:
+        _run_campaigns()
+        record_complete(_BRAND_DIR, _WORKER_LABEL, _BRAND, "success")
+    except Exception as exc:
+        record_complete(_BRAND_DIR, _WORKER_LABEL, _BRAND, "error", str(exc))
+        raise
 
 
 if __name__ == "__main__":
