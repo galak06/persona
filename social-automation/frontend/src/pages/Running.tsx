@@ -43,7 +43,7 @@ export default function Running(): React.JSX.Element {
       </p>
       <div className="space-y-4">
         {running.map((w) => (
-          <WorkerCard key={w.label} worker={w} defaultLogOpen />
+          <WorkerCard key={w.label} worker={w} />
         ))}
       </div>
     </section>

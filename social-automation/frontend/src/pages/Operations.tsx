@@ -40,7 +40,7 @@ interface OperationsProps {
 }
 
 export default function Operations({
-  initialView = "health",
+  initialView = "running",
 }: OperationsProps): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab") as OpsView | null;
