@@ -10,7 +10,7 @@
  * here (via `initialView`) so existing deep links keep working.
  */
 
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import Flows from "./Flows";
 import Schedule from "./Schedule";
@@ -30,6 +30,8 @@ const SEGMENTS: readonly Segment[] = [
   { key: "audit", label: "Workers", hint: "Inspect and trigger automation workers." },
 ];
 
+const VALID_VIEWS = new Set<OpsView>(["health", "schedule", "audit"]);
+
 const SEG_BASE =
   "px-4 py-1.5 rounded-md text-sm font-medium transition-colors duration-150";
 const SEG_ACTIVE = "bg-white text-amber-900 shadow-sm";
@@ -42,7 +44,18 @@ interface OperationsProps {
 export default function Operations({
   initialView = "health",
 }: OperationsProps): React.JSX.Element {
-  const [view, setView] = useState<OpsView>(initialView);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as OpsView | null;
+  const view: OpsView = (tabParam && VALID_VIEWS.has(tabParam)) ? tabParam : initialView;
+
+  function setView(next: OpsView) {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set("tab", next);
+      return p;
+    }, { replace: true });
+  }
+
   const active = SEGMENTS.find((s) => s.key === view) ?? SEGMENTS[0];
 
   return (

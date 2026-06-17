@@ -6,7 +6,7 @@
  * inspect its JSON artifact.
  */
 
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
@@ -23,12 +23,21 @@ export default function FlowGuide(): React.JSX.Element {
     { refetchInterval: POLL_MS },
   );
 
-  const [selectedLabel, setSelectedLabel] = useState<string>("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const workerParam = searchParams.get("worker") ?? "";
 
   const list = workers ?? [];
-  // Default to first worker when none explicitly chosen
-  const effectiveLabel = selectedLabel || (list.length > 0 ? list[0].label : "");
+  // Default to first worker when none explicitly chosen or param not found
+  const effectiveLabel = (list.find((w) => w.label === workerParam) ? workerParam : "") || (list.length > 0 ? list[0].label : "");
   const selected = list.find((w) => w.label === effectiveLabel) ?? null;
+
+  function setSelectedLabel(label: string) {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set("worker", label);
+      return p;
+    }, { replace: true });
+  }
 
   if (loading && !workers) {
     return <LoadingState message="Loading workers…" />;
