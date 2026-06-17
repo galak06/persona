@@ -625,10 +625,13 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
             _brand_dir: Path = brand_dir,
             _label: str = instance_label,
             _log_path: Path = log_path,
+            _is_instance: bool = count > 1,
         ) -> None:
+            timed_out = False
             try:
                 p.wait(timeout=timeout_s)
             except subprocess.TimeoutExpired:
+                timed_out = True
                 p.kill()
                 p.wait()
                 msg = f"timeout after {timeout_s // 60}m"
@@ -639,6 +642,11 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
                     pass
                 worker_db_record_complete(_brand_dir, _label, _brand_dir.name, "error", msg)
             finally:
+                if not timed_out and _is_instance:
+                    # Instance rows are only updated by the reaper (the script uses
+                    # the base label); mark them complete so they don't stay "running"
+                    status = "error" if (p.returncode or 0) != 0 else "success"
+                    worker_db_record_complete(_brand_dir, _label, _brand_dir.name, status)
                 path.unlink(missing_ok=True)
         _threading.Thread(target=_reap, args=(proc, pp, _timeout_s), daemon=True).start()
 
