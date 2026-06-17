@@ -99,10 +99,11 @@ export function CollapsiblePanel({
 interface LogPanelProps {
   label: string;
   workerStatus: WorkerStatus["status"];
+  defaultOpen?: boolean;
 }
 
-function LogPanel({ label, workerStatus }: LogPanelProps): React.JSX.Element {
-  const [open, setOpen] = useState(false);
+function LogPanel({ label, workerStatus, defaultOpen = false }: LogPanelProps): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
   const [lines, setLines] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -199,9 +200,10 @@ function LogPanel({ label, workerStatus }: LogPanelProps): React.JSX.Element {
 
 interface WorkerCardProps {
   worker: WorkerStatus;
+  defaultLogOpen?: boolean;
 }
 
-export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Element {
+export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCardProps): React.JSX.Element {
   const [triggerState, setTriggerState] = useState<
     "idle" | "loading" | "triggered" | "error"
   >("idle");
@@ -290,7 +292,7 @@ export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Eleme
       )}
 
       <div className="flex gap-4 flex-wrap">
-        <LogPanel label={worker.label} workerStatus={worker.status} />
+        <LogPanel label={worker.label} workerStatus={worker.status} defaultOpen={defaultLogOpen} />
         <CollapsiblePanel
           title="Artifact"
           onLoad={loadArtifact}
