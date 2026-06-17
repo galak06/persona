@@ -30,23 +30,6 @@ from pipeline.checkpoint import StructuredLogger, checkpoint
 PHASE = "dedup_check"
 
 
-def _load_published_slugs() -> set[str]:
-    """Read already-published slugs from state/published_recipes.json (if any)."""
-    from pathlib import Path
-
-    from lib.io.jsonio import read_json
-
-    path = Path(__file__).resolve().parent.parent / "state" / "published_recipes.json"
-    history = read_json(path, [])
-    if not isinstance(history, list):
-        return set()
-    return {
-        entry["slug"]
-        for entry in history
-        if isinstance(entry, dict) and entry.get("slug")
-    }
-
-
 @dataclass(frozen=True)
 class DedupReport:
     """Outcome of one dedup-check run."""
@@ -68,11 +51,10 @@ class DedupChecker:
         logger: StructuredLogger | None = None,
     ) -> None:
         self._repo = repo
-        # Externally-recorded already-published slugs (e.g. from
-        # state/published_recipes.json). Within the recipes table id (PK) and
-        # content_hash (UNIQUE) can't collide across rows, so cross-run dedup
-        # must key off this external history, not the table's own unique keys.
-        self._published_slugs = set(published_slugs or ())
+        # Optional test-injection of already-published slugs. In production
+        # (None), _already_published_ids() queries the DB directly via
+        # list_published_ids().
+        self._published_slugs: set[str] | None = published_slugs
         self._log = logger
 
     def run(self, *, persist: bool) -> DedupReport:
@@ -97,12 +79,17 @@ class DedupChecker:
         return report
 
     def _already_published_ids(self) -> set[str]:
-        """External published slugs ∪ recipes already in the PUBLISHED state."""
-        db_published = {
-            r.id
-            for r in self._repo.list_by_content_status(ContentStatus.PUBLISHED)
-        }
-        return self._published_slugs | db_published
+        """Return the set of already-published recipe IDs.
+
+        - Test injection: if ``published_slugs`` was passed to ``__init__``, use
+          it directly (keeps unit tests hermetic).
+        - Production: delegate to ``RecipeRepository.list_published_ids()`` which
+          queries the DB for rows where ``content_status = 'published'`` or
+          ``wp_url`` is set.
+        """
+        if self._published_slugs is not None:
+            return self._published_slugs
+        return self._repo.list_published_ids()
 
     def _gate(self, report: DedupReport) -> None:
         ok = report.unique + report.duplicates == report.candidates
@@ -143,7 +130,6 @@ def main(argv: list[str] | None = None) -> int:
         db.migrate(conn)
         report = DedupChecker(
             RecipeRepository(conn),
-            published_slugs=_load_published_slugs(),
             logger=log,
         ).run(persist=not args.dry_run)
     finally:

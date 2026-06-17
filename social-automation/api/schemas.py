@@ -308,6 +308,7 @@ class WorkerStatus(BaseModel):
     status: str          # "never" | "running" | "success" | "error"
     last_run: str | None = None
     message: str | None = None
+    is_instance: bool = False  # True for individual slots of a multi-instance trigger
 
 
 FlowStatusLiteral = Literal["ok", "error", "never", "stale", "manual"]

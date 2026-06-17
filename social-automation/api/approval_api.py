@@ -102,6 +102,7 @@ from lib.config import settings
 from lib.worker_db import (
     get_all as worker_db_get_all,
     get_one as worker_db_get_one,
+    record_complete as worker_db_record_complete,
     record_start as worker_db_record_start,
 )
 
@@ -418,15 +419,24 @@ _BRAND = _BRAND_DIR.name
 @app.get("/api/v1/workers", response_model=list[WorkerStatus])
 def list_workers() -> list[WorkerStatus]:
     """List all scheduled workers with their last run status from DB."""
+    import re as _re
     from api.schedule_config import load_schedule_config
 
     config = load_schedule_config()
-    db_rows = {r["worker_label"]: r for r in worker_db_get_all(_BRAND_DIR, _BRAND)}
+    all_rows = {r["worker_label"]: r for r in worker_db_get_all(_BRAND_DIR, _BRAND)}
+    # Separate base rows from per-instance rows (label format: "{base}/{slot}")
+    _instance_pat = _re.compile(r"^(.+)/(\d+)$")
+    base_rows = {k: v for k, v in all_rows.items() if not _instance_pat.match(k)}
+    instance_rows = [v | {"_base": m.group(1), "_slot": int(m.group(2))}
+                     for k, v in all_rows.items() if (m := _instance_pat.match(k))]
+
+    task_meta: dict[str, dict] = {}
     results: list[WorkerStatus] = []
     for task in config.tasks:
         extra: dict = task.model_extra or {}
         label = task.id
-        row = db_rows.get(label)
+        task_meta[label] = extra
+        row = base_rows.get(label)
         results.append(WorkerStatus(
             label=label,
             title=extra.get("title") or label,
@@ -435,6 +445,37 @@ def list_workers() -> list[WorkerStatus]:
             last_run=row["last_run"] if row else None,
             message=row.get("message") if row else None,
         ))
+
+    # Append running/recent per-instance rows so the Running tab shows each slot
+    _recent_cutoff = 60  # seconds
+    import time as _time
+    for row in sorted(instance_rows, key=lambda r: (r["_base"], r["_slot"])):
+        status = row["status"]
+        last_run_str = row.get("last_run") or ""
+        if status != "running":
+            if not last_run_str:
+                continue
+            try:
+                import datetime as _dt
+                age = _time.time() - _dt.datetime.fromisoformat(last_run_str).timestamp()
+                if age > _recent_cutoff:
+                    continue
+            except Exception:
+                continue
+        base = row["_base"]
+        slot = row["_slot"]
+        meta = task_meta.get(base, {})
+        base_title = meta.get("title") or base
+        results.append(WorkerStatus(
+            label=row["worker_label"],
+            title=f"{base_title} #{slot + 1}",
+            description=meta.get("description") or "",
+            status=status,
+            last_run=last_run_str or None,
+            message=row.get("message"),
+            is_instance=True,
+        ))
+
     return results
 
 
@@ -473,6 +514,7 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     ``<suffix>_<i>.pid``.  If any slot is already occupied the whole
     request is rejected with 409.
     """
+    import platform
     import shlex
     import shutil as _shutil
     import subprocess
@@ -516,6 +558,12 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     cwd = str(Path(__file__).parent.parent)
     env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1"}
 
+    # On macOS the API may run as a daemon (PPID=1, session 0) which has no
+    # Window Server access.  Wrap the worker command in `launchctl asuser <uid>`
+    # so it runs inside the user's login session and Playwright can open Chrome.
+    if platform.system() == "Darwin":
+        cmd = ["launchctl", "asuser", str(os.getuid())] + cmd
+
     # Guard: reject if any slot is already occupied
     def _pid_path(i: int) -> Path:
         return brand_dir / "logs" / (f"{base}_{i}.pid" if count > 1 else f"{base}.pid")
@@ -537,11 +585,20 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
             detail=f"Already running (pid={alive[0]})" + (f" +{len(alive)-1} more" if len(alive) > 1 else ""),
         )
 
-    worker_db_record_start(brand_dir, label, brand_dir.name)
+    # For multi-instance triggers record each slot individually; single stays as task.id
+    _timeout_s = int(extra.get("timeout_minutes", 30)) * 60
+    import threading as _threading
+
+    if count == 1:
+        worker_db_record_start(brand_dir, task.id, brand_dir.name)
+    else:
+        for _si in range(count):
+            worker_db_record_start(brand_dir, f"{task.id}/{_si}", brand_dir.name)
 
     pids: list[int] = []
     for i in range(count):
         instance_env = {**env, "WORKER_INDEX": str(i), "WORKER_COUNT": str(count)}
+        instance_label = task.id if count == 1 else f"{task.id}/{i}"
         log_fh = None
         try:
             log_fh = open(log_path, "a")  # noqa: WPS515
@@ -554,7 +611,6 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
             stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
             stderr=subprocess.STDOUT,
             close_fds=True,
-            start_new_session=True,
         )
         if log_fh is not None:
             log_fh.close()
@@ -562,13 +618,29 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         pp.write_text(str(proc.pid))
         pids.append(proc.pid)
 
-        # Reaper: remove PID file when the process exits (handles abnormal exits
-        # like singleton-lock rejection that never reach record_complete)
-        import threading as _threading
-        def _reap(p: subprocess.Popen, path: Path) -> None:
-            p.wait()
-            path.unlink(missing_ok=True)
-        _threading.Thread(target=_reap, args=(proc, pp), daemon=True).start()
+        def _reap(
+            p: subprocess.Popen,
+            path: Path,
+            timeout_s: int,
+            _brand_dir: Path = brand_dir,
+            _label: str = instance_label,
+            _log_path: Path = log_path,
+        ) -> None:
+            try:
+                p.wait(timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+                msg = f"timeout after {timeout_s // 60}m"
+                try:
+                    with _log_path.open("a") as _lf:
+                        _lf.write(f"\n[timeout] Worker killed — {msg}\n")
+                except OSError:
+                    pass
+                worker_db_record_complete(_brand_dir, _label, _brand_dir.name, "error", msg)
+            finally:
+                path.unlink(missing_ok=True)
+        _threading.Thread(target=_reap, args=(proc, pp, _timeout_s), daemon=True).start()
 
     msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
 
@@ -679,6 +751,9 @@ def get_schedule_log(
     lines: int = Query(default=200, ge=1, le=1000),
 ) -> LogTailResponse:
     """Return the last N lines of the log file for a scheduled job."""
+    import re as _re
+    # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment/0")
+    label = _re.sub(r"/\d+$", "", label)
     label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")

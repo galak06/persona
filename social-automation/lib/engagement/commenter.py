@@ -48,7 +48,6 @@ class CommenterSpec:
     label: str                          # short tag for logs/CLI, e.g. "FB" | "IG"
     guard_key: str                      # per-platform re-run-guard key
     session_file: Path
-    queue_file: Path
     last_run_file: Path
     log_file: Path
     home_url: str                       # homepage used for the session check
@@ -57,6 +56,8 @@ class CommenterSpec:
     draft_fn: Callable[[dict[str, Any]], str]      # item -> draft ("" => skip)
     post_fn: Callable[[Any, str, str], bool]       # (page, post_url, text) -> ok
     session_missing_msg: str
+    queue_file: Path | None = None   # required when task_queue is None (JSON path)
+    task_queue: Any = None           # if set, drain Redis instead of queue_file
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -125,6 +126,24 @@ def _pending_items(spec: CommenterSpec, queue: list[dict[str, Any]]) -> list[dic
     return out
 
 
+def _pending_items_pg(spec: CommenterSpec, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Dedup filter for Redis-backed queue items using Postgres completed_tasks."""
+    from lib.dedup_pg import already_done
+    return [
+        item for item in items
+        if not already_done("comment", spec.platform, str(item.get("post_id") or ""))  # type: ignore[arg-type]
+    ]
+
+
+def _record_done_pg(platform: str, post_id: str) -> None:
+    """Best-effort Postgres dedup record after a successful comment."""
+    try:
+        from lib.dedup_pg import record_done
+        record_done("comment", platform, post_id)  # type: ignore[arg-type]
+    except Exception:
+        pass
+
+
 def _record(
     spec: CommenterSpec, item: dict[str, Any], status: str, *, draft: str = "", error: str = ""
 ) -> None:
@@ -159,10 +178,17 @@ def run_commenter(spec: CommenterSpec, args: argparse.Namespace) -> int:
         rate_limiter.print_status()
         return 0
 
-    queue = _load_json(spec.queue_file, [])
-    pending = _pending_items(spec, queue)
-    if not args.dry_run:
-        _save_json(spec.queue_file, queue)  # persist already-commented stamps (live only)
+    if spec.task_queue is not None:
+        raw: list[dict[str, Any]] = []
+        while (t := spec.task_queue.pop_nowait()) is not None:
+            raw.append(t)
+        queue: list[dict[str, Any]] = raw
+        pending = _pending_items_pg(spec, raw)
+    else:
+        queue = _load_json(spec.queue_file, [])
+        pending = _pending_items(spec, queue)
+        if not args.dry_run:
+            _save_json(spec.queue_file, queue)  # persist already-commented stamps (live only)
     if args.limit is not None:
         pending = pending[: args.limit]
 
@@ -256,7 +282,8 @@ def _post_loop(
             item["status"] = "USER_SKIPPED"
             item["_blocked_reason"] = "draft failed voice validation"
             skipped += 1
-            _save_json(spec.queue_file, queue)
+            if spec.task_queue is None:
+                _save_json(spec.queue_file, queue)
             continue
 
         try:
@@ -279,6 +306,8 @@ def _post_loop(
 
         rate_limiter.record_action(spec.platform, "comment")
         deduplication.mark_engaged(spec.platform, pid, "comment", label)
+        if spec.task_queue is not None:
+            _record_done_pg(spec.platform, pid)
         _log_engagement(spec, label, draft)
         item["status"] = "posted"
         item["posted_at"] = datetime.now(UTC).isoformat() + "Z"
@@ -286,12 +315,14 @@ def _post_loop(
         _record(spec, item, "posted", draft=draft)
         posted += 1
         print("    ✅ Posted!", flush=True)
-        _save_json(spec.queue_file, queue)
+        if spec.task_queue is None:
+            _save_json(spec.queue_file, queue)
 
         if idx < len(pending) - 1:
             rate_limiter.wait_random_delay(spec.platform, "comment")
 
-    _save_json(spec.queue_file, queue)
+    if spec.task_queue is None:
+        _save_json(spec.queue_file, queue)
     return posted, failed, skipped
 
 

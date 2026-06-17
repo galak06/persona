@@ -47,11 +47,15 @@ export default function Operations({
   const view: OpsView =
     tabParam && VALID_VIEWS.has(tabParam) ? tabParam : initialView;
 
-  // Lightweight poll to show the pulsing dot on the Running tab
+  // Poll at the same rate as Running.tsx so the badge stays in sync with the tab
   const { data: workers } = useApiQuery<WorkerStatus[]>(endpoints.workers, {
-    refetchInterval: 5_000,
+    refetchInterval: 1_000,
   });
-  const runningCount = (workers ?? []).filter((w) => w.status === "running").length;
+  const now = Date.now();
+  const runningCount = (workers ?? []).filter((w) =>
+    w.status === "running" ||
+    (w.status !== "never" && w.last_run != null && now - new Date(w.last_run).getTime() < 60_000),
+  ).length;
 
   function setView(next: OpsView) {
     setSearchParams(

@@ -13,7 +13,7 @@ import logging
 import sqlite3
 from dataclasses import asdict
 
-from recipe_db.models import Ingredient, RecipeRow
+from recipe_db.models import ContentStatus, Ingredient, RecipeRow
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +297,15 @@ class RecipeRepository:
             (content_status,),
         )
         return [self._row_to_recipe(r) for r in cur.fetchall()]
+
+    def list_published_ids(self) -> set[str]:
+        """Return IDs of all recipes already published (by content_status or wp_url)."""
+        rows = self._conn.execute(
+            "SELECT id FROM recipes "
+            "WHERE content_status = ? OR (wp_url IS NOT NULL AND wp_url != '')",
+            (ContentStatus.PUBLISHED,),
+        ).fetchall()
+        return {row["id"] for row in rows}
 
     def set_display_name(self, recipe_id: str, display_name: str) -> None:
         """Store the brand-voice display name shown in place of the source title."""

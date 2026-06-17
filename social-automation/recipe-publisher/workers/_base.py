@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 from collections.abc import Callable
+from pathlib import Path
 
 from recipe_db import db
 from recipe_db.models import RecipeRow
@@ -18,6 +20,7 @@ from recipe_db.repository import RecipeRepository
 
 from lib.local_env import load_local_env
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
+from lib.worker_db import record_complete, record_start
 
 logger = logging.getLogger("workers")
 
@@ -99,18 +102,29 @@ def run_worker(
         conn.close()
         return 0
 
+    brand_dir: str = os.environ.get("BRAND_DIR", "")
+    brand: str = Path(brand_dir).name if brand_dir else "unknown"
+
     try:
         with SingletonLock(f"worker_{name}"):
-            if pre_apply_fn is not None:
-                pre_apply_fn(repo)
-            targets = targets_fn(repo, args.seed, args.limit)
-            outcomes = _run_apply(repo, targets, do_one_fn, name)
+            record_start(brand_dir, name, brand)
+            try:
+                if pre_apply_fn is not None:
+                    pre_apply_fn(repo)
+                targets = targets_fn(repo, args.seed, args.limit)
+                outcomes = _run_apply(repo, targets, do_one_fn, name)
+            except Exception as exc:
+                record_complete(brand_dir, name, brand, "error", message=str(exc))
+                conn.close()
+                raise
     except LockAcquisitionError as exc:
         logger.warning("another %s instance is running: %s", name, exc)
         conn.close()
         return 0
     conn.close()
 
+    n = len(outcomes)
+    record_complete(brand_dir, name, brand, "success", message=f"{n} processed")
     ok = sum(1 for v in outcomes.values() if not v.startswith("error"))
     logger.info("=== %s done: processed=%d ok=%d ===", name, len(outcomes), ok)
     return 0

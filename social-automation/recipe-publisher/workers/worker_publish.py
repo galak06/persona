@@ -22,7 +22,7 @@ import logging
 import os
 from datetime import UTC, datetime
 
-from recipe_db.models import RecipeRow
+from recipe_db.models import ContentStatus, RecipeRow
 from recipe_db.repository import RecipeRepository
 
 from workers._base import run_worker
@@ -96,6 +96,7 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
         _record_social_urls(repo, row)
     except Exception as exc:
         logger.warning("social-url sync failed for %s: %s", row.id, exc)
+    repo.set_content_status(row.id, ContentStatus.PUBLISHED)
     return "published"
 
 

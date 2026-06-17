@@ -283,6 +283,8 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
   }
 
   const isBusy = triggerState === "loading";
+  const isRunning = worker.status === "running";
+  const isDisabled = isBusy || isRunning;
 
   return (
     <article className="bg-white rounded-md border border-slate-200 p-4 space-y-3">
@@ -300,12 +302,13 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
           </span>
 
           {/* Worker count selector */}
-          <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-xs font-medium">
+          <div className={`inline-flex rounded-md border border-slate-200 overflow-hidden text-xs font-medium ${isDisabled ? "opacity-50 pointer-events-none" : ""}`}>
             {([1, 2, 3] as const).map((n) => (
               <button
                 key={n}
                 type="button"
                 onClick={() => setWorkerCount(n)}
+                disabled={isDisabled}
                 className={`px-2.5 py-1.5 transition-colors ${
                   workerCount === n
                     ? "bg-slate-800 text-white"
@@ -320,11 +323,13 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
           <button
             type="button"
             onClick={() => void handleTrigger()}
-            disabled={isBusy}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 disabled:opacity-60 transition-colors"
+            disabled={isDisabled}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
           >
             {isBusy ? (
               <><Spinner size="sm" className="text-amber-700" /> Triggering…</>
+            ) : isRunning ? (
+              <><Spinner size="sm" className="text-amber-700" /> Running…</>
             ) : triggerState === "triggered" ? "Triggered!" : "Trigger ▶"}
           </button>
         </div>

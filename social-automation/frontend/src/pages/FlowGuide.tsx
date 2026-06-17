@@ -26,7 +26,7 @@ export default function FlowGuide(): React.JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const workerParam = searchParams.get("worker") ?? "";
 
-  const list = workers ?? [];
+  const list = (workers ?? []).filter((w) => !w.is_instance);
   // Default to first worker when none explicitly chosen or param not found
   const effectiveLabel = (list.find((w) => w.label === workerParam) ? workerParam : "") || (list.length > 0 ? list[0].label : "");
   const selected = list.find((w) => w.label === effectiveLabel) ?? null;

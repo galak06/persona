@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
+from lib.task_queue import TaskQueue
 from lib.worker_db import record_complete, record_start
 
 WORKER_LABEL = "dogfood-ig-scanner"
@@ -35,40 +36,29 @@ from lib.engagement.post import Post
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status
 
-QUEUE_FILE = settings.paths.instagram_comment_queue
 LAST_RUN_FILE = settings.paths.last_run
 SESSION_FILE = settings.paths.instagram_session
 CONFIG_FILE = settings.paths.brand_dir / "config.json"
 HASHTAG_FILE = settings.paths.instagram_accounts
 
 
-class _QueueIO:
-    """`run_outbound_scan` queue collaborator: append + atomic save + today-count."""
+class _RedisQueueIO:
+    """`run_outbound_scan` queue collaborator: push to Redis TaskQueue."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._existing: list[dict[str, Any]] = (
-            json.loads(path.read_text()) if path.exists() else []
-        )
+    def __init__(self, queue: TaskQueue) -> None:
+        self._q = queue
         self.newly_queued: list[dict[str, Any]] = []
 
     def append(self, record: dict[str, object]) -> None:
-        rec = dict(record)
-        self._existing.append(rec)  # type: ignore[arg-type]
-        self.newly_queued.append(rec)  # type: ignore[arg-type]
+        task = dict(record)
+        self._q.push(task)
+        self.newly_queued.append(task)
 
     def save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._existing, indent=2))
+        pass  # Redis push is immediate; no batch save needed
 
     def existing_today(self, platform: str) -> int:
-        today = date.today().isoformat()
-        return sum(
-            1 for q in self._existing
-            if q.get("platform") == platform
-            and str(q.get("queued_at", "")).startswith(today)
-            and q not in self.newly_queued
-        )
+        return self._q.depth()
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -118,7 +108,7 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     active = adapter or InstagramHashtagAdapter(
         {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE}
     )
-    queue_io = _QueueIO(QUEUE_FILE)
+    queue_io = _RedisQueueIO(TaskQueue("ig-comment"))
 
     try:
         report = run_outbound_scan(
@@ -138,11 +128,15 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
             return None
         raise
 
+    from lib.dedup_pg import record_done as _pg_record_done
     for rec in queue_io.newly_queued:
         deduplication.mark_engaged(
             "instagram", str(rec["post_id"]),
             action="comment_queued",
             group_or_hashtag=str(rec.get("hashtag") or rec.get("group_or_hashtag") or ""),
+        )
+        _pg_record_done(
+            "scan", "instagram", str(rec["post_id"]), worker_label=WORKER_LABEL,
         )
 
     last_run["ig_scanner"] = {

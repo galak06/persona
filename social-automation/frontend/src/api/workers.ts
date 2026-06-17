@@ -7,6 +7,7 @@ export interface WorkerStatus {
   status: "never" | "running" | "success" | "error";
   last_run: string | null;
   message: string | null;
+  is_instance?: boolean;
 }
 
 export async function fetchWorkers(): Promise<WorkerStatus[]> {

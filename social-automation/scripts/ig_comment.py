@@ -36,6 +36,7 @@ from draft_helper import draft_comment_for_post
 from lib.comment_queue_routing import guard_key_for
 from lib.engagement.commenter import CommenterSpec, main_for
 from lib.ig.comment_post import post_comment_ig
+from lib.task_queue import TaskQueue
 
 PLATFORM = "instagram"
 
@@ -58,7 +59,6 @@ SPEC = CommenterSpec(
     label="IG",
     guard_key=guard_key_for(PLATFORM),
     session_file=settings.paths.instagram_session,
-    queue_file=settings.paths.instagram_comment_queue,
     last_run_file=settings.paths.last_run,
     log_file=settings.paths.logs_dir / "engagement_log.jsonl",
     home_url="https://www.instagram.com",
@@ -67,6 +67,7 @@ SPEC = CommenterSpec(
     draft_fn=_draft,
     post_fn=post_comment_ig,
     session_missing_msg="No saved Instagram session — run scripts/ig_login.py first",
+    task_queue=TaskQueue("ig-comment"),
 )
 
 
