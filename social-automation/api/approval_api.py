@@ -558,8 +558,17 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         )
         if log_fh is not None:
             log_fh.close()
-        _pid_path(i).write_text(str(proc.pid))
+        pp = _pid_path(i)
+        pp.write_text(str(proc.pid))
         pids.append(proc.pid)
+
+        # Reaper: remove PID file when the process exits (handles abnormal exits
+        # like singleton-lock rejection that never reach record_complete)
+        import threading as _threading
+        def _reap(p: subprocess.Popen, path: Path) -> None:
+            p.wait()
+            path.unlink(missing_ok=True)
+        _threading.Thread(target=_reap, args=(proc, pp), daemon=True).start()
 
     msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
 
