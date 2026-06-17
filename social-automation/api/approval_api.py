@@ -572,12 +572,22 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
 
     msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
 
-    # Attach any at-limit rate counters so the UI can surface a warning
+    # Attach at-limit rate counters relevant to this worker
+    # Infer platform from script/id so we don't show FB limits on an IG worker
     at_limit: dict[str, dict[str, int]] = {}
     try:
         from lib.rate_limiter import get_daily_status
+        script_hint = (extra.get("script") or task.skill or "").lower()
+        if "ig_" in script_hint or "ig-" in script_hint or script_hint.startswith("ig"):
+            relevant_prefix = "instagram:"
+        elif "fb_" in script_hint or "fb-" in script_hint or script_hint.startswith("fb"):
+            relevant_prefix = "facebook:"
+        elif "wp_" in script_hint or "wp-" in script_hint:
+            relevant_prefix = "wordpress:"
+        else:
+            relevant_prefix = ""  # show all if unknown
         for key, s in get_daily_status().items():
-            if s["remaining"] == 0:
+            if s["remaining"] == 0 and (not relevant_prefix or key.startswith(relevant_prefix)):
                 at_limit[key] = s
     except Exception:
         pass
