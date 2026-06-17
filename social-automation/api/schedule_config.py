@@ -13,12 +13,11 @@ pydantic, exposes:
 - ``topological_order`` -- sort tasks by ``order`` (ascending, None last),
   then label. Detects dep cycles and raises ``DependencyCycleError``.
 
-Reuses ``read_json`` from ``api.flow_helpers`` so JSON parsing semantics
-match the rest of the API surface.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
@@ -26,8 +25,12 @@ from typing import Any, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from api.flow_helpers import read_json
 from api.schedule_schemas import InputStatus
+
+
+def read_json(path: Path | str) -> Any:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 from lib.config import BrandPaths
 from lib.config import settings as _settings
 
