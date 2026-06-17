@@ -1,9 +1,8 @@
 /**
- * Flows page — live health snapshot of every documented flow.
+ * Flows page — live health snapshot of every registered worker.
  *
- * Polls `GET /api/v1/flows/state` every 10s and renders one card per
- * flow with status pill, last-run timestamp, output counts, optional
- * error block, and a collapsible sample of the most recent outputs.
+ * Polls `GET /api/v1/workers` every 15s and renders one card per
+ * worker with status pill, last-run timestamp, optional error block.
  */
 
 import { useMemo, useState, useEffect } from "react";
@@ -12,30 +11,25 @@ import Alert from "../components/ui/Alert";
 import LoadingState from "../components/ui/LoadingState";
 import { endpoints } from "../api/endpoints";
 import { useApiQuery } from "../hooks/useApiQuery";
-import type { components } from "../types/openapi";
+import type { WorkerStatus } from "../api/workers";
 
-type FlowState = components["schemas"]["FlowState"];
-type FlowsStateResponse = components["schemas"]["FlowsStateResponse"];
+const POLL_MS = 15_000;
 
-const POLL_MS = 10000;
-
-const STATUS_STYLES: Record<FlowState["last_status"], string> = {
-  ok: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  error: "bg-rose-100 text-rose-800 border-rose-200",
-  never: "bg-slate-100 text-slate-700 border-slate-200",
-  stale: "bg-amber-100 text-amber-800 border-amber-200",
-  manual: "bg-sky-100 text-sky-800 border-sky-200",
+const STATUS_STYLES: Record<WorkerStatus["status"], string> = {
+  success: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  error:   "bg-rose-100 text-rose-800 border-rose-200",
+  running: "bg-sky-100 text-sky-700 border-sky-200",
+  never:   "bg-slate-100 text-slate-700 border-slate-200",
 };
 
-const STATUS_LABEL: Record<FlowState["last_status"], string> = {
-  ok: "OK",
-  error: "Error",
-  never: "Never run",
-  stale: "Stale",
-  manual: "Manual",
+const STATUS_LABEL: Record<WorkerStatus["status"], string> = {
+  success: "OK",
+  error:   "Error",
+  running: "Running",
+  never:   "Never run",
 };
 
-/** Format an ISO timestamp as a short relative phrase ("3s ago"). */
+/** Format an ISO timestamp as a short relative phrase ("3m ago"). */
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const then = new Date(iso).getTime();
@@ -58,27 +52,6 @@ function formatAbsTime(iso: string | null | undefined): string {
   return d.toLocaleString();
 }
 
-const SAMPLE_SUMMARY_KEYS = [
-  "post_url",
-  "keyword",
-  "group_name",
-  "suggested_title",
-  "title",
-  "name",
-];
-
-function sampleSummary(item: Record<string, unknown>): string {
-  for (const key of SAMPLE_SUMMARY_KEYS) {
-    const val = item[key];
-    if (typeof val === "string" && val.trim()) return val;
-  }
-  // Fall back: first string value in the object.
-  for (const val of Object.values(item)) {
-    if (typeof val === "string" && val.trim()) return val;
-  }
-  return "(no summary field)";
-}
-
 interface RefreshedIndicatorProps {
   asOf: number;
 }
@@ -98,37 +71,33 @@ function RefreshedIndicator({ asOf }: RefreshedIndicatorProps): React.JSX.Elemen
 }
 
 interface FlowCardProps {
-  flow: FlowState;
+  worker: WorkerStatus;
 }
 
-function FlowCard({ flow }: FlowCardProps): React.JSX.Element {
-  const countEntries = Object.entries(flow.output_counts);
-  const samples = flow.sample.slice(0, 3);
-  const firstSummary = samples.length > 0 ? sampleSummary(samples[0]) : "";
-
+function FlowCard({ worker }: FlowCardProps): React.JSX.Element {
   return (
     <article className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-slate-900 truncate">
-            {flow.name}
+            {worker.title}
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5 font-mono">{flow.id}</p>
+          <p className="text-xs text-slate-500 mt-0.5 font-mono">{worker.label}</p>
         </div>
         <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${STATUS_STYLES[flow.last_status]}`}
+          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${STATUS_STYLES[worker.status]}`}
         >
-          {STATUS_LABEL[flow.last_status]}
+          {STATUS_LABEL[worker.status]}
         </span>
       </div>
 
       <p className="text-sm text-slate-600">
-        {flow.last_run_at ? (
+        {worker.last_run ? (
           <>
             <span className="font-medium">Last run:</span>{" "}
-            {formatRelativeTime(flow.last_run_at)}{" "}
+            {formatRelativeTime(worker.last_run)}{" "}
             <span className="text-slate-400">
-              · {formatAbsTime(flow.last_run_at)}
+              · {formatAbsTime(worker.last_run)}
             </span>
           </>
         ) : (
@@ -136,54 +105,23 @@ function FlowCard({ flow }: FlowCardProps): React.JSX.Element {
         )}
       </p>
 
-      {countEntries.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {countEntries.map(([label, value]) => (
-            <span
-              key={label}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200 text-xs text-slate-700"
-            >
-              <span className="text-slate-500">{label}:</span>
-              <span className="font-semibold tabular-nums">{value}</span>
-            </span>
-          ))}
-        </div>
-      )}
+      <p className="text-sm text-slate-600">{worker.description}</p>
 
-      {flow.last_status === "error" && flow.error_message && (
+      {worker.status === "error" && worker.message && (
         <div className="bg-red-50 border border-red-200 text-red-900 text-sm rounded-md p-3">
           <p className="font-semibold mb-1">Last error</p>
           <pre className="text-xs whitespace-pre-wrap break-words font-mono">
-            {flow.error_message.slice(0, 500)}
+            {worker.message.slice(0, 500)}
           </pre>
         </div>
-      )}
-
-      {samples.length > 0 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-slate-600 hover:text-slate-900 select-none">
-            Sample ({samples.length}):{" "}
-            <span className="text-slate-500 truncate">{firstSummary}</span>
-          </summary>
-          <div className="mt-2 space-y-2">
-            {samples.map((item, idx) => (
-              <pre
-                key={idx}
-                className="text-xs bg-slate-50 border border-slate-200 rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words font-mono"
-              >
-                {JSON.stringify(item, null, 2)}
-              </pre>
-            ))}
-          </div>
-        </details>
       )}
     </article>
   );
 }
 
 export default function Flows(): React.JSX.Element {
-  const { data, loading, error } = useApiQuery<FlowsStateResponse>(
-    endpoints.flowsState,
+  const { data, loading, error } = useApiQuery<WorkerStatus[]>(
+    endpoints.workers,
     { refetchInterval: POLL_MS },
   );
 
@@ -191,18 +129,18 @@ export default function Flows(): React.JSX.Element {
   const asOf = useMemo(() => Date.now(), [data]);
 
   if (loading && !data) {
-    return <LoadingState message="Loading flows…" />;
+    return <LoadingState message="Loading workers…" />;
   }
 
   if (error && !data) {
     return (
-      <Alert status="error" title="Could not load flows">
+      <Alert status="error" title="Could not load workers">
         {error}
       </Alert>
     );
   }
 
-  const flows = data?.flows ?? [];
+  const workers = data ?? [];
 
   return (
     <section className="space-y-4">
@@ -216,15 +154,15 @@ export default function Flows(): React.JSX.Element {
         </Alert>
       )}
 
-      {flows.length === 0 ? (
-        <p className="text-sm text-slate-500">No flows reported.</p>
+      {workers.length === 0 ? (
+        <p className="text-sm text-slate-500">No workers reported.</p>
       ) : (
         <div className="space-y-4">
-          {flows.map((flow) => (
-            <FlowCard key={flow.id} flow={flow} />
+          {workers.map((w) => (
+            <FlowCard key={w.label} worker={w} />
           ))}
         </div>
       )}
     </section>
-    );
-    }
+  );
+}

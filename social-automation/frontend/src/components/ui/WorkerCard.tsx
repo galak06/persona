@@ -1,0 +1,247 @@
+/**
+ * WorkerCard — single-worker detail card used by the Worker Explorer page.
+ *
+ * Renders status pill, trigger button, log/artifact collapsible panels,
+ * and the error box when status === "error".
+ */
+
+import { useState } from "react";
+
+import Spinner from "./Spinner";
+import { endpoints } from "../../api/endpoints";
+import apiClient, { getErrorMessage } from "../../api/client";
+import type { WorkerStatus } from "../../api/workers";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const PILL_BASE =
+  "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border";
+
+export const PILL_VARIANT: Record<WorkerStatus["status"], string> = {
+  never:   "bg-slate-100 text-slate-700 border-slate-200",
+  running: "bg-sky-100 text-sky-700 border-sky-200",
+  success: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  error:   "bg-rose-100 text-rose-800 border-rose-200",
+};
+
+const PILL_LABEL: Record<WorkerStatus["status"], string> = {
+  never:   "Never Run",
+  running: "Running",
+  success: "Success",
+  error:   "Error",
+};
+
+// ── Humanizer ─────────────────────────────────────────────────────────────────
+
+export function humanizeRelative(iso: string | null | undefined): string {
+  if (!iso) return "Never Run";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const diffSec = Math.round((then - Date.now()) / 1000);
+  const fmt = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  const abs = Math.abs(diffSec);
+  if (abs < 60) return fmt.format(diffSec, "second");
+  if (abs < 3_600) return fmt.format(Math.round(diffSec / 60), "minute");
+  if (abs < 86_400) return fmt.format(Math.round(diffSec / 3_600), "hour");
+  if (abs < 86_400 * 30) return fmt.format(Math.round(diffSec / 86_400), "day");
+  if (abs < 86_400 * 365) return fmt.format(Math.round(diffSec / (86_400 * 30)), "month");
+  return fmt.format(Math.round(diffSec / (86_400 * 365)), "year");
+}
+
+// ── CollapsiblePanel ──────────────────────────────────────────────────────────
+
+interface PanelProps {
+  title: string;
+  onLoad: () => Promise<string>;
+  onClose: () => void;
+  content: string | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export function CollapsiblePanel({
+  title,
+  onLoad,
+  onClose,
+  content,
+  loading,
+  error,
+}: PanelProps): React.JSX.Element {
+  const open = content !== null || loading || error !== null;
+
+  function toggle() {
+    if (open) onClose();
+    else void onLoad();
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        className="text-sm font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
+        aria-expanded={open}
+      >
+        {open ? `Hide ${title}` : `View ${title}`}
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          {loading && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Spinner size="sm" className="text-slate-400" />
+              Loading…
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-2">
+              {error}
+            </p>
+          )}
+          {content && (
+            <pre className="font-mono text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
+              {content}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── WorkerCard ────────────────────────────────────────────────────────────────
+
+interface WorkerCardProps {
+  worker: WorkerStatus;
+}
+
+export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Element {
+  const [triggerState, setTriggerState] = useState<
+    "idle" | "loading" | "triggered" | "error"
+  >("idle");
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+
+  const [logContent, setLogContent] = useState<string | null>(null);
+  const [logLoading, setLogLoading] = useState(false);
+  const [logError, setLogError] = useState<string | null>(null);
+
+  const [artifactContent, setArtifactContent] = useState<string | null>(null);
+  const [artifactLoading, setArtifactLoading] = useState(false);
+  const [artifactError, setArtifactError] = useState<string | null>(null);
+
+  async function handleTrigger() {
+    setTriggerState("loading");
+    setTriggerError(null);
+    try {
+      await apiClient.post(endpoints.workerTrigger(worker.label));
+      setTriggerState("triggered");
+      setTimeout(() => setTriggerState("idle"), 2_000);
+    } catch (err) {
+      setTriggerError(getErrorMessage(err, "Trigger failed"));
+      setTriggerState("error");
+      setTimeout(() => setTriggerState("idle"), 3_000);
+    }
+  }
+
+  async function loadLog(): Promise<string> {
+    setLogLoading(true);
+    setLogError(null);
+    try {
+      const res = await apiClient.get<{ log: string }>(endpoints.workerLog(worker.label));
+      const text = res.data.log ?? "";
+      setLogContent(text || "(empty log)");
+      return text;
+    } catch (err) {
+      const msg = getErrorMessage(err, "Failed to load log");
+      setLogError(msg);
+      return "";
+    } finally {
+      setLogLoading(false);
+    }
+  }
+
+  async function loadArtifact(): Promise<string> {
+    setArtifactLoading(true);
+    setArtifactError(null);
+    try {
+      const res = await apiClient.get<unknown>(endpoints.workerArtifact(worker.label));
+      const text = JSON.stringify(res.data, null, 2);
+      setArtifactContent(text);
+      return text;
+    } catch (err) {
+      const msg = getErrorMessage(err, "Failed to load artifact");
+      setArtifactError(msg);
+      return "";
+    } finally {
+      setArtifactLoading(false);
+    }
+  }
+
+  const isBusy = triggerState === "loading";
+
+  return (
+    <article className="bg-white rounded-md border border-slate-200 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-slate-900 truncate">{worker.title}</h2>
+          <p className="text-xs text-slate-500 mt-0.5 font-mono">
+            com.dogfoodandfun.{worker.label}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className={`${PILL_BASE} ${PILL_VARIANT[worker.status]}`}>
+            {PILL_LABEL[worker.status]}
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleTrigger()}
+            disabled={isBusy}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 disabled:opacity-60 transition-colors"
+          >
+            {isBusy ? (
+              <><Spinner size="sm" className="text-amber-700" /> Triggering…</>
+            ) : triggerState === "triggered" ? "Triggered!" : "Trigger ▶"}
+          </button>
+        </div>
+      </div>
+
+      <p className="text-sm text-slate-600">
+        <span className="font-medium">Last run:</span>{" "}
+        {humanizeRelative(worker.last_run)}
+      </p>
+
+      <p className="text-sm text-slate-700">{worker.description}</p>
+
+      {worker.status === "error" && worker.message && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 text-sm rounded-md p-3">
+          <p className="font-semibold mb-1">Last error</p>
+          <pre className="text-xs whitespace-pre-wrap break-words font-mono">{worker.message}</pre>
+        </div>
+      )}
+
+      {triggerState === "error" && triggerError && (
+        <p className="text-sm text-rose-700">{triggerError}</p>
+      )}
+
+      <div className="flex gap-4 flex-wrap">
+        <CollapsiblePanel
+          title="Log"
+          onLoad={loadLog}
+          onClose={() => { setLogContent(null); setLogError(null); }}
+          content={logContent}
+          loading={logLoading}
+          error={logError}
+        />
+        <CollapsiblePanel
+          title="Artifact"
+          onLoad={loadArtifact}
+          onClose={() => { setArtifactContent(null); setArtifactError(null); }}
+          content={artifactContent}
+          loading={artifactLoading}
+          error={artifactError}
+        />
+      </div>
+    </article>
+  );
+}

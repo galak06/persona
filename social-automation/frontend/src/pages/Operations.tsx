@@ -1,9 +1,9 @@
 /**
  * Operations — unified ops cockpit merging three former tabs into one
  * segmented page:
- *   • Health   (was "Flows")      — live run status, polls /flows/state
- *   • Schedule (was "Schedule")   — cron table, run-now triggers, log tails
- *   • Audit    (was "Flow Guide") — static snapshot, stale/dead flows first
+ *   • Health   — live worker run status, polls /workers
+ *   • Schedule — cron table, run-now triggers, log tails
+ *   • Workers  — inspect and trigger automation workers
  *
  * Only the active segment is mounted, so at most one poller runs at a
  * time. The old /flows, /schedule and /flow-guide routes still resolve
@@ -27,7 +27,7 @@ interface Segment {
 const SEGMENTS: readonly Segment[] = [
   { key: "health", label: "Health", hint: "Live run status of every flow." },
   { key: "schedule", label: "Schedule", hint: "Cron jobs, triggers & log tails." },
-  { key: "audit", label: "Audit", hint: "Stale and never-run flows surfaced first to prune." },
+  { key: "audit", label: "Workers", hint: "Inspect and trigger automation workers." },
 ];
 
 const SEG_BASE =

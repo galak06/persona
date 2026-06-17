@@ -65,23 +65,22 @@ export const endpoints = {
   /** GET — readiness probe. */
   health: "/health",
 
-  /** GET — live state of every documented flow + schedule entries. */
-  flowsState: "/flows/state",
+  /** GET — list all registered independent workers. */
+  workers: "/workers",
 
-  /** POST — manually fire a scheduled job by its launchd label. */
-  scheduleTrigger: (label: string): string =>
-    `/schedule/${enc(label)}/trigger`,
+  /** GET — status of a single worker by launchd label. */
+  workerStatus: (label: string): string => `/workers/${enc(label)}/status`,
 
-  /** GET — tail the launchd job's log file. */
-  scheduleLog: (label: string, lines = 200): string =>
-    "/schedule/" + encodeURIComponent(label) + "/log?lines=" + lines,
+  /** POST — manually trigger a worker by launchd label. */
+  workerTrigger: (label: string): string => `/workers/${enc(label)}/trigger`,
 
-  /** GET — fetch the JSON output artifact for a scheduled job. */
-  scheduleArtifact: (label: string): string =>
-    `/schedule/${enc(label)}/artifact`,
+  /** GET — tail a worker's log file. */
+  workerLog: (label: string, lines = 200): string =>
+    `/workers/${enc(label)}/log?lines=${lines}`,
 
-  /** GET — scheduled flows defined in schedule.json but not loaded. */
-  scheduleMissing: "/schedule/missing",
+  /** GET — fetch the JSON output artifact for a worker. */
+  workerArtifact: (label: string): string =>
+    `/workers/${enc(label)}/artifact`,
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers
