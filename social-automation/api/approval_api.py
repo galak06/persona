@@ -504,8 +504,21 @@ def trigger_worker(label: str) -> TriggerResponse:
     log_name = f"cron_{suffix.replace('-', '_')}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
     log_path = brand_dir / "logs" / log_name
+    pid_path = brand_dir / "logs" / f"{suffix.replace('-', '_')}.pid"
     cwd = str(Path(__file__).parent.parent)
     env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1"}
+
+    # Guard: reject if a previous instance is still alive
+    if pid_path.exists():
+        try:
+            existing_pid = int(pid_path.read_text().strip())
+            os.kill(existing_pid, 0)  # signal 0 = is-alive probe
+            raise HTTPException(
+                status_code=409,
+                detail=f"Worker already running (pid={existing_pid})",
+            )
+        except (ValueError, ProcessLookupError, PermissionError):
+            pid_path.unlink(missing_ok=True)  # stale PID — clean up
 
     worker_db_record_start(brand_dir, label, brand_dir.name)
 
@@ -526,6 +539,8 @@ def trigger_worker(label: str) -> TriggerResponse:
     )
     if log_fh is not None:
         log_fh.close()
+
+    pid_path.write_text(str(proc.pid))
 
     return TriggerResponse(ok=True, message=f"Spawned (pid={proc.pid})", label=label)
 

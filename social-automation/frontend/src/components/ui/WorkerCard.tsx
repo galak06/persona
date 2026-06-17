@@ -221,7 +221,13 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
     } catch (err) {
-      setTriggerError(getErrorMessage(err, "Trigger failed"));
+      import("axios").then(({ isAxiosError }) => {
+        const msg =
+          isAxiosError(err) && err.response?.status === 409
+            ? "Already running"
+            : getErrorMessage(err, "Trigger failed");
+        setTriggerError(msg);
+      }).catch(() => setTriggerError(getErrorMessage(err, "Trigger failed")));
       setTriggerState("error");
       setTimeout(() => setTriggerState("idle"), 3_000);
     }
