@@ -394,6 +394,15 @@ def health() -> Response:
 
 
 _LABEL_RE = __import__("re").compile(r"com\.dogfoodandfun\.[a-z0-9-]+")
+_SHORT_LABEL_RE = __import__("re").compile(r"[a-z0-9-]+")
+_LABEL_PREFIX = "com.dogfoodandfun."
+
+
+def _normalize_label(label: str) -> str:
+    """Accept both short form (dogfood-fb-scanner) and full launchd form."""
+    if label.startswith(_LABEL_PREFIX):
+        return label
+    return f"{_LABEL_PREFIX}{label}"
 
 _BRAND_DIR = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
 _BRAND = _BRAND_DIR.name
@@ -459,6 +468,7 @@ def trigger_worker(label: str) -> TriggerResponse:
 
     from api.schedule_config import load_schedule_config, task_for_label
 
+    label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
 
@@ -597,11 +607,8 @@ def get_schedule_log(
     label: str,
     lines: int = Query(default=200, ge=1, le=1000),
 ) -> LogTailResponse:
-    """Return the last N lines of the log file for a scheduled job.
-
-    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
-    Log path is derived from BRAND_DIR + the label suffix — no plist read.
-    """
+    """Return the last N lines of the log file for a scheduled job."""
+    label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
 
@@ -635,13 +642,11 @@ def get_schedule_log(
 
 @app.get("/api/v1/workers/{label}/artifact")
 def get_schedule_artifact(label: str) -> dict[str, Any]:
-    """Return the JSON content of the output_file for a scheduled job.
-
-    Securely reads only files declared in schedule.json as output_file.
-    """
+    """Return the JSON content of the output_file for a scheduled job."""
     from api.schedule_config import load_schedule_config, task_for_label
     from lib.io.jsonio import read_json
 
+    label = _normalize_label(label)
     config = load_schedule_config()
     task = task_for_label(label, config)
     if not task:
