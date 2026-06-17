@@ -290,7 +290,7 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-900 truncate">{worker.title}</h2>
           <p className="text-xs text-slate-500 mt-0.5 font-mono">
-            com.dogfoodandfun.{worker.label}
+            com.dogfoodandfun.{worker.label.replace(/^dogfood-/, "")}
           </p>
         </div>
 

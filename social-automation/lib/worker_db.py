@@ -76,6 +76,7 @@ def record_complete(
     """Upsert final status + last_run=now UTC.
 
     ``status`` should be 'success' or 'error'.
+    Also removes any PID files so the next trigger isn't falsely blocked.
     """
     with _connect(brand_dir) as conn:
         conn.execute(
@@ -86,6 +87,16 @@ def record_complete(
             """,
             (label, brand, status, _now_utc(), message),
         )
+
+    # Clean up PID files (single and multi-worker variants)
+    logs_dir = Path(brand_dir) / "logs"
+    suffix = label.removeprefix("com.dogfoodandfun.").replace("-", "_")
+    for pattern in (f"{suffix}.pid", f"{suffix}_0.pid", f"{suffix}_1.pid", f"{suffix}_2.pid"):
+        p = logs_dir / pattern
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def get_all(brand_dir: str | Path, brand: str) -> list[dict]:
