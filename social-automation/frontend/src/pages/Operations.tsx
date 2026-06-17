@@ -51,11 +51,7 @@ export default function Operations({
   const { data: workers } = useApiQuery<WorkerStatus[]>(endpoints.workers, {
     refetchInterval: 1_000,
   });
-  const now = Date.now();
-  const runningCount = (workers ?? []).filter((w) =>
-    w.status === "running" ||
-    (w.status !== "never" && w.last_run != null && now - new Date(w.last_run).getTime() < 60_000),
-  ).length;
+  const runningCount = (workers ?? []).filter((w) => w.status === "running").length;
 
   function setView(next: OpsView) {
     setSearchParams(

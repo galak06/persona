@@ -16,12 +16,6 @@ import type { WorkerStatus } from "../api/workers";
 
 const WORKER_POLL_MS = 1_000;
 const LOG_POLL_MS = 1_000;
-const RECENTLY_ACTIVE_MS = 60_000;
-
-function isRecent(lastRun: string | null | undefined): boolean {
-  if (!lastRun) return false;
-  return Date.now() - new Date(lastRun).getTime() < RECENTLY_ACTIVE_MS;
-}
 
 // ── LiveLog ───────────────────────────────────────────────────────────────────
 
@@ -152,13 +146,9 @@ export default function Running(): React.JSX.Element {
     return <LoadingState message="Checking for running workers…" />;
   }
 
-  const list = workers ?? [];
-  const running = list.filter((w) => w.status === "running");
-  const recent = list.filter(
-    (w) => w.status !== "running" && w.status !== "never" && isRecent(w.last_run),
-  );
+  const running = (workers ?? []).filter((w) => w.status === "running");
 
-  if (running.length === 0 && recent.length === 0) {
+  if (running.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
         <span className="text-5xl">⏸</span>
@@ -170,25 +160,12 @@ export default function Running(): React.JSX.Element {
 
   return (
     <section className="space-y-3">
-      {running.length > 0 && (
-        <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
-          {running.length} running · logs refresh every {LOG_POLL_MS / 1_000}s
-        </p>
-      )}
+      <p className="text-xs text-slate-500 uppercase tracking-wide font-medium">
+        {running.length} running · logs refresh every {LOG_POLL_MS / 1_000}s
+      </p>
       {running.map((w) => (
         <WorkerLogPanel key={w.label} worker={w} live={true} />
       ))}
-
-      {recent.length > 0 && (
-        <>
-          <p className="text-xs text-slate-400 uppercase tracking-wide font-medium pt-2">
-            Recently completed
-          </p>
-          {recent.map((w) => (
-            <WorkerLogPanel key={w.label} worker={w} live={false} />
-          ))}
-        </>
-      )}
     </section>
   );
 }
