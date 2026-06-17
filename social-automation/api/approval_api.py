@@ -35,6 +35,7 @@ from fastapi import (
     Response,
     status,
 )
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from api import state
