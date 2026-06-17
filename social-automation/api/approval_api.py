@@ -424,8 +424,8 @@ def list_workers() -> list[WorkerStatus]:
 
     config = load_schedule_config()
     all_rows = {r["worker_label"]: r for r in worker_db_get_all(_BRAND_DIR, _BRAND)}
-    # Separate base rows from per-instance rows (label format: "{base}/{slot}")
-    _instance_pat = _re.compile(r"^(.+)/(\d+)$")
+    # Separate base rows from per-instance rows (label format: "{base}--{slot}")
+    _instance_pat = _re.compile(r"^(.+)--(\d+)$")
     base_rows = {k: v for k, v in all_rows.items() if not _instance_pat.match(k)}
     instance_rows = [v | {"_base": m.group(1), "_slot": int(m.group(2))}
                      for k, v in all_rows.items() if (m := _instance_pat.match(k))]
@@ -593,12 +593,12 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         worker_db_record_start(brand_dir, task.id, brand_dir.name)
     else:
         for _si in range(count):
-            worker_db_record_start(brand_dir, f"{task.id}/{_si}", brand_dir.name)
+            worker_db_record_start(brand_dir, f"{task.id}--{_si}", brand_dir.name)
 
     pids: list[int] = []
     for i in range(count):
         instance_env = {**env, "WORKER_INDEX": str(i), "WORKER_COUNT": str(count)}
-        instance_label = task.id if count == 1 else f"{task.id}/{i}"
+        instance_label = task.id if count == 1 else f"{task.id}--{i}"
         log_fh = None
         try:
             log_fh = open(log_path, "a")  # noqa: WPS515
@@ -752,8 +752,8 @@ def get_schedule_log(
 ) -> LogTailResponse:
     """Return the last N lines of the log file for a scheduled job."""
     import re as _re
-    # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment/0")
-    label = _re.sub(r"/\d+$", "", label)
+    # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment--0")
+    label = _re.sub(r"--\d+$", "", label)
     label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
