@@ -458,14 +458,19 @@ def worker_status(label: str) -> WorkerStatus:
     )
 
 
-@app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
-def trigger_worker(label: str) -> TriggerResponse:
-    """Fire a scheduled worker on demand by spawning its script/skill directly.
+class _TriggerBody(BaseModel):
+    count: int = 1  # number of parallel worker instances (1-3)
 
-    Label is whitelisted against the ``com.dogfoodandfun.*`` namespace.
-    The task definition is read from schedule.json; the script or skill
-    is launched as a detached subprocess so the HTTP response returns
-    immediately while the job runs in the background.
+
+@app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
+def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerResponse:
+    """Fire a scheduled worker on demand.
+
+    ``body.count`` (1–3) spawns that many parallel instances — useful once
+    workers are backed by a Redis task queue so each instance independently
+    pops and processes tasks.  Each instance gets its own PID file
+    ``<suffix>_<i>.pid``.  If any slot is already occupied the whole
+    request is rejected with 409.
     """
     import shlex
     import shutil as _shutil
@@ -477,6 +482,8 @@ def trigger_worker(label: str) -> TriggerResponse:
     label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
+
+    count = max(1, min(3, body.count))
 
     config = load_schedule_config()
     task = task_for_label(label, config)
@@ -501,48 +508,60 @@ def trigger_worker(label: str) -> TriggerResponse:
         return TriggerResponse(ok=False, message="No script or skill defined for task", label=label)
 
     suffix = label[len("com.dogfoodandfun."):]
-    log_name = f"cron_{suffix.replace('-', '_')}.log"
+    base = suffix.replace("-", "_")
+    log_name = f"cron_{base}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
     log_path = brand_dir / "logs" / log_name
-    pid_path = brand_dir / "logs" / f"{suffix.replace('-', '_')}.pid"
     cwd = str(Path(__file__).parent.parent)
     env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1"}
 
-    # Guard: reject if a previous instance is still alive
-    if pid_path.exists():
-        try:
-            existing_pid = int(pid_path.read_text().strip())
-            os.kill(existing_pid, 0)  # signal 0 = is-alive probe
-            raise HTTPException(
-                status_code=409,
-                detail=f"Worker already running (pid={existing_pid})",
-            )
-        except (ValueError, ProcessLookupError, PermissionError):
-            pid_path.unlink(missing_ok=True)  # stale PID — clean up
+    # Guard: reject if any slot is already occupied
+    def _pid_path(i: int) -> Path:
+        return brand_dir / "logs" / (f"{base}_{i}.pid" if count > 1 else f"{base}.pid")
+
+    alive: list[int] = []
+    for i in range(count):
+        pp = _pid_path(i)
+        if pp.exists():
+            try:
+                pid = int(pp.read_text().strip())
+                os.kill(pid, 0)
+                alive.append(pid)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pp.unlink(missing_ok=True)
+
+    if alive:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Already running (pid={alive[0]})" + (f" +{len(alive)-1} more" if len(alive) > 1 else ""),
+        )
 
     worker_db_record_start(brand_dir, label, brand_dir.name)
 
-    log_fh = None
-    try:
-        log_fh = open(log_path, "a")  # noqa: WPS515
-    except OSError:
-        pass
+    pids: list[int] = []
+    for i in range(count):
+        instance_env = {**env, "WORKER_INDEX": str(i), "WORKER_COUNT": str(count)}
+        log_fh = None
+        try:
+            log_fh = open(log_path, "a")  # noqa: WPS515
+        except OSError:
+            pass
+        proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            cwd=cwd,
+            env=instance_env,
+            stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            close_fds=True,
+            start_new_session=True,
+        )
+        if log_fh is not None:
+            log_fh.close()
+        _pid_path(i).write_text(str(proc.pid))
+        pids.append(proc.pid)
 
-    proc = subprocess.Popen(  # noqa: S603
-        cmd,
-        cwd=cwd,
-        env=env,
-        stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
-        stderr=subprocess.STDOUT,
-        close_fds=True,
-        start_new_session=True,
-    )
-    if log_fh is not None:
-        log_fh.close()
-
-    pid_path.write_text(str(proc.pid))
-
-    return TriggerResponse(ok=True, message=f"Spawned (pid={proc.pid})", label=label)
+    msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
+    return TriggerResponse(ok=True, message=msg, label=label)
 
 
 @app.get("/api/v1/schedule/missing", response_model=MissingFlowsResponse)

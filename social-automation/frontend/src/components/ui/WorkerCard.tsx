@@ -208,6 +208,7 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
     "idle" | "loading" | "triggered" | "error"
   >("idle");
   const [triggerError, setTriggerError] = useState<string | null>(null);
+  const [workerCount, setWorkerCount] = useState<1 | 2 | 3>(1);
 
   const [artifactContent, setArtifactContent] = useState<string | null>(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
@@ -217,7 +218,7 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
     setTriggerState("loading");
     setTriggerError(null);
     try {
-      await apiClient.post(endpoints.workerTrigger(worker.label));
+      await apiClient.post(endpoints.workerTrigger(worker.label), { count: workerCount });
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
     } catch (err) {
@@ -262,10 +263,29 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
           <span className={`${PILL_BASE} ${PILL_VARIANT[worker.status]}`}>
             {PILL_LABEL[worker.status]}
           </span>
+
+          {/* Worker count selector */}
+          <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-xs font-medium">
+            {([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setWorkerCount(n)}
+                className={`px-2.5 py-1.5 transition-colors ${
+                  workerCount === n
+                    ? "bg-slate-800 text-white"
+                    : "bg-white text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                ×{n}
+              </button>
+            ))}
+          </div>
+
           <button
             type="button"
             onClick={() => void handleTrigger()}
