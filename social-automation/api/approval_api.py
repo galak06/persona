@@ -399,10 +399,16 @@ _LABEL_PREFIX = "com.dogfoodandfun."
 
 
 def _normalize_label(label: str) -> str:
-    """Accept both short form (dogfood-fb-scanner) and full launchd form."""
+    """Accept task id (dogfood-fb-scanner) or full launchd label (com.dogfoodandfun.fb-scanner).
+
+    Uses label_for_task_id for task ids so the dogfood- prefix is stripped correctly,
+    matching how launchd labels are actually generated (dogfood-fb-scanner → com.dogfoodandfun.fb-scanner).
+    """
     if label.startswith(_LABEL_PREFIX):
         return label
-    return f"{_LABEL_PREFIX}{label}"
+    from api.schedule_config import label_for_task_id
+    mapped = label_for_task_id(label)
+    return mapped if mapped else f"{_LABEL_PREFIX}{label}"
 
 _BRAND_DIR = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
 _BRAND = _BRAND_DIR.name
