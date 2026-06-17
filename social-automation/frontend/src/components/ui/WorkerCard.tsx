@@ -1,11 +1,8 @@
 /**
  * WorkerCard — single-worker detail card used by the Worker Explorer page.
- *
- * Renders status pill, trigger button, log/artifact collapsible panels,
- * and the error box when status === "error".
  */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import Spinner from "./Spinner";
 import { endpoints } from "../../api/endpoints";
@@ -48,7 +45,7 @@ export function humanizeRelative(iso: string | null | undefined): string {
   return fmt.format(Math.round(diffSec / (86_400 * 365)), "year");
 }
 
-// ── CollapsiblePanel ──────────────────────────────────────────────────────────
+// ── CollapsiblePanel (for artifact) ──────────────────────────────────────────
 
 interface PanelProps {
   title: string;
@@ -60,37 +57,25 @@ interface PanelProps {
 }
 
 export function CollapsiblePanel({
-  title,
-  onLoad,
-  onClose,
-  content,
-  loading,
-  error,
+  title, onLoad, onClose, content, loading, error,
 }: PanelProps): React.JSX.Element {
   const open = content !== null || loading || error !== null;
-
-  function toggle() {
-    if (open) onClose();
-    else void onLoad();
-  }
 
   return (
     <div>
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => open ? onClose() : void onLoad()}
         className="text-sm font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
         aria-expanded={open}
       >
         {open ? `Hide ${title}` : `View ${title}`}
       </button>
-
       {open && (
         <div className="mt-2">
           {loading && (
             <div className="flex items-center gap-2 text-sm text-slate-500">
-              <Spinner size="sm" className="text-slate-400" />
-              Loading…
+              <Spinner size="sm" className="text-slate-400" /> Loading…
             </div>
           )}
           {error && (
@@ -102,6 +87,107 @@ export function CollapsiblePanel({
             <pre className="font-mono text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
               {content}
             </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── LogPanel — live-polling log viewer ────────────────────────────────────────
+
+interface LogPanelProps {
+  label: string;
+  workerStatus: WorkerStatus["status"];
+}
+
+function LogPanel({ label, workerStatus }: LogPanelProps): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [lines, setLines] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  async function fetchLog() {
+    try {
+      const res = await apiClient.get<{ lines: string[]; truncated: boolean }>(
+        endpoints.workerLog(label)
+      );
+      setLines(res.data.lines ?? []);
+      setError(null);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load log"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Poll every 3s while open; faster (1s) while worker is running
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    void fetchLog();
+    const interval = workerStatus === "running" ? 1_000 : 3_000;
+    const id = setInterval(() => void fetchLog(), interval);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, label, workerStatus]);
+
+  // Auto-scroll to bottom when new lines arrive
+  useEffect(() => {
+    if (preRef.current) {
+      preRef.current.scrollTop = preRef.current.scrollHeight;
+    }
+  }, [lines]);
+
+  function toggle() {
+    if (open) {
+      setOpen(false);
+      setLines([]);
+      setError(null);
+    } else {
+      setOpen(true);
+    }
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        className="text-sm font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
+        aria-expanded={open}
+      >
+        {open ? "Hide Log" : "View Log"}
+      </button>
+
+      {open && (
+        <div className="mt-2">
+          {loading && lines.length === 0 && (
+            <div className="flex items-center gap-2 text-sm text-slate-500">
+              <Spinner size="sm" className="text-slate-400" /> Loading…
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-md p-2">
+              {error}
+            </p>
+          )}
+          {!error && (
+            <div className="relative">
+              {workerStatus === "running" && (
+                <div className="absolute top-2 right-2 flex items-center gap-1 text-xs text-sky-600">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse" />
+                  Live
+                </div>
+              )}
+              <pre
+                ref={preRef}
+                className="font-mono text-xs bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto"
+              >
+                {lines.length > 0 ? lines.join("\n") : "(empty log)"}
+              </pre>
+            </div>
           )}
         </div>
       )}
@@ -121,10 +207,6 @@ export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Eleme
   >("idle");
   const [triggerError, setTriggerError] = useState<string | null>(null);
 
-  const [logContent, setLogContent] = useState<string | null>(null);
-  const [logLoading, setLogLoading] = useState(false);
-  const [logError, setLogError] = useState<string | null>(null);
-
   const [artifactContent, setArtifactContent] = useState<string | null>(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
@@ -140,23 +222,6 @@ export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Eleme
       setTriggerError(getErrorMessage(err, "Trigger failed"));
       setTriggerState("error");
       setTimeout(() => setTriggerState("idle"), 3_000);
-    }
-  }
-
-  async function loadLog(): Promise<string> {
-    setLogLoading(true);
-    setLogError(null);
-    try {
-      const res = await apiClient.get<{ log: string }>(endpoints.workerLog(worker.label));
-      const text = res.data.log ?? "";
-      setLogContent(text || "(empty log)");
-      return text;
-    } catch (err) {
-      const msg = getErrorMessage(err, "Failed to load log");
-      setLogError(msg);
-      return "";
-    } finally {
-      setLogLoading(false);
     }
   }
 
@@ -225,14 +290,7 @@ export default function WorkerCard({ worker }: WorkerCardProps): React.JSX.Eleme
       )}
 
       <div className="flex gap-4 flex-wrap">
-        <CollapsiblePanel
-          title="Log"
-          onLoad={loadLog}
-          onClose={() => { setLogContent(null); setLogError(null); }}
-          content={logContent}
-          loading={logLoading}
-          error={logError}
-        />
+        <LogPanel label={worker.label} workerStatus={worker.status} />
         <CollapsiblePanel
           title="Artifact"
           onLoad={loadArtifact}
