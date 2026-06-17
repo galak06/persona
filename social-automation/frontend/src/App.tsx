@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import SideNav from "./components/layout/SideNav";
+import { ToastProvider } from "./components/ui/Toast";
 import Activity from "./pages/Activity";
 import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
@@ -19,6 +20,7 @@ import NotFound from "./pages/NotFound";
  */
 export default function App() {
   return (
+    <ToastProvider>
     <div className="min-h-screen bg-brand-bg flex">
       <SideNav />
       <main className="flex-1 min-w-0">
@@ -49,5 +51,6 @@ export default function App() {
         </div>
       </main>
     </div>
+    </ToastProvider>
   );
 }

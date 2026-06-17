@@ -84,6 +84,7 @@ class TriggerResponse(BaseModel):
     ok: bool
     message: str
     label: str
+    rate_limits: dict[str, dict[str, int]] | None = None  # at-limit keys only
 
 
 __all__ = [

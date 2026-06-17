@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from "react";
 
 import Spinner from "./Spinner";
+import { useToast } from "./Toast";
 import { endpoints } from "../../api/endpoints";
 import apiClient, { getErrorMessage } from "../../api/client";
 import type { WorkerStatus } from "../../api/workers";
@@ -203,11 +204,18 @@ interface WorkerCardProps {
   defaultLogOpen?: boolean;
 }
 
+interface TriggerResponse {
+  ok: boolean;
+  message: string;
+  label: string;
+  rate_limits: Record<string, { used: number; limit: number; remaining: number }> | null;
+}
+
 export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCardProps): React.JSX.Element {
+  const { toast } = useToast();
   const [triggerState, setTriggerState] = useState<
     "idle" | "loading" | "triggered" | "error"
   >("idle");
-  const [triggerError, setTriggerError] = useState<string | null>(null);
   const [workerCount, setWorkerCount] = useState<1 | 2 | 3>(1);
 
   const [artifactContent, setArtifactContent] = useState<string | null>(null);
@@ -216,21 +224,44 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
 
   async function handleTrigger() {
     setTriggerState("loading");
-    setTriggerError(null);
     try {
-      await apiClient.post(endpoints.workerTrigger(worker.label), { count: workerCount });
+      const res = await apiClient.post<TriggerResponse>(
+        endpoints.workerTrigger(worker.label),
+        { count: workerCount },
+      );
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
+
+      const { message, rate_limits } = res.data;
+      const countLabel = workerCount > 1 ? ` ×${workerCount}` : "";
+
+      if (rate_limits && Object.keys(rate_limits).length > 0) {
+        const capped = Object.entries(rate_limits)
+          .map(([k, v]) => `${k} ${v.used}/${v.limit}`)
+          .join(" · ");
+        toast.warning(
+          `${worker.title}${countLabel} triggered`,
+          `Daily limits hit — worker will exit early: ${capped}`,
+          6_000,
+        );
+      } else {
+        toast.success(
+          `${worker.title}${countLabel} started`,
+          message,
+        );
+      }
     } catch (err) {
+      setTriggerState("error");
+      setTimeout(() => setTriggerState("idle"), 3_000);
       import("axios").then(({ isAxiosError }) => {
         const msg =
           isAxiosError(err) && err.response?.status === 409
             ? "Already running"
             : getErrorMessage(err, "Trigger failed");
-        setTriggerError(msg);
-      }).catch(() => setTriggerError(getErrorMessage(err, "Trigger failed")));
-      setTriggerState("error");
-      setTimeout(() => setTriggerState("idle"), 3_000);
+        toast.error(`${worker.title} — trigger failed`, msg, 5_000);
+      }).catch(() => {
+        toast.error(`${worker.title} — trigger failed`, getErrorMessage(err, ""), 5_000);
+      });
     }
   }
 
@@ -311,10 +342,6 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
           <p className="font-semibold mb-1">Last error</p>
           <pre className="text-xs whitespace-pre-wrap break-words font-mono">{worker.message}</pre>
         </div>
-      )}
-
-      {triggerState === "error" && triggerError && (
-        <p className="text-sm text-rose-700">{triggerError}</p>
       )}
 
       <div className="flex gap-4 flex-wrap">

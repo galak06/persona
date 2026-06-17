@@ -562,7 +562,18 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         pids.append(proc.pid)
 
     msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
-    return TriggerResponse(ok=True, message=msg, label=label)
+
+    # Attach any at-limit rate counters so the UI can surface a warning
+    at_limit: dict[str, dict[str, int]] = {}
+    try:
+        from lib.rate_limiter import get_daily_status
+        for key, s in get_daily_status().items():
+            if s["remaining"] == 0:
+                at_limit[key] = s
+    except Exception:
+        pass
+
+    return TriggerResponse(ok=True, message=msg, label=label, rate_limits=at_limit or None)
 
 
 @app.get("/api/v1/schedule/missing", response_model=MissingFlowsResponse)
