@@ -546,8 +546,9 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     log_name = f"cron_{base}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
 
-    # Pre-flight: block if worker already ran successfully today (unless force)
-    if not body.force:
+    # Pre-flight: block if worker already ran successfully today (unless force or re_run_guard=0)
+    _re_run_guard = int(extra.get("re_run_guard", 1))
+    if not body.force and _re_run_guard != 0:
         import datetime as _dt
         _today = _dt.date.today().isoformat()
         _row = worker_db_get_one(brand_dir, task.id, brand_dir.name)
