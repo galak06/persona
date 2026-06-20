@@ -1,8 +1,8 @@
 ---
 name: content-ideator
 description: >
-  Generate new blog post ideas for {{brand.domain}} and append them to the
-  Google Sheet. Analyzes content gaps, trending topics, social media discussions,
+  Generate new blog post ideas for {{brand.domain}} and save them to the
+  Supabase content_ideas table. Analyzes content gaps, trending topics, social media discussions,
   seasonal opportunities, and competitor content to produce 5-10 high-quality
   ideas per run. Use when: "generate ideas", "what should I write", "new topics",
   "fill the content calendar", "brainstorm posts", "need more ideas".
@@ -11,7 +11,7 @@ description: >
 # Content Ideator Skill
 
 ## Purpose
-Generate high-quality blog post ideas for {{brand.domain}} that match the engineer-led brand voice, leverage {{brand.mascot}}'s personal context, and fill identified content gaps. Automatically append approved ideas to the Google Sheet to keep the content calendar current.
+Generate high-quality blog post ideas for {{brand.domain}} that match the engineer-led brand voice, leverage {{brand.mascot}}'s personal context, and fill identified content gaps. Automatically save approved ideas to the Supabase `content_ideas` table to keep the content calendar current.
 
 ## Key Context
 
@@ -29,10 +29,10 @@ Generate high-quality blog post ideas for {{brand.domain}} that match the engine
 3. **Lifestyle & Gear** — Leashes, collars, toys, beds, GPS trackers, vests, equipment reviews
 4. **Training** — Recall, commands, tricks, behavior modification, reactivity
 
-### Google Sheet
-- **URL**: https://docs.google.com/spreadsheets/d/1_GmIsHDd1y1hNSCx4S97l35UMFUNQX4NZSyTDlUxjsI/edit?gid=799238859
-- **Tab**: "posts"
-- **Columns**: Category | Topic | Target_Keyword | {{brand.mascot}}_Context | Post_Goal | Status | Input
+### Content Ideas Storage
+- **Table**: `content_ideas` in Supabase
+- **Columns**: `category | topic | target_keyword | nalla_context | post_goal | status | input`
+- **Status lifecycle**: `publish → enriching → approved/skipped → wp_draft → wp_published → social_queued → social_done`
 
 ## Workflow
 
@@ -79,7 +79,7 @@ Load these assets to understand current coverage:
 
 ### Step 2: Identify Content Gaps
 
-Cross-reference existing sheet ideas and published posts against all keyword categories:
+Cross-reference existing DB ideas and published posts against all keyword categories:
 
 ```
 Categories and their keyword coverage:
@@ -194,7 +194,7 @@ The site monetizes via affiliate links — every batch must surface keywords wit
 
 ### Step 4: Generate Ideas
 
-For each identified opportunity, create a complete idea matching the Google Sheet schema:
+For each identified opportunity, create a complete idea matching the `content_ideas` table schema:
 
 ```json
 {
@@ -210,7 +210,7 @@ For each identified opportunity, create a complete idea matching the Google Shee
 
 #### Quality Rules for Each Idea
 
-1. **No Duplicates** — Topic must NOT overlap with existing sheet ideas, published posts, OR ideas in `.claude/state/ideation_history.json` (case-insensitive keyword check). The history file persists ideas even after they're trimmed from the sheet by sheet-backup cleanup.
+1. **No Duplicates** — Topic must NOT overlap with existing DB ideas (`existing_topics()`), published posts, OR ideas in `.claude/state/ideation_history.json` (case-insensitive keyword check). The history file persists ideas even after they're trimmed from the sheet by sheet-backup cleanup.
 
 2. **{{brand.mascot}} Context Required** — Each idea must include a specific personal angle from {{brand.mascot}}'s experience
    - Examples: "I noticed {{brand.mascot}}'s coat improved after..."
@@ -350,7 +350,7 @@ Sources: [X gap], [Y trending], [Z PAA], [W seasonal]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ✅ Actions:
-• "approve all" → add all 8 ideas to sheet
+• "approve all" → save all 8 ideas to DB
 • "approve 1,3,5,7" → add only those IDs
 • "skip" → discard batch
 • "edit 2" → modify idea 2, then re-approve
@@ -491,15 +491,15 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 - `.claude/state/ideation_history.json` — generation history and deduplication
 
 ### External Tools
-- **Chrome MCP** — Google Sheet access and navigation
 - **Web Search** — trend research and competitor analysis
 - **Telegram API** — notification and approval workflow
+- **lib/ideas_db.py** — Supabase `content_ideas` table (insert, dedup, count)
 - **JSON utilities** — data parsing and state persistence
 
 ### Generated Files
 - `.claude/state/ideation_history.json` — updated after each run
-- `backups/ideas_[YYYY-MM-DD].json` — backup of approved ideas
-- Google Sheet "posts" tab — primary destination
+- `backups/ideas_[YYYY-MM-DD].json` — fallback backup if Supabase unreachable
+- `content_ideas` Supabase table — primary destination
 
 ## Tips for High-Quality Ideas
 
@@ -522,7 +522,7 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 **Input:** "Generate new ideas, we're low on content"
 
 **Process:**
-1. Load sheet: 12 existing ideas (3 pending, 9 published)
+1. Load DB: `existing_topics()` returns 12 known topics, `pending_count()` = 3
 2. Analyze gaps: Lifestyle/Gear category has ZERO recent posts
 3. Research trends: GPS trackers trending on IG (+18%), TikTok "dog gear hauls" viral
 4. PAA: "Best GPS tracker for dogs" → 8 related questions
@@ -530,7 +530,7 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 6. Score: Top 2 ideas score 8/10 (gap + trending), 4 ideas score 6-7/10
 7. Present: Telegram batch summary
 8. Approval: User approves 5 ideas
-9. Sheet: Add 5 rows to "posts" tab
+9. DB: `insert_idea()` × 5 → `content_ideas` table
 10. State: Update ideation_history.json with metadata
 
 **Output:** 5 new ideas in content calendar, ready for writing queue
