@@ -347,6 +347,19 @@ class RecipeRepository:
         )
         self._conn.commit()
 
+    def set_card_html(self, recipe_id: str, html_path: str) -> None:
+        """Record that the self-contained recipe card HTML was written (Worker HTML).
+
+        Stores the BRAND_DIR-relative ``html_path`` and stamps
+        ``card_html_created_at`` so the render worker can poll on it.
+        """
+        self._conn.execute(
+            "UPDATE recipes SET card_html_path = ?, card_html_created_at = CURRENT_TIMESTAMP, "
+            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (html_path, recipe_id),
+        )
+        self._conn.commit()
+
     # ------------------------------------------------- worker artifact markers
     def set_wp_post_id(self, recipe_id: str, wp_post_id: int) -> None:
         """Record the numeric WP post id (Worker A). Promotes it out of the
@@ -373,6 +386,14 @@ class RecipeRepository:
             "UPDATE recipes SET slides_count = ?, slides_created_at = ?, "
             "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (slides_count, ts, recipe_id),
+        )
+        self._conn.commit()
+
+    def set_image_created_at(self, recipe_id: str, ts: str) -> None:
+        """Record that the hero image was saved (Worker E)."""
+        self._conn.execute(
+            "UPDATE recipes SET image_created_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (ts, recipe_id),
         )
         self._conn.commit()
 
@@ -531,6 +552,12 @@ class RecipeRepository:
             pdf_url=(
                 sql_row["pdf_url"]
                 if "pdf_url" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
+            image_created_at=(
+                sql_row["image_created_at"]
+                if "image_created_at" in sql_row.keys()  # noqa: SIM118
                 else ""
             )
             or "",

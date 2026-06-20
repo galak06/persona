@@ -162,6 +162,9 @@ class RecipeRow:
     # never set on insert/upsert, so DB defaults apply on scrape.
     wp_post_id: int | None = None          # Worker A: numeric WP draft/post id
     pdf_url: str = ""                      # Worker A: uploaded recipe-card PDF url
+    image_created_at: str = ""             # Worker E: ISO ts when hero image saved
+    card_html_path: str = ""               # Worker HTML: BRAND_DIR-relative path to card HTML
+    card_html_created_at: str = ""         # Worker HTML: ISO ts when card HTML written
     slides_created_at: str = ""            # Worker B: ISO ts when slides saved
     slides_count: int = 0                  # Worker B: number of slides saved
     reel_created_at: str = ""              # Worker C: ISO ts when source.mp4 made

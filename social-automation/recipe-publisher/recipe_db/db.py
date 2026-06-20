@@ -73,7 +73,10 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "slides_count": "INTEGER DEFAULT 0",
         "reel_created_at": "TEXT DEFAULT ''",
         "audio_ready_at": "TEXT DEFAULT ''",
+        "image_created_at": "TEXT DEFAULT ''",
         "social_published_at": "TEXT DEFAULT ''",
+        "card_html_path": "TEXT DEFAULT ''",
+        "card_html_created_at": "TEXT DEFAULT ''",
     },
 }
 

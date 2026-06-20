@@ -9,6 +9,8 @@ import {
   type RecipeDetail,
 } from "../api/recipes";
 import { getErrorMessage } from "../api/client";
+import { triggerWorker } from "../api/workers";
+import { useToast } from "../components/ui/Toast";
 import { AffiliateProductsSection } from "./RecipeLifecycle";
 import { PagePreviewModal } from "./RecipePagePreview";
 import { RecipeMediaSection } from "./RecipeMediaSection";
@@ -290,6 +292,8 @@ export function RecipeDrawer({
 }) {
   const [igModal, setIgModal] = useState<PublishChannel | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [imgLoading, setImgLoading] = useState(false);
+  const { toast } = useToast();
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div
@@ -321,13 +325,53 @@ export function RecipeDrawer({
               {recipe.category && <span>{recipe.category}</span>}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowPreview(true)}
-              className="mb-4 inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
-            >
-              🔍 Preview page
-            </button>
+            <div className="mb-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPreview(true)}
+                className="inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600"
+              >
+                🔍 Preview page
+              </button>
+              {recipe.wp_url && (
+                <>
+                  <button
+                    type="button"
+                    disabled={imgLoading}
+                    onClick={() => {
+                      setImgLoading(true);
+                      triggerWorker("dogfood-worker-image", { recipeIds: [recipe.id] })
+                        .then(() => {
+                          toast.success("Image generation queued");
+                        })
+                        .catch((err: unknown) => {
+                          toast.error(
+                            "Failed to queue image generation",
+                            getErrorMessage(err),
+                          );
+                        })
+                        .finally(() => {
+                          setImgLoading(false);
+                        });
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {imgLoading ? "Generating..." : "🖼️ Generate Image"}
+                  </button>
+                  {recipe.card_html_path && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.open(`file://${recipe.card_html_path}`, "_blank")
+                      }
+                      className="inline-flex items-center gap-1.5 rounded-md bg-slate-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                    >
+                      🖼 View HTML
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
 
             <RecipeMediaSection recipeId={recipe.id} media={recipe.media} />
 

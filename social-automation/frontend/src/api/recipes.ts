@@ -16,6 +16,8 @@ export type RecipeMedia = {
 type RecipeCardFields = {
   card_path?: string;
   card_created_at?: string;
+  card_html_path?: string;
+  card_html_created_at?: string;
   season_tags?: string[];
   affiliate_products?: AffiliateProduct[];
   content_status?: string; // none|generated|pending|approved|rejected|published

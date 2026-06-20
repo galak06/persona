@@ -60,6 +60,8 @@ class RecipeSummary(BaseModel):
     artifacts_path: str = ""  # absolute local path to the artifact folder
     card_path: str = ""  # absolute local path to the rendered recipe card, or ""
     card_created_at: str = ""  # when the card was generated (ISO), or ""
+    card_html_path: str = ""  # absolute local path to the self-contained card HTML, or ""
+    card_html_created_at: str = ""  # when the card HTML was written (ISO), or ""
     wp_url: str = ""
     ig_url: str = ""
     fb_url: str = ""

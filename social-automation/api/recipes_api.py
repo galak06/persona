@@ -148,6 +148,8 @@ def _to_summary(row: RecipeRow) -> RecipeSummary:
         artifacts_path=_abs_artifacts(row.artifacts_path),
         card_path=_abs_artifacts(row.card_path),
         card_created_at=row.card_created_at,
+        card_html_path=_abs_artifacts(row.card_html_path),
+        card_html_created_at=row.card_html_created_at,
         wp_url=row.wp_url,
         ig_url=row.ig_url,
         fb_url=row.fb_url,
@@ -325,6 +327,115 @@ def recipe_page(recipe_id: str) -> HTMLResponse:
         associates_tag=os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip(),
     )
     return HTMLResponse(build_page_html(data))
+
+
+@router.get("/recipes/{recipe_id}/image-preview", response_class=HTMLResponse)
+def recipe_image_preview(recipe_id: str) -> HTMLResponse:
+    """Render the post_image.html recipe card with base64-embedded assets.
+
+    The card shows: food photo | dog avatar | recipe name | ingredients | timing.
+    All assets are inlined as base64 data URIs so the page is fully self-contained.
+    Returns a green placeholder when ``post_image.jpg`` has not yet been generated.
+    """
+    import base64
+    from html import escape
+
+    if settings.paths is None:
+        raise HTTPException(
+            status_code=500, detail="settings.paths unset; BRAND_DIR not resolved"
+        )
+
+    conn = _open_readonly()
+    try:
+        row = RecipeRepository(conn).get_recipe(recipe_id)
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"no recipe with id '{recipe_id}'")
+
+    template_path = _RECIPE_PUBLISHER / "templates" / "post_image.html"
+    if not template_path.exists():
+        raise HTTPException(
+            status_code=500, detail=f"post_image.html not found at {template_path}"
+        )
+    html = template_path.read_text(encoding="utf-8")
+
+    # --- Food photo (left panel) ---
+    img_path = settings.paths.campaigns_dir / "recipes" / "ready" / recipe_id / "post_image.jpg"
+    if img_path.exists():
+        img_b64 = base64.b64encode(img_path.read_bytes()).decode()
+        food_photo_html = f'<img class="food-photo" src="data:image/jpeg;base64,{img_b64}" alt="recipe">'
+    else:
+        food_photo_html = '<div class="photo-placeholder">🐾</div>'
+
+    # --- Dog avatar (brand logo) ---
+    brand_dir = settings.paths.brand_dir
+    avatar_src = ""
+    for candidate in [
+        brand_dir / "images" / "badge.png",
+        brand_dir / "images" / "badge.jpg",
+        brand_dir / "data" / "assets" / "badge.png",
+        brand_dir / "data" / "assets" / "nalla-avatar.png",
+        brand_dir / "data" / "assets" / "logo.png",
+    ]:
+        if candidate.exists():
+            ext = candidate.suffix.lstrip(".")
+            mime = "png" if ext == "png" else "jpeg"
+            b64 = base64.b64encode(candidate.read_bytes()).decode()
+            avatar_src = f"data:image/{mime};base64,{b64}"
+            break
+
+    if avatar_src:
+        dog_avatar_html = f'<img class="brand-avatar" src="{avatar_src}" alt="Nalla">'
+    else:
+        dog_avatar_html = '<div class="avatar-placeholder">🐶</div>'
+
+    # --- Ingredients ---
+    MAX_INGREDIENTS = 12
+    items = (row.ingredients or [])[:MAX_INGREDIENTS]
+    ing_lines = []
+    for ing in items:
+        qty_unit = " ".join(filter(None, [ing.qty, ing.unit]))
+        qty_html = f'<span class="ing-qty">{escape(qty_unit)}</span> ' if qty_unit else ""
+        item_text = escape(ing.item)
+        if ing.notes:
+            item_text += f', <em style="color:#888;font-size:13px">{escape(ing.notes)}</em>'
+        ing_lines.append(
+            f'<li class="ing-item"><span class="ing-dot"></span>'
+            f'<span>{qty_html}{item_text}</span></li>'
+        )
+    ingredients_html = "\n        ".join(ing_lines)
+
+    # --- Meta bar (prep / cook / servings) ---
+    def _fmt_time(minutes: int) -> str:
+        if not minutes:
+            return "—"
+        return f"{minutes} min" if minutes < 60 else f"{minutes // 60}h {minutes % 60}m".replace(" 0m", "")
+
+    meta_items = [
+        ("Prep", _fmt_time(row.prep_minutes)),
+        ("Cook", _fmt_time(row.cook_minutes)),
+    ]
+    if row.servings:
+        meta_items.append(("Serves", escape(str(row.servings))))
+
+    meta_html = "\n        ".join(
+        f'<div class="meta-item">'
+        f'<span class="meta-label">{label}</span>'
+        f'<span class="meta-value">{value}</span>'
+        f'</div>'
+        for label, value in meta_items
+    )
+
+    recipe_name = escape(row.display_name or row.name or recipe_id)
+
+    html = html.replace("{{FOOD_PHOTO_HTML}}", food_photo_html)
+    html = html.replace("{{DOG_AVATAR_HTML}}", dog_avatar_html)
+    html = html.replace("{{RECIPE_NAME}}", recipe_name)
+    html = html.replace("{{INGREDIENTS_HTML}}", ingredients_html)
+    html = html.replace("{{META_HTML}}", meta_html)
+
+    return HTMLResponse(html)
 
 
 @router.post("/recipes/sync-publish", response_model=SyncResponse)

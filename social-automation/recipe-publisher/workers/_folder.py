@@ -41,7 +41,7 @@ def badge_path() -> str | None:
     brand = os.environ.get("BRAND_DIR")
     if not brand:
         return None
-    badge = Path(brand) / "data" / "media" / "nalla-approved-badge.png"
+    badge = Path(brand) / "images" / "badge.png"
     return str(badge) if badge.exists() else None
 
 
