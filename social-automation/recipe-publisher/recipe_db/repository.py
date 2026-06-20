@@ -1,27 +1,43 @@
 # pyright: reportMissingImports=false
-"""Data-access layer for raw scrapes and normalized recipes.
-
-`RecipeRepository` wraps a single sqlite3 connection and owns all (de)serialization
-of JSON columns. Dedup is enforced on two keys: exact `content_hash` and the
-normalized-title slug (`recipes.id`).
-"""
+"""Data-access layer for raw scrapes and normalized recipes (Supabase backend)."""
 
 from __future__ import annotations
 
-import json
 import logging
-import sqlite3
+import sys
 from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, cast
 
 from recipe_db.models import ContentStatus, Ingredient, RecipeRow
 
+_SA_ROOT = Path(__file__).resolve().parents[2]
+if str(_SA_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SA_ROOT))
+
+from lib.supabase_client import get_client
+
 logger = logging.getLogger(__name__)
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _j(val: Any, default: Any) -> Any:
+    """Return val as-is if already a Python object; parse JSON string if needed."""
+    if val is None:
+        return default
+    if isinstance(val, str):
+        import json
+        return json.loads(val) if val else default
+    return val
 
 
 def _channel_urls(
     publish_status: dict[str, dict[str, str]],
 ) -> tuple[str, str, str]:
-    """Extract flat (wp_url, ig_url, fb_url) from a publish_status dict."""
     return (
         publish_status.get("wp", {}).get("url", ""),
         publish_status.get("ig", {}).get("url", ""),
@@ -29,11 +45,71 @@ def _channel_urls(
     )
 
 
-class RecipeRepository:
-    """CRUD + dedup operations over the recipe tables."""
+def _row_to_recipe(row: Any) -> RecipeRow:
+    """Deserialize a Supabase row (JSONB cols already parsed) into a RecipeRow."""
+    raw_ings = _j(row.get("ingredients"), [])
+    ingredients = [Ingredient(**ing) for ing in raw_ings]
+    return RecipeRow(
+        id=row.get("id", ""),
+        name=row.get("name") or row.get("title") or "",
+        display_name=row.get("display_name") or "",
+        artifacts_path=row.get("artifacts_path") or "",
+        card_path=row.get("card_path") or "",
+        card_created_at=row.get("card_created_at") or "",
+        card_html_created_at=row.get("card_html_created_at") or "",
+        wp_url=row.get("wp_url") or "",
+        ig_url=row.get("ig_url") or "",
+        fb_url=row.get("fb_url") or "",
+        ingredients=ingredients,
+        steps=_j(row.get("steps"), []),
+        prep_minutes=row.get("prep_minutes") or 0,
+        cook_minutes=row.get("cook_minutes") or 0,
+        total_minutes=row.get("total_minutes") or 0,
+        servings=row.get("servings") or "",
+        nutrition=_j(row.get("nutrition"), {}),
+        category=row.get("category") or "",
+        tags=_j(row.get("tags"), []),
+        hero_image_url=row.get("hero_image_url") or "",
+        source_url=row.get("source_url") or "",
+        source_name=row.get("source_name") or "",
+        license=row.get("license") or "",
+        content_hash=row.get("content_hash") or "",
+        publish_status=_j(row.get("publish_status"), {}),
+        status=row.get("status") or "",
+        toxic_flags=_j(row.get("toxic_flags"), []),
+        dog_safe=bool(row.get("dog_safe")),
+        override=bool(row.get("override")),
+        season_tags=_j(row.get("season_tags"), []),
+        affiliate_products=_j(row.get("affiliate_products"), []),
+        generated_content=_j(row.get("generated_content"), {}),
+        content_status=row.get("content_status") or "none",
+        publish_results=_j(row.get("publish_results"), []),
+        wp_post_id=row.get("wp_post_id"),
+        pdf_url=row.get("pdf_url") or "",
+        image_created_at=row.get("image_created_at") or "",
+        slides_created_at=row.get("slides_created_at") or "",
+        slides_count=row.get("slides_count") or 0,
+        reel_created_at=row.get("reel_created_at") or "",
+        audio_ready_at=row.get("audio_ready_at") or "",
+        social_published_at=row.get("social_published_at") or "",
+    )
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
+
+def _rows(data: Any) -> list[Any]:
+    """Cast supabase result.data (JSON alias) to a plain list for safe iteration."""
+    return cast(list[Any], data)
+
+
+class RecipeRepository:
+    """CRUD + dedup operations over the recipe tables (Supabase backend)."""
+
+    def __init__(self, conn: Any = None) -> None:
+        # conn param kept for backward compat; Supabase client used directly
+        pass
+
+    def _update(self, recipe_id: str, **fields: Any) -> None:
+        payload: Any = {"updated_at": _now(), **fields}
+        get_client().table("recipes").update(payload).eq("id", recipe_id).execute()
 
     # ------------------------------------------------------------------ raw
     def insert_raw(
@@ -45,556 +121,171 @@ class RecipeRepository:
         scraped_at: str,
     ) -> bool:
         """Insert an immutable raw scrape. Returns False on duplicate hash."""
-        cur = self._conn.execute(
-            """
-            INSERT OR IGNORE INTO raw_scrapes
-                (source_url, source_name, scraped_at, content_hash, payload)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                source_url,
-                source_name,
-                scraped_at,
-                content_hash,
-                json.dumps(payload, ensure_ascii=False),
-            ),
+        raw: Any = {
+            "source_url": source_url,
+            "source_name": source_name,
+            "scraped_at": scraped_at,
+            "content_hash": content_hash,
+            "payload": payload,
+        }
+        result = (
+            get_client()
+            .table("raw_scrapes")
+            .upsert(raw, on_conflict="content_hash", ignore_duplicates=True)
+            .execute()
         )
-        self._conn.commit()
-        inserted = cur.rowcount > 0
+        inserted = len(result.data) > 0
         if not inserted:
             logger.debug("raw scrape duplicate skipped: %s", content_hash)
         return inserted
 
     # -------------------------------------------------------------- recipes
     def upsert_recipe(self, row: RecipeRow) -> None:
-        """Insert or replace a recipe, serializing list/dict fields to JSON.
-
-        `created_at` is preserved on update via COALESCE; `updated_at` is set to
-        SQL CURRENT_TIMESTAMP. `id` is derived from the name slug if unset.
-        """
+        """Insert or replace a recipe. created_at is preserved on conflict."""
         recipe_id = row.ensure_id()
-        ingredients_json = json.dumps(
-            [asdict(ing) for ing in row.ingredients], ensure_ascii=False
-        )
         wp_url, ig_url, fb_url = _channel_urls(row.publish_status)
-        self._conn.execute(
-            """
-            INSERT INTO recipes (
-                id, title, name, display_name, artifacts_path,
-                wp_url, ig_url, fb_url, category,
-                prep_minutes, cook_minutes, total_minutes, servings,
-                ingredients, steps, nutrition, tags, hero_image_url, source_url,
-                source_name, license, content_hash, status, toxic_flags,
-                dog_safe, override, publish_status, season_tags,
-                affiliate_products, generated_content, content_status,
-                publish_results, created_at, updated_at
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            )
-            ON CONFLICT(id) DO UPDATE SET
-                title          = excluded.title,
-                name           = excluded.name,
-                category       = excluded.category,
-                prep_minutes   = excluded.prep_minutes,
-                cook_minutes   = excluded.cook_minutes,
-                total_minutes  = excluded.total_minutes,
-                servings       = excluded.servings,
-                ingredients    = excluded.ingredients,
-                steps          = excluded.steps,
-                nutrition      = excluded.nutrition,
-                tags           = excluded.tags,
-                hero_image_url = excluded.hero_image_url,
-                source_url     = excluded.source_url,
-                source_name    = excluded.source_name,
-                license        = excluded.license,
-                content_hash   = excluded.content_hash,
-                status         = excluded.status,
-                toxic_flags    = excluded.toxic_flags,
-                dog_safe       = excluded.dog_safe,
-                override       = excluded.override,
-                season_tags    = excluded.season_tags,
-                affiliate_products = excluded.affiliate_products,
-                generated_content = excluded.generated_content,
-                content_status = excluded.content_status,
-                publish_results = excluded.publish_results,
-                created_at     = COALESCE(recipes.created_at, CURRENT_TIMESTAMP),
-                updated_at     = CURRENT_TIMESTAMP
-            """,
-            (
-                recipe_id,
-                row.name,
-                row.name,
-                row.display_name,
-                row.artifacts_path,
-                wp_url,
-                ig_url,
-                fb_url,
-                row.category,
-                row.prep_minutes,
-                row.cook_minutes,
-                row.total_minutes,
-                row.servings,
-                ingredients_json,
-                json.dumps(row.steps, ensure_ascii=False),
-                json.dumps(row.nutrition, ensure_ascii=False),
-                json.dumps(row.tags, ensure_ascii=False),
-                row.hero_image_url,
-                row.source_url,
-                row.source_name,
-                row.license,
-                row.content_hash,
-                row.status,
-                json.dumps(row.toxic_flags, ensure_ascii=False),
-                1 if row.dog_safe else 0,
-                1 if row.override else 0,
-                json.dumps(row.publish_status, ensure_ascii=False),
-                json.dumps(row.season_tags, ensure_ascii=False),
-                json.dumps(row.affiliate_products, ensure_ascii=False),
-                json.dumps(row.generated_content, ensure_ascii=False),
-                row.content_status,
-                json.dumps(row.publish_results, ensure_ascii=False),
-            ),
-        )
-        self._conn.commit()
+        data: Any = {
+            "id": recipe_id,
+            "title": row.name,
+            "name": row.name,
+            "display_name": row.display_name,
+            "artifacts_path": row.artifacts_path,
+            "wp_url": wp_url,
+            "ig_url": ig_url,
+            "fb_url": fb_url,
+            "category": row.category,
+            "prep_minutes": row.prep_minutes,
+            "cook_minutes": row.cook_minutes,
+            "total_minutes": row.total_minutes,
+            "servings": row.servings,
+            "ingredients": [asdict(ing) for ing in row.ingredients],
+            "steps": row.steps,
+            "nutrition": row.nutrition,
+            "tags": row.tags,
+            "hero_image_url": row.hero_image_url,
+            "source_url": row.source_url,
+            "source_name": row.source_name,
+            "license": row.license,
+            "content_hash": row.content_hash,
+            "status": row.status,
+            "toxic_flags": row.toxic_flags,
+            "dog_safe": row.dog_safe,
+            "override": row.override,
+            "publish_status": row.publish_status,
+            "season_tags": row.season_tags,
+            "affiliate_products": row.affiliate_products,
+            "generated_content": row.generated_content,
+            "content_status": row.content_status,
+            "publish_results": row.publish_results,
+            "updated_at": _now(),
+        }
+        get_client().table("recipes").upsert(data).execute()
 
     def get_recipe(self, recipe_id: str) -> RecipeRow | None:
-        """Fetch one recipe by slug id, or None."""
-        cur = self._conn.execute(
-            "SELECT * FROM recipes WHERE id = ?", (recipe_id,)
-        )
-        sql_row = cur.fetchone()
-        return self._row_to_recipe(sql_row) if sql_row is not None else None
+        result = get_client().table("recipes").select("*").eq("id", recipe_id).execute()
+        rows = _rows(result.data)
+        return _row_to_recipe(rows[0]) if rows else None
 
-    def list_recipes(self, status: str | None = None) -> list[RecipeRow]:
-        """List recipes, optionally filtered by status."""
-        if status is None:
-            cur = self._conn.execute("SELECT * FROM recipes ORDER BY id")
-        else:
-            cur = self._conn.execute(
-                "SELECT * FROM recipes WHERE status = ? ORDER BY id", (status,)
-            )
-        return [self._row_to_recipe(r) for r in cur.fetchall()]
+    def list_recipes(self, status: str | None = None, limit: int = 0) -> list[RecipeRow]:
+        q = get_client().table("recipes").select("*").order("id")
+        if status is not None:
+            q = q.eq("status", status)
+        if limit > 0:
+            q = q.limit(limit)
+        return [_row_to_recipe(r) for r in _rows(q.execute().data)]
 
     # ----------------------------------------------------------------- dedup
     def exists_by_content_hash(self, content_hash: str) -> bool:
-        """True if any recipe already has this exact content hash."""
-        cur = self._conn.execute(
-            "SELECT 1 FROM recipes WHERE content_hash = ? LIMIT 1",
-            (content_hash,),
-        )
-        return cur.fetchone() is not None
+        result = get_client().table("recipes").select("id").eq("content_hash", content_hash).limit(1).execute()
+        return len(result.data) > 0
 
     def exists_by_id(self, recipe_id: str) -> bool:
-        """True if a recipe with this slug id already exists."""
-        cur = self._conn.execute(
-            "SELECT 1 FROM recipes WHERE id = ? LIMIT 1", (recipe_id,)
-        )
-        return cur.fetchone() is not None
+        result = get_client().table("recipes").select("id").eq("id", recipe_id).limit(1).execute()
+        return len(result.data) > 0
 
     # ---------------------------------------------------------------- status
     def set_status(self, recipe_id: str, status: str) -> None:
-        """Advance a recipe's pipeline status."""
-        self._conn.execute(
-            "UPDATE recipes SET status = ?, updated_at = CURRENT_TIMESTAMP "
-            "WHERE id = ?",
-            (status, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, status=status)
 
-    def set_safety(
-        self, recipe_id: str, toxic_flags: list[str], dog_safe: bool
-    ) -> None:
-        """Record safety-check results on a recipe."""
-        self._conn.execute(
-            "UPDATE recipes SET toxic_flags = ?, dog_safe = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (
-                json.dumps(toxic_flags, ensure_ascii=False),
-                1 if dog_safe else 0,
-                recipe_id,
-            ),
-        )
-        self._conn.commit()
+    def set_safety(self, recipe_id: str, toxic_flags: list[str], dog_safe: bool) -> None:
+        self._update(recipe_id, toxic_flags=toxic_flags, dog_safe=dog_safe)
 
     def set_publish_status(
         self, recipe_id: str, publish_status: dict[str, dict[str, str]]
     ) -> None:
-        """Store per-channel publish status (wp/pdf/ig/fb) + flat URLs."""
         wp_url, ig_url, fb_url = _channel_urls(publish_status)
-        self._conn.execute(
-            "UPDATE recipes SET publish_status = ?, wp_url = ?, ig_url = ?, "
-            "fb_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (
-                json.dumps(publish_status, ensure_ascii=False),
-                wp_url, ig_url, fb_url, recipe_id,
-            ),
+        self._update(
+            recipe_id,
+            publish_status=publish_status,
+            wp_url=wp_url,
+            ig_url=ig_url,
+            fb_url=fb_url,
         )
-        self._conn.commit()
 
     def set_season_tags(self, recipe_id: str, season_tags: list[str]) -> None:
-        """Store the seasons a recipe suits (subset of pipeline.seasons.SEASONS).
+        self._update(recipe_id, season_tags=season_tags)
 
-        Empty list = all-season. Written by the seasonal-selection phase.
-        """
-        self._conn.execute(
-            "UPDATE recipes SET season_tags = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (json.dumps(season_tags, ensure_ascii=False), recipe_id),
-        )
-        self._conn.commit()
-
-    def set_affiliate_products(
-        self, recipe_id: str, products: list[dict[str, str]]
-    ) -> None:
-        """Store matched affiliate products (list of {key, asin, display}).
-
-        Written by the affiliate-matching phase; empty list = no matches.
-        """
-        self._conn.execute(
-            "UPDATE recipes SET affiliate_products = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (json.dumps(products, ensure_ascii=False), recipe_id),
-        )
-        self._conn.commit()
+    def set_affiliate_products(self, recipe_id: str, products: list[dict[str, str]]) -> None:
+        self._update(recipe_id, affiliate_products=products)
 
     def set_generated_content(
         self, recipe_id: str, content: dict[str, str], content_status: str
     ) -> None:
-        """Store generated draft content and advance the content-status lifecycle."""
-        self._conn.execute(
-            "UPDATE recipes SET generated_content = ?, content_status = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (json.dumps(content, ensure_ascii=False), content_status, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, generated_content=content, content_status=content_status)
 
     def set_content_status(self, recipe_id: str, content_status: str) -> None:
-        """Advance the publish-content lifecycle state (see models.ContentStatus)."""
-        self._conn.execute(
-            "UPDATE recipes SET content_status = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (content_status, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, content_status=content_status)
 
-    def set_publish_results(
-        self, recipe_id: str, results: list[dict[str, str]]
-    ) -> None:
-        """Store per-attempt publish outcomes (the local outcome log)."""
-        self._conn.execute(
-            "UPDATE recipes SET publish_results = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (json.dumps(results, ensure_ascii=False), recipe_id),
-        )
-        self._conn.commit()
-
-    def list_by_content_status(self, content_status: str) -> list[RecipeRow]:
-        """List recipes in a given content-lifecycle state, ordered by id."""
-        cur = self._conn.execute(
-            "SELECT * FROM recipes WHERE content_status = ? ORDER BY id",
-            (content_status,),
-        )
-        return [self._row_to_recipe(r) for r in cur.fetchall()]
-
-    def list_published_ids(self) -> set[str]:
-        """Return IDs of all recipes already published (by content_status or wp_url)."""
-        rows = self._conn.execute(
-            "SELECT id FROM recipes "
-            "WHERE content_status = ? OR (wp_url IS NOT NULL AND wp_url != '')",
-            (ContentStatus.PUBLISHED,),
-        ).fetchall()
-        return {row["id"] for row in rows}
+    def set_publish_results(self, recipe_id: str, results: list[dict[str, str]]) -> None:
+        self._update(recipe_id, publish_results=results)
 
     def set_display_name(self, recipe_id: str, display_name: str) -> None:
-        """Store the brand-voice display name shown in place of the source title."""
-        self._conn.execute(
-            "UPDATE recipes SET display_name = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (display_name, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, display_name=display_name)
 
     def set_artifacts_path(self, recipe_id: str, artifacts_path: str) -> None:
-        """Store the recipe's local artifact folder (relative to BRAND_DIR)."""
-        self._conn.execute(
-            "UPDATE recipes SET artifacts_path = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (artifacts_path, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, artifacts_path=artifacts_path)
 
     def set_html_exported_at(self, recipe_id: str, ts: str) -> None:
-        """Record the ISO timestamp when recipe_page.html was last written."""
-        self._conn.execute(
-            "UPDATE recipes SET html_exported_at = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, html_exported_at=ts)
 
     def set_card(self, recipe_id: str, card_path: str) -> None:
-        """Record that the static recipe card was created, with its file path.
-
-        Stores the BRAND_DIR-relative ``card_path`` and stamps
-        ``card_created_at`` so consumers can flag "card ready" and link the file.
-        """
-        self._conn.execute(
-            "UPDATE recipes SET card_path = ?, card_created_at = CURRENT_TIMESTAMP, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (card_path, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, card_path=card_path, card_created_at=_now())
 
     def set_card_html(self, recipe_id: str, html_path: str) -> None:
-        """Record that the self-contained recipe card HTML was written (Worker HTML).
+        self._update(recipe_id, card_html_path=html_path, card_html_created_at=_now())
 
-        Stores the BRAND_DIR-relative ``html_path`` and stamps
-        ``card_html_created_at`` so the render worker can poll on it.
-        """
-        self._conn.execute(
-            "UPDATE recipes SET card_html_path = ?, card_html_created_at = CURRENT_TIMESTAMP, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (html_path, recipe_id),
-        )
-        self._conn.commit()
-
-    # ------------------------------------------------- worker artifact markers
     def set_wp_post_id(self, recipe_id: str, wp_post_id: int) -> None:
-        """Record the numeric WP post id (Worker A). Promotes it out of the
-        folder metadata.json so downstream workers need no filesystem read."""
-        self._conn.execute(
-            "UPDATE recipes SET wp_post_id = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (wp_post_id, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, wp_post_id=wp_post_id)
 
     def set_pdf_url(self, recipe_id: str, pdf_url: str) -> None:
-        """Record the uploaded recipe-card PDF url (Worker A's PDF arm)."""
-        self._conn.execute(
-            "UPDATE recipes SET pdf_url = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (pdf_url, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, pdf_url=pdf_url)
 
     def set_slides(self, recipe_id: str, slides_count: int, ts: str) -> None:
-        """Record that the carousel post slides were saved (Worker B)."""
-        self._conn.execute(
-            "UPDATE recipes SET slides_count = ?, slides_created_at = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (slides_count, ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, slides_count=slides_count, slides_created_at=ts)
 
     def set_image_created_at(self, recipe_id: str, ts: str) -> None:
-        """Record that the hero image was saved (Worker E)."""
-        self._conn.execute(
-            "UPDATE recipes SET image_created_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, image_created_at=ts)
 
     def set_reel(self, recipe_id: str, ts: str) -> None:
-        """Record that the silent reel (source.mp4) was composed (Worker C)."""
-        self._conn.execute(
-            "UPDATE recipes SET reel_created_at = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, reel_created_at=ts)
 
     def set_audio_ready(self, recipe_id: str, ts: str) -> None:
-        """Record that the operator's audio.mp3 was detected (Worker D gate)."""
-        self._conn.execute(
-            "UPDATE recipes SET audio_ready_at = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, audio_ready_at=ts)
 
     def set_social_published(self, recipe_id: str, ts: str) -> None:
-        """Record that IG/FB/Pinterest publishing completed (Worker D)."""
-        self._conn.execute(
-            "UPDATE recipes SET social_published_at = ?, "
-            "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (ts, recipe_id),
-        )
-        self._conn.commit()
+        self._update(recipe_id, social_published_at=ts)
 
-    # --------------------------------------------------------------- helpers
-    @staticmethod
-    def _row_to_recipe(sql_row: sqlite3.Row) -> RecipeRow:
-        """Deserialize a SQL row (JSON columns) into a RecipeRow."""
-        ingredients = [
-            Ingredient(**ing)
-            for ing in json.loads(sql_row["ingredients"] or "[]")
-        ]
-        return RecipeRow(
-            id=sql_row["id"],
-            name=sql_row["name"] or sql_row["title"],
-            display_name=(
-                sql_row["display_name"]
-                # sqlite3.Row `in` checks values, so .keys() is required.
-                if "display_name" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            artifacts_path=(
-                sql_row["artifacts_path"]
-                if "artifacts_path" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            card_path=(
-                sql_row["card_path"]
-                if "card_path" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            card_created_at=(
-                sql_row["card_created_at"]
-                if "card_created_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            wp_url=(
-                sql_row["wp_url"]
-                if "wp_url" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            ig_url=(
-                sql_row["ig_url"]
-                if "ig_url" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            fb_url=(
-                sql_row["fb_url"]
-                if "fb_url" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            ingredients=ingredients,
-            steps=json.loads(sql_row["steps"] or "[]"),
-            prep_minutes=sql_row["prep_minutes"] or 0,
-            cook_minutes=sql_row["cook_minutes"] or 0,
-            total_minutes=sql_row["total_minutes"] or 0,
-            servings=sql_row["servings"] or "",
-            nutrition=json.loads(sql_row["nutrition"] or "{}"),
-            category=sql_row["category"] or "",
-            tags=json.loads(sql_row["tags"] or "[]"),
-            hero_image_url=sql_row["hero_image_url"] or "",
-            source_url=sql_row["source_url"] or "",
-            source_name=sql_row["source_name"] or "",
-            license=sql_row["license"] or "",
-            content_hash=sql_row["content_hash"] or "",
-            publish_status=json.loads(
-                (
-                    sql_row["publish_status"]
-                    # sqlite3.Row `in` checks values, so .keys() is required.
-                    if "publish_status" in sql_row.keys()  # noqa: SIM118
-                    else None
-                )
-                or "{}"
-            ),
-            status=sql_row["status"],
-            toxic_flags=json.loads(sql_row["toxic_flags"] or "[]"),
-            dog_safe=bool(sql_row["dog_safe"]),
-            override=bool(sql_row["override"]),
-            season_tags=json.loads(
-                (
-                    sql_row["season_tags"]
-                    # sqlite3.Row `in` checks values, so .keys() is required.
-                    if "season_tags" in sql_row.keys()  # noqa: SIM118
-                    else None
-                )
-                or "[]"
-            ),
-            affiliate_products=json.loads(
-                (
-                    sql_row["affiliate_products"]
-                    if "affiliate_products" in sql_row.keys()  # noqa: SIM118
-                    else None
-                )
-                or "[]"
-            ),
-            generated_content=json.loads(
-                (
-                    sql_row["generated_content"]
-                    if "generated_content" in sql_row.keys()  # noqa: SIM118
-                    else None
-                )
-                or "{}"
-            ),
-            content_status=(
-                sql_row["content_status"]
-                if "content_status" in sql_row.keys()  # noqa: SIM118
-                else None
-            )
-            or "none",
-            publish_results=json.loads(
-                (
-                    sql_row["publish_results"]
-                    if "publish_results" in sql_row.keys()  # noqa: SIM118
-                    else None
-                )
-                or "[]"
-            ),
-            wp_post_id=(
-                sql_row["wp_post_id"]
-                if "wp_post_id" in sql_row.keys()  # noqa: SIM118
-                else None
-            ),
-            pdf_url=(
-                sql_row["pdf_url"]
-                if "pdf_url" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            card_html_created_at=(
-                sql_row["card_html_created_at"]
-                if "card_html_created_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            image_created_at=(
-                sql_row["image_created_at"]
-                if "image_created_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            slides_created_at=(
-                sql_row["slides_created_at"]
-                if "slides_created_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            slides_count=(
-                sql_row["slides_count"]
-                if "slides_count" in sql_row.keys()  # noqa: SIM118
-                else 0
-            )
-            or 0,
-            reel_created_at=(
-                sql_row["reel_created_at"]
-                if "reel_created_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            audio_ready_at=(
-                sql_row["audio_ready_at"]
-                if "audio_ready_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
-            social_published_at=(
-                sql_row["social_published_at"]
-                if "social_published_at" in sql_row.keys()  # noqa: SIM118
-                else ""
-            )
-            or "",
+    # --------------------------------------------------------------- queries
+    def list_by_content_status(self, content_status: str) -> list[RecipeRow]:
+        result = (
+            get_client().table("recipes").select("*").eq("content_status", content_status).order("id").execute()
         )
+        return [_row_to_recipe(r) for r in _rows(result.data)]
+
+    def list_published_ids(self) -> set[str]:
+        result = get_client().table("recipes").select("id,content_status,wp_url").execute()
+        rows = _rows(result.data)
+        return {
+            str(r["id"]) for r in rows
+            if r.get("content_status") == ContentStatus.PUBLISHED or r.get("wp_url", "")
+        }

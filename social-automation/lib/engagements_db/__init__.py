@@ -35,10 +35,8 @@ __all__ = [
 ]
 
 
-def _repo() -> tuple[Any, EngagementsRepository]:
-    conn = connect()
-    migrate(conn)
-    return conn, EngagementsRepository(conn)
+def _repo() -> EngagementsRepository:
+    return EngagementsRepository(None)
 
 
 def record_publish(
@@ -62,25 +60,21 @@ def record_publish(
     keep rows light.
     """
     try:
-        conn, repo = _repo()
-        try:
-            return repo.record(
-                {
-                    "platform": platform,
-                    "kind": kind,
-                    "status": status,
-                    "target_name": target_name,
-                    "target_url": target_url,
-                    "permalink": permalink,
-                    "content": (content or "")[:500],
-                    "source_ref": source_ref,
-                    "ref": ref,
-                    "error": error[:300] if error else "",
-                    "posted_at": posted_at,
-                }
-            )
-        finally:
-            conn.close()
+        return _repo().record(
+            {
+                "platform": platform,
+                "kind": kind,
+                "status": status,
+                "target_name": target_name,
+                "target_url": target_url,
+                "permalink": permalink,
+                "content": (content or "")[:500],
+                "source_ref": source_ref,
+                "ref": ref,
+                "error": error[:300] if error else "",
+                "posted_at": posted_at,
+            }
+        )
     except Exception as exc:  # logging must never break a publish
         logger.warning("engagements record_publish failed: %s", exc)
         return None
@@ -93,27 +87,13 @@ def list_engagements(
     status: str | None = None,
     limit: int = 200,
 ) -> list[dict[str, Any]]:
-    conn, repo = _repo()
-    try:
-        return repo.list_engagements(
-            platform=platform, kind=kind, status=status, limit=limit
-        )
-    finally:
-        conn.close()
+    return _repo().list_engagements(platform=platform, kind=kind, status=status, limit=limit)
 
 
 def counts() -> dict[str, int]:
-    conn, repo = _repo()
-    try:
-        return repo.counts()
-    finally:
-        conn.close()
+    return _repo().counts()
 
 
 def posted_comment_post_ids(platform: str, post_ids: list[str]) -> set[str]:
     """Of ``post_ids``, which already have a POSTED comment recorded (dedup guard)."""
-    conn, repo = _repo()
-    try:
-        return repo.posted_comment_post_ids(platform, post_ids)
-    finally:
-        conn.close()
+    return _repo().posted_comment_post_ids(platform, post_ids)

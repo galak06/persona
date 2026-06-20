@@ -91,12 +91,8 @@ def _load_from_db(db_path: Path) -> ScheduleConfig | None:
     try:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from lib import schedule_db  # noqa: PLC0415
-        conn = schedule_db.connect(str(db_path))
-        try:
-            rows = schedule_db.load_all(conn)
-        finally:
-            conn.close()
+        from lib import schedule_db
+        rows = schedule_db.load_all()
         raw_tasks: list[dict[str, Any]] = []
         for row in rows:
             task: dict[str, Any] = dict(row)
@@ -104,7 +100,7 @@ def _load_from_db(db_path: Path) -> ScheduleConfig | None:
             extra = task.pop("extra", None) or {}
             task.update(extra)
             raw_tasks.append(task)
-        config = ScheduleConfig(tasks=raw_tasks)
+        config = ScheduleConfig.model_validate({"tasks": raw_tasks})
         _log.info("schedule config: DB %s (%d tasks)", db_path, len(config.tasks))
         return config
     except ValidationError as exc:

@@ -1,0 +1,26 @@
+# Secrets
+.env
+.env.*
+.claude/settings.local.json
+
+# SQLite databases (moved to Supabase)
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Logs & runtime
+logs/*.log
+*.pid
+*.lock
+
+# OS
+.DS_Store

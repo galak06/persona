@@ -1,15 +1,12 @@
-"""Data-access layer for the engagements table.
+"""Data-access layer for the engagements table (Supabase backend).
 
-Dict-native (like ``groups_db``): ``record`` upserts one publish keyed by a stable
-``dedup_id`` so retries/failures-then-success collapse to one row; reads return
-plain dicts for the API.
+Same public API as the SQLite version — swap is transparent to callers.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -20,26 +17,26 @@ logger = logging.getLogger(__name__)
 
 
 def _brand_id() -> str:
-    """Stable brand slug = the BRAND_DIR folder name (e.g. ``dogfoodandfun``)."""
     brand_dir = os.environ.get("BRAND_DIR")
     return Path(brand_dir).name if brand_dir else "default"
+
+
+def _as_rows(data: Any) -> list[Any]:
+    """Normalise supabase result.data (JSON union) to a plain list."""
+    return list(data) if data else []
 
 
 class EngagementsRepository:
     """CRUD over the engagements table, dict-native to match the codebase."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._conn = conn
+    def __init__(self, conn: object | None = None) -> None:
+        pass  # conn ignored; Supabase client is obtained per-call
 
     # --------------------------------------------------------------- writes
     def record(self, rec: dict[str, Any]) -> str:
-        """Upsert one published post/comment. Returns its id.
+        """Upsert one published post/comment. Returns its id."""
+        from lib.supabase_client import get_client
 
-        Required keys: ``platform``, ``kind``. ``ref`` (the natural key) defaults
-        to source_ref / permalink / target_url when omitted. ``posted_at``
-        defaults to now (UTC). Re-recording the same (platform, kind, ref) updates
-        the row in place (e.g. failed → posted).
-        """
         platform = str(rec.get("platform", "")).strip()
         kind = str(rec.get("kind", "")).strip()
         if not platform or not kind:
@@ -61,19 +58,14 @@ class EngagementsRepository:
         values["status"] = rec.get("status") or "posted"
         values["posted_at"] = posted_at
 
-        cols = ["id", "brand_id", *ENGAGEMENT_COLUMNS]
-        vals: list[Any] = [eid, _brand_id(), *(values[c] for c in ENGAGEMENT_COLUMNS)]
-        placeholders = ", ".join("?" for _ in cols)
-        updates = ", ".join(f"{c}=excluded.{c}" for c in cols if c != "id")
-        self._conn.execute(
-            f"INSERT INTO engagements ({', '.join(cols)}, created_at, updated_at) "
-            f"VALUES ({placeholders}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "
-            f"ON CONFLICT(id) DO UPDATE SET {updates}, "
-            f"created_at=COALESCE(engagements.created_at, CURRENT_TIMESTAMP), "
-            f"updated_at=CURRENT_TIMESTAMP",
-            vals,
-        )
-        self._conn.commit()
+        row: dict[str, Any] = {
+            "id": eid,
+            "brand_id": _brand_id(),
+            **{c: values[c] for c in ENGAGEMENT_COLUMNS},
+        }
+
+        client = get_client()
+        client.table("engagements").upsert(row, on_conflict="id").execute()
         return eid
 
     # ---------------------------------------------------------------- reads
@@ -86,50 +78,59 @@ class EngagementsRepository:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Most-recent-first rows, optionally filtered by platform/kind/status."""
-        clauses: list[str] = []
-        params: list[Any] = []
-        for col, val in (("platform", platform), ("kind", kind), ("status", status)):
-            if val:
-                clauses.append(f"{col}=?")
-                params.append(val)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(max(1, min(limit, 1000)))
-        rows = self._conn.execute(
-            f"SELECT * FROM engagements {where} ORDER BY posted_at DESC LIMIT ?",
-            params,
-        ).fetchall()
-        return [dict(r) for r in rows]
+        from lib.supabase_client import get_client
+
+        q = get_client().table("engagements").select("*")
+        if platform:
+            q = q.eq("platform", platform)
+        if kind:
+            q = q.eq("kind", kind)
+        if status:
+            q = q.eq("status", status)
+        q = q.order("posted_at", desc=True).limit(max(1, min(limit, 1000)))
+        return [dict(r) for r in _as_rows(q.execute().data)]
 
     def get(self, eid: str) -> dict[str, Any] | None:
-        row = self._conn.execute(
-            "SELECT * FROM engagements WHERE id=?", (eid,)
-        ).fetchone()
-        return dict(row) if row is not None else None
+        from lib.supabase_client import get_client
+
+        result = get_client().table("engagements").select("*").eq("id", eid).limit(1).execute()
+        rows = _as_rows(result.data)
+        return dict(rows[0]) if rows else None
 
     def posted_comment_post_ids(self, platform: str, post_ids: list[str]) -> set[str]:
-        """Of ``post_ids``, which already have a POSTED comment recorded here.
+        """Of ``post_ids``, which already have a POSTED comment recorded here."""
+        from lib.supabase_client import get_client
 
-        The durable duplicate-comment guard: a posted-comment row blocks a second
-        comment on the same post even if the dedup cache was cleared. Comment rows
-        are keyed by ``dedup_id(platform, "comment", post_id)``.
-        """
+        result = (
+            get_client()
+            .table("engagements")
+            .select("id")
+            .eq("platform", platform)
+            .eq("kind", "comment")
+            .eq("status", "posted")
+            .execute()
+        )
+        posted_ids: set[str] = {str(dict(r).get("id", "")) for r in _as_rows(result.data)}
         out: set[str] = set()
         for pid in post_ids:
-            if not pid:
-                continue
-            eid = dedup_id(platform, "comment", pid)
-            row = self._conn.execute(
-                "SELECT 1 FROM engagements WHERE id=? AND status='posted' LIMIT 1",
-                (eid,),
-            ).fetchone()
-            if row is not None:
+            if pid and dedup_id(platform, "comment", pid) in posted_ids:
                 out.add(pid)
         return out
 
     def counts(self) -> dict[str, int]:
-        """Totals by ``{platform}:{kind}`` for posted rows (for UI summaries)."""
-        rows = self._conn.execute(
-            "SELECT platform, kind, COUNT(*) AS n FROM engagements "
-            "WHERE status='posted' GROUP BY platform, kind"
-        ).fetchall()
-        return {f"{r['platform']}:{r['kind']}": int(r["n"]) for r in rows}
+        """Totals by ``{platform}:{kind}`` for posted rows."""
+        from lib.supabase_client import get_client
+
+        result = (
+            get_client()
+            .table("engagements")
+            .select("platform,kind")
+            .eq("status", "posted")
+            .execute()
+        )
+        totals: dict[str, int] = {}
+        for item in _as_rows(result.data):
+            row: dict[str, Any] = dict(item)
+            key = f"{row.get('platform', '')}:{row.get('kind', '')}"
+            totals[key] = totals.get(key, 0) + 1
+        return totals

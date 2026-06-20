@@ -40,73 +40,39 @@ __all__ = [
 ]
 
 
-def _repo() -> tuple[Any, GroupsRepository]:
-    conn = connect()
-    migrate(conn)
-    return conn, GroupsRepository(conn)
+def _repo() -> GroupsRepository:
+    return GroupsRepository(None)
 
 
 def load_all() -> list[dict[str, Any]]:
     """All groups as tracker-shaped dicts."""
-    conn, repo = _repo()
-    try:
-        return repo.load_all()
-    finally:
-        conn.close()
+    return _repo().load_all()
 
 
 def save_all(groups: list[dict[str, Any]]) -> None:
     """Upsert every group from a tracker-shaped list."""
-    conn, repo = _repo()
-    try:
-        repo.save_all(groups)
-    finally:
-        conn.close()
+    _repo().save_all(groups)
 
 
 def list_groups(status: str | None = None) -> list[dict[str, Any]]:
-    conn, repo = _repo()
-    try:
-        return repo.list_groups(status)
-    finally:
-        conn.close()
+    return _repo().list_groups(status)
 
 
 def get_by_url(group_url: str) -> dict[str, Any] | None:
-    conn, repo = _repo()
-    try:
-        return repo.get_by_url(group_url)
-    finally:
-        conn.close()
+    return _repo().get_by_url(group_url)
 
 
 def get_by_name(group_name: str) -> dict[str, Any] | None:
-    conn, repo = _repo()
-    try:
-        return repo.get_by_name(group_name)
-    finally:
-        conn.close()
+    return _repo().get_by_name(group_name)
 
 
 def set_status(group_url: str, status: str) -> bool:
-    conn, repo = _repo()
-    try:
-        return repo.set_status(group_url, status)
-    finally:
-        conn.close()
+    return _repo().set_status(group_url, status)
 
 
 def set_posting_mode(group_url: str, mode: str) -> bool:
-    conn, repo = _repo()
-    try:
-        return repo.set_posting_mode(group_url, mode)
-    finally:
-        conn.close()
+    return _repo().set_posting_mode(group_url, mode)
 
 
 def append_note(group_url: str, note: dict[str, str]) -> bool:
-    conn, repo = _repo()
-    try:
-        return repo.append_note(group_url, note)
-    finally:
-        conn.close()
+    return _repo().append_note(group_url, note)

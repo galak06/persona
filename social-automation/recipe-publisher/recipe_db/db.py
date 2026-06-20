@@ -1,117 +1,29 @@
-"""SQLite connection + migration helpers for the recipe DB.
+"""Recipe DB connection stub — schema now lives in Supabase.
 
-DB location resolves from the `BRAND_DIR` env var so the database lives in the
-brand data dir, never in the engine repo. No secrets are read or stored here.
+Callers that do `conn = connect(); migrate(conn); repo = RecipeRepository(conn)`
+continue to work: connect() returns None, RecipeRepository ignores the conn arg,
+and migrate() is a no-op.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import sqlite3
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
-
 
 def resolve_db_path() -> Path:
-    """Return the recipes.db path, creating its parent dir if needed.
-
-    Prefers `${BRAND_DIR}/data/db/recipes.db`. Falls back to a path under the
-    recipe-publisher package dir when `BRAND_DIR` is unset (logs a warning).
-    """
-    brand_dir = os.environ.get("BRAND_DIR")
-    if brand_dir:
-        db_path = Path(brand_dir) / "data" / "db" / "recipes.db"
-    else:
-        fallback_root = Path(__file__).resolve().parent.parent
-        db_path = fallback_root / "data" / "db" / "recipes.db"
-        logger.warning(
-            "BRAND_DIR unset; falling back to %s for recipe DB", db_path
-        )
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    return db_path
+    """Unused placeholder kept for import compat."""
+    return Path(__file__).parent / "schema.sql"
 
 
-def connect(path: Path | None = None) -> sqlite3.Connection:
-    """Open a connection with Row factory, WAL journaling, and FK enforcement."""
-    db_path = path if path is not None else resolve_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+def connect(path: Path | None = None) -> None:  # type: ignore[return]
+    """No-op: recipe data now lives in Supabase."""
+    logger.debug("recipe DB connect() called (Supabase mode — no-op)")
 
 
-# Columns added after the initial schema shipped. Backfilled via ALTER TABLE on
-# pre-existing databases (CREATE TABLE IF NOT EXISTS never alters live tables).
-_ADDED_COLUMNS: dict[str, dict[str, str]] = {
-    "recipes": {
-        "publish_status": "TEXT DEFAULT '{}'",
-        "display_name": "TEXT DEFAULT ''",
-        "artifacts_path": "TEXT DEFAULT ''",
-        "card_path": "TEXT DEFAULT ''",
-        "card_created_at": "TEXT DEFAULT ''",
-        "wp_url": "TEXT DEFAULT ''",
-        "ig_url": "TEXT DEFAULT ''",
-        "fb_url": "TEXT DEFAULT ''",
-        "season_tags": "TEXT DEFAULT '[]'",
-        "affiliate_products": "TEXT DEFAULT '[]'",
-        "generated_content": "TEXT DEFAULT '{}'",
-        "content_status": "TEXT NOT NULL DEFAULT 'none'",
-        "publish_results": "TEXT DEFAULT '[]'",
-        "html_exported_at": "TEXT DEFAULT NULL",
-        # Decoupled-worker artifact markers. Each worker owns one (or two) of
-        # these and polls on "(prerequisite filled) AND (my output empty)" — see
-        # recipe-publisher/workers/. Additive, worker-written-only.
-        "wp_post_id": "INTEGER DEFAULT NULL",
-        "pdf_url": "TEXT DEFAULT ''",
-        "slides_created_at": "TEXT DEFAULT ''",
-        "slides_count": "INTEGER DEFAULT 0",
-        "reel_created_at": "TEXT DEFAULT ''",
-        "audio_ready_at": "TEXT DEFAULT ''",
-        "image_created_at": "TEXT DEFAULT ''",
-        "social_published_at": "TEXT DEFAULT ''",
-        "card_html_path": "TEXT DEFAULT ''",
-        "card_html_created_at": "TEXT DEFAULT ''",
-    },
-}
-
-# Columns removed after they shipped. Dropped from pre-existing databases.
-_DROPPED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "recipes": ("rating_value", "rating_count"),
-}
-
-
-def _ensure_columns(conn: sqlite3.Connection) -> None:
-    """Add missing columns and drop retired ones on existing tables (idempotent)."""
-    for table, columns in _ADDED_COLUMNS.items():
-        existing = {
-            str(row["name"])
-            for row in conn.execute(f"PRAGMA table_info({table})")
-        }
-        for name, decl in columns.items():
-            if name not in existing:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
-                logger.info("added column %s.%s", table, name)
-    for table, names in _DROPPED_COLUMNS.items():
-        existing = {
-            str(row["name"])
-            for row in conn.execute(f"PRAGMA table_info({table})")
-        }
-        for name in names:
-            if name in existing:
-                conn.execute(f"ALTER TABLE {table} DROP COLUMN {name}")
-                logger.info("dropped column %s.%s", table, name)
-
-
-def migrate(conn: sqlite3.Connection) -> None:
-    """Apply schema.sql then reconcile late-added/removed columns. Idempotent."""
-    schema_sql = _SCHEMA_PATH.read_text(encoding="utf-8")
-    conn.executescript(schema_sql)
-    _ensure_columns(conn)
-    conn.commit()
-    logger.info("recipe DB schema migrated")
+def migrate(conn: Any = None) -> None:
+    """No-op: Supabase schema managed externally via scripts/create_supabase_schema.sql."""
+    logger.debug("recipe DB migrate() called (Supabase mode — no-op)")
