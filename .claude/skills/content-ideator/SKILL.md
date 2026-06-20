@@ -49,11 +49,10 @@ Cluster awareness ensures every new idea lands in a defined topical network, wit
 ### Step 1: Load Existing Data
 Load these assets to understand current coverage:
 
-1. **Google Sheet "posts" tab**
-   - Open via Chrome browser
-   - Extract all existing topics and keywords to avoid duplicates
-   - Note topics with Status = "publish" (published posts)
-   - Note topics with Status = "pending" (queued for publication)
+1. **Supabase `content_ideas` table** (replaces Google Sheet)
+   - Run `python -c "from lib.ideas_db import existing_topics, pending_count; print(existing_topics()); print('pending:', pending_count())"`
+   - `existing_topics()` returns all known topic strings (lowercased) — use for dedup
+   - `pending_count()` returns how many ideas still have status="publish" — if ≥ 5, skip this run unless forced
 
 2. **`data/site_content_cache.json`**
    - Recent published posts and their keywords
@@ -404,26 +403,29 @@ This builds a preference profile over time. After 3+ decisions, future batches w
 - **Set minimum score thresholds** based on approval patterns
 - **Surface preferred angles** (comparison, cost analysis, protocol, etc.)
 
-### Step 6: Append to Google Sheet
+### Step 6: Save to Supabase
 
-For each approved idea:
+For each approved idea, call `lib/ideas_db.insert_idea()`:
 
-1. **Open Google Sheet** via Chrome
-2. **Navigate to "posts" tab**
-3. **Scroll to last row with data**
-4. **Click first empty cell** in column A (Category column)
-5. **Enter data row-by-row**:
-   ```
-   Category: [value] [TAB]
-   Topic: [value] [TAB]
-   Target_Keyword: [value] [TAB]
-   {{brand.mascot}}_Context: [value] [TAB]
-   Post_Goal: [value] [TAB]
-   Status: publish [TAB]
-   Input: 1
-   ```
-6. **Verify by reading back** — scroll to newly added row and confirm all fields match
-7. **Repeat** for each approved idea
+```python
+from lib.ideas_db import insert_idea
+
+for idea in approved_ideas:
+    idea_id = insert_idea({
+        "Category":       idea["category"],
+        "Topic":          idea["topic"],
+        "Target_Keyword": idea["target_keyword"],
+        "Nalla_Context":  idea["nalla_context"],
+        "Post_Goal":      idea["post_goal"],
+        "Status":         "publish",
+        "Input":          "1",
+    })
+    print(f"Saved: {idea['topic']} → {idea_id}")
+```
+
+- `insert_idea()` upserts on `(lower(topic), brand_id)` — safe to re-run
+- Confirm count: `from lib.ideas_db import pending_count; print(pending_count())` after saving
+- No browser required — no Sheet access needed
 
 ### Step 7: Update State
 
@@ -456,7 +458,7 @@ Save generation metadata to `.claude/state/ideation_history.json`:
       "score": 8
     }
   ],
-  "notes": "All ideas approved. 5 rows added to sheet."
+  "notes": "All ideas approved. 5 rows saved to content_ideas table."
 }
 ```
 
@@ -464,7 +466,7 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 
 **Recommended Triggers:**
 - Monthly on 1st of month (consistent cadence)
-- When sheet has fewer than 5 rows with Status = "publish" + Input = "1" (demand-based)
+- When `pending_count()` returns fewer than 5 ideas with status="publish" (demand-based)
 - When content gaps identified in analysis (urgent gaps)
 
 **Optimal Time:** Mornings (less resource contention)
@@ -473,10 +475,10 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 
 | Error | Recovery |
 |-------|----------|
-| Google Sheet not accessible | Save ideas to `backups/ideas_[date].json` for manual entry later |
+| Supabase unreachable | Save ideas to `backups/ideas_[date].json` for manual retry later |
 | Web search fails | Generate ideas from content_gaps + config keywords only (note reduced quality in Telegram) |
 | No gaps found | Focus on seasonal + trending + competitor angles as alternative sources |
-| Sheet write fails | Format ideas as tab-separated text, send to Telegram for manual paste |
+| DB write fails | `insert_idea()` logs the error and returns None — retry via `python -c "from lib.ideas_db import insert_idea; ..."` |
 | Duplicate idea generated | Check against full history in ideation_history.json before approval |
 | Low idea quality | Return to research phase, expand sources (check Reddit, newsletters, YouTube comments) |
 

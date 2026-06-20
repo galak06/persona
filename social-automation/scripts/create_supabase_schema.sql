@@ -190,3 +190,24 @@ CREATE TABLE IF NOT EXISTS completed_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_completed_tasks_brand ON completed_tasks(brand, task_type, platform);
 CREATE INDEX IF NOT EXISTS idx_completed_tasks_at    ON completed_tasks(completed_at DESC);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- content_ideas (replaces Google Sheet "posts" tab)
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS content_ideas (
+    id             TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    category       TEXT        NOT NULL,
+    topic          TEXT        NOT NULL,
+    target_keyword TEXT,
+    nalla_context  TEXT,
+    post_goal      TEXT,
+    status         TEXT        NOT NULL DEFAULT 'publish',
+    input          TEXT,
+    brand_id       TEXT        REFERENCES brands(id),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS content_ideas_topic_brand_idx
+    ON content_ideas (lower(topic), COALESCE(brand_id, ''));
+CREATE INDEX IF NOT EXISTS content_ideas_status_idx ON content_ideas (status);
