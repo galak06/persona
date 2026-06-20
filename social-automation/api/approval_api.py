@@ -460,7 +460,8 @@ def list_workers() -> list[WorkerStatus]:
                 age = _time.time() - _dt.datetime.fromisoformat(last_run_str).timestamp()
                 if age > _recent_cutoff:
                     continue
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
+                _log.debug("skipping instance row with unparseable last_run: %s", exc)
                 continue
         base = row["_base"]
         slot = row["_slot"]
@@ -501,7 +502,9 @@ def worker_status(label: str) -> WorkerStatus:
 
 
 class _TriggerBody(BaseModel):
-    count: int = 1  # number of parallel worker instances (1-3)
+    count: int = 1      # number of parallel worker instances (1-3)
+    force: bool = False  # skip the "already ran today" guard
+    recipe_ids: list[str] = []
 
 
 @app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
@@ -537,6 +540,22 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     script_str: str | None = extra.get("script")
     extra_args: list[str] = extra.get("args") or []
 
+    suffix = label[len("com.dogfoodandfun."):]
+    base = suffix.replace("-", "_")
+    log_name = f"cron_{base}.log"
+    brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
+
+    # Pre-flight: block if worker already ran successfully today (unless force)
+    if not body.force:
+        import datetime as _dt
+        _today = _dt.date.today().isoformat()
+        _row = worker_db_get_one(brand_dir, task.id, brand_dir.name)
+        if _row and _row.get("status") == "success" and (_row.get("last_run") or "")[:10] == _today:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Already ran successfully today ({_row['last_run'][:16]}). Use force to run again.",
+            )
+
     if script_str:
         parts = shlex.split(script_str)
         if parts and parts[0] in ("python", "python3"):
@@ -544,19 +563,22 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         elif parts and not parts[0].startswith("/"):
             parts = [sys.executable] + parts
         cmd = parts + extra_args
+        if body.force:
+            cmd = cmd + ["--force"]
+        if body.recipe_ids:
+            for rid in body.recipe_ids:
+                cmd += ["--seed", rid]
     elif task.skill:
         claude_bin = _shutil.which("claude") or str(Path.home() / ".local/bin/claude")
         cmd = [claude_bin, "--dangerously-skip-permissions", f"/{task.skill}"]
     else:
         return TriggerResponse(ok=False, message="No script or skill defined for task", label=label)
 
-    suffix = label[len("com.dogfoodandfun."):]
-    base = suffix.replace("-", "_")
-    log_name = f"cron_{base}.log"
-    brand_dir = Path(os.environ.get("BRAND_DIR", str(Path(__file__).parent.parent / "dogfoodandfun")))
     log_path = brand_dir / "logs" / log_name
     cwd = str(Path(__file__).parent.parent)
-    env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1"}
+    # PYTHONPATH ensures `lib/` is importable even when launchctl asuser
+    # spawns the child in a different working directory than `cwd`.
+    env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1", "PYTHONPATH": cwd}
 
     # On macOS the API may run as a daemon (PPID=1, session 0) which has no
     # Window Server access.  Wrap the worker command in `launchctl asuser <uid>`
@@ -586,7 +608,7 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         )
 
     # For multi-instance triggers record each slot individually; single stays as task.id
-    _timeout_s = int(extra.get("timeout_minutes", 30)) * 60
+    _timeout_s = int(extra.get("timeout_minutes") or 30) * 60
     import threading as _threading
 
     if count == 1:
@@ -642,9 +664,7 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
                     pass
                 worker_db_record_complete(_brand_dir, _label, _brand_dir.name, "error", msg)
             finally:
-                if not timed_out and _is_instance:
-                    # Instance rows are only updated by the reaper (the script uses
-                    # the base label); mark them complete so they don't stay "running"
+                if not timed_out:
                     status = "error" if (p.returncode or 0) != 0 else "success"
                     worker_db_record_complete(_brand_dir, _label, _brand_dir.name, status)
                 path.unlink(missing_ok=True)
@@ -669,8 +689,8 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         for key, s in get_daily_status().items():
             if s["remaining"] == 0 and (not relevant_prefix or key.startswith(relevant_prefix)):
                 at_limit[key] = s
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("rate_limiter check failed, skipping: %s", exc)
 
     return TriggerResponse(ok=True, message=msg, label=label, rate_limits=at_limit or None)
 

@@ -1,24 +1,15 @@
 # pyright: reportMissingImports=false
-"""schedule.json loader + dep sort + input freshness checks.
+"""Schedule config loader: schedule.db is the sole source of truth.
 
-Reads ``settings.paths.schedule_file``, validates per-task shape with
-pydantic, exposes:
-
-- ``load_schedule_config`` -- parse + validate; returns ``ScheduleConfig``.
-- ``label_for_task_id`` -- maps ``dogfood-<suffix>`` -> ``com.dogfoodandfun.<suffix>``.
-- ``task_for_label`` -- reverse lookup; returns ``ScheduleTask | None``.
-- ``check_inputs_satisfied`` -- for each declared input, verify existence,
-  optional ``min_count`` (non-empty list / dict items), and optional
-  ``max_age_hours`` against mtime. Returns ``(ok: bool, [InputStatus])``.
-- ``topological_order`` -- sort tasks by ``order`` (ascending, None last),
-  then label. Detects dep cycles and raises ``DependencyCycleError``.
-
+Exposes load_schedule_config, label_for_task_id, task_for_label,
+check_inputs_satisfied, topological_order, annotate_schedule_entries.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -52,7 +43,7 @@ class ScheduleInput(BaseModel):
 
 
 class ScheduleTask(BaseModel):
-    """A task entry from ``schedule.json``.
+    """A task entry from ``schedule.db``.
 
     Mirrors only the fields the API surface needs; extra keys are kept
     via ``extra="allow"`` so unrelated metadata round-trips cleanly.
@@ -69,7 +60,7 @@ class ScheduleTask(BaseModel):
 
 
 class ScheduleConfig(BaseModel):
-    """Top-level schedule.json shape."""
+    """Top-level schedule config shape."""
 
     tasks: list[ScheduleTask] = Field(default_factory=list)
 
@@ -95,44 +86,54 @@ def label_for_task_id(task_id: str) -> str | None:
     return f"{_BRAND_LABEL_PREFIX}{suffix}"
 
 
-def load_schedule_config() -> ScheduleConfig:
-    """Parse + validate ``schedule.json``.
-
-    On any failure (missing file, parse error, validation error) returns
-    an empty ``ScheduleConfig`` and logs a warning.
-    """
+def _load_from_db(db_path: Path) -> ScheduleConfig | None:
+    """Load tasks from schedule.db; returns None on any error."""
     try:
-        schedule_file = _paths().schedule_file
-    except Exception as exc:  # settings may be unbound in tests
-        _log.warning("schedule_file path unresolved: %s", exc)
-        return ScheduleConfig(tasks=[])
-
-    if not schedule_file.exists():
-        _log.warning("schedule.json not found at %s", schedule_file)
-        return ScheduleConfig(tasks=[])
-
-    data = read_json(schedule_file)
-    if data is None:
-        _log.warning("schedule.json unreadable / malformed: %s", schedule_file)
-        return ScheduleConfig(tasks=[])
-
-    if isinstance(data, dict):
-        raw_tasks = data.get("tasks", [])
-    elif isinstance(data, list):
-        raw_tasks = data
-    else:
-        _log.warning("schedule.json root is %s, expected dict|list", type(data).__name__)
-        return ScheduleConfig(tasks=[])
-
-    if not isinstance(raw_tasks, list):
-        _log.warning("schedule.json 'tasks' is %s, expected list", type(raw_tasks).__name__)
-        return ScheduleConfig(tasks=[])
-
-    try:
-        return ScheduleConfig(tasks=raw_tasks)
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from lib import schedule_db  # noqa: PLC0415
+        conn = schedule_db.connect(str(db_path))
+        try:
+            rows = schedule_db.load_all(conn)
+        finally:
+            conn.close()
+        raw_tasks: list[dict[str, Any]] = []
+        for row in rows:
+            task: dict[str, Any] = dict(row)
+            task["order"] = task.pop("order_num", None)  # DB uses order_num
+            extra = task.pop("extra", None) or {}
+            task.update(extra)
+            raw_tasks.append(task)
+        config = ScheduleConfig(tasks=raw_tasks)
+        _log.info("schedule config: DB %s (%d tasks)", db_path, len(config.tasks))
+        return config
     except ValidationError as exc:
-        _log.warning("schedule.json failed pydantic validation: %s", exc)
-        return ScheduleConfig(tasks=[])
+        _log.warning("schedule.db validation failed: %s", exc)
+        return None
+    except Exception as exc:
+        _log.warning("schedule.db load error: %s", exc)
+        return None
+
+
+def load_schedule_config() -> ScheduleConfig:
+    """Parse + validate schedule config from ``$BRAND_DIR/data/db/schedule.db``.
+
+    Raises ``RuntimeError`` if ``BRAND_DIR`` is unset, the DB file is missing,
+    or the DB cannot be loaded.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        raise RuntimeError("BRAND_DIR environment variable is not set; cannot locate schedule.db")
+
+    db_path = Path(brand_dir) / "data" / "db" / "schedule.db"
+    if not db_path.exists():
+        raise RuntimeError(f"schedule.db not found at {db_path}")
+
+    result = _load_from_db(db_path)
+    if result is None:
+        raise RuntimeError(f"Failed to load schedule config from {db_path}; check logs for details")
+
+    return result
 
 
 def task_for_label(
@@ -171,71 +172,42 @@ def check_inputs_satisfied(
     task: ScheduleTask,
     brand_dir: Path | None = None,
 ) -> tuple[bool, list[InputStatus]]:
-    """Check every declared input for existence, count, freshness.
-
-    Returns ``(all_ok, statuses)``. A task with no inputs is trivially OK.
-    """
+    """Check every declared input for existence, count, and freshness."""
     base: Path = brand_dir if brand_dir is not None else _paths().brand_dir
     now = datetime.now(tz=UTC)
-
     statuses: list[InputStatus] = []
     all_ok = True
-
     for spec in task.inputs:
-        path = (base / spec.path).resolve() if not Path(spec.path).is_absolute() else Path(spec.path)
-        exists = path.exists()
-        count = 0
-        age_hours: float | None = None
-        reason: str | None = None
-        ok = True
-
+        p = (base / spec.path).resolve() if not Path(spec.path).is_absolute() else Path(spec.path)
+        exists = p.exists()
+        count, age_hours, reason, ok = 0, None, None, True
         if not exists:
-            ok = False
-            reason = "file missing"
+            ok, reason = False, "file missing"
         else:
-            data = read_json(path)
+            data = read_json(p)
             count = _count_artifact(data) if data is not None else 1
-            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
-            age_hours = (now - mtime).total_seconds() / 3600.0
-
+            age_hours = (now - datetime.fromtimestamp(p.stat().st_mtime, tz=UTC)).total_seconds() / 3600.0
             if count < spec.min_count:
-                ok = False
-                reason = f"empty (got {count}, need {spec.min_count})"
+                ok, reason = False, f"empty (got {count}, need {spec.min_count})"
             elif spec.max_age_hours is not None and age_hours > spec.max_age_hours:
-                ok = False
-                reason = _format_age(age_hours, spec.max_age_hours)
-
-        statuses.append(InputStatus(
-            path=spec.path,
-            exists=exists,
-            count=count,
-            age_hours=age_hours,
-            ok=ok,
-            reason=reason,
-        ))
+                ok, reason = False, _format_age(age_hours, spec.max_age_hours)
+        statuses.append(InputStatus(path=spec.path, exists=exists, count=count, age_hours=age_hours, ok=ok, reason=reason))
         if not ok:
             all_ok = False
-
     return all_ok, statuses
 
 
 def topological_order(tasks: list[ScheduleTask]) -> list[ScheduleTask]:
-    """Kahn's algorithm by ``depends_on``.
-
-    Within a topological level, sort by ``(order is None, order or 0, id)``
-    so explicitly-ordered tasks fire first and unordered tasks fall to
-    the end alphabetically. Raises ``DependencyCycleError`` on cycle.
-    """
+    """Kahn's algorithm; level-sort by (order is None, order, id).
+    Raises ``DependencyCycleError`` on cycle."""
     by_id: dict[str, ScheduleTask] = {t.id: t for t in tasks}
     indeg: dict[str, int] = {t.id: 0 for t in tasks}
-    # Edges: dep -> dependent.
-    edges: dict[str, list[str]] = {t.id: [] for t in tasks}
+    edges: dict[str, list[str]] = {t.id: [] for t in tasks}  # dep -> dependents
 
     for task in tasks:
         for dep in task.depends_on:
             if dep not in by_id:
-                # Unknown dep — skip silently; not our job to fail the whole list.
-                continue
+                continue  # unknown dep — skip silently
             edges[dep].append(task.id)
             indeg[task.id] += 1
 
@@ -260,18 +232,16 @@ def topological_order(tasks: list[ScheduleTask]) -> list[ScheduleTask]:
 
     if len(out) != len(tasks):
         raise DependencyCycleError(
-            f"cycle detected in schedule.json depends_on graph "
+            f"cycle detected in schedule depends_on graph "
             f"({len(out)}/{len(tasks)} tasks ordered)"
         )
     return out
 
 
 def annotate_schedule_entries(entries: list[dict[str, Any]]) -> None:
-    """Annotate launchctl entries (mutated in-place) with schedule.json
-    ``order`` / ``depends_on`` plus the input-freshness check result.
-
-    Entries without a matching task in ``schedule.json`` are left
-    untouched; ``ScheduleEntry`` defaults take care of the missing keys.
+    """Annotate launchctl entries (mutated in-place) with order/depends_on
+    and the input-freshness check. Entries without a matching task are left
+    untouched.
     """
     config = load_schedule_config()
     for entry in entries:

@@ -22,9 +22,21 @@ export async function fetchWorkerStatus(label: string): Promise<WorkerStatus> {
   return data;
 }
 
-export async function triggerWorker(label: string): Promise<unknown> {
+interface TriggerOptions {
+  count?: number;
+  force?: boolean;
+  recipeIds?: string[];
+}
+
+export async function triggerWorker(label: string, options: TriggerOptions = {}): Promise<unknown> {
+  const { count = 1, force = false, recipeIds } = options;
   const { data } = await apiClient.post(
-    `/workers/${encodeURIComponent(label)}/trigger`
+    `/workers/${encodeURIComponent(label)}/trigger`,
+    {
+      count,
+      force,
+      ...(recipeIds && recipeIds.length > 0 ? { recipe_ids: recipeIds } : {}),
+    }
   );
   return data;
 }

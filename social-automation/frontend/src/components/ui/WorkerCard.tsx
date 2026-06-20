@@ -222,12 +222,27 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
   const [artifactLoading, setArtifactLoading] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
 
-  async function handleTrigger() {
+  const today = new Date().toISOString().slice(0, 10);
+  const ranToday =
+    worker.status === "success" && (worker.last_run ?? "").startsWith(today);
+
+  async function handleTrigger(force = false) {
+    // Short-circuit: if already ran today and not forcing, show message immediately
+    if (!force && ranToday) {
+      const when = worker.last_run ? worker.last_run.slice(0, 16).replace("T", " ") : "today";
+      toast.warning(
+        `${worker.title} — already ran today`,
+        `Last success: ${when}. Use ⚡ Force to run again.`,
+        6_000,
+      );
+      return;
+    }
+
     setTriggerState("loading");
     try {
       const res = await apiClient.post<TriggerResponse>(
         endpoints.workerTrigger(worker.label),
-        { count: workerCount },
+        { count: workerCount, force },
       );
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
@@ -254,11 +269,12 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
       setTriggerState("error");
       setTimeout(() => setTriggerState("idle"), 3_000);
       import("axios").then(({ isAxiosError }) => {
-        const msg =
-          isAxiosError(err) && err.response?.status === 409
-            ? "Already running"
-            : getErrorMessage(err, "Trigger failed");
-        toast.error(`${worker.title} — trigger failed`, msg, 5_000);
+        let msg = getErrorMessage(err, "Trigger failed");
+        if (isAxiosError(err) && err.response?.status === 409) {
+          const detail = (err.response?.data as { detail?: string })?.detail ?? "";
+          msg = detail || "Already running or ran today";
+        }
+        toast.error(`${worker.title} — trigger failed`, msg, 6_000);
       }).catch(() => {
         toast.error(`${worker.title} — trigger failed`, getErrorMessage(err, ""), 5_000);
       });
@@ -331,6 +347,16 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
             ) : isRunning ? (
               <><Spinner size="sm" className="text-amber-700" /> Running…</>
             ) : triggerState === "triggered" ? "Triggered!" : "Trigger ▶"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleTrigger(true)}
+            disabled={isDisabled}
+            title="Force run — bypass the 'already ran today' guard"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ⚡ Force
           </button>
         </div>
       </div>

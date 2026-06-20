@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_brand_dir = str(Path(__file__).resolve().parent.parent.parent / "dogfoodandfun")
 os.chdir(PROJECT_ROOT)
 
 def run():
@@ -39,7 +40,8 @@ def run():
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        bufsize=1
+        bufsize=1,
+        env={**os.environ, "BRAND_DIR": _brand_dir},
     )
     processes.append(("API", api_proc))
 

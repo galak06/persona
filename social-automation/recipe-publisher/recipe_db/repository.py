@@ -555,6 +555,12 @@ class RecipeRepository:
                 else ""
             )
             or "",
+            card_html_created_at=(
+                sql_row["card_html_created_at"]
+                if "card_html_created_at" in sql_row.keys()  # noqa: SIM118
+                else ""
+            )
+            or "",
             image_created_at=(
                 sql_row["image_created_at"]
                 if "image_created_at" in sql_row.keys()  # noqa: SIM118
