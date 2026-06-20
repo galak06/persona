@@ -309,6 +309,7 @@ class WorkerStatus(BaseModel):
     last_run: str | None = None
     message: str | None = None
     is_instance: bool = False  # True for individual slots of a multi-instance trigger
+    re_run_guard: int = 1  # 0 = no daily limit; 1 = block after first daily success
 
 
 FlowStatusLiteral = Literal["ok", "error", "never", "stale", "manual"]

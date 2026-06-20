@@ -8,6 +8,7 @@ export interface WorkerStatus {
   last_run: string | null;
   message: string | null;
   is_instance?: boolean;
+  re_run_guard?: number; // 0 = no daily limit; 1 (default) = block after first daily success
 }
 
 export async function fetchWorkers(): Promise<WorkerStatus[]> {

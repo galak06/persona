@@ -227,8 +227,9 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
     worker.status === "success" && (worker.last_run ?? "").startsWith(today);
 
   async function handleTrigger(force = false) {
-    // Short-circuit: if already ran today and not forcing, show message immediately
-    if (!force && ranToday) {
+    // Short-circuit: if already ran today and guard is active and not forcing, show message
+    const guardActive = (worker.re_run_guard ?? 1) !== 0;
+    if (!force && ranToday && guardActive) {
       const when = worker.last_run ? worker.last_run.slice(0, 16).replace("T", " ") : "today";
       toast.warning(
         `${worker.title} — already ran today`,

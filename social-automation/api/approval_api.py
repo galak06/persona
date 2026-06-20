@@ -444,6 +444,7 @@ def list_workers() -> list[WorkerStatus]:
             status=row["status"] if row else "never",
             last_run=row["last_run"] if row else None,
             message=row.get("message") if row else None,
+            re_run_guard=int(task.model_extra.get("re_run_guard", 1) if task.model_extra else 1),
         ))
 
     # Append running/recent per-instance rows so the Running tab shows each slot
