@@ -222,6 +222,22 @@ def _save_ig_result(
     repo.set_publish_status(row.id, status)
 
 
+def _write_artifact(data: dict) -> None:
+    """Write last-run result to logs/worker_ig_post_artifact.json for the UI artifact viewer."""
+    import json
+
+    from workers._folder import brand_dir
+
+    bd = brand_dir()
+    if not bd:
+        return
+    logs_dir = Path(bd) / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "worker_ig_post_artifact.json").write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core per-recipe action
 # ---------------------------------------------------------------------------
@@ -235,6 +251,13 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
     existing = _find_existing_ig_post(row.name, row.wp_url or "")
     if existing:
         _save_ig_result(repo, row, media_id="", permalink=existing)
+        _write_artifact({
+            "recipe_id": row.id,
+            "recipe_name": row.display_name or row.name,
+            "status": "ig_exists",
+            "permalink": existing,
+            "at": datetime.datetime.utcnow().isoformat(),
+        })
         return "ig_exists"
 
     # Verify HTML card exists
@@ -257,6 +280,15 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
     # Post
     result = publish_to_instagram(recipe, image_url=image_url)
     _save_ig_result(repo, row, media_id=result.media_id, permalink=result.permalink or "")
+    _write_artifact({
+        "recipe_id": row.id,
+        "recipe_name": row.display_name or row.name,
+        "status": "ig_post",
+        "permalink": result.permalink or "",
+        "media_id": result.media_id,
+        "image_url": image_url,
+        "at": datetime.datetime.utcnow().isoformat(),
+    })
     if result.warnings:
         for w in result.warnings:
             _log.warning("ig warning for %s: %s", row.id, w)

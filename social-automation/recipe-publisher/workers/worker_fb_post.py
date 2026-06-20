@@ -26,7 +26,7 @@ from recipe_db.models import RecipeRow
 from recipe_db.repository import RecipeRepository
 
 from workers._base import run_worker
-from workers._folder import campaign_folder
+from workers._folder import brand_dir, campaign_folder
 
 _log = logging.getLogger("workers.fb_post")
 
@@ -228,6 +228,20 @@ def _save_fb_result(
     repo.set_publish_status(row.id, status)
 
 
+def _write_artifact(data: dict) -> None:
+    """Write last-run result to logs/worker_fb_post_artifact.json for the UI artifact viewer."""
+    import json
+
+    bd = brand_dir()
+    if not bd:
+        return
+    logs_dir = Path(bd) / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    (logs_dir / "worker_fb_post_artifact.json").write_text(
+        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core per-recipe action
 # ---------------------------------------------------------------------------
@@ -239,6 +253,13 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
     existing = _find_existing_fb_post(row.wp_url or "")
     if existing:
         _save_fb_result(repo, row, post_id="", permalink=existing)
+        _write_artifact({
+            "recipe_id": row.id,
+            "recipe_name": row.display_name or row.name,
+            "status": "fb_exists",
+            "permalink": existing,
+            "at": datetime.datetime.utcnow().isoformat(),
+        })
         return "fb_exists"
 
     card_html = folder / "post_image_card.html"
@@ -253,6 +274,15 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
     caption = _build_caption(row, folder)
     result = _post_photo_to_facebook(image_url, caption)
     _save_fb_result(repo, row, post_id=result.post_id, permalink=result.permalink)
+    _write_artifact({
+        "recipe_id": row.id,
+        "recipe_name": row.display_name or row.name,
+        "status": "fb_post",
+        "permalink": result.permalink,
+        "post_id": result.post_id,
+        "image_url": image_url,
+        "at": datetime.datetime.utcnow().isoformat(),
+    })
     return "fb_post"
 
 
