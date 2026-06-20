@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -173,7 +174,7 @@ def run_commenter(spec: CommenterSpec, args: argparse.Namespace) -> int:
     if _already_ran_today(spec, last_run) and not args.force:
         skill_skipped(spec.skill_name, "already ran successfully today")
         return 0
-    if not rate_limiter.can_act(spec.platform, "comment"):
+    if not rate_limiter.can_act(spec.platform, "comment") and not args.force:
         skill_skipped(spec.skill_name, f"Daily {spec.label} comment limit reached")
         rate_limiter.print_status()
         return 0
@@ -345,8 +346,12 @@ def main_for(spec: CommenterSpec) -> int:
             file=sys.stderr,
         )
         return 0 if ok else 1
+    # Use a per-slot lock when running as a multi-instance trigger (WORKER_INDEX
+    # is set by the API), so ×2/×3 instances don't block each other.
+    _worker_index = os.environ.get("WORKER_INDEX", "")
+    _lock_name = f"{spec.skill_name}-{_worker_index}" if _worker_index else spec.skill_name
     try:
-        with SingletonLock(spec.skill_name):
+        with SingletonLock(_lock_name):
             return run_commenter(spec, args)
     except LockAcquisitionError as exc:
         print(f"another instance of {spec.skill_name!r} is running: {exc}", file=sys.stderr)

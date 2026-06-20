@@ -133,7 +133,7 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
         skill_skipped("fb-scanner", "already ran successfully today")
         log_trace("facebook", "Skipped: already ran today")
         return None
-    if not can_act("facebook", "group_visit"):
+    if not can_act("facebook", "group_visit") and "--force" not in sys.argv:
         skill_skipped("fb-scanner", "Daily group visit limit reached")
         print_status()
         return None

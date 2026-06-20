@@ -95,7 +95,7 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
         skill_skipped("ig-scanner", "already ran successfully today")
         log_trace("instagram", "Skipped: already ran today")
         return None
-    if not can_act("instagram", "like"):
+    if not can_act("instagram", "like") and "--force" not in sys.argv:
         skill_skipped("ig-scanner", "Daily IG like limit reached")
         print_status()
         return None

@@ -154,7 +154,15 @@ class InstagramHashtagAdapter:
         caption/author/like/comment text.
         """
         page = self._require_page()
-        page.goto(source.url, wait_until="domcontentloaded")
+        try:
+            page.goto(source.url, wait_until="domcontentloaded", timeout=60_000)
+        except Exception:
+            # Instagram hashtag pages sometimes stall on DOMContentLoaded due to
+            # redirect chains; fall back to waiting for the network to settle.
+            try:
+                page.wait_for_load_state("networkidle", timeout=15_000)
+            except Exception:
+                pass
         time.sleep(4)
 
         body_text = page.inner_text("body")[:500].lower()
@@ -174,11 +182,13 @@ class InstagramHashtagAdapter:
             if not post_url or not post_id:
                 continue
             try:
-                page.goto(post_url, wait_until="domcontentloaded")
+                page.goto(post_url, wait_until="domcontentloaded", timeout=60_000)
                 time.sleep(3)
             except Exception:
-                _log.exception("instagram_post_navigation_failed", extra={"post_id": post_id})
-                continue
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15_000)
+                except Exception:
+                    pass
             self._dismiss_overlays()
             try:
                 details = page.evaluate(EXTRACT_POST_DETAILS_JS) or {}

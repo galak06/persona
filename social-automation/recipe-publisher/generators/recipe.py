@@ -229,7 +229,11 @@ def _claimed_ingredient_count(caption: str) -> int | None:
 
 
 def _validate(recipe: Recipe) -> None:
-    if not 120 <= len(recipe.meta_description) <= 165:
+    if len(recipe.meta_description) > 165:
+        # Trim to last word boundary at or before 165 chars
+        trimmed = recipe.meta_description[:165].rsplit(" ", 1)[0]
+        recipe.meta_description = trimmed
+    if len(recipe.meta_description) < 120:
         raise ValueError(f"meta_description length={len(recipe.meta_description)} outside 120-165")
     if len(recipe.ig_caption) < 80:
         raise ValueError(f"ig_caption too short: {len(recipe.ig_caption)} chars")

@@ -30,7 +30,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT / "lib") not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT / "lib"))
 
-from recipe_products import (  # noqa: E402  (lib path inserted above)
+from recipe_products import (
     insert_or_replace_block,
     load_catalog,
     pick_products,
@@ -431,6 +431,34 @@ def upload_video_to_media_library(
             raise WordPressError(f"video upload failed: {resp.status_code} {resp.text[:300]}")
         body = resp.json()
     return int(body["id"]), body["source_url"]
+
+
+def get_featured_image_url(wp_post_id: int) -> str:
+    """Return the source_url of the featured image attached to a WP post.
+
+    Fetches ``GET /wp-json/wp/v2/posts/{wp_post_id}?_embed&_fields=_embedded``
+    and walks ``data["_embedded"]["wp:featuredmedia"][0]["source_url"]``.
+
+    Raises:
+        RuntimeError: If the post has no embedded featured media.
+    """
+    with _client() as client:
+        resp = client.get(
+            f"/wp-json/wp/v2/posts/{wp_post_id}",
+            params={"_embed": "1", "_fields": "_embedded"},
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"WP post fetch failed: {resp.status_code} {resp.text[:200]}"
+            )
+        data = resp.json()
+        try:
+            media = data["_embedded"]["wp:featuredmedia"]
+            return str(media[0]["source_url"])
+        except (KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(
+                f"No featured media found for wp_post_id={wp_post_id}"
+            ) from exc
 
 
 def _ext_for(content_type: str) -> str:

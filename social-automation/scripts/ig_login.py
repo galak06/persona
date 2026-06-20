@@ -14,10 +14,11 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from lib.config import settings
 from lib.local_env import get_runtime_headless
 
 STATE_DIR = settings.paths.state_dir
-STATE_FILE = STATE_DIR / "instagram_session.json"
+STATE_FILE = settings.paths.instagram_session
 
 MAX_WAIT_SEC = 600  # 10 minutes for login + 2FA
 
