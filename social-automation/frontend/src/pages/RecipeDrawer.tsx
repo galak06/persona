@@ -4,6 +4,7 @@ import {
   PUBLISH_CHANNELS,
   artifactUrl,
   fetchArtifacts,
+  storyCardUrl,
   type ArtifactItem,
   type PublishChannel,
   type RecipeDetail,
@@ -292,6 +293,7 @@ export function RecipeDrawer({
 }) {
   const [igModal, setIgModal] = useState<PublishChannel | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [showStoryPreview, setShowStoryPreview] = useState(false);
   const [imgLoading, setImgLoading] = useState(false);
   const { toast } = useToast();
   return (
@@ -370,6 +372,15 @@ export function RecipeDrawer({
                     </button>
                   )}
                 </>
+              )}
+              {(recipe.wp_url || recipe.publish_status?.ig) && (
+                <button
+                  type="button"
+                  onClick={() => setShowStoryPreview(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-pink-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-pink-600"
+                >
+                  📱 Story preview
+                </button>
               )}
             </div>
 
@@ -493,6 +504,32 @@ export function RecipeDrawer({
           recipeName={recipe.display_name || recipe.name}
           onClose={() => setShowPreview(false)}
         />
+      )}
+      {showStoryPreview && recipe && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          onClick={() => setShowStoryPreview(false)}
+        >
+          <div className="absolute inset-0 bg-black/60" aria-hidden />
+          <div
+            className="relative z-[61] flex flex-col items-center gap-3 m-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={storyCardUrl(recipe.id)}
+              alt="Story card preview"
+              className="max-h-[85vh] rounded-lg shadow-2xl"
+              style={{ maxWidth: "min(400px, 90vw)" }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowStoryPreview(false)}
+              className="rounded-md bg-white/90 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-white"
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

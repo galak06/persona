@@ -14,6 +14,7 @@ from lib.config import settings
 
 _DEFAULT_LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 _CONTENT_TRUNCATE_CHARS = 200
+_POST_TEXT_TRUNCATE_CHARS = 300
 
 
 def log_engagement(
@@ -23,6 +24,10 @@ def log_engagement(
     content: str,
     *,
     log_file: Path | None = None,
+    post_url: str | None = None,
+    post_id: str | None = None,
+    relevance_score: float | None = None,
+    post_text: str | None = None,
 ) -> None:
     """Append one engagement record to the JSONL log.
 
@@ -35,6 +40,10 @@ def log_engagement(
         content: The text of the action. Truncated to 200 chars on disk.
         log_file: Override path (tests). Default
             `logs/engagement_log.jsonl` under the project root.
+        post_url: URL of the post that was engaged with (optional).
+        post_id: Platform post ID (optional).
+        relevance_score: Scanner relevance score for the post (optional).
+        post_text: Snippet of the original post text. Truncated to 300 chars (optional).
 
     Side effects:
         Appends one JSON-encoded line to `log_file`. Creates parent dir
@@ -52,5 +61,13 @@ def log_engagement(
         "target_name": target,
         "content": content[:_CONTENT_TRUNCATE_CHARS],
     }
+    if post_url is not None:
+        entry["post_url"] = post_url
+    if post_id is not None:
+        entry["post_id"] = post_id
+    if relevance_score is not None:
+        entry["relevance_score"] = relevance_score
+    if post_text is not None:
+        entry["post_text"] = post_text[:_POST_TEXT_TRUNCATE_CHARS]
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")

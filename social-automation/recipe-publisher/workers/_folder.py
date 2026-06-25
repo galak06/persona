@@ -94,6 +94,32 @@ def campaign_folder(row: RecipeRow) -> Path:
     return ready
 
 
+def reel_folder(row: RecipeRow) -> Path:
+    """Find the reel artifacts folder regardless of pipeline stage.
+
+    Checks in_review/ → ready/ → published/ in order; returns the in_review/
+    path when none exist yet so callers can mkdir it themselves.
+    """
+    brand = brand_dir()
+    for stage in ("in_review", "ready", "published"):
+        p = brand / "campaigns" / "recipes_reels" / stage / row.id
+        if p.exists():
+            return p
+    return brand / "campaigns" / "recipes_reels" / "in_review" / row.id
+
+
+def reel_in_review_folder(row: RecipeRow) -> Path:
+    """Absolute in-review folder for a reel artifact.
+
+    Writes to ``<BRAND_DIR>/campaigns/recipes_reels/in_review/<id>/`` —
+    a separate tree from the post campaign folder so reel and post artifacts
+    never collide.
+    """
+    folder = brand_dir() / "campaigns" / "recipes_reels" / "in_review" / row.id
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
 def ensure_seed_exported(row: RecipeRow) -> None:
     """Idempotently export the row's frozen seed into seeds/seeds.json.
 

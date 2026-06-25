@@ -165,10 +165,12 @@ class RecipeRow:
     image_created_at: str = ""             # Worker E: ISO ts when hero image saved
     card_html_path: str = ""               # Worker HTML: BRAND_DIR-relative path to card HTML
     card_html_created_at: str = ""         # Worker HTML: ISO ts when card HTML written
+    content_created_at: str = ""           # Worker content: ISO ts when content generated
     slides_created_at: str = ""            # Worker B: ISO ts when slides saved
     slides_count: int = 0                  # Worker B: number of slides saved
     reel_created_at: str = ""              # Worker C: ISO ts when source.mp4 made
     audio_ready_at: str = ""               # Worker D: ISO ts when audio detected
+    wp_audio_updated_at: str = ""          # Worker D: ISO ts when MP3 injected into WP
     social_published_at: str = ""          # Worker D: ISO ts when IG/FB/Pin done
 
     def ensure_id(self) -> str:

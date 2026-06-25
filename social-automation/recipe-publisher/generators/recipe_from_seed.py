@@ -113,8 +113,9 @@ VOICE_TOOL = {
                     "concrete wins: time, macros, ingredient count, or specific "
                     "behavior. Not opinions. "
                     "(3) One comment-gated CTA line with the keyword in UPPERCASE, "
-                    "e.g. 'Comment RECIPE and I'll DM you the link to the printable "
-                    "card.' (Verb can also be BAKE, CHEWS, etc. — match the recipe.) "
+                    "e.g. 'Comment PUPSICLES and I'll DM you the link — hear the full song + get the printable card!' "
+                    "The keyword MUST be a single specific word from the recipe name (e.g. BACON, BISCUITS, PUPSICLES, CHEWS, JERKY). "
+                    "NEVER use generic words like RECIPE, FOOD, TREAT, CARD, LINK. "
                     "(4) One specific question — not 'what do you think?'. "
                     "(5) Blank line, then 8-12 hashtags mixing broad/niche/branded; "
                     "must include #nallasdad and #dogfoodandfun."
@@ -149,17 +150,19 @@ def generate_from_seed(
         "generating voice fields for topic=%r seed=%s model=%s",
         topic, seed.id, model,
     )
+    from anthropic.types import ToolUseBlock
+
     response = client.messages.create(
         model=model,
         max_tokens=2048,
         system=system_prompt,
-        tools=[VOICE_TOOL],
+        tools=[VOICE_TOOL],  # type: ignore[arg-type]
         tool_choice={"type": "tool", "name": "submit_voice"},
         messages=[{"role": "user", "content": user_msg}],
     )
 
     tool_block = next(
-        (b for b in response.content if getattr(b, "type", None) == "tool_use"), None
+        (b for b in response.content if isinstance(b, ToolUseBlock)), None
     )
     if tool_block is None:
         raise RuntimeError(

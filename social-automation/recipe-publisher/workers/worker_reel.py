@@ -25,7 +25,7 @@ from recipe_db.models import RecipeRow
 from recipe_db.repository import RecipeRepository
 
 from workers._base import run_worker
-from workers._folder import campaign_folder, load_frames
+from workers._folder import load_frames, reel_in_review_folder
 
 logger = logging.getLogger("workers.reel")
 
@@ -54,7 +54,7 @@ def _do_one(repo: RecipeRepository, row: RecipeRow) -> str:
     """Compose the silent reel from the un-badged reel_src frames; mark done."""
     from generators.reel import compose_reel
 
-    folder = campaign_folder(row)
+    folder = reel_in_review_folder(row)
     frames = load_frames(folder / "reel_src")
     if not frames:
         logger.warning("%s: no reel_src frames — cannot compose reel", row.id)

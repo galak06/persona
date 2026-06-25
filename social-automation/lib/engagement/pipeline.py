@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from lib.engagement.adapter import OutboundAdapter, Source
+from lib.engagement.log import log_engagement
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 
@@ -239,6 +240,22 @@ def _process_post(
     candidate_score: float | None = None
     if _is_comment_candidate(platform, post, score, policy):
         candidate_score = score
+        log.info(
+            "post_candidate platform=%s post_id=%s score=%.2f url=%s",
+            platform,
+            post.post_id,
+            score,
+            post.post_url,
+        )
+    elif score >= 0.5:
+        # Log near-misses at info level so users can see why posts were skipped.
+        log.info(
+            "post_skipped platform=%s post_id=%s score=%.2f url=%s",
+            platform,
+            post.post_id,
+            score,
+            post.post_url,
+        )
 
     return _PostOutcome(
         like_attempted=like_attempted,
@@ -312,5 +329,18 @@ def _cherry_pick_and_queue(
             queued_at=now_iso(),
         )
         queue_io.append(record)
+        log_engagement(
+            "queued",
+            platform,
+            post.post_url,
+            f"Queued post for commenting: {post.post_url} (score={score:.2f})",
+        )
+        log.info(
+            "post_queued platform=%s post_id=%s score=%.2f url=%s",
+            platform,
+            post.post_id,
+            score,
+            post.post_url,
+        )
         queued += 1
     return queued

@@ -74,8 +74,17 @@ def _label_for(spec: CommenterSpec, item: dict[str, Any]) -> str:
     return str(item.get(spec.target_field) or "")
 
 
-def _log_engagement(spec: CommenterSpec, target: str, content: str) -> None:
-    entry = {
+def _log_engagement(
+    spec: CommenterSpec,
+    target: str,
+    content: str,
+    *,
+    post_url: str | None = None,
+    post_id: str | None = None,
+    relevance_score: float | None = None,
+    post_text: str | None = None,
+) -> None:
+    entry: dict[str, Any] = {
         "date": date.today().isoformat(),
         "timestamp": datetime.now(UTC).isoformat(),
         "action": "comment",
@@ -83,6 +92,14 @@ def _log_engagement(spec: CommenterSpec, target: str, content: str) -> None:
         "target_name": target,
         "content": content[:200],
     }
+    if post_url is not None:
+        entry["post_url"] = post_url
+    if post_id is not None:
+        entry["post_id"] = post_id
+    if relevance_score is not None:
+        entry["relevance_score"] = relevance_score
+    if post_text is not None:
+        entry["post_text"] = post_text[:300]
     spec.log_file.parent.mkdir(parents=True, exist_ok=True)
     with spec.log_file.open("a") as f:
         f.write(json.dumps(entry) + "\n")
@@ -309,7 +326,15 @@ def _post_loop(
         deduplication.mark_engaged(spec.platform, pid, "comment", label)
         if spec.task_queue is not None:
             _record_done_pg(spec.platform, pid)
-        _log_engagement(spec, label, draft)
+        _log_engagement(
+            spec,
+            label,
+            draft,
+            post_url=item.get("post_url"),
+            post_id=item.get("post_id"),
+            relevance_score=item.get("relevance_score"),
+            post_text=item.get("post_text"),
+        )
         item["status"] = "posted"
         item["posted_at"] = datetime.now(UTC).isoformat() + "Z"
         item["comment_text"] = draft

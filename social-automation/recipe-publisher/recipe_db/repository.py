@@ -86,11 +86,13 @@ def _row_to_recipe(row: Any) -> RecipeRow:
         publish_results=_j(row.get("publish_results"), []),
         wp_post_id=row.get("wp_post_id"),
         pdf_url=row.get("pdf_url") or "",
+        content_created_at=row.get("content_created_at") or "",
         image_created_at=row.get("image_created_at") or "",
         slides_created_at=row.get("slides_created_at") or "",
         slides_count=row.get("slides_count") or 0,
         reel_created_at=row.get("reel_created_at") or "",
         audio_ready_at=row.get("audio_ready_at") or "",
+        wp_audio_updated_at=row.get("wp_audio_updated_at") or "",
         social_published_at=row.get("social_published_at") or "",
     )
 
@@ -269,8 +271,14 @@ class RecipeRepository:
     def set_reel(self, recipe_id: str, ts: str) -> None:
         self._update(recipe_id, reel_created_at=ts)
 
+    def set_content(self, recipe_id: str, ts: str) -> None:
+        self._update(recipe_id, content_created_at=ts)
+
     def set_audio_ready(self, recipe_id: str, ts: str) -> None:
         self._update(recipe_id, audio_ready_at=ts)
+
+    def set_wp_audio_updated(self, recipe_id: str, ts: str) -> None:
+        self._update(recipe_id, wp_audio_updated_at=ts)
 
     def set_social_published(self, recipe_id: str, ts: str) -> None:
         self._update(recipe_id, social_published_at=ts)

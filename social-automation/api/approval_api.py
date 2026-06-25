@@ -506,6 +506,7 @@ class _TriggerBody(BaseModel):
     count: int = 1      # number of parallel worker instances (1-3)
     force: bool = False  # skip the "already ran today" guard
     recipe_ids: list[str] = []
+    headless: bool | None = None  # override PLAYWRIGHT_HEADLESS; None = defer to brand.json
 
 
 @app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
@@ -581,12 +582,17 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     # PYTHONPATH ensures `lib/` is importable even when launchctl asuser
     # spawns the child in a different working directory than `cwd`.
     env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1", "PYTHONPATH": cwd}
+    if body.headless is not None:
+        env["PLAYWRIGHT_HEADLESS"] = "1" if body.headless else "0"
 
     # On macOS the API may run as a daemon (PPID=1, session 0) which has no
     # Window Server access.  Wrap the worker command in `launchctl asuser <uid>`
     # so it runs inside the user's login session and Playwright can open Chrome.
     if platform.system() == "Darwin":
-        cmd = ["launchctl", "asuser", str(os.getuid())] + cmd
+        env_inject: list[str] = []
+        if body.headless is not None:
+            env_inject = ["env", f"PLAYWRIGHT_HEADLESS={'1' if body.headless else '0'}"]
+        cmd = ["launchctl", "asuser", str(os.getuid())] + env_inject + cmd
 
     # Guard: reject if any slot is already occupied
     def _pid_path(i: int) -> Path:

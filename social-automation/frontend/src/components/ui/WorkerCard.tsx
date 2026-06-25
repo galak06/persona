@@ -217,6 +217,7 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
     "idle" | "loading" | "triggered" | "error"
   >("idle");
   const [workerCount, setWorkerCount] = useState<1 | 2 | 3>(1);
+  const [headless, setHeadless] = useState(false);
 
   const [artifactContent, setArtifactContent] = useState<string | null>(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
@@ -243,7 +244,11 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
     try {
       const res = await apiClient.post<TriggerResponse>(
         endpoints.workerTrigger(worker.label),
-        { count: workerCount, force },
+        {
+          count: workerCount,
+          force,
+          ...(headless ? { headless: true } : {}),
+        },
       );
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
@@ -359,6 +364,17 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
           >
             ⚡ Force
           </button>
+
+          <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+            <input
+              type="checkbox"
+              checked={headless}
+              onChange={(e) => setHeadless(e.target.checked)}
+              disabled={isDisabled}
+              className="rounded border-slate-300 text-slate-700 focus:ring-slate-400 disabled:opacity-40"
+            />
+            Headless
+          </label>
         </div>
       </div>
 

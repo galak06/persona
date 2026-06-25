@@ -140,3 +140,12 @@ export function recipePageUrl(id: string): string {
   const base = apiClient.defaults.baseURL ?? "";
   return `${base}/recipes/${encodeURIComponent(id)}/page`;
 }
+
+/**
+ * Absolute URL for the generated story card JPEG (<img src> / open in tab).
+ * The API generates it on demand — just use this as an <img> src.
+ */
+export function storyCardUrl(id: string): string {
+  const base = apiClient.defaults.baseURL ?? "";
+  return `${base}/recipes/${encodeURIComponent(id)}/story-card`;
+}

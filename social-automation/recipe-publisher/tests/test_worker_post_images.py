@@ -1,3 +1,4 @@
+# ruff: noqa: S101
 """Tests for Worker B (post-images): the DB-polling predicate, the generate-once
 save-both-variants task, and idempotency. Real temp sqlite DB; the carousel /
 seed / image collaborators are monkeypatched (no LLM or image API calls).
@@ -13,7 +14,7 @@ import pytest
 from recipe_db.db import connect, migrate
 from recipe_db.models import RecipeRow
 from recipe_db.repository import RecipeRepository
-from workers import worker_post_images as w
+from workers import worker_post_reels as w
 
 
 def _repo(tmp_path: Path) -> tuple[sqlite3.Connection, RecipeRepository]:

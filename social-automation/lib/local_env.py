@@ -45,12 +45,23 @@ def load_local_env(*, settings_file: Path | None = None) -> int:
 def get_runtime_headless() -> bool:
     """Return Playwright headless setting from the brand overlay.
 
-    Reads `<BRAND_DIR>/brand.json` -> `runtime.headless`. Defaults to True
-    (production-safe) if `BRAND_DIR` is unset, `brand.json` is missing or
-    malformed, or the `runtime.headless` field is not specified.
+    Checks the `PLAYWRIGHT_HEADLESS` environment variable first:
+    - ``PLAYWRIGHT_HEADLESS=1`` or ``PLAYWRIGHT_HEADLESS=true`` (case-insensitive) → True
+    - ``PLAYWRIGHT_HEADLESS=0`` or ``PLAYWRIGHT_HEADLESS=false`` (case-insensitive) → False
+
+    If absent or empty, falls through to `<BRAND_DIR>/brand.json` ->
+    `runtime.headless`. Defaults to True (production-safe) if `BRAND_DIR` is
+    unset, `brand.json` is missing or malformed, or the `runtime.headless`
+    field is not specified.
 
     Set to False in `brand.json` for local dev to see the browser window.
     """
+    _env_headless = os.environ.get("PLAYWRIGHT_HEADLESS", "").strip().lower()
+    if _env_headless in ("1", "true"):
+        return True
+    if _env_headless in ("0", "false"):
+        return False
+
     brand_dir = os.environ.get("BRAND_DIR")
     if not brand_dir:
         return True

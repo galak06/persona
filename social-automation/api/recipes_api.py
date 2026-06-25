@@ -16,7 +16,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from api.recipe_schemas import (
     AffiliateProduct,
@@ -529,3 +529,41 @@ def get_media_file(
     if not target.is_file():
         raise HTTPException(status_code=404, detail="media file not found")
     return FileResponse(target)
+
+
+@router.get("/recipes/{recipe_id}/story-card")
+def get_story_card(recipe_id: str) -> Response:
+    """Generate and return a story card JPEG for the given recipe."""
+    conn = _open_readonly()
+    try:
+        row = RecipeRepository(conn).get_recipe(recipe_id)
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"no recipe with id '{recipe_id}'")
+
+    from workers.worker_post_stories import _resolve_image_url
+    import httpx as _httpx
+
+    image_url = _resolve_image_url(row)
+    if not image_url:
+        raise HTTPException(status_code=422, detail="no image available for this recipe")
+
+    img_resp = _httpx.get(image_url, follow_redirects=True, timeout=30.0)
+    img_resp.raise_for_status()
+
+    from generators.story_card import compose_story_card
+
+    recipe_name = row.display_name or getattr(row, "name", None) or row.id
+    _BADGE_PATH = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "../../dogfoodandfun/images/badge.png",
+    ))
+    card_bytes = compose_story_card(
+        img_resp.content,
+        recipe_name,
+        row.wp_url or "",
+        badge_path=_BADGE_PATH if os.path.exists(_BADGE_PATH) else "",
+    )
+
+    return Response(content=card_bytes, media_type="image/jpeg")

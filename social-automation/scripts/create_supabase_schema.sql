@@ -162,7 +162,8 @@ CREATE TABLE IF NOT EXISTS recipes (
     social_published_at TEXT                    DEFAULT '',
     image_created_at    TEXT                    DEFAULT '',
     card_html_path      TEXT                    DEFAULT '',
-    card_html_created_at TEXT                   DEFAULT ''
+    card_html_created_at TEXT                   DEFAULT '',
+    content_created_at  TEXT                    DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_recipes_status         ON recipes(status);

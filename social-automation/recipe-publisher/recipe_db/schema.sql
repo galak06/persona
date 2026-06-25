@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS recipes (
     slides_count   INTEGER DEFAULT 0,
     reel_created_at TEXT DEFAULT '',
     audio_ready_at TEXT DEFAULT '',
+    wp_audio_updated_at TEXT DEFAULT '',
     social_published_at TEXT DEFAULT '',
     created_at     TEXT,
     updated_at     TEXT

@@ -74,6 +74,10 @@ def run():
                 # Check if process died
                 if proc.poll() is not None:
                     print(f"❌ {name} process died with exit code {proc.returncode}")
+                    print("🛑 Terminating remaining processes...")
+                    for other_name, other_proc in processes:
+                        if other_proc is not proc:
+                            other_proc.terminate()
                     sys.exit(1)
             time.sleep(0.01)
     except KeyboardInterrupt:

@@ -30,7 +30,6 @@ from recipe_db.repository import RecipeRepository
 from workers._base import run_worker
 from workers._folder import (
     artifacts_rel,
-    campaign_folder,
     ensure_seed_exported,
     rehydrate_recipe,
 )
@@ -168,8 +167,6 @@ def _do_wp(repo: RecipeRepository, row: RecipeRow) -> tuple[int, str]:
         wp = publish_to_wordpress(recipe, image)
         wp_id, link = wp.post_id, wp.permalink
 
-    folder = campaign_folder(row)
-    _write_publish_inputs(folder, recipe, wp_id, link)
     repo.set_artifacts_path(row.id, artifacts_rel(row))
     repo.set_wp_post_id(row.id, wp_id)
     _record_channel(repo, row.id, "wp", link, wp_id)

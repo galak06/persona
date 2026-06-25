@@ -99,7 +99,8 @@ def run_worker(
         for row in targets:
             logger.info("would %-14s %-44.44s %s", name, row.id, row.name)
         logger.info("targets=%d (run with --apply)", len(targets))
-        conn.close()
+        if conn is not None:
+            conn.close()
         return 0
 
     brand_dir: str = os.environ.get("BRAND_DIR", "")
@@ -115,13 +116,16 @@ def run_worker(
                 outcomes = _run_apply(repo, targets, do_one_fn, name)
             except Exception as exc:
                 record_complete(brand_dir, name, brand, "error", message=str(exc))
-                conn.close()
+                if conn is not None:
+                    conn.close()
                 raise
     except LockAcquisitionError as exc:
         logger.warning("another %s instance is running: %s", name, exc)
-        conn.close()
+        if conn is not None:
+            conn.close()
         return 0
-    conn.close()
+    if conn is not None:
+        conn.close()
 
     n = len(outcomes)
     record_complete(brand_dir, name, brand, "success", message=f"{n} processed")

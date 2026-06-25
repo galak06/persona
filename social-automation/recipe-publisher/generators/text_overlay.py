@@ -190,7 +190,7 @@ def apply_image_badge(
     its width as a fraction of the slide width. ``corner`` is one of
     top_right/top_left/bottom_right/bottom_left. Reels intentionally do NOT get
     this badge \u2014 the post/reel split lives in
-    ``carousel.generate_post_and_reel_slides`` (consumed by workers.worker_post_images).
+    ``carousel.generate_post_and_reel_slides`` (consumed by workers.worker_post_reels).
     """
     img = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = img.size

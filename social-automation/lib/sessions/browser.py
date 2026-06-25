@@ -46,8 +46,9 @@ USER_AGENT: str = (
 ~14 different copies across scripts/."""
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_DEFAULT_FB_SESSION = _PROJECT_ROOT / ".claude/state/facebook_session.json"
-_DEFAULT_IG_SESSION = _PROJECT_ROOT / ".claude/state/instagram_session.json"
+_BRAND_DIR = Path(__file__).resolve().parent.parent.parent / "dogfoodandfun"
+_DEFAULT_FB_SESSION = _BRAND_DIR / "state/facebook_session.json"
+_DEFAULT_IG_SESSION = _BRAND_DIR / "state/instagram_session.json"
 
 
 @dataclass(frozen=True)
