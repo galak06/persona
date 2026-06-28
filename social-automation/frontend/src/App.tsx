@@ -4,6 +4,7 @@ import { ToastProvider } from "./components/ui/Toast";
 import Activity from "./pages/Activity";
 import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
+import Ideas from "./pages/Ideas";
 import Operations from "./pages/Operations";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
@@ -31,6 +32,7 @@ export default function App() {
             <Route path="/activity" element={<Activity />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/inbox" element={<Inbox />} />
+            <Route path="/ideas" element={<Ideas />} />
             <Route path="/groups" element={<Groups />} />
             <Route path="/published" element={<Published />} />
             <Route path="/recipes" element={<Recipes />} />

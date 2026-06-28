@@ -212,3 +212,7 @@ CREATE TABLE IF NOT EXISTS content_ideas (
 CREATE UNIQUE INDEX IF NOT EXISTS content_ideas_topic_brand_idx
     ON content_ideas (lower(topic), COALESCE(brand_id, ''));
 CREATE INDEX IF NOT EXISTS content_ideas_status_idx ON content_ideas (status);
+
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS brand_name TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS wp_post_id TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS wp_url     TEXT;

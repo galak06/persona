@@ -33,7 +33,7 @@ def _rows(data: object) -> list[dict[str, Any]]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Write
 
-def insert_idea(idea: dict[str, Any], *, brand_id: str | None = None) -> str | None:
+def insert_idea(idea: dict[str, Any], *, brand_id: str | None = None, brand_name: str | None = None) -> str | None:
     """Insert one idea row. Returns the new ``id`` or None on error.
 
     ``idea`` keys match Google Sheet columns (case-insensitive):
@@ -51,10 +51,12 @@ def insert_idea(idea: dict[str, Any], *, brand_id: str | None = None) -> str | N
         }
         if brand_id:
             row["brand_id"] = brand_id
+        if brand_name:
+            row["brand_name"] = brand_name
         result = (
             get_client()
             .table("content_ideas")
-            .upsert(row, on_conflict="lower(topic),COALESCE(brand_id, '')")
+            .insert(row)
             .execute()
         )
         rows = _rows(result.data)
@@ -71,6 +73,22 @@ def update_status(idea_id: str, status: str) -> bool:
         return True
     except Exception as exc:
         _log.warning("ideas_db.update_status failed: %s", exc)
+        return False
+
+
+def set_wp_result(idea_id: str, wp_post_id: str, wp_url: str) -> bool:
+    """Store the WordPress post ID and URL on a published idea."""
+    try:
+        client = get_client()
+        resp = (
+            client.table("content_ideas")
+            .update({"wp_post_id": wp_post_id, "wp_url": wp_url})
+            .eq("id", idea_id)
+            .execute()
+        )
+        return bool(resp.data)
+    except Exception as exc:
+        _log.warning("ideas_db.set_wp_result failed: %s", exc)
         return False
 
 

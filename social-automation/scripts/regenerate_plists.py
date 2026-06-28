@@ -122,10 +122,13 @@ def build_plist(
     calendar = cron_to_launchd(cron)
     log_path = _resolve_log_path(suffix)
 
+    working_dir_rel = extra.get("working_directory")
+    working_directory = str(REPO_ROOT / working_dir_rel) if working_dir_rel else str(REPO_ROOT)
+
     plist: dict[str, Any] = {
         "Label": label,
         "ProgramArguments": program_args,
-        "WorkingDirectory": str(REPO_ROOT),
+        "WorkingDirectory": working_directory,
         "StartCalendarInterval": calendar,
         "StandardOutPath": log_path,
         "StandardErrorPath": log_path,

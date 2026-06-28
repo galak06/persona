@@ -95,6 +95,7 @@ _load_secrets()
 from api import routes_helpers as rh
 from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
+from api.ideas_api import router as _ideas_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
 from lib import activity_log
@@ -116,7 +117,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -124,6 +125,7 @@ app.include_router(_campaigns_router, prefix="/api/v1/campaigns", tags=["campaig
 app.include_router(_recipe_card_router, prefix="/api/v1")
 app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
+app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 
 
 @app.get("/api/v1/config")

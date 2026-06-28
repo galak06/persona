@@ -2,13 +2,14 @@
  * WorkerCard — single-worker detail card used by the Worker Explorer page.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 import Spinner from "./Spinner";
 import { useToast } from "./Toast";
 import { endpoints } from "../../api/endpoints";
 import apiClient, { getErrorMessage } from "../../api/client";
 import type { WorkerStatus } from "../../api/workers";
+import { fetchWorkerStatus } from "../../api/workers";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,10 @@ interface TriggerResponse {
   rate_limits: Record<string, { used: number; limit: number; remaining: number }> | null;
 }
 
+const TERMINAL_STATUSES: WorkerStatus["status"][] = ["success", "error", "never"];
+const POLL_INTERVAL_MS = 3_000;
+const POLL_MAX = 200; // 200 × 3s = 10 minutes
+
 export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCardProps): React.JSX.Element {
   const { toast } = useToast();
   const [triggerState, setTriggerState] = useState<
@@ -219,13 +224,56 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
   const [workerCount, setWorkerCount] = useState<1 | 2 | 3>(1);
   const [headless, setHeadless] = useState(false);
 
+  // Polled status overrides the prop while we're actively watching the worker
+  const [polledStatus, setPolledStatus] = useState<WorkerStatus | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
+
   const [artifactContent, setArtifactContent] = useState<string | null>(null);
   const [artifactLoading, setArtifactLoading] = useState(false);
   const [artifactError, setArtifactError] = useState<string | null>(null);
 
+  // The effective status is the polled one (if available) or the prop
+  const effectiveWorker: WorkerStatus = polledStatus ?? worker;
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    pollCountRef.current = 0;
+    setIsPolling(false);
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollCountRef.current = 0;
+    setIsPolling(true);
+
+    const tick = async () => {
+      pollCountRef.current += 1;
+      try {
+        const status = await fetchWorkerStatus(worker.label);
+        setPolledStatus(status);
+        if (TERMINAL_STATUSES.includes(status.status) || pollCountRef.current >= POLL_MAX) {
+          stopPolling();
+        }
+      } catch {
+        // network hiccup — keep polling until max
+        if (pollCountRef.current >= POLL_MAX) stopPolling();
+      }
+    };
+
+    pollRef.current = setInterval(() => void tick(), POLL_INTERVAL_MS);
+  }, [worker.label, stopPolling]);
+
+  // Cleanup on unmount
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
   const today = new Date().toISOString().slice(0, 10);
   const ranToday =
-    worker.status === "success" && (worker.last_run ?? "").startsWith(today);
+    effectiveWorker.status === "success" && (effectiveWorker.last_run ?? "").startsWith(today);
 
   async function handleTrigger(force = false) {
     // Short-circuit: if already ran today and guard is active and not forcing, show message
@@ -252,6 +300,9 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
       );
       setTriggerState("triggered");
       setTimeout(() => setTriggerState("idle"), 2_000);
+
+      // Start polling status so the card reflects running → terminal state
+      startPolling();
 
       const { message, rate_limits } = res.data;
       const countLabel = workerCount > 1 ? ` ×${workerCount}` : "";
@@ -305,22 +356,31 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
   }
 
   const isBusy = triggerState === "loading";
-  const isRunning = worker.status === "running";
+  const isRunning = effectiveWorker.status === "running" || isPolling;
   const isDisabled = isBusy || isRunning;
+
+  // While polling but status not yet "running", show an amber "Running..." badge
+  const displayStatus: WorkerStatus["status"] =
+    isPolling && effectiveWorker.status !== "running"
+      ? "running"
+      : effectiveWorker.status;
 
   return (
     <article className="bg-white rounded-md border border-slate-200 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-900 truncate">{worker.title}</h2>
+          <h2 className="text-base font-semibold text-slate-900 truncate">{effectiveWorker.title}</h2>
           <p className="text-xs text-slate-500 mt-0.5 font-mono">
-            com.dogfoodandfun.{worker.label.replace(/^dogfood-/, "")}
+            com.dogfoodandfun.{effectiveWorker.label.replace(/^dogfood-/, "")}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap justify-end">
-          <span className={`${PILL_BASE} ${PILL_VARIANT[worker.status]}`}>
-            {PILL_LABEL[worker.status]}
+          <span className={`${PILL_BASE} ${PILL_VARIANT[displayStatus]}`}>
+            {isPolling && displayStatus === "running" && (
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse mr-1.5" />
+            )}
+            {PILL_LABEL[displayStatus]}
           </span>
 
           {/* Worker count selector */}
@@ -380,20 +440,20 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
 
       <p className="text-sm text-slate-600">
         <span className="font-medium">Last run:</span>{" "}
-        {humanizeRelative(worker.last_run)}
+        {humanizeRelative(effectiveWorker.last_run)}
       </p>
 
-      <p className="text-sm text-slate-700">{worker.description}</p>
+      <p className="text-sm text-slate-700">{effectiveWorker.description}</p>
 
-      {worker.status === "error" && worker.message && (
+      {effectiveWorker.status === "error" && effectiveWorker.message && (
         <div className="bg-rose-50 border border-rose-200 text-rose-900 text-sm rounded-md p-3">
           <p className="font-semibold mb-1">Last error</p>
-          <pre className="text-xs whitespace-pre-wrap break-words font-mono">{worker.message}</pre>
+          <pre className="text-xs whitespace-pre-wrap break-words font-mono">{effectiveWorker.message}</pre>
         </div>
       )}
 
       <div className="flex gap-4 flex-wrap">
-        <LogPanel label={worker.label} workerStatus={worker.status} defaultOpen={defaultLogOpen} />
+        <LogPanel label={effectiveWorker.label} workerStatus={displayStatus} defaultOpen={defaultLogOpen} />
         <CollapsiblePanel
           title="Artifact"
           onLoad={loadArtifact}

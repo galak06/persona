@@ -274,6 +274,7 @@
         "cadence": "weekly",
         "cron": "0 9 * * 0"
       },
+      "working_directory": "recipe-publisher",
       "script": "python -m ideator.main",
       "skill": "content-ideator",
       "telegram_notify": true
@@ -420,6 +421,40 @@
       "script": "scripts/ig_own_comments.py",
       "skill": "comment-composer",
       "telegram_notify": true
+    },
+    {
+      "description": "Safety-net: publish any approved ideas not yet sent to WordPress",
+      "id": "dogfood-wp-ideas",
+      "order": 45,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "hourly",
+        "cron": "0 * * * *"
+      },
+      "script": "python -m workers.worker_wp_ideas",
+      "telegram_notify": true,
+      "working_directory": "social-automation/recipe-publisher"
+    },
+    {
+      "approval_channel": null,
+      "depends_on": [],
+      "description": "Weekly content ideator — surfaces ~40 fresh marketing ideas by category into content_ideas",
+      "id": "dogfood-content-ideator",
+      "inputs": [],
+      "order": 80,
+      "output_file": null,
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "weekly",
+        "cron": "0 8 * * 0"
+      },
+      "script": "python -m workers.worker_content_ideator",
+      "skill": null,
+      "telegram_notify": false,
+      "working_directory": "."
     }
   ]
 }
