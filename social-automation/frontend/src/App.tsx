@@ -10,6 +10,7 @@ import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
 import Published from "./pages/Published";
 import Recipes from "./pages/Recipes";
+import TikTokCandidates from "./pages/TikTokCandidates";
 import Explorer from "./pages/Explorer";
 import NotFound from "./pages/NotFound";
 
@@ -35,6 +36,7 @@ export default function App() {
             <Route path="/ideas" element={<Ideas />} />
             <Route path="/groups" element={<Groups />} />
             <Route path="/published" element={<Published />} />
+            <Route path="/tiktok" element={<TikTokCandidates />} />
             <Route path="/recipes" element={<Recipes />} />
             <Route path="/explorer" element={<Explorer />} />
             <Route path="/operations" element={<Operations />} />

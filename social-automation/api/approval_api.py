@@ -98,6 +98,7 @@ from api.engagements_api import router as _engagements_router
 from api.ideas_api import router as _ideas_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
+from api.tiktok_candidates_api import router as _tiktok_router
 from lib import activity_log
 from lib.config import settings
 from lib.worker_db import (
@@ -126,6 +127,7 @@ app.include_router(_recipe_card_router, prefix="/api/v1")
 app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
+app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 
 
 @app.get("/api/v1/config")

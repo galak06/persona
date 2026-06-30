@@ -287,6 +287,79 @@ def publish_carousel_to_instagram(
     )
 
 
+def publish_content_carousel(
+    slides: list[GeneratedImage],
+    *,
+    caption: str,
+    slug: str,
+) -> IGPublishResult:
+    """Publish a carousel for non-recipe content (e.g. content ideas).
+
+    Identical flow to ``publish_carousel_to_instagram`` but takes ``caption``
+    and ``slug`` as primitives instead of a ``Recipe`` — no recipe-DB coupling.
+    """
+    if len(slides) < 2 or len(slides) > 10:
+        raise InstagramError(f"carousel requires 2-10 slides, got {len(slides)}")
+
+    ig_user_id = _get_ig_account_id()
+    token = _get_ig_token()
+    warnings: list[str] = []
+
+    logger.info("uploading %d content carousel slides to WP media library", len(slides))
+    image_urls: list[str] = []
+    for i, img in enumerate(slides, 1):
+        filename = f"{slug}-slide-{i:02d}.jpg"
+        _, src = upload_image_to_media_library(img, filename=filename)
+        image_urls.append(src)
+
+    with httpx.Client(timeout=90.0, base_url=_GRAPH_BASE) as client:
+        child_ids: list[str] = []
+        for i, src in enumerate(image_urls, 1):
+            resp = client.post(
+                f"/{ig_user_id}/media",
+                params={"image_url": src, "is_carousel_item": "true", "access_token": token},
+            )
+            if resp.status_code >= 400:
+                raise InstagramError(
+                    f"carousel child #{i} create failed: {resp.status_code} {resp.text[:300]}"
+                )
+            child_ids.append(resp.json()["id"])
+
+        for cid in child_ids:
+            _wait_for_container(client, cid, token, warnings)
+
+        parent_resp = client.post(
+            f"/{ig_user_id}/media",
+            params={
+                "media_type": "CAROUSEL",
+                "children": ",".join(child_ids),
+                "caption": caption,
+                "access_token": token,
+            },
+        )
+        if parent_resp.status_code >= 400:
+            raise InstagramError(
+                f"carousel parent create failed: {parent_resp.status_code} {parent_resp.text[:300]}"
+            )
+        parent_id = parent_resp.json()["id"]
+        _wait_for_container(client, parent_id, token, warnings)
+
+        pub_resp = client.post(
+            f"/{ig_user_id}/media_publish",
+            params={"creation_id": parent_id, "access_token": token},
+        )
+        if pub_resp.status_code >= 400:
+            raise InstagramError(
+                f"carousel media_publish failed: {pub_resp.status_code} {pub_resp.text[:300]}"
+            )
+        media_id = pub_resp.json()["id"]
+        permalink = _fetch_permalink(client, media_id, token, warnings)
+
+    return IGPublishResult(
+        media_id=media_id, permalink=permalink, warnings=warnings, image_urls=image_urls
+    )
+
+
 def publish_reel_to_instagram(
     recipe: Recipe,
     video_path: Path,

@@ -51,6 +51,18 @@ _DEFAULT_FB_SESSION = _BRAND_DIR / "state/facebook_session.json"
 _DEFAULT_IG_SESSION = _BRAND_DIR / "state/instagram_session.json"
 
 
+def _default_tiktok_session() -> Path:
+    """Resolve TikTok session path via settings (authoritative) or fallback."""
+    try:
+        from lib.config import settings
+        return Path(settings.paths.tiktok_session)
+    except Exception:
+        return _BRAND_DIR / "state/tiktok_session.json"
+
+
+_DEFAULT_TIKTOK_SESSION = _default_tiktok_session()
+
+
 @dataclass(frozen=True)
 class BrowserSessionConfig:
     """Configuration for a Playwright session.
@@ -205,4 +217,31 @@ def ig_session(
         headless=get_runtime_headless() if headless is None else headless,
     )
     with BrowserSession(config) as page:
+        yield page
+
+
+@contextmanager
+def tiktok_session(
+    *,
+    headless: bool | None = None,
+    storage_state_path: Path | None = None,
+) -> Iterator[Page]:
+    """Open a Playwright session against the persisted TikTok cookies.
+
+    Same shape as `fb_session` / `ig_session`, different storage-state file.
+    TikTok's bot-detection is aggressive — defaults to headless=False and
+    applies playwright-stealth fingerprint patches to avoid CAPTCHA triggers.
+    """
+    from lib.local_env import get_runtime_headless
+
+    config = BrowserSessionConfig(
+        storage_state_path=storage_state_path or _DEFAULT_TIKTOK_SESSION,
+        headless=get_runtime_headless() if headless is None else headless,
+    )
+    with BrowserSession(config) as page:
+        try:
+            from playwright_stealth import stealth_sync
+            stealth_sync(page)
+        except ImportError:
+            pass
         yield page

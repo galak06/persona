@@ -193,6 +193,81 @@ def post_first_comment_to_facebook(
         return None, [msg]
 
 
+@dataclass
+class FBCarouselPublishResult:
+    post_id: str
+    permalink: str | None = None
+    photo_ids: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def publish_content_video_to_facebook(
+    video_path: Path,
+    *,
+    caption: str,
+) -> FBCarouselPublishResult:
+    """Upload a slideshow MP4 as a Facebook Page video post.
+
+    Uses the Resumable Upload API on graph-video.facebook.com so large files
+    are handled correctly. The video is posted directly as a Page video with
+    the carousel caption as the description.
+    Requires scope: pages_manage_posts + pages_read_engagement.
+    """
+    if not video_path.exists():
+        raise FacebookError(f"video not found: {video_path}")
+
+    page_id = os.environ.get("FB_PAGE_ID") or ""
+    token = os.environ.get("FB_PAGE_TOKEN") or ""
+    if not page_id:
+        raise FacebookError("FB_PAGE_ID not set")
+    if not token:
+        raise FacebookError("FB_PAGE_TOKEN not set")
+
+    warnings: list[str] = []
+    video_bytes = video_path.read_bytes()
+
+    with httpx.Client(timeout=120.0) as client:
+        resp = client.post(
+            f"https://graph-video.facebook.com/v23.0/{page_id}/videos",
+            data={"description": caption, "access_token": token},
+            files={"source": (video_path.name, video_bytes, "video/mp4")},
+        )
+        if resp.status_code >= 400:
+            raise FacebookError(
+                f"FB video upload failed: {resp.status_code} {resp.text[:300]}"
+            )
+        body = resp.json()
+        video_id = body.get("id", "")
+        if not video_id:
+            raise FacebookError(f"FB video upload returned no id: {resp.text[:300]}")
+
+        permalink: str | None = None
+        try:
+            perm = client.get(
+                f"{_GRAPH_BASE}/{video_id}",
+                params={"fields": "permalink_url", "access_token": token},
+            )
+            if perm.status_code == 200:
+                permalink = perm.json().get("permalink_url")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"permalink fetch error: {exc}")
+
+    logger.info(
+        "FB video published: video_id=%s permalink=%s size_kb=%d",
+        video_id, permalink, len(video_bytes) // 1024,
+    )
+    return FBCarouselPublishResult(
+        post_id=video_id,
+        permalink=permalink,
+        photo_ids=[],
+        warnings=warnings,
+    )
+
+
+# Keep old name as alias so any external callers don't break.
+publish_content_carousel_to_facebook = publish_content_video_to_facebook
+
+
 def publish_reel_to_facebook(
     recipe: Recipe,
     video_path: Path,

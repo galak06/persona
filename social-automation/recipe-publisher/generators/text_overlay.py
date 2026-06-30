@@ -28,6 +28,30 @@ _SUBCOPY_FONT_INDEX = int(os.getenv("OVERLAY_SUBCOPY_FONT_INDEX", "1"))  # 1 = H
 _CREAM = (245, 239, 229)  # #f5efe5
 
 
+def _wrap_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    max_width: int,
+) -> list[str]:
+    """Word-wrap text to fit within max_width pixels."""
+    words = text.split()
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        bb = draw.textbbox((0, 0), candidate, font=font)
+        if bb[2] - bb[0] <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines or [text]
+
+
 @dataclass
 class OverlaySpec:
     headline: str  # supports embedded \n for multi-line
@@ -104,13 +128,22 @@ def apply_overlay(
 
     sub_y = head_y + total_head_h + int(head_size * 0.35)
     sub_stroke = max(2, sub_size // 28)
-    sb = draw.textbbox((0, 0), spec.subcopy, font=sub_font)
-    sw = sb[2] - sb[0]
-    draw.text(
-        ((w - sw) // 2, sub_y), spec.subcopy, font=sub_font,
-        fill=(*_CREAM, 245),
-        stroke_width=sub_stroke, stroke_fill=(0, 0, 0, 220),
-    )
+    sub_margin = int(w * 0.06)
+    sub_line_h = int(sub_size * 1.3)
+    sub_lines = _wrap_text(draw, spec.subcopy, sub_font, w - sub_margin * 2)
+    # Cap at 2 lines so the last line never falls below the image boundary.
+    sub_lines = sub_lines[:2]
+    for j, sub_line in enumerate(sub_lines):
+        y_pos = sub_y + j * sub_line_h
+        if y_pos + sub_size > h:
+            break
+        sb = draw.textbbox((0, 0), sub_line, font=sub_font)
+        sw = sb[2] - sb[0]
+        draw.text(
+            ((w - sw) // 2, y_pos), sub_line, font=sub_font,
+            fill=(*_CREAM, 245),
+            stroke_width=sub_stroke, stroke_fill=(0, 0, 0, 220),
+        )
 
     buf = io.BytesIO()
     out.convert("RGB").save(buf, "JPEG", quality=output_quality)

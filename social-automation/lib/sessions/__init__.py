@@ -23,6 +23,7 @@ from lib.sessions.browser import (
     BrowserSessionConfig,
     fb_session,
     ig_session,
+    tiktok_session,
 )
 from lib.sessions.graph_api import (
     GRAPH_BASE,
@@ -44,5 +45,6 @@ __all__ = [
     "ig_session",
     "read_fb_token",
     "read_ig_token",
+    "tiktok_session",
     "wp_client",
 ]

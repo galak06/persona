@@ -172,6 +172,7 @@ class BrandPaths(BaseModel):
     last_run: Path
     facebook_session: Path
     instagram_session: Path
+    tiktok_session: Path
     pending_groups: Path
 
 
@@ -221,6 +222,7 @@ def _resolve_paths(brand_dir: Path) -> BrandPaths:
         last_run=state_dir / "last_run.json",
         facebook_session=state_dir / "facebook_session.json",
         instagram_session=state_dir / "instagram_session.json",
+        tiktok_session=state_dir / "tiktok_session.json",
         pending_groups=state_dir / "pending_groups.json",
     )
 
