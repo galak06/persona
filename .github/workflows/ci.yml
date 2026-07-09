@@ -56,6 +56,26 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: persona
+          POSTGRES_PASSWORD: persona
+          POSTGRES_DB: persona
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U persona -d persona"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # Matches .env.example's DATABASE_URL convention (lib/db_pool.py reads
+      # this). Makes the groups_db/engagements_db/worker_db/schedule_db
+      # integration tests (tests/test_db.py et al.) run for real here instead
+      # of skipping via their requires_postgres skipif guard.
+      DATABASE_URL: postgresql://persona:persona@localhost:5432/persona
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +87,14 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      - name: Apply Postgres schema
+        # Overrides the job's `social-automation` default working-directory
+        # (stale post-rename to persona/ — separate, already-flagged,
+        # out-of-scope follow-up) since persona/db/schema.sql is the real
+        # current location of the schema file.
+        working-directory: .
+        run: psql "$DATABASE_URL" -f persona/db/schema.sql
 
       - name: Run tests with coverage
         run: pytest --cov=lib --cov-report=term-missing --cov-fail-under=45
@@ -98,3 +126,27 @@ jobs:
             exit 1
           fi
           echo "No dangerous patterns found"
+
+  frontend:
+    name: Frontend Build & Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: social-automation/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: social-automation/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check & build
+        run: npm run build
+
+      - name: Lint
+        run: npm run lint

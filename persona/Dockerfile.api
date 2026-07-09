@@ -1,0 +1,33 @@
+# Persona — API image
+# Python 3.11 slim. FastAPI routes only — no browser automation, so unlike
+# Dockerfile.worker this image skips the Playwright/Chromium install and the
+# ffmpeg/build-dep layers (smaller, faster build).
+#
+#   api → uvicorn api.approval_api:app
+
+FROM python:3.11-slim
+
+# curl is kept for the container healthcheck (GET /api/v1/health); everything
+# else the worker image needs (ffmpeg, gcc, libc6-dev, libffi-dev, libssl-dev,
+# Playwright/Chromium) is intentionally omitted — the API never launches a
+# browser or touches the reel pipeline.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps first (layer-cached until requirements change)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt 2>/dev/null || \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy project source
+COPY . .
+
+# Non-root user for security
+RUN useradd -m -u 1000 persona && chown -R persona:persona /app
+USER persona
+
+# Default: run the API.
+CMD ["uvicorn", "api.approval_api:app", "--host", "0.0.0.0", "--port", "5001", "--reload"]

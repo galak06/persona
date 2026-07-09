@@ -1,0 +1,37 @@
+# Persona — Worker image
+# Python 3.11 slim; Playwright installs chromium for browser-based scrapers.
+#
+# Runs the cron worker (browser-driven scan/scrape flows):
+#   worker → python scripts/dev.py --workers-only
+
+FROM python:3.11-slim
+
+# System deps for Playwright + Pillow + FFmpeg (reel pipeline)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    gcc \
+    libc6-dev \
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps first (layer-cached until requirements change)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --break-system-packages -r requirements.txt 2>/dev/null || \
+    pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright + Chromium
+RUN playwright install --with-deps chromium
+
+# Copy project source
+COPY . .
+
+# Non-root user for security
+RUN useradd -m -u 1000 persona && chown -R persona:persona /app
+USER persona
+
+# Default: run the cron worker. Override in docker-compose if needed.
+CMD ["python", "scripts/dev.py", "--workers-only"]
