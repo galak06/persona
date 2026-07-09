@@ -1,0 +1,86 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap");
+@import "tailwindcss";
+
+@theme {
+  /* Theme — Warm Amber + Slate. Warm amber primary signals "human
+     review queue" (vs. cyan's tech vibe), slate text keeps the chrome
+     calm so post previews stand out. */
+  --color-brand-bg: #fafaf9;
+  --color-brand-primary: #b45309;
+  --color-brand-primary-hover: #92400e;
+  --color-brand-accent: #d97706;
+  --color-brand-surface: #ffffff;
+  --color-brand-header: #ffffff;
+  --color-brand-border: #e7e5e4;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, "Times New Roman", serif;
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lifted: 0 4px 12px rgba(15, 23, 42, 0.05),
+    0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-floated: 0 24px 48px -12px rgba(15, 23, 42, 0.12),
+    0 8px 16px rgba(15, 23, 42, 0.04);
+}
+
+@layer base {
+  body {
+    @apply bg-brand-bg text-slate-700 font-sans antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-slate-900 tracking-tight font-bold;
+    overflow-wrap: anywhere;
+  }
+
+  ::selection {
+    @apply bg-amber-500/30 text-amber-900;
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-brand-primary);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  html {
+    scrollbar-gutter: stable;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    overflow-x: clip;
+  }
+}
+
+@layer utilities {
+  .text-title {
+    @apply text-base font-semibold text-slate-900;
+  }
+
+  /* Mobile safe-area clearance for notched phones */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  }
+}
+
+@layer components {
+  /* Slide-up animation for the mobile drawer */
+  @keyframes slide-up {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .animate-slide-up {
+    animation: slide-up 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+}
