@@ -1,0 +1,88 @@
+{
+  "platform": "instagram",
+  "rate_limits": {
+    "feed_posts_per_day": 2,
+    "likes_per_day": 20,
+    "comments_per_day": 15,
+    "follows_per_day": 22,
+    "delay_between_likes": "10-45s random",
+    "delay_between_comments": "3-10s random",
+    "delay_between_follows": "60-180s random"
+  },
+  "flows": [
+    {
+      "id": "ig-scanner",
+      "skill": "ig-scanner",
+      "script": "scripts/ig_scan.py",
+      "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
+      "schedule": {
+        "cron": "3 19 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "state/instagram_comment_queue.json",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "rate_limits": {
+        "likes_per_day": 20,
+        "comments_per_day": 15
+      },
+      "order": 30,
+      "depends_on": [
+        "site-analyzer"
+      ],
+      "inputs": [
+        {
+          "path": "data/site_content_cache.json",
+          "min_count": 1,
+          "max_age_hours": 26,
+          "produced_by": "site-analyzer"
+        }
+      ]
+    },
+    {
+      "id": "ig-comment",
+      "skill": "ig-comment",
+      "script": "scripts/ig_comment.py",
+      "description": "IG loop: draft a reply per queued post at post time and post it (max 10/day) from the Instagram queue",
+      "schedule": {
+        "cron": "0 9 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": true,
+      "requires_browser": true,
+      "requires_approval": false,
+      "telegram_notify": true,
+      "rate_limits": {
+        "comments_per_day": 15
+      },
+      "order": 51,
+      "depends_on": [
+        "ig-scanner"
+      ],
+      "inputs": []
+    },
+    {
+      "id": "ig-own-comments",
+      "skill": "comment-composer",
+      "script": "scripts/ig_own_comments.py",
+      "description": "Hourly sweep of our own Instagram posts to reply to incoming comments",
+      "schedule": {
+        "cron": "0 9,14,20 * * *",
+        "cadence": "daily"
+      },
+      "output_file": "logs/engagement_log.jsonl",
+      "re_run_guard": false,
+      "requires_browser": false,
+      "requires_approval": true,
+      "approval_channel": "telegram",
+      "telegram_notify": true,
+      "order": 135,
+      "depends_on": [],
+      "inputs": []
+    }
+  ],
+  "_notes": "comments_per_day bumped from 2 to 10 in slice 3 (ADR-0002); reflected here as canonical. likes_per_day bumped from 8 to 20 (IG-loop split); ig-scanner flow override raised to 20 likes / 10 comments. Slice B added flows[]."
+}

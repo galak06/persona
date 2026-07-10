@@ -64,7 +64,16 @@ scripts/backfill_recipe_products.py
 
 # Brand-specific runtime data (live in BRAND_DIR, not in repo)
 launchd/
-profiles/
+# profiles/: instagram.json/facebook.json are genuinely generic engine flow
+# definitions (rate limits, cron schedules) with no brand-specific content,
+# confirmed by grep — brand_provisioning.py reads these for new-brand
+# schedule_tasks cron strings, so they must ship with the engine, not live in
+# BRAND_DIR. Excluding specific files (not the whole profiles/ dir) because
+# gitignore can't re-include a file whose parent directory is excluded.
+# wordpress.json/_engine.json currently have brand-specific description text
+# baked in and stay excluded until that's cleaned up (separate, out of scope).
+profiles/wordpress.json
+profiles/_engine.json
 recipe-publisher/seeds/
 recipe-publisher/prompts/
 recipe-publisher/docs/
