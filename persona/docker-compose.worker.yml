@@ -60,7 +60,11 @@ services:
       - playwright_cache:/home/persona/.cache/ms-playwright
     networks:
       - persona_net
-    command: ["python", "scripts/dev.py", "--workers-only"]
+    # Phase A dispatcher: reads this brand's due `schedule_tasks` rows and
+    # runs them (see scripts/task_dispatcher.py). Bare invocation with no
+    # `--loop` does a single pass and exits -- useful for manual
+    # verification; `--loop` (used here) runs continuously.
+    command: ["python", "scripts/task_dispatcher.py", "--loop"]
 
 networks:
   persona_net:
