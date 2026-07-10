@@ -1,0 +1,70 @@
+# Persona — Per-brand worker Compose
+#
+# One instance per onboarded brand (own BRAND_DIR, own Playwright session) —
+# a single service definition in the shared docker-compose.yml can't express
+# that, so it lives here instead. Start it per brand, as its own Compose
+# project, pointed at the shared stack's network:
+#
+#   BRAND_DIR=./brands/<slug> PERSONA_BRAND=<slug> \
+#     docker compose -f docker-compose.worker.yml -p <slug> up -d
+#
+# Requires the shared stack (docker-compose.yml) to already be running —
+# this file joins its `persona_net` network (declared `external: true` below)
+# to resolve the `postgres`/`redis`/`api` hostnames.
+#
+# BRAND_DIR/PERSONA_BRAND are required — no hardcoded default brand, since a
+# worker with no brand specified isn't a meaningful thing to start.
+
+version: "3.9"
+
+services:
+  # ── Worker (cron scheduler, browser-driven scan/scrape flows) ───────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      - BRAND_DIR=/brand
+      - PERSONA_BRAND=${PERSONA_BRAND}
+      - REDIS_URL=redis://redis:6379/0
+      - WP_URL=${WP_URL}
+      - WP_USER=${WP_USER}
+      - WP_APP_PASSWORD=${WP_APP_PASSWORD}
+      - FB_PAGE_ID=${FB_PAGE_ID}
+      - FB_PAGE_TOKEN=${FB_PAGE_TOKEN}
+      - FB_APP_ID=${FB_APP_ID}
+      - FB_APP_SECRET=${FB_APP_SECRET}
+      - IG_ACCOUNT_ID=${IG_ACCOUNT_ID}
+      - PEXELS_API_KEY=${PEXELS_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - GOOGLE_SERVICE_ACCOUNT_PATH=/brand/data/config/google_service_account.json
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID}
+      - AMAZON_ASSOCIATES_TAG=${AMAZON_ASSOCIATES_TAG}
+      - PLAYWRIGHT_HEADLESS=1
+    volumes:
+      - ${BRAND_DIR}:/brand:ro
+      # Bind mounts, NOT named volumes: the one-time interactive login
+      # (ig_login.py/fb_login.py) runs on the HOST — worker is headless-only
+      # — and writes its session file into ${BRAND_DIR}/state on the host.
+      # A named volume is a separate location the container can't share with
+      # a host-side write; a bind mount is the same files on both sides.
+      - ${BRAND_DIR}/state:/brand/state
+      - ${BRAND_DIR}/logs:/brand/logs
+      - playwright_cache:/home/persona/.cache/ms-playwright
+    networks:
+      - persona_net
+    command: ["python", "scripts/dev.py", "--workers-only"]
+
+networks:
+  persona_net:
+    external: true
+
+volumes:
+  playwright_cache:

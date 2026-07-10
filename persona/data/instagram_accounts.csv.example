@@ -1,0 +1,11 @@
+hashtag,tier,scan_frequency,category,notes
+dogfood,1,daily,food,High-volume primary hashtag
+homemadedogfood,1,daily,food,Strong engagement, recipe audience
+dognutrition,2,every_2_days,food,Mid-tier health-focused
+rawdogfood,2,every_2_days,food,BARF community
+dogrecipes,1,daily,food,Recipe seekers
+gpsdogcollar,1,daily,gps,GPS/tracking niche
+dogrunning,2,every_2_days,active,Running with dogs
+canicross,2,weekly,active,Niche but highly engaged
+doghealth,3,weekly,health,Broad — filter carefully
+petfood,3,weekly,food,Very broad, lower signal
