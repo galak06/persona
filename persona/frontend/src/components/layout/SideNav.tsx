@@ -39,6 +39,10 @@ const SECTIONS: readonly NavSection[] = [
     ],
   },
   {
+    title: "Brands",
+    items: [{ to: "/onboarding", label: "Onboarding", icon: "🏢" }],
+  },
+  {
     title: "System",
     items: [
       { to: "/connect", label: "Connect", icon: "🔗" },

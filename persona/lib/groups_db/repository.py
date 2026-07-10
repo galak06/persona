@@ -20,6 +20,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from lib import brands_db
 from lib.db import execute, fetch_all, fetch_one
 from lib.groups_db.models import _ALWAYS_KEYS, GROUP_COLUMNS, group_id_from_url
 
@@ -50,24 +51,18 @@ class GroupsRepository:
 
     # --------------------------------------------------------------- brand
     def ensure_brand(self) -> str:
-        """Idempotently seed the single brand row (FK target). Returns its id."""
+        """Idempotently seed the single brand row (FK target). Returns its id.
+
+        Delegates to `brands_db.ensure()` -- one code path writes brand
+        identity. Behavior is unchanged: same `id = Path(BRAND_DIR).name`
+        convention, same upsert-if-absent semantics on the same four columns.
+        """
         if self._brand_id is not None:
             return self._brand_id
 
         bid, name, persona, url = _brand_identity()
-        execute(
-            """
-            INSERT INTO brands (id, name, persona, site_url)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                persona = EXCLUDED.persona,
-                site_url = EXCLUDED.site_url
-            """,
-            (bid, name, persona, url),
-        )
-        self._brand_id = bid
-        return bid
+        self._brand_id = brands_db.ensure(bid, name, persona, url)
+        return self._brand_id
 
     # --------------------------------------------------------------- writes
     def upsert_group(self, group: dict[str, Any]) -> None:

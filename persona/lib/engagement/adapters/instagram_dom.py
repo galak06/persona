@@ -12,10 +12,14 @@ That's intentional: it is data, not logic, and keeps instagram.py readable.
 
 from __future__ import annotations
 
+from lib.config import settings
+
 # --- Account guards -----------------------------------------------------------
 
-# Known competitor brand accounts — never like their posts.
-COMPETITOR_ACCOUNTS: set[str] = {
+# Known competitor brand accounts — never like their posts. Fallback used
+# ONLY when a brand's config.json leaves content_analysis.competitor_accounts
+# empty/omitted (the field defaults to [], which is falsy).
+_DEFAULT_COMPETITOR_ACCOUNTS: set[str] = {
     "tractive",
     "tractivepets",
     "ficollar",
@@ -25,8 +29,16 @@ COMPETITOR_ACCOUNTS: set[str] = {
     "linkakc",
 }
 
-# Our own account — skip to avoid self-engagement.
-OWN_ACCOUNT: str = "persona"
+# Our own account — skip to avoid self-engagement. Fallback used ONLY when a
+# brand's config.json leaves social_channels.instagram.own_account empty.
+_DEFAULT_OWN_ACCOUNT: str = "persona"
+
+# Computed once at import time — consistent with the single-process-per-brand
+# model (no runtime brand switching this stage).
+COMPETITOR_ACCOUNTS: set[str] = (
+    set(settings.content_analysis.competitor_accounts) or _DEFAULT_COMPETITOR_ACCOUNTS
+)
+OWN_ACCOUNT: str = settings.social_channels.instagram.own_account or _DEFAULT_OWN_ACCOUNT
 
 
 # --- Overlay dismissers -------------------------------------------------------
