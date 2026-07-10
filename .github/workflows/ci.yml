@@ -126,6 +126,13 @@ jobs:
       # integration tests (tests/test_db.py et al.) run for real here instead
       # of skipping via their requires_postgres skipif guard.
       DATABASE_URL: postgresql://persona:persona@localhost:5432/persona
+      # lib/config.py's module-level settings singleton is imported by
+      # comment_generator.py/brand_templates.py/brand_provisioning.py and
+      # hard-requires a loadable brand config at import time — without this,
+      # collecting those test files crashes before any test runs. Points at
+      # a generic placeholder brand (tests/fixtures/ci_brand/), built from
+      # config.example.json, not any real brand's data.
+      BRAND_DIR: ${{ github.workspace }}/persona/tests/fixtures/ci_brand
     steps:
       - uses: actions/checkout@v4
 

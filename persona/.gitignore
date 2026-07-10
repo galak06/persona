@@ -8,6 +8,7 @@
 config.json
 brand.json
 brands/
+!tests/fixtures/ci_brand/config.json
 
 # Runtime state (gitignored — lives in BRAND_DIR/state/)
 .claude/state/
