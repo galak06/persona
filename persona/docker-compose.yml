@@ -1,0 +1,154 @@
+# Persona — Shared stack Docker Compose
+#
+# Services (one shared instance across all brands):
+#   postgres  — Local Postgres (brands, fb_groups, engagements, worker_runs, schedule_tasks)
+#   redis     — Task queue + rate-limit counters
+#   api       — FastAPI approval/campaign/schedule API (port 5001)
+#   frontend  — Vite/React UI served via nginx (port 3000)
+#
+# Per-brand worker (one instance per onboarded brand, own BRAND_DIR/session) is
+# NOT started by this file — see docker-compose.worker.yml, started per brand:
+#   docker compose -f docker-compose.worker.yml -p <slug> up -d
+#
+# External dependencies (cloud-hosted, not containerised):
+#   Telegram  — Approval bot        (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
+#   Supabase  — recipes_db / content_ideas / oauth_tokens only, NOT the tables
+#               in db/schema.sql (SUPABASE_URL / SUPABASE_KEY, optional)
+#
+# Quick start:
+#   cp .env.example .env          # fill in your secrets
+#   docker compose up -d
+#   open http://localhost:3000
+#
+# (Or just run scripts/setup.sh, which does the above plus health polling.)
+
+version: "3.9"
+
+services:
+  # ── Postgres ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-persona}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-persona}
+      - POSTGRES_DB=${POSTGRES_DB:-persona}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Self-initializing schema — applied automatically by the postgres
+      # entrypoint on first boot against an empty data dir.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    networks:
+      - persona_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-persona} -d ${POSTGRES_DB:-persona}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - persona_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI ──────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    environment:
+      - BRAND_DIR=/app/brands/${PERSONA_BRAND:-default}
+      - PERSONA_BRAND=${PERSONA_BRAND:-default}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
+      # Platform credentials — set in .env
+      - WP_URL=${WP_URL}
+      - WP_USER=${WP_USER}
+      - WP_APP_PASSWORD=${WP_APP_PASSWORD}
+      - FB_PAGE_ID=${FB_PAGE_ID}
+      - FB_PAGE_TOKEN=${FB_PAGE_TOKEN}
+      - FB_APP_ID=${FB_APP_ID}
+      - FB_APP_SECRET=${FB_APP_SECRET}
+      - IG_ACCOUNT_ID=${IG_ACCOUNT_ID}
+      - PEXELS_API_KEY=${PEXELS_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - GOOGLE_SERVICE_ACCOUNT_PATH=/app/brands/${PERSONA_BRAND:-default}/data/config/google_service_account.json
+      - VOICE_PROVIDER=${VOICE_PROVIDER:-anthropic}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID}
+      - AMAZON_ASSOCIATES_TAG=${AMAZON_ASSOCIATES_TAG}
+      - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-http://localhost:5001}
+    volumes:
+      # Whole brands root, read-write — api provisions new brand folders for
+      # any onboarded slug (unlike worker, which is legitimately scoped to a
+      # single brand via docker-compose.worker.yml's ${BRAND_DIR} bind mount).
+      - ./brands:/app/brands:rw
+    networks:
+      - persona_net
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    command: ["uvicorn", "api.approval_api:app", "--host", "0.0.0.0", "--port", "5001"]
+
+  # ── Frontend ─────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - persona_net
+    depends_on:
+      - api
+
+  # ── Phoenix (OTel tracing — optional) ────────────────────────────────────────
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    restart: unless-stopped
+    profiles: ["tracing"]   # only starts with: docker compose --profile tracing up
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    volumes:
+      - phoenix_data:/mnt/data
+    environment:
+      - PHOENIX_WORKING_DIR=/mnt/data
+
+networks:
+  persona_net:
+    name: persona_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  phoenix_data:

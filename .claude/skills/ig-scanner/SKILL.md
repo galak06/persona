@@ -3,7 +3,7 @@ name: ig-scanner
 description: >
   Scan Instagram hashtags for posts relevant to {{brand.domain}} content.
   Like qualifying posts. Queue high-relevance posts for comments.
-  Enforce Instagram rate limits (8 likes/day, 2 comments/day).
+  Enforce Instagram rate limits (20 likes/day, 10 comments/day).
   Use when the user says "run instagram scan", "scan instagram hashtags",
   "scan ig", "run ig scanner", or "run daily instagram scan".
 ---
@@ -11,7 +11,7 @@ description: >
 # Instagram Hashtag Scanner — {{brand.name}}
 
 Scan priority hashtags for relevant posts, like them, and queue top candidates
-for comment-composer. Rate limits: 8 likes/day, 2 comments/day (hard limits).
+for comment-composer. Rate limits: 20 likes/day, 10 comments/day (hard limits).
 
 This skill runs via Playwright (same approach as fb-scanner). No Chrome MCP
 required — works in `claude -p` and interactive mode.
@@ -51,7 +51,7 @@ reused for future scans.
    - +0.15 if post has < 500 likes (real engagement possible)
    - -0.20 if post has > 5000 likes (we'd be lost in the noise)
 6. **Likes qualifying posts** — clicks like button if score >= 0.75 and budget remains
-7. **Queues top posts for comments** — score >= 0.85 AND post is a question, max 2/day
+7. **Queues top posts for comments** — score >= 0.85 AND post is a question, max 10/day
 8. **Updates state** — dedup cache, rate limits, last run timestamp, comment queue
 
 ---
@@ -83,7 +83,7 @@ ALL Instagram comments require manual user approval — they are never posted au
 ## Key Rules
 
 - ALL Instagram comments require user approval — never post without explicit confirmation
-- Max 8 likes/day, max 2 comments/day — hard limits, stop immediately when reached
+- Max 20 likes/day, max 10 comments/day — hard limits, stop immediately when reached
 - Random delays (10–45s) between actions to reduce bot detection risk
 - Never like competitor brand accounts' posts (Fi, Tractive, Whistle corporate accounts)
 - Never interact with the same post twice within 60 days (dedup check)

@@ -1,0 +1,24 @@
+# Persona — Docker ignore
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+node_modules
+frontend/node_modules
+frontend/dist
+*.log
+logs/
+brands/
+.claude/state/
+*.db
+*.db-shm
+*.db-wal
+docker/phoenix/

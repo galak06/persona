@@ -1,0 +1,19 @@
+# Persona — Frontend image (Vite/React)
+# Multi-stage: build → serve with nginx
+
+FROM node:20-slim AS builder
+
+WORKDIR /app
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# Serve with nginx
+FROM nginx:alpine
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Proxy /api → api:5001
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

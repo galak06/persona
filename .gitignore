@@ -48,6 +48,15 @@ campaigns/
 # …same for the tests covering it
 !social-automation/tests/lib/campaigns/
 !social-automation/tests/lib/campaigns/**
+# …but never the bytecode caches the `**` un-ignore re-included
+social-automation/lib/campaigns/**/__pycache__/
+*.pyc
+
+# AI agent scratch + session state (keep local, never commit)
+$CLAUDE_SCRATCHPAD_DIR/
+**/$CLAUDE_SCRATCHPAD_DIR/
+.claude/state/
+**/.claude/state/
 
 # Test artifacts
 .coverage

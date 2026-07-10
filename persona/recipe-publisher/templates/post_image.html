@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 1080px; height: 1080px; overflow: hidden; background: #1a1a1a; }
+
+    .card {
+      display: flex;
+      width: 1080px;
+      height: 1080px;
+    }
+
+    /* LEFT — food photo */
+    .photo-panel {
+      position: relative;
+      width: 570px;
+      flex-shrink: 0;
+    }
+    .food-photo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .photo-placeholder {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(145deg, #2d5a27 0%, #4a7c40 60%, #6aaa55 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 140px;
+    }
+
+    /* RIGHT — recipe info */
+    .info-panel {
+      flex: 1;
+      background: #faf7f0;
+      display: flex;
+      flex-direction: column;
+      padding: 38px 34px 30px;
+    }
+
+    /* Brand header */
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 26px;
+    }
+    .brand-avatar {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #4a7c40;
+      flex-shrink: 0;
+    }
+    .avatar-placeholder {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: #4a7c40;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      flex-shrink: 0;
+    }
+    .brand-text { display: flex; flex-direction: column; gap: 1px; }
+    .brand-name {
+      font-family: Georgia, serif;
+      font-size: 14px;
+      font-weight: bold;
+      color: #4a7c40;
+      letter-spacing: 0.3px;
+    }
+    .brand-sub {
+      font-family: Arial, sans-serif;
+      font-size: 11px;
+      color: #999;
+    }
+
+    /* Title */
+    .recipe-title {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 28px;
+      font-weight: bold;
+      color: #1a1a1a;
+      line-height: 1.25;
+      margin-bottom: 18px;
+    }
+
+    .divider {
+      width: 44px;
+      height: 3px;
+      background: #4a7c40;
+      border-radius: 2px;
+      margin-bottom: 18px;
+    }
+
+    /* Ingredients */
+    .section-label {
+      font-family: Arial, sans-serif;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: #4a7c40;
+      margin-bottom: 12px;
+    }
+    .ingredients-list {
+      list-style: none;
+      flex: 1;
+      overflow: hidden;
+    }
+    .ing-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      color: #2a2a2a;
+      line-height: 1.35;
+    }
+    .ing-item:last-child { border-bottom: none; }
+    .ing-dot {
+      width: 6px;
+      height: 6px;
+      background: #4a7c40;
+      border-radius: 50%;
+      margin-top: 5px;
+      flex-shrink: 0;
+    }
+    .ing-qty { color: #4a7c40; font-weight: bold; flex-shrink: 0; }
+
+    /* Meta bar */
+    .meta-bar {
+      display: flex;
+      gap: 22px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(0, 0, 0, 0.08);
+      margin-top: 10px;
+    }
+    .meta-item { display: flex; flex-direction: column; gap: 2px; }
+    .meta-label {
+      font-family: Arial, sans-serif;
+      font-size: 9px;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+    }
+    .meta-value {
+      font-family: Arial, sans-serif;
+      font-size: 15px;
+      font-weight: bold;
+      color: #1a1a1a;
+    }
+
+    .watermark {
+      font-family: Arial, sans-serif;
+      font-size: 10px;
+      color: #bbb;
+      margin-top: 12px;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="info-panel">
+      <h1 class="recipe-title">{{RECIPE_NAME}}</h1>
+      <div class="divider"></div>
+
+      <div class="section-label">Ingredients</div>
+      <ul class="ingredients-list">
+        {{INGREDIENTS_HTML}}
+      </ul>
+
+      <div class="brand-header">
+        {{DOG_AVATAR_HTML}}
+        <div class="brand-text">
+          <div class="brand-name">Persona</div>
+          <div class="brand-sub">Nalla's Dad &bull; Dog Recipes</div>
+        </div>
+      </div>
+
+      <div class="meta-bar">
+        {{META_HTML}}
+      </div>
+      <div class="watermark">your-brand.com</div>
+    </div>
+    <div class="photo-panel">
+      {{FOOD_PHOTO_HTML}}
+    </div>
+  </div>
+</body>
+</html>
