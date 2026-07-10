@@ -37,9 +37,12 @@ jobs:
           lib/db.py lib/db_pool.py
           lib/groups_db/db.py lib/groups_db/repository.py
           lib/engagements_db/db.py lib/engagements_db/repository.py
-          lib/worker_db.py lib/schedule_db.py
+          lib/worker_db.py lib/schedule_db.py lib/scheduling/
+          lib/errors/platforms.py
+          scripts/task_dispatcher.py scripts/noop_healthcheck.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
+          tests/test_task_dispatcher.py tests/lib/scheduling/
 
       - name: Ruff format check
         run: >-
@@ -47,9 +50,12 @@ jobs:
           lib/db.py lib/db_pool.py
           lib/groups_db/db.py lib/groups_db/repository.py
           lib/engagements_db/db.py lib/engagements_db/repository.py
-          lib/worker_db.py lib/schedule_db.py
+          lib/worker_db.py lib/schedule_db.py lib/scheduling/
+          lib/errors/platforms.py
+          scripts/task_dispatcher.py scripts/noop_healthcheck.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
+          tests/test_task_dispatcher.py tests/lib/scheduling/
 
   typecheck:
     name: Type Check
@@ -72,7 +78,8 @@ jobs:
           lib/db.py lib/db_pool.py
           lib/groups_db/db.py lib/groups_db/repository.py
           lib/engagements_db/db.py lib/engagements_db/repository.py
-          lib/worker_db.py lib/schedule_db.py
+          lib/worker_db.py lib/schedule_db.py lib/scheduling/
+          scripts/task_dispatcher.py scripts/noop_healthcheck.py
           --ignore-missing-imports
 
   test:
@@ -127,8 +134,11 @@ jobs:
             tests/test_engagements_db.py \
             tests/test_worker_db.py \
             tests/test_schedule_db.py \
+            tests/test_task_dispatcher.py \
+            tests/lib/scheduling/ \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db \
+            --cov=lib.scheduling \
             --cov-report=term-missing --cov-fail-under=75
 
   security:

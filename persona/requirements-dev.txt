@@ -11,6 +11,7 @@ pre-commit>=3.7.0
 
 # Type stubs (for strict mypy on new lib/ modules)
 types-requests>=2.31.0
+types-croniter>=3.0.3   # lib/scheduling/cron_due.py (strict mypy override)
 
 # HTTP mocking — used by tests/test_wp_comments.py (was missing, broke CI)
 respx>=0.21.0

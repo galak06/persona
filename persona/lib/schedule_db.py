@@ -44,6 +44,7 @@ _KNOWN_COLUMNS = {
     "inputs",
     "telegram_notify",
     "extra",
+    "brand_id",
 }
 
 

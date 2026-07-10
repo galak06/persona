@@ -37,6 +37,12 @@ CREATE TABLE IF NOT EXISTS schedule_tasks (
     extra               JSONB       DEFAULT '{}'
 );
 
+-- Additive (PR2 — Phase A dispatcher): brand-scoped dispatch. Existing rows
+-- default to 'dogfoodandfun' (today's only brand) so this migration is a
+-- no-op for current data; new brands set their own brand_id going forward.
+ALTER TABLE schedule_tasks ADD COLUMN IF NOT EXISTS brand_id TEXT NOT NULL DEFAULT 'dogfoodandfun';
+CREATE INDEX IF NOT EXISTS idx_schedule_tasks_brand ON schedule_tasks(brand_id);
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- worker_runs (from workers.db)
 -- ────────────────────────────────────────────────────────────────────────────
