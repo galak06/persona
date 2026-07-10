@@ -21,9 +21,12 @@ from lib.bootstrap import init_script
 from lib.task_queue import TaskQueue
 from lib.worker_db import record_complete, record_start
 
-WORKER_LABEL = "persona-ig-scanner"
-
 settings, log = init_script(__name__)
+
+# Brand-derived so each onboarded brand's worker_runs rows are distinct.
+# NOTE: dogfoodandfun's history under the old literal "persona-ig-scanner"
+# label is orphaned by this rename — new runs record under the new label.
+WORKER_LABEL = f"{settings.paths.brand_dir.name}-ig-scanner"
 
 import deduplication
 import rate_limiter
@@ -112,11 +115,15 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
 
     try:
         report = run_outbound_scan(
-            active, policy,
+            active,
+            policy,
             # Scan-only: no drafter. Comments are drafted at post time by
             # scripts/ig_comment.py, so the queue holds bare target posts.
-            dedup=deduplication, rate_tracker=rate_limiter, drafter=None,
-            queue_io=queue_io, log=log,
+            dedup=deduplication,
+            rate_tracker=rate_limiter,
+            drafter=None,
+            queue_io=queue_io,
+            log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,
         )
@@ -129,14 +136,19 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
         raise
 
     from lib.dedup_pg import record_done as _pg_record_done
+
     for rec in queue_io.newly_queued:
         deduplication.mark_engaged(
-            "instagram", str(rec["post_id"]),
+            "instagram",
+            str(rec["post_id"]),
             action="comment_queued",
             group_or_hashtag=str(rec.get("hashtag") or rec.get("group_or_hashtag") or ""),
         )
         _pg_record_done(
-            "scan", "instagram", str(rec["post_id"]), worker_label=WORKER_LABEL,
+            "scan",
+            "instagram",
+            str(rec["post_id"]),
+            worker_label=WORKER_LABEL,
         )
 
     last_run["ig_scanner"] = {
@@ -159,7 +171,24 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     return report
 
 
+def _health_check() -> int:
+    """Verify the IG Playwright session file exists and is non-empty.
+
+    No browser launch, no network call — mirrors
+    scripts/fb_group_post.py::_health_check()'s exact pattern (a `> 2` byte
+    threshold rejects empty JSON files a torn-down context may write).
+    """
+    if SESSION_FILE.exists() and SESSION_FILE.stat().st_size > 2:
+        print(f"IG session OK (storage: {SESSION_FILE})")
+        return 0
+    print(f"SESSION_EXPIRED: {SESSION_FILE} missing or empty", file=sys.stderr)
+    return 1
+
+
 if __name__ == "__main__":
+    if "--health-check" in sys.argv:
+        sys.exit(_health_check())
+
     _brand_dir = settings.paths.brand_dir
     _brand = _brand_dir.name
     record_start(_brand_dir, WORKER_LABEL, _brand)

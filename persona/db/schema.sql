@@ -91,6 +91,21 @@ CREATE TABLE IF NOT EXISTS brands (
     updated_at  TEXT
 );
 
+-- Additive (PR3 — Phase B onboarding): brand-registry fields beyond the
+-- minimal {id, name, persona, site_url} shape above. Existing rows (today's
+-- only brand, dogfoodandfun, seeded via groups_db.ensure_brand()) pick up
+-- these defaults untouched.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS niche               TEXT  DEFAULT '';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS mascot_name         TEXT  DEFAULT '';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS target_audience     TEXT  DEFAULT '';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS keywords            JSONB DEFAULT '{}';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS competitor_accounts JSONB DEFAULT '[]';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '["ig-scanner","fb-scanner"]';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS status              TEXT  NOT NULL DEFAULT 'draft';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS brand_dir           TEXT  DEFAULT '';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS extra               JSONB DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
+
 CREATE TABLE IF NOT EXISTS fb_groups (
     id                       TEXT    PRIMARY KEY,
     brand_id                 TEXT    NOT NULL    REFERENCES brands(id),

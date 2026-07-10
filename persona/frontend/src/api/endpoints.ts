@@ -71,6 +71,16 @@ export const endpoints = {
   /** GET — readiness probe. */
   health: "/health",
 
+  /** GET — list brands (optional ?status= filter). POST — create a new brand. */
+  brands: (status?: string): string =>
+    status ? `/brands?status=${encodeURIComponent(status)}` : "/brands",
+
+  /** GET — full brand row by id. */
+  brand: (id: string): string => `/brands/${enc(id)}`,
+
+  /** POST — (re)provision a brand's folder + schedule_tasks rows (idempotent). */
+  brandProvision: (id: string): string => `/brands/${enc(id)}/provision`,
+
   /** GET — list all registered independent workers. */
   workers: "/workers",
 

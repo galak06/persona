@@ -7,46 +7,23 @@ Validates voice before returning.
 from __future__ import annotations
 
 import json
-from lib.config import settings
 import re
-from pathlib import Path
 
+from comment_generator_defaults import (
+    DEFAULT_COMPETITOR_MENTIONS,
+    DEFAULT_PRIMARY_KEYWORDS,
+    DEFAULT_SECONDARY_KEYWORDS,
+)
 from draft_history import (
     filter_unused,
     record_draft,
     was_post_commented,
-    was_text_recently_used,
 )
+from lib.config import settings
 
 DATA_DIR = settings.paths.data_dir
 TEMPLATES_FILE = DATA_DIR / "post_templates.json"
 BRAND_VOICE_FILE = DATA_DIR / "brand_voice_guide.md"
-
-# Keywords that signal voice failure — never allowed in final comment
-MEDICAL_JARGON = [
-    "clinical",
-    "veterinary-grade",
-    "clinically proven",
-    "studies show",
-    "research indicates",
-    "scientifically",
-    "diagnosis",
-    "symptoms",
-    "treatment",
-    "prescribe",
-    "consult your vet before",
-]
-SALESY_PHRASES = [
-    "check out our",
-    "visit our site",
-    "click here",
-    "buy now",
-    "our product",
-    "shop now",
-    "affiliate",
-    "promo code",
-    settings.site.url,  # never include the URL unless user explicitly approves
-]
 
 
 def load_templates() -> dict:
@@ -68,100 +45,28 @@ def score_relevance(
     """
     text = post_text.lower()
     score = 0.0
+    keywords = settings.content_analysis.keywords
 
-    # Food / nutrition signals (broadened — these groups ARE about dog food)
-    food_keywords = [
-        "dog food",
-        "homemade",
-        "recipe",
-        "nutrition",
-        "ingredients",
-        "raw",
-        "kibble",
-        "diet",
-        "feeding",
-        "meal",
-        "protein",
-        "grain",
-        "food",
-        "treat",
-        "snack",
-        "chew",
-        "supplement",
-        "vitamin",
-        "probiotic",
-        "omega",
-        "calcium",
-        "freeze dried",
-        "dehydrated",
-        "batch cook",
-        "prep",
-        "topper",
-        "fresh pet",
-        "freshpet",
-        "transition",
-        "switching",
-        "picky eater",
-        "allergy",
-        "sensitive",
-        "stomach",
-        "digestive",
-        "gut",
-        "dental",
-        "teeth",
-        "yogurt",
-        "pumpkin",
-        "sardine",
-        "chicken",
-        "beef",
-        "turkey",
-        "salmon",
-        "sweet potato",
-        "broth",
-        "bone broth",
-        "coconut oil",
-    ]
-    if any(kw in text for kw in food_keywords):
+    # Food / nutrition signals (broadened — these groups ARE about dog food).
+    # Fallback fires ONLY when the key is missing entirely from config — an
+    # empty list from a real onboarded brand is a deliberate "no bonus yet"
+    # state, not a bug, so it must NOT trigger the default.
+    primary_keywords = keywords.get("primary_keywords", DEFAULT_PRIMARY_KEYWORDS)
+    if any(kw in text for kw in primary_keywords):
         score += 0.40
 
     # GPS / running / active dog signals
-    active_keywords = [
-        "gps",
-        "tracker",
-        "running",
-        "canicross",
-        "trail",
-        "hike",
-        "gear",
-        "collar",
-        "leash",
-        "activity",
-        "exercise",
-        "sport",
-        "fi ",
-        "tractive",
-        "walk",
-        "adventure",
-    ]
-    if any(kw in text for kw in active_keywords):
+    secondary_keywords = keywords.get("secondary_keywords", DEFAULT_SECONDARY_KEYWORDS)
+    if any(kw in text for kw in secondary_keywords):
         score += 0.30
 
     # Question format
     if "?" in post_text:
         score += 0.20
 
-    # Specific brands reviewed on site
-    reviewed_brands = [
-        "fi collar",
-        "tractive",
-        "whistle",
-        "link akc",
-        "ollie",
-        "nom nom",
-        "the farmer's dog",
-        "open farm",
-    ]
-    if any(brand in text for brand in reviewed_brands):
+    # Specific competitor brands reviewed on site
+    competitor_mentions = keywords.get("competitor_mentions", DEFAULT_COMPETITOR_MENTIONS)
+    if any(brand in text for brand in competitor_mentions):
         score += 0.20
 
     # Meta signals from post
@@ -217,14 +122,19 @@ def validate_voice(
     violations = []
     comment_lower = comment.lower()
 
-    # Block list checks
-    for phrase in MEDICAL_JARGON:
+    # Block list checks. voice_validation.* are REQUIRED (non-Optional)
+    # AppSettings fields, so these read directly from config with no
+    # Python-constant fallback.
+    for phrase in settings.voice_validation.blocked_medical_terms:
         if phrase in comment_lower:
             violations.append(f"Medical jargon detected: '{phrase}'")
 
-    salesy_phrases = SALESY_PHRASES
+    # The brand URL is never a config-declared "salesy phrase" — it's
+    # appended at runtime (mirrors the pre-config-driven behavior) and
+    # excluded when allow_own_url=True.
+    salesy_phrases = [*settings.voice_validation.blocked_salesy_phrases, settings.site.url]
     if allow_own_url:
-        salesy_phrases = [p for p in SALESY_PHRASES if p != settings.site.url]
+        salesy_phrases = [p for p in salesy_phrases if p != settings.site.url]
     for phrase in salesy_phrases:
         if phrase in comment_lower:
             violations.append(f"Salesy language detected: '{phrase}'")
@@ -240,7 +150,7 @@ def validate_voice(
         violations.append(f"Comment too long ({len(comment)} chars) — trim to under {max_len}")
 
     # Generic openers are forbidden
-    generic_openers = ["great post!", "love this!", "awesome!", "nice post", "amazing!"]
+    generic_openers = settings.voice_validation.blocked_generic_openers
     if any(comment_lower.startswith(g) for g in generic_openers):
         violations.append("Generic opener detected — start with something specific")
 
@@ -309,6 +219,7 @@ def draft_comment_from_template(
         return None  # all templates used recently — caller falls through to Claude
 
     import random
+
     template = random.choice(fresh)
 
     # Record the selection up-front. Whether the caller posts the draft or
@@ -380,16 +291,19 @@ def generate_comment(
     engaged with this post (returns method="skipped").
     """
     # Pre-flight: refuse to draft a duplicate engagement on the same post.
-    if post_id and platform in ("facebook", "instagram", "wordpress"):
-        if was_post_commented(platform, post_id):
-            return {
-                "comment": None,
-                "valid": False,
-                "violations": [],
-                "method": "skipped",
-                "score_check": False,
-                "skip_reason": f"post_id {post_id} on {platform} already engaged",
-            }
+    if (
+        post_id
+        and platform in ("facebook", "instagram", "wordpress")
+        and was_post_commented(platform, post_id)
+    ):
+        return {
+            "comment": None,
+            "valid": False,
+            "violations": [],
+            "method": "skipped",
+            "score_check": False,
+            "skip_reason": f"post_id {post_id} on {platform} already engaged",
+        }
 
     # Try template first
     draft = draft_comment_from_template(category, post_text, post_author)

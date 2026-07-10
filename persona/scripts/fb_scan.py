@@ -21,9 +21,12 @@ from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 from lib.worker_db import record_complete, record_start
 
-WORKER_LABEL = "dogfood-fb-scanner"
-
 settings, log = init_script(__name__)
+
+# Brand-derived so each onboarded brand's worker_runs rows are distinct.
+# NOTE: dogfoodandfun's history under the old literal "dogfood-fb-scanner"
+# label is orphaned by this rename — new runs record under the new label.
+WORKER_LABEL = f"{settings.paths.brand_dir.name}-fb-scanner"
 
 import deduplication
 import rate_limiter
@@ -67,9 +70,7 @@ class _QueueIO:
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._existing: list[dict[str, Any]] = (
-            json.loads(path.read_text()) if path.exists() else []
-        )
+        self._existing: list[dict[str, Any]] = json.loads(path.read_text()) if path.exists() else []
         self.newly_queued: list[dict[str, Any]] = []
 
     def append(self, record: dict[str, object]) -> None:
@@ -84,7 +85,8 @@ class _QueueIO:
     def existing_today(self, platform: str) -> int:
         today = date.today().isoformat()
         return sum(
-            1 for q in self._existing
+            1
+            for q in self._existing
             if q.get("platform") == platform
             and str(q.get("queued_at", "")).startswith(today)
             and q not in self.newly_queued
@@ -154,11 +156,15 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
 
     try:
         report = run_outbound_scan(
-            _WarmFiltered(active), policy,
+            _WarmFiltered(active),
+            policy,
             # Scan-only: no drafter. Comments are drafted at post time by
             # scripts/fb_comment.py, so the queue holds bare target posts.
-            dedup=deduplication, rate_tracker=rate_limiter, drafter=None,
-            queue_io=queue_io, log=log,
+            dedup=deduplication,
+            rate_tracker=rate_limiter,
+            drafter=None,
+            queue_io=queue_io,
+            log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,
         )
@@ -172,7 +178,8 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     # (pipeline only marks likes). Mirrors pre-pipeline fb_scan semantics.
     for rec in queue_io.newly_queued:
         deduplication.mark_engaged(
-            "facebook", str(rec["post_id"]),
+            "facebook",
+            str(rec["post_id"]),
             action="comment_queued",
             group_or_hashtag=str(rec.get("group_name") or ""),
         )
@@ -182,7 +189,8 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     for post_id, reason in report.pre_filtered_posts:
         if reason == "comments_disabled":
             deduplication.mark_engaged(
-                "facebook", str(post_id),
+                "facebook",
+                str(post_id),
                 action="comments_disabled",
                 group_or_hashtag="",
             )
@@ -213,7 +221,24 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     return report
 
 
+def _health_check() -> int:
+    """Verify the FB Playwright session file exists and is non-empty.
+
+    No browser launch, no network call — mirrors
+    scripts/fb_group_post.py::_health_check()'s exact pattern (a `> 2` byte
+    threshold rejects empty JSON files a torn-down context may write).
+    """
+    if SESSION_FILE.exists() and SESSION_FILE.stat().st_size > 2:
+        print(f"FB session OK (storage: {SESSION_FILE})")
+        return 0
+    print(f"SESSION_EXPIRED: {SESSION_FILE} missing or empty", file=sys.stderr)
+    return 1
+
+
 if __name__ == "__main__":
+    if "--health-check" in sys.argv:
+        sys.exit(_health_check())
+
     _brand_dir = settings.paths.brand_dir
     _brand = _brand_dir.name
     record_start(_brand_dir, WORKER_LABEL, _brand)

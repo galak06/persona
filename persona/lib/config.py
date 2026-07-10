@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -29,18 +29,19 @@ class InstagramConfig(BaseModel):
     enabled: bool
     profile_url: str
     hashtags_file: str
+    own_account: str = ""
 
 
 class TwitterConfig(BaseModel):
     enabled: bool
     profile_url: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class TiktokConfig(BaseModel):
     enabled: bool
     profile_url: str
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class SocialChannelsConfig(BaseModel):
@@ -58,7 +59,7 @@ class FacebookRateLimits(BaseModel):
     min_delay_between_group_visits_sec: int
     max_delay_between_group_visits_sec: int
     group_visit_schedule_hours: list[int]
-    _note_group_visits: Optional[str] = None
+    _note_group_visits: str | None = None
 
 
 class InstagramRateLimits(BaseModel):
@@ -68,7 +69,7 @@ class InstagramRateLimits(BaseModel):
     max_delay_between_likes_sec: int
     min_delay_between_comments_sec: int
     max_delay_between_comments_sec: int
-    _note_likes: Optional[str] = None
+    _note_likes: str | None = None
     hashtag_rotation: dict[str, Any]
 
 
@@ -85,6 +86,7 @@ class ContentAnalysisConfig(BaseModel):
     site_crawl_depth: int
     keywords: dict[str, list[str]]
     scoring_weights: dict[str, float]
+    competitor_accounts: list[str] = []
 
 
 class ApprovalGatesConfig(BaseModel):
@@ -133,9 +135,9 @@ class VoiceValidationConfig(BaseModel):
 class RecipeCardConfig(BaseModel):
     enabled: bool = True
     header_title: str = "Recipe Card"
-    stamp_media_id: int = 0       # 0 = no stamp
+    stamp_media_id: int = 0  # 0 = no stamp
     footer_text: str = ""
-    font_regular_path: str = ""   # relative to project root
+    font_regular_path: str = ""  # relative to project root
     font_bold_path: str = ""
     black_and_white: bool = False
 
@@ -186,7 +188,7 @@ class AppSettings(BaseModel):
     file_paths: FilePathsConfig
     voice_validation: VoiceValidationConfig
     recipe_card: RecipeCardConfig = RecipeCardConfig()
-    paths: Optional[BrandPaths] = None
+    paths: BrandPaths | None = None
 
 
 def default_brand_dir() -> Path:
@@ -260,6 +262,7 @@ def load_config() -> AppSettings:
 # Load local environment variables from .claude/settings.local.json
 try:
     from lib.local_env import load_local_env
+
     load_local_env()
 except ImportError:
     pass

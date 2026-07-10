@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 
 from comment_generator import build_claude_prompt, score_relevance, validate_voice
+from lib.config import settings
 
 # ── score_relevance ──────────────────────────────────────────────────────────
 
@@ -222,6 +224,135 @@ class TestValidateVoice:
         valid, violations = validate_voice(comment)
         assert not valid
         assert len(violations) >= 3  # generic opener, salesy, too short, no question, etc.
+
+
+# ── score_relevance: config-driven keywords (brand generalization) ──────────
+
+
+class TestScoreRelevanceCharacterization:
+    """Regression gate for the content_analysis.keywords rename
+    (food_nutrition/active_gps/brands_reviewed ->
+    primary_keywords/secondary_keywords/competitor_mentions) and the switch
+    from hardcoded Python lists to config-driven lookups.
+
+    Expected scores were captured by running the PRE-rename score_relevance
+    (git history, before comment_generator_defaults.py existed) against the
+    live dogfoodandfun/config.json for each case below, then verified
+    identical against the POST-rename code + renamed/expanded config. Any
+    value here diverging from a live run means dogfoodandfun's scoring
+    behavior silently changed — treat as a hard regression, never "fix" by
+    updating the expected number.
+    """
+
+    CASES: ClassVar[list[tuple[str, str, dict | None, str, float]]] = [
+        (
+            "food_with_question",
+            "My dog has been on a raw diet for 3 months, what protein should I try next?",
+            None,
+            "food",
+            0.75,
+        ),
+        (
+            "gps_no_question",
+            "Just got a Tractive GPS tracker for our hiking trips. Battery lasts 2 days.",
+            None,
+            "",
+            0.5,
+        ),
+        ("irrelevant", "Just adopted a new kitten! So excited!", None, "", 0.0),
+        (
+            "competitor_meta",
+            "Check out our new dog food subscription service!",
+            {"is_competitor": True, "comment_count": 5, "hours_old": 6},
+            "",
+            0.1,
+        ),
+        (
+            "crowded_food",
+            "What homemade dog food recipe do you use?",
+            {"comment_count": 150, "hours_old": 12},
+            "",
+            0.4,
+        ),
+        (
+            "light_food",
+            "What homemade dog food recipe do you use?",
+            {"comment_count": 10, "hours_old": 12},
+            "",
+            0.8,
+        ),
+        (
+            "competitor_brand_mention",
+            "I'm looking at the Fi collar for my dog.",
+            None,
+            "",
+            0.5,
+        ),
+        (
+            "all_signals",
+            "Has anyone tried the Fi collar GPS tracker for raw fed dogs on trail hikes?",
+            {"comment_count": 20, "hours_old": 2},
+            "food",
+            1.45,
+        ),
+        ("empty", "", None, "", 0.0),
+        ("health_group_itch", "My dog has been itching a lot lately", None, "health", 0.0),
+        ("gps_group_bonus", "Just got new gear for our trail walks", None, "gps", 0.45),
+    ]
+
+    def test_scores_unchanged_after_config_rename(self):
+        for name, text, meta, category, expected in self.CASES:
+            actual = score_relevance(text, meta, group_category=category)
+            assert actual == expected, (
+                f"{name}: expected {expected}, got {actual} — "
+                "dogfoodandfun scoring behavior changed"
+            )
+
+
+class TestScoreRelevanceCrossBrandIsolation:
+    """A differently-themed brand's config must not score dog-food text high
+    off leftover Python defaults — proves no cross-brand keyword leakage."""
+
+    def test_dog_food_text_scores_near_zero_for_unrelated_brand(self, monkeypatch):
+        monkeypatch.setattr(
+            settings.content_analysis,
+            "keywords",
+            {
+                "primary_keywords": ["espresso", "latte", "roast"],
+                "secondary_keywords": ["grinder", "portafilter"],
+                "competitor_mentions": ["blue bottle", "peets"],
+            },
+        )
+        post = "Homemade raw kibble diet with extra protein and bone broth for my dog."
+        score = score_relevance(post, group_category="")
+        assert score == 0.0, f"Unrelated-brand config leaked dog-food scoring: {score}"
+
+    def test_explicit_empty_lists_do_not_fall_back_to_defaults(self, monkeypatch):
+        """An empty list for a real onboarded brand is a deliberate 'no bonus
+        yet' state — the fallback must NOT fire just because the list is
+        empty (only when the key is missing entirely)."""
+        monkeypatch.setattr(
+            settings.content_analysis,
+            "keywords",
+            {"primary_keywords": [], "secondary_keywords": [], "competitor_mentions": []},
+        )
+        post = "Homemade raw kibble diet with extra protein and a Tractive GPS tracker."
+        score = score_relevance(post, group_category="")
+        assert score == 0.0, f"Empty-but-present keys wrongly fell back to defaults: {score}"
+
+
+class TestScoreRelevanceMissingKeyFallback:
+    """A config.json that omits content_analysis.keywords entirely must still
+    score using the Python DEFAULT_* constants in comment_generator_defaults.py."""
+
+    def test_missing_keywords_dict_uses_defaults(self, monkeypatch):
+        monkeypatch.setattr(settings.content_analysis, "keywords", {})
+        post = "My dog has been on a raw diet for 3 months, what protein should I try next?"
+        score = score_relevance(post, group_category="food")
+        # Same post/category as the "food_with_question" characterization
+        # case (0.75) — proves DEFAULT_* constants reproduce identical
+        # scoring when the config key is missing outright.
+        assert score == 0.75, f"Missing-key fallback did not use defaults: {score}"
 
 
 # ── build_claude_prompt ──────────────────────────────────────────────────────
