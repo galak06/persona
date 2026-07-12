@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import { getErrorMessage } from "../api/client";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -191,7 +192,7 @@ function ToastView({ toast }: { toast: Toast }): React.JSX.Element {
 }
 
 export function Campaigns(): React.JSX.Element {
-  const { data, loading, error } = useApiQuery<CampaignListResponse>(
+  const { data, loading, error, refetch } = useApiQuery<CampaignListResponse>(
     "/campaigns",
     { refetchInterval: POLL_MS },
   );
@@ -242,9 +243,7 @@ export function Campaigns(): React.JSX.Element {
 
   if (error && !data) {
     return (
-      <Alert status="error" title="Could not load campaigns">
-        {error}
-      </Alert>
+      <ErrorState title="Could not load campaigns" message={error} onRetry={() => void refetch()} retrying={loading} />
     );
   }
 

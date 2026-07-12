@@ -9,6 +9,7 @@
 import { useSearchParams } from "react-router-dom";
 
 import LoadingState from "../components/ui/LoadingState";
+import ErrorState from "../components/ui/ErrorState";
 import EmptyState from "../components/ui/EmptyState";
 import WorkerCard from "../components/ui/WorkerCard";
 import { endpoints } from "../api/endpoints";
@@ -18,10 +19,12 @@ import type { WorkerStatus } from "../api/workers";
 const POLL_MS = 10_000;
 
 export default function FlowGuide(): React.JSX.Element {
-  const { data: workers, loading, error } = useApiQuery<WorkerStatus[]>(
-    endpoints.workers,
-    { refetchInterval: POLL_MS },
-  );
+  const {
+    data: workers,
+    loading,
+    error,
+    refetch,
+  } = useApiQuery<WorkerStatus[]>(endpoints.workers, { refetchInterval: POLL_MS });
 
   const [searchParams, setSearchParams] = useSearchParams();
   const workerParam = searchParams.get("worker") ?? "";
@@ -45,10 +48,12 @@ export default function FlowGuide(): React.JSX.Element {
 
   if (error && !workers) {
     return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        <h3 className="font-semibold mb-1">Error loading workers</h3>
-        <p className="text-sm">{error}</p>
-      </div>
+      <ErrorState
+        title="Error loading workers"
+        message={error}
+        onRetry={() => void refetch()}
+        retrying={loading}
+      />
     );
   }
 

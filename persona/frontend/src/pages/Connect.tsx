@@ -14,6 +14,7 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { endpoints } from "../api/endpoints";
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import Spinner from "../components/ui/Spinner";
 
 interface TokenSummary {
@@ -165,7 +166,9 @@ export default function Connect() {
       {refreshMsg && (
         <Alert status="success">{refreshMsg}</Alert>
       )}
-      {error && <Alert status="error">Could not load token status: {error}</Alert>}
+      {error && (
+        <ErrorState message={`Could not load token status: ${error}`} onRetry={() => void refetch()} retrying={loading} />
+      )}
 
       {/* ── Step 1: Connect Facebook ─────────────────────────────────── */}
       <section className="bg-brand-surface rounded-2xl border border-brand-border shadow-card p-6 space-y-4">

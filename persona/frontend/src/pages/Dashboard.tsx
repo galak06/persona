@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import { endpoints } from "../api/endpoints";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -92,9 +93,12 @@ export default function Dashboard(): React.JSX.Element {
 
   if (pendingQ.error && !pendingQ.data) {
     return (
-      <Alert status="error" title="Could not load dashboard">
-        {pendingQ.error}
-      </Alert>
+      <ErrorState
+        title="Could not load dashboard"
+        message={pendingQ.error}
+        onRetry={() => void pendingQ.refetch()}
+        retrying={pendingQ.loading}
+      />
     );
   }
 

@@ -15,8 +15,8 @@
 
 import { useState } from "react";
 
-import Alert from "../components/ui/Alert";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import WorkerCard from "../components/ui/WorkerCard";
 import { endpoints } from "../api/endpoints";
@@ -26,7 +26,7 @@ import type { WorkerStatus } from "../api/workers";
 const POLL_MS = 30000;
 
 export default function Explorer(): React.JSX.Element {
-  const { data: workers, loading, error } = useApiQuery<WorkerStatus[]>(
+  const { data: workers, loading, error, refetch } = useApiQuery<WorkerStatus[]>(
     endpoints.workers,
     { refetchInterval: POLL_MS },
   );
@@ -40,7 +40,10 @@ export default function Explorer(): React.JSX.Element {
   const selected = list.find((w) => w.label === effectiveLabel) ?? null;
 
   if (loading && !workers) return <LoadingState message="Loading workers..." />;
-  if (error) return <Alert status="error">{error}</Alert>;
+  if (error)
+    return (
+      <ErrorState message={error} onRetry={() => void refetch()} retrying={loading} />
+    );
 
   return (
     <div className="space-y-6">

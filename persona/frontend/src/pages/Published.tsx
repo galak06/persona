@@ -5,6 +5,8 @@ import {
   type EngagementsResponse,
 } from "../api/engagements";
 import { useApiQuery } from "../hooks/useApiQuery";
+import ErrorState from "../components/ui/ErrorState";
+import LoadingState from "../components/ui/LoadingState";
 
 /**
  * Published — the post + comment history recorded in engagements.db by the
@@ -84,7 +86,7 @@ export default function Published(): React.JSX.Element {
     () => engagementsUrl({ platform: platform === "all" ? undefined : platform, limit: 500 }),
     [platform],
   );
-  const { data, loading, error } = useApiQuery<EngagementsResponse>(url);
+  const { data, loading, error, refetch } = useApiQuery<EngagementsResponse>(url);
 
   const totalPosted = useMemo(() => {
     if (!data) return 0;
@@ -130,8 +132,10 @@ export default function Published(): React.JSX.Element {
         </div>
       )}
 
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {loading && !data && <LoadingState message="Loading published history…" />}
+      {error && (
+        <ErrorState message={error} onRetry={() => void refetch()} retrying={loading} />
+      )}
 
       {data && data.engagements.length === 0 && !loading && (
         <p className="text-sm text-slate-400">Nothing published yet for this filter.</p>

@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 
 import Alert from "../components/ui/Alert";
 import EmptyState from "../components/ui/EmptyState";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import { endpoints } from "../api/endpoints";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -85,7 +86,7 @@ export default function Activity(): React.JSX.Element {
   const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all");
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
 
-  const { data, loading, error } = useApiQuery<ActivityResponse>(
+  const { data, loading, error, refetch } = useApiQuery<ActivityResponse>(
     endpoints.activity({ limit: FETCH_LIMIT }),
     { refetchInterval: POLL_MS },
   );
@@ -107,9 +108,7 @@ export default function Activity(): React.JSX.Element {
 
   if (error && !data) {
     return (
-      <Alert status="error" title="Could not load activity">
-        {error}
-      </Alert>
+      <ErrorState title="Could not load activity" message={error} onRetry={() => void refetch()} retrying={loading} />
     );
   }
 

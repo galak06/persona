@@ -68,6 +68,13 @@ export function getErrorMessage(
   }
 
   if (detail && typeof detail === "object") {
+    // Common shape for our own structured error payloads (e.g.
+    // brands_api.py's provisioning-failure 502): {message, ...context}.
+    // Prefer the human-readable message over dumping the raw object.
+    const withMessage = detail as { message?: unknown };
+    if (typeof withMessage.message === "string" && withMessage.message.trim()) {
+      return withMessage.message;
+    }
     return JSON.stringify(detail);
   }
 
@@ -81,6 +88,16 @@ export function getErrorMessage(
 /** Type guard for "error caused by HTTP response with status N". */
 export function isHttpStatus(err: unknown, status: number): boolean {
   return (err as AxiosError)?.response?.status === status;
+}
+
+/**
+ * Raw `err.response.data.detail` value, for callers that need more than the
+ * formatted message `getErrorMessage` returns — e.g. reading a `brand_id`
+ * or `retry` hint out of a structured error payload to build a real retry
+ * action instead of just displaying text.
+ */
+export function getErrorDetail(err: unknown): unknown {
+  return (err as ApiError)?.response?.data?.detail;
 }
 
 export default apiClient;

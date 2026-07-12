@@ -6,6 +6,8 @@ import {
 } from "../api/tiktokCandidates";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
+import ErrorState from "../components/ui/ErrorState";
+import LoadingState from "../components/ui/LoadingState";
 
 const STATUSES = ["all", "pending", "followed", "skipped"] as const;
 type StatusFilter = (typeof STATUSES)[number];
@@ -201,8 +203,10 @@ export default function TikTokCandidates(): React.JSX.Element {
         })}
       </div>
 
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <p className="text-sm text-rose-600">{error}</p>}
+      {loading && !data && <LoadingState message="Loading candidates…" />}
+      {error && (
+        <ErrorState message={error} onRetry={() => void refetch()} retrying={loading} />
+      )}
 
       {!loading && !error && data?.candidates.length === 0 && (
         <p className="text-sm text-slate-400">

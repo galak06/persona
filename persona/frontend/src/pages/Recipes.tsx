@@ -8,6 +8,8 @@ import {
   type RecipeSummary,
 } from "../api/recipes";
 import { getErrorMessage } from "../api/client";
+import ErrorState from "../components/ui/ErrorState";
+import LoadingState from "../components/ui/LoadingState";
 import {
   ArtifactsModal,
   IgModal,
@@ -115,21 +117,12 @@ export default function Recipes() {
   }, [recipes, safety]);
 
   if (loading) {
-    return <div className="text-slate-500">Loading recipes...</div>;
+    return <LoadingState message="Loading recipes…" />;
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        <h3 className="font-semibold mb-1">Error loading recipes</h3>
-        <p className="text-sm">{error}</p>
-        <button
-          onClick={load}
-          className="mt-3 text-sm font-medium hover:underline"
-        >
-          Try Again
-        </button>
-      </div>
+      <ErrorState title="Error loading recipes" message={error} onRetry={() => void load()} />
     );
   }
 
