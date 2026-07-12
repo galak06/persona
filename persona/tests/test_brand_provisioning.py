@@ -162,7 +162,7 @@ def test_real_run_writes_brand_json_defaulting_headless_true(pg: None, brands_ro
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     data = json.loads((result.brand_dir / "brand.json").read_text(encoding="utf-8"))
-    assert data == {"runtime": {"headless": True}}
+    assert data["runtime"] == {"headless": True}
 
 
 @requires_postgres
@@ -176,7 +176,7 @@ def test_real_run_writes_brand_json_reflecting_headless_false(pg: None, brands_r
     result = provision_brand(spec, dry_run=False)
 
     data = json.loads((result.brand_dir / "brand.json").read_text(encoding="utf-8"))
-    assert data == {"runtime": {"headless": False}}
+    assert data["runtime"] == {"headless": False}
 
 
 @requires_postgres

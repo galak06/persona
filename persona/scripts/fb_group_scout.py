@@ -45,13 +45,17 @@ from group_discovery.state import (
     save_pending,
 )
 from lib.fb.session import FbSession, build_fb_session
+from lib.local_env import get_group_join_limit
 from lib.runtime.singleton import SingletonLock
 from notifier import skill_finished, skill_skipped, skill_started
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-JOIN_LIMIT_PER_DAY = 10  # ~2.5x under FB's ~25/day ceiling
+# Brand-overlay override via <BRAND_DIR>/brand.json's group_discovery.
+# join_limit_per_day; falls back to 10 (~2.5x under FB's ~25/day ceiling)
+# for brands that don't customize it.
+JOIN_LIMIT_PER_DAY = get_group_join_limit()
 MIN_SCORE = 40
 
 SEARCH_QUERIES = [

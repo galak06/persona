@@ -79,6 +79,8 @@ def _spec_from_row(row: dict[str, Any]) -> BrandSpec:
         competitor_mentions=list(keywords.get("competitor_mentions") or []),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         headless=bool(row.get("headless", True)),
+        enabled_flows=list(row.get("enabled_flows") or brands_db.default_enabled_flows()),
+        group_join_limit=int(row.get("group_join_limit") or 10),
     )
 
 
@@ -98,6 +100,7 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),
+        group_join_limit=int(row.get("group_join_limit") or 10),
         status=str(row.get("status") or ""),
         brand_dir=brand_dir,
         extra=dict(row.get("extra") or {}),
@@ -218,6 +221,7 @@ def get_brand(brand_id: str) -> BrandDetail:
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),
+        group_join_limit=int(row.get("group_join_limit") or 10),
         status=str(row.get("status") or ""),
         brand_dir=str(row.get("brand_dir") or ""),
         extra=dict(row.get("extra") or {}),

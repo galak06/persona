@@ -82,6 +82,19 @@ def test_update_competitor_accounts_and_enabled_flows(repo: BrandsRepository) ->
 
 
 @requires_postgres
+def test_update_group_join_limit_only_leaves_enabled_flows_untouched(
+    repo: BrandsRepository,
+) -> None:
+    repo.create(brand_id="gjl-only", name="Gjl Only", site_url="https://g.example", niche="n")
+    assert repo.update("gjl-only", group_join_limit=3) is True
+
+    row = repo.get("gjl-only")
+    assert row is not None
+    assert row["group_join_limit"] == 3
+    assert row["enabled_flows"] == ["ig-scanner", "fb-scanner"]  # untouched, create()-time default
+
+
+@requires_postgres
 def test_update_with_no_fields_returns_false_and_issues_no_query(repo: BrandsRepository) -> None:
     repo.create(brand_id="noop", name="Noop", site_url="https://n.example", niche="n")
     assert repo.update("noop") is False

@@ -208,10 +208,32 @@ def test_render_instagram_hashtags_csv_derives_hashtags_mechanically() -> None:
 # ------------------------------------------------------------------- render_brand_json
 
 
-def test_render_brand_json_defaults_headless_true() -> None:
-    assert render_brand_json(MINIMAL_SPEC) == {"runtime": {"headless": True}}
+def test_render_brand_json_defaults() -> None:
+    assert render_brand_json(MINIMAL_SPEC) == {
+        "runtime": {"headless": True},
+        "group_discovery": {"join_limit_per_day": 10},
+    }
 
 
 def test_render_brand_json_reflects_headless_false() -> None:
     spec = BrandSpec(name="X Co", site_url="https://x.example", niche="widgets", headless=False)
-    assert render_brand_json(spec) == {"runtime": {"headless": False}}
+    assert render_brand_json(spec)["runtime"] == {"headless": False}
+
+
+def test_render_brand_json_reflects_group_join_limit() -> None:
+    spec = BrandSpec(name="X Co", site_url="https://x.example", niche="widgets", group_join_limit=3)
+    assert render_brand_json(spec)["group_discovery"] == {"join_limit_per_day": 3}
+
+
+def test_brand_spec_default_enabled_flows() -> None:
+    assert MINIMAL_SPEC.enabled_flows == ["ig-scanner", "fb-scanner"]
+
+
+def test_brand_spec_enabled_flows_can_include_fb_group_scout() -> None:
+    spec = BrandSpec(
+        name="X Co",
+        site_url="https://x.example",
+        niche="widgets",
+        enabled_flows=["ig-scanner", "fb-scanner", "fb-group-scout"],
+    )
+    assert "fb-group-scout" in spec.enabled_flows
