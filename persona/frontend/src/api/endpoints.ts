@@ -84,6 +84,13 @@ export const endpoints = {
   /** PATCH — partial brand settings edit (headless + keyword/competitor lists). */
   brandSettings: (id: string): string => `/brands/${enc(id)}/settings`,
 
+  /** GET — per-flow enabled state, last-run status, and readiness signal. */
+  brandFlows: (id: string): string => `/brands/${enc(id)}/flows`,
+
+  /** POST — enqueue one flow to run now, bypassing the cron-due check. */
+  brandFlowRun: (id: string, flowId: string): string =>
+    `/brands/${enc(id)}/flows/${enc(flowId)}/run`,
+
   /** GET — list all registered independent workers. */
   workers: "/workers",
 

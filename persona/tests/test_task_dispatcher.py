@@ -1,4 +1,4 @@
-"""Tests for `scripts/task_dispatcher.py` (Phase A Postgres+Redis dispatcher).
+"""Tests for `scripts/task_dispatcher.py` (pure PRODUCER, PR7 split).
 
 The pure due-check tests need no infra. The dispatch-level tests are real
 integration tests against a live local Postgres, following the project's
@@ -9,13 +9,15 @@ when one is reachable at `DATABASE_URL` and skip cleanly otherwise; CI's
 The Redis lock is exercised via `_FakeLock`, a tiny in-memory stand-in that
 mirrors `redis.Redis.set`'s NX/EX contract (`True` on success, `None` when
 `nx=True` blocks) -- no live Redis server is needed for these tests. The
-real `persona:{brand}:dispatch:{task_id}` key against a live Redis is
-exercised by the plan's manual verification steps, not here.
+`flow-run` queue is exercised via `_FakeQueue`, a tiny in-memory stand-in
+for `lib.task_queue.TaskQueue.push()` -- no live Redis queue is needed
+either. Neither fake means the dispatcher runs anything: since PR7, it only
+enqueues -- `scripts/task_worker.py` (tested separately, in
+`tests/test_task_worker.py`) is what actually executes.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -79,6 +81,25 @@ class _FakeLock:
         return True
 
 
+class _FakeQueue:
+    """In-memory stand-in for `lib.task_queue.TaskQueue.push()`.
+
+    `fail_for` optionally names a `schedule_task_id` whose push raises --
+    used to exercise `run_once`'s per-row exception handling without a real
+    dependency failure.
+    """
+
+    def __init__(self, *, fail_for: str | None = None) -> None:
+        self.pushed: list[dict[str, Any]] = []
+        self._fail_for = fail_for
+
+    def push(self, payload: dict[str, Any]) -> str:
+        if self._fail_for and payload.get("schedule_task_id") == self._fail_for:
+            raise RuntimeError("queue unavailable")
+        self.pushed.append(payload)
+        return "fake-queue-item-id"
+
+
 def _task_row(
     task_id: str,
     brand_id: str,
@@ -94,18 +115,6 @@ def _task_row(
         "args": [],
         "order_num": order_num,
     }
-
-
-def _fake_run(returncode: int = 0) -> Any:
-    """Build a fake `subprocess.run` replacement recording every call."""
-    calls: list[list[str]] = []
-
-    def _run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        calls.append(cmd)
-        return subprocess.CompletedProcess(cmd, returncode, stdout="", stderr="boom")
-
-    _run.calls = calls  # type: ignore[attr-defined]
-    return _run
 
 
 # --------------------------------------------------------------------------- is_task_due (pure, no infra)
@@ -136,15 +145,30 @@ def test_is_task_due_true_for_malformed_last_run_timestamp() -> None:
     assert is_task_due("* * * * *", "not-a-timestamp", datetime.now(UTC)) is True
 
 
+# --------------------------------------------------------------------- build_queue_payload (pure, no infra)
+
+
+def test_build_queue_payload_shape() -> None:
+    task = _task_row("t1", _BRAND, script="scripts/ig_scan.py")
+    payload = task_dispatcher.build_queue_payload(
+        task, brand=_BRAND, brand_dir=Path("/brands/dogfoodandfun"), timeout_seconds=120
+    )
+    assert payload == {
+        "schedule_task_id": "t1",
+        "script": "scripts/ig_scan.py",
+        "args": [],
+        "brand": _BRAND,
+        "brand_dir": "/brands/dogfoodandfun",
+        "timeout_seconds": 120,
+    }
+
+
 # --------------------------------------------------------------------------- dispatch_task
 
 
 @requires_postgres
-def test_dispatch_task_runs_due_task_and_records_success(
-    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+def test_dispatch_task_enqueues_due_task_without_executing_it(pg: None, tmp_path: Path) -> None:
+    queue = _FakeQueue()
 
     task_dispatcher.dispatch_task(
         _task_row("t1", _BRAND),
@@ -152,21 +176,19 @@ def test_dispatch_task_runs_due_task_and_records_success(
         brand_dir=tmp_path,
         now=datetime.now(UTC),
         redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert len(fake_run.calls) == 1
-    row = worker_db.get_one(tmp_path, "t1", _BRAND)
-    assert row is not None
-    assert row["status"] == "success"
+    assert len(queue.pushed) == 1
+    assert queue.pushed[0]["schedule_task_id"] == "t1"
+    # Enqueuing is NOT executing -- worker_runs stays untouched; that's
+    # scripts/task_worker.py's job once it pops this off the queue.
+    assert worker_db.get_one(tmp_path, "t1", _BRAND) is None
 
 
 @requires_postgres
-def test_dispatch_task_skips_when_not_due(
-    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
+def test_dispatch_task_skips_when_not_due(pg: None, tmp_path: Path) -> None:
+    queue = _FakeQueue()
     now = datetime.now(UTC)
     worker_db.record_complete(tmp_path, "t1", _BRAND, "success")  # last_run = now
 
@@ -176,109 +198,96 @@ def test_dispatch_task_skips_when_not_due(
         brand_dir=tmp_path,
         now=now,
         redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert fake_run.calls == []
+    assert queue.pushed == []
 
 
 @requires_postgres
-def test_dispatch_task_skips_row_missing_cron(
-    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
+def test_dispatch_task_skips_row_missing_cron(pg: None, tmp_path: Path) -> None:
+    queue = _FakeQueue()
     task = _task_row("t1", _BRAND)
     task["schedule"] = {}
 
     task_dispatcher.dispatch_task(
-        task, brand=_BRAND, brand_dir=tmp_path, now=datetime.now(UTC), redis_client=_FakeLock()
+        task,
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert fake_run.calls == []
+    assert queue.pushed == []
 
 
 @requires_postgres
-def test_dispatch_task_lock_prevents_double_dispatch(
+def test_dispatch_task_lock_prevents_double_enqueue(
     pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Isolates the Redis lock from the due-check: `is_task_due` is forced
     True on both calls (a real second call would also see "not due" once
     `record_complete` lands, which is a *different* guard tested above)."""
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(task_dispatcher, "is_task_due", lambda *a, **k: True)
 
+    queue = _FakeQueue()
     lock = _FakeLock()
     now = datetime.now(UTC)
     task = _task_row("t1", _BRAND)
 
     task_dispatcher.dispatch_task(
-        task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock
+        task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock, queue=queue
     )
     task_dispatcher.dispatch_task(
-        task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock
+        task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock, queue=queue
     )
 
-    assert len(fake_run.calls) == 1  # second call saw the held lock and skipped
+    assert len(queue.pushed) == 1  # second call saw the held lock and skipped
 
 
 # --------------------------------------------------------------------------- run_once
 
 
 @requires_postgres
-def test_run_once_only_dispatches_rows_for_its_own_brand(
-    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
+def test_run_once_only_enqueues_rows_for_its_own_brand(pg: None, tmp_path: Path) -> None:
+    queue = _FakeQueue()
     schedule_db.save_task(None, _task_row("mine", _BRAND))
     schedule_db.save_task(None, _task_row("theirs", _OTHER_BRAND))
 
     task_dispatcher.run_once(
-        brand=_BRAND, brand_dir=tmp_path, now=datetime.now(UTC), redis_client=_FakeLock()
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert len(fake_run.calls) == 1
-    assert worker_db.get_one(tmp_path, "mine", _BRAND) is not None
-    assert worker_db.get_one(tmp_path, "theirs", _OTHER_BRAND) is None
+    assert [p["schedule_task_id"] for p in queue.pushed] == ["mine"]
 
 
 @requires_postgres
-def test_run_once_continues_after_one_task_fails(
+def test_run_once_continues_after_one_task_fails_to_enqueue(
     pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[str] = []
     notified: list[tuple[str, str]] = []
-
-    def fake_run(cmd: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-        calls.append(cmd[1])
-        if "bad" in cmd[1]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(
         task_dispatcher,
         "_notify_telegram_failure",
         lambda task_id, error: notified.append((task_id, error)),
     )
 
-    schedule_db.save_task(None, _task_row("bad-task", _BRAND, script="scripts/bad.py", order_num=0))
-    schedule_db.save_task(
-        None, _task_row("good-task", _BRAND, script="scripts/good.py", order_num=1)
-    )
+    queue = _FakeQueue(fail_for="bad-task")
+    schedule_db.save_task(None, _task_row("bad-task", _BRAND, order_num=0))
+    schedule_db.save_task(None, _task_row("good-task", _BRAND, order_num=1))
 
     task_dispatcher.run_once(
-        brand=_BRAND, brand_dir=tmp_path, now=datetime.now(UTC), redis_client=_FakeLock()
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert len(calls) == 2  # both attempted despite the first failing
-    bad_row = worker_db.get_one(tmp_path, "bad-task", _BRAND)
-    good_row = worker_db.get_one(tmp_path, "good-task", _BRAND)
-    assert bad_row is not None
-    assert bad_row["status"] == "error"
-    assert good_row is not None
-    assert good_row["status"] == "success"
+    assert [p["schedule_task_id"] for p in queue.pushed] == ["good-task"]
     assert notified and notified[0][0] == "bad-task"

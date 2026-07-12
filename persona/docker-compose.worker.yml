@@ -14,11 +14,42 @@
 #
 # BRAND_DIR/PERSONA_BRAND are required — no hardcoded default brand, since a
 # worker with no brand specified isn't a meaningful thing to start.
+#
+# Two services (PR7 producer/consumer split — replaces the single "worker"
+# service that used to both decide-what's-due AND run it):
+#   dispatcher — scripts/task_dispatcher.py --loop: reads due schedule_tasks
+#                rows and pushes them onto this brand's Redis `flow-run`
+#                queue. Never launches a browser, so it builds off the
+#                lightweight Dockerfile.api image (no Playwright/Chromium).
+#   worker     — scripts/task_worker.py --loop: pops that queue and actually
+#                runs each task's script (ig_scan.py/fb_scan.py/
+#                fb_group_scout.py/...) as a subprocess. Builds off
+#                Dockerfile.worker (has Playwright/Chromium).
 
 version: "3.9"
 
 services:
-  # ── Worker (cron scheduler, browser-driven scan/scrape flows) ───────────────
+  # ── Dispatcher (croniter due-check, pure producer) ──────────────────────────
+  dispatcher:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    environment:
+      - BRAND_DIR=/brand
+      - PERSONA_BRAND=${PERSONA_BRAND}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
+    volumes:
+      # Read-only: the dispatcher only reads config to resolve BRAND_DIR's
+      # settings -- it never writes to the brand folder (no session/browser
+      # state, no worker_runs writes -- those are Postgres, done by `worker`).
+      - ${BRAND_DIR}:/brand:ro
+    networks:
+      - persona_net
+    command: ["python", "scripts/task_dispatcher.py", "--loop"]
+
+  # ── Worker (consumer, browser-driven scan/scrape flows) ─────────────────────
   worker:
     build:
       context: .
@@ -28,6 +59,7 @@ services:
       - BRAND_DIR=/brand
       - PERSONA_BRAND=${PERSONA_BRAND}
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
       - WP_URL=${WP_URL}
       - WP_USER=${WP_USER}
       - WP_APP_PASSWORD=${WP_APP_PASSWORD}
@@ -60,11 +92,7 @@ services:
       - playwright_cache:/home/persona/.cache/ms-playwright
     networks:
       - persona_net
-    # Phase A dispatcher: reads this brand's due `schedule_tasks` rows and
-    # runs them (see scripts/task_dispatcher.py). Bare invocation with no
-    # `--loop` does a single pass and exits -- useful for manual
-    # verification; `--loop` (used here) runs continuously.
-    command: ["python", "scripts/task_dispatcher.py", "--loop"]
+    command: ["python", "scripts/task_worker.py", "--loop"]
 
 networks:
   persona_net:

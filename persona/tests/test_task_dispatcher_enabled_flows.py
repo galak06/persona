@@ -1,13 +1,14 @@
 """Tests for `scripts/task_dispatcher.py`'s `enabled_flows` gate (PR6).
 
 Split out of `test_task_dispatcher.py` to keep that file under the
-project's 300-line cap. Reuses its `_task_row`/`_fake_run`/`_FakeLock`
-helpers and `requires_postgres` skipif convention.
+project's 300-line cap. Reuses its `_task_row`/`_FakeLock`/`_FakeQueue`
+helpers and `requires_postgres` skipif convention. Since PR7,
+`run_once`/`dispatch_task` enqueue rather than execute -- gate assertions
+below check `_FakeQueue.pushed`, not a subprocess call.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -23,7 +24,7 @@ from scripts import task_dispatcher
 
 from lib import db, schedule_db, worker_db
 from lib.brands_db.repository import BrandsRepository
-from tests.test_task_dispatcher import _fake_run, _FakeLock, _task_row, pg, requires_postgres
+from tests.test_task_dispatcher import _FakeLock, _FakeQueue, _task_row, pg, requires_postgres
 
 __all__ = ["pg"]  # re-exported fixture, used implicitly as a test parameter
 
@@ -80,13 +81,12 @@ def test_flow_enabled_true_for_enabled_managed_flow() -> None:
 
 @requires_postgres
 def test_run_once_skips_disabled_managed_flow(
-    pg: None, flow_gate_brand: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    pg: None, flow_gate_brand: None, tmp_path: Path
 ) -> None:
     """`fb-group-scout` is absent from `_FLOW_GATE_BRAND`'s `enabled_flows`
     -- its row is skipped even though it's due, while the sibling
-    `ig-scanner` row (which IS enabled) still dispatches normally."""
-    fake_run = _fake_run(returncode=0)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    `ig-scanner` row (which IS enabled) still gets enqueued normally."""
+    queue = _FakeQueue()
 
     ig_task = _task_row("ig", _FLOW_GATE_BRAND)
     ig_task["title"] = "ig-scanner"
@@ -100,8 +100,9 @@ def test_run_once_skips_disabled_managed_flow(
         brand_dir=tmp_path,
         now=datetime.now(UTC),
         redis_client=_FakeLock(),
+        queue=queue,
     )
 
-    assert len(fake_run.calls) == 1
-    assert worker_db.get_one(tmp_path, "ig", _FLOW_GATE_BRAND) is not None
+    assert [p["schedule_task_id"] for p in queue.pushed] == ["ig"]
+    assert worker_db.get_one(tmp_path, "ig", _FLOW_GATE_BRAND) is None
     assert worker_db.get_one(tmp_path, "scout", _FLOW_GATE_BRAND) is None

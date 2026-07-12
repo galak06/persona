@@ -130,3 +130,47 @@ export async function updateBrandSettings(
   );
   return data;
 }
+
+/** `GET /brands/{id}/flows` — mirrors `api.brand_schemas.FlowStatus` (Python side). */
+export interface FlowLastRun {
+  status: string;
+  last_run: string;
+  message: string;
+}
+
+export interface FlowReadiness {
+  signal: string | null;
+  count: number | null;
+  ready: boolean;
+  hint: string;
+}
+
+export interface FlowStatus {
+  flow_id: string;
+  script: string;
+  enabled: boolean;
+  last_run: FlowLastRun | null;
+  readiness: FlowReadiness;
+}
+
+export interface FlowStatusResponse {
+  brand_id: string;
+  flows: FlowStatus[];
+}
+
+export interface RunNowResponse {
+  brand_id: string;
+  flow_id: string;
+  schedule_task_id: string;
+  enqueued: boolean;
+}
+
+export async function fetchFlowStatus(id: string): Promise<FlowStatusResponse> {
+  const { data } = await apiClient.get<FlowStatusResponse>(endpoints.brandFlows(id));
+  return data;
+}
+
+export async function runFlowNow(id: string, flowId: string): Promise<RunNowResponse> {
+  const { data } = await apiClient.post<RunNowResponse>(endpoints.brandFlowRun(id, flowId));
+  return data;
+}

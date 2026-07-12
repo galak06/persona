@@ -7,6 +7,7 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "../components/ui/Toast";
 import Alert from "../components/ui/Alert";
+import FlowReadinessPanel from "../components/FlowReadinessPanel";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -119,6 +120,8 @@ export default function BrandSettings(): React.JSX.Element {
           <code className="font-mono text-xs">instagram_accounts.csv</code>.
         </p>
       </header>
+
+      <FlowReadinessPanel brandId={id} />
 
       {loading && !form && <p className="text-sm text-slate-400">Loading…</p>}
       {error && <Alert status="error">Could not load brand: {error}</Alert>}

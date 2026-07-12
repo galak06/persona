@@ -112,3 +112,48 @@ class BrandProvisionResponse(BaseModel):
     warnings: list[str]
     ig_login_command: str
     fb_login_command: str
+
+
+class FlowLastRun(BaseModel):
+    """One `worker_runs` row's shape, as surfaced to the flow-readiness panel."""
+
+    status: str
+    last_run: str
+    message: str = ""
+
+
+class FlowReadiness(BaseModel):
+    """A flow-specific "is there anything for this flow to do yet" signal."""
+
+    signal: str | None = None
+    count: int | None = None
+    ready: bool = True
+    hint: str = ""
+
+
+class FlowStatus(BaseModel):
+    """One managed flow's full readiness-panel entry (`GET /brands/{id}/flows`)."""
+
+    flow_id: str
+    script: str
+    enabled: bool
+    last_run: FlowLastRun | None = None
+    readiness: FlowReadiness
+
+
+class FlowStatusResponse(BaseModel):
+    brand_id: str
+    flows: list[FlowStatus]
+
+
+class RunNowResponse(BaseModel):
+    """`POST /brands/{id}/flows/{flow_id}/run` — always enqueues; no cron-due
+    or lock check (the equivalent guards `scripts/task_dispatcher.py`
+    applies for its own scheduled passes don't apply to an explicit,
+    operator-initiated run).
+    """
+
+    brand_id: str
+    flow_id: str
+    schedule_task_id: str
+    enqueued: bool = True
