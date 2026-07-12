@@ -52,10 +52,15 @@ class _FakeStore:
 
 
 @pytest.fixture(autouse=True)
-def _reset_state() -> None:
+def _reset_state(monkeypatch: pytest.MonkeyPatch) -> None:
     oauth_api._pending_states.clear()
     _FakeStore.instances.clear()
     _FakeStore.saved.clear()
+    # FacebookOAuth() reads these from the environment even when its methods
+    # are monkeypatched below -- CI has no real FB app credentials configured
+    # (this is a solo-dev project, not something to put in repo secrets).
+    monkeypatch.setenv("FB_APP_ID", "test-app-id")
+    monkeypatch.setenv("FB_APP_SECRET", "test-app-secret")
 
 
 def test_start_oauth_requires_brand_id_over_http() -> None:
