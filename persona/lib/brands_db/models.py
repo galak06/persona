@@ -43,6 +43,7 @@ BRAND_COLUMNS: tuple[str, ...] = (
     "keywords",
     "competitor_accounts",
     "enabled_flows",
+    "headless",
     "status",
     "brand_dir",
     "extra",

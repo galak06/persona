@@ -56,11 +56,25 @@ class BrandDetail(BaseModel):
     keywords: dict[str, Any] = {}
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
+    headless: bool = True
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
     created_at: str = ""
     updated_at: str = ""
+
+
+class BrandSettingsRequest(BaseModel):
+    """`PATCH /brands/{id}/settings` body. Every field optional and independent --
+    an unset field is left untouched (see `BrandsRepository.update`'s own
+    `None` = "leave alone" contract, which this mirrors 1:1).
+    """
+
+    headless: bool | None = None
+    primary_keywords: list[str] | None = None
+    secondary_keywords: list[str] | None = None
+    competitor_mentions: list[str] | None = None
+    competitor_accounts: list[str] | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -82,6 +96,7 @@ class BrandProvisionResponse(BaseModel):
     keywords: dict[str, Any] = {}
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
+    headless: bool = True
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}

@@ -81,6 +81,9 @@ export const endpoints = {
   /** POST — (re)provision a brand's folder + schedule_tasks rows (idempotent). */
   brandProvision: (id: string): string => `/brands/${enc(id)}/provision`,
 
+  /** PATCH — partial brand settings edit (headless + keyword/competitor lists). */
+  brandSettings: (id: string): string => `/brands/${enc(id)}/settings`,
+
   /** GET — list all registered independent workers. */
   workers: "/workers",
 

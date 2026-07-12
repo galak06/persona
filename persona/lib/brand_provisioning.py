@@ -24,6 +24,7 @@ from lib import schedule_db
 from lib.brand_templates import (
     BrandSpec,
     render_brand_facts_md,
+    render_brand_json,
     render_config_json,
     render_instagram_hashtags_csv,
 )
@@ -142,6 +143,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     config = render_config_json(spec)
     brand_facts_md = render_brand_facts_md(spec)
     hashtags_csv = render_instagram_hashtags_csv(spec)
+    brand_json = render_brand_json(spec)
     tasks = _build_stage1_tasks(slug)
 
     warnings: list[str] = []
@@ -156,6 +158,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
         "config.json",
         "data/config/brand_facts.md",
         "data/config/instagram_accounts.csv",
+        "brand.json",
     ]
     schedule_tasks_created = [str(t["id"]) for t in tasks]
 
@@ -181,6 +184,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     (brand_dir / "data" / "config" / "instagram_accounts.csv").write_text(
         hashtags_csv, encoding="utf-8"
     )
+    (brand_dir / "brand.json").write_text(json.dumps(brand_json, indent=2) + "\n", encoding="utf-8")
 
     for task in tasks:
         schedule_db.save_task(None, task)
@@ -201,6 +205,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
                 "competitor_mentions": list(spec.competitor_mentions),
             },
             competitor_accounts=list(spec.competitor_accounts),
+            headless=spec.headless,
             brand_dir=str(brand_dir),
         )
     repo.set_brand_dir(slug, str(brand_dir))

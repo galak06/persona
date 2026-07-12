@@ -74,6 +74,7 @@ def test_dry_run_returns_full_preview(tmp_path: Path, monkeypatch: pytest.Monkey
         "config.json",
         "data/config/brand_facts.md",
         "data/config/instagram_accounts.csv",
+        "brand.json",
     }
     assert set(result.schedule_tasks_created) == {"acme-dogs-ig-scanner", "acme-dogs-fb-scanner"}
     assert result.warnings == []
@@ -147,12 +148,35 @@ def test_real_run_writes_config_json_that_round_trips_through_app_settings(
 
 
 @requires_postgres
-def test_real_run_writes_all_three_files(pg: None, brands_root: Path) -> None:
+def test_real_run_writes_all_four_files(pg: None, brands_root: Path) -> None:
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     assert (result.brand_dir / "config.json").exists()
     assert (result.brand_dir / "data" / "config" / "brand_facts.md").exists()
     assert (result.brand_dir / "data" / "config" / "instagram_accounts.csv").exists()
+    assert (result.brand_dir / "brand.json").exists()
+
+
+@requires_postgres
+def test_real_run_writes_brand_json_defaulting_headless_true(pg: None, brands_root: Path) -> None:
+    result = provision_brand(FULL_SPEC, dry_run=False)
+
+    data = json.loads((result.brand_dir / "brand.json").read_text(encoding="utf-8"))
+    assert data == {"runtime": {"headless": True}}
+
+
+@requires_postgres
+def test_real_run_writes_brand_json_reflecting_headless_false(pg: None, brands_root: Path) -> None:
+    spec = BrandSpec(
+        name="Acme Dogs",
+        site_url="https://acmedogs.example",
+        niche="dog nutrition",
+        headless=False,
+    )
+    result = provision_brand(spec, dry_run=False)
+
+    data = json.loads((result.brand_dir / "brand.json").read_text(encoding="utf-8"))
+    assert data == {"runtime": {"headless": False}}
 
 
 @requires_postgres

@@ -62,6 +62,7 @@ class BrandSpec:
     secondary_keywords: list[str] = field(default_factory=list)
     competitor_mentions: list[str] = field(default_factory=list)
     competitor_accounts: list[str] = field(default_factory=list)
+    headless: bool = True
 
 
 def render_config_json(spec: BrandSpec) -> dict[str, Any]:
@@ -121,6 +122,19 @@ def render_config_json(spec: BrandSpec) -> dict[str, Any]:
         # module docstring. AppSettings.recipe_card's own Pydantic default
         # (generic, no brand-specific media id) applies.
     }
+
+
+def render_brand_json(spec: BrandSpec) -> dict[str, Any]:
+    """Build the `brand_dir/brand.json` runtime-overrides dict.
+
+    Read by `lib.local_env.get_runtime_headless()`: `runtime.headless`. This
+    is the file's entire shape today -- one field, because headless is the
+    only per-brand runtime override that exists yet. Written by
+    `brand_provisioning.provision_brand()` on every call (create AND
+    re-provision), which is what makes a settings-page headless edit
+    actually take effect on the next scanner run.
+    """
+    return {"runtime": {"headless": spec.headless}}
 
 
 def _fact_bullet(label: str, value: str, todo_hint: str) -> str:

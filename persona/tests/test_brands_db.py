@@ -278,5 +278,7 @@ def test_module_level_functions_delegate_to_repository(repo: BrandsRepository) -
     assert brands_db.update_status(bid, BrandStatus.ACTIVE) is True
     assert brands_db.set_brand_dir(bid, "/brands/module-level") is True
     assert brands_db.get(bid)["brand_dir"] == "/brands/module-level"
+    assert brands_db.update(bid, headless=False) is True
+    assert brands_db.get(bid)["headless"] is False
 
     assert brands_db.ensure("legacy-brand", "Legacy") == "legacy-brand"
