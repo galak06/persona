@@ -85,14 +85,32 @@ uv sync          # or: pip install -r requirements.txt
 
 ### Facebook & Instagram — session cookies
 
-Persona uses Playwright with saved browser sessions. Log in once manually, save the session, and workers reuse it.
+Persona uses Playwright with saved browser sessions for the scanner workers (`ig-scanner`/`fb-scanner`). Log in once manually per brand, save the session, and the workers reuse it.
+
+**Run on your host machine, not inside Docker.** The `worker` container always runs headless (`PLAYWRIGHT_HEADLESS=1`) — there's no display for you to log into. Login must happen locally, against the same `$BRAND_DIR` the container mounts, so the saved session is visible to both:
 
 ```bash
-python scripts/fb_login.py        # opens browser, saves session to $BRAND_DIR/state/sessions/
+cd persona
+export PYTHONPATH="$(pwd)"                 # these scripts don't set sys.path themselves
+export BRAND_DIR="$(pwd)/brands/<slug>"    # the brand you provisioned via onboarding
+export PLAYWRIGHT_HEADLESS=0               # forces a visible browser window
+
+python scripts/fb_login.py
 python scripts/ig_login.py
 ```
 
-Session files are stored in `$BRAND_DIR/state/sessions/` and gitignored.
+Each opens a real Chromium window ("Chrome for Testing" — a separate instance from your regular Chrome, so `Cmd+Tab`/Mission Control if you don't see it appear) and polls for up to 10 minutes for a successful login (including 2FA, recaptcha, or account-verification prompts — all normal, just complete them in the window). On success it prints `Session saved to: ...` and exits; on timeout it prints an error and exits with nothing saved — just rerun the command.
+
+**Why `PLAYWRIGHT_HEADLESS=0` is required:** without it, headless mode defaults to `true` unless the brand's `$BRAND_DIR/brand.json` sets `runtime.headless: false` — and brands provisioned through onboarding don't generate a `brand.json` at all, so the env var is currently the only way to force a visible window for a newly onboarded brand.
+
+Session files land directly at `$BRAND_DIR/state/instagram_session.json` / `facebook_session.json` (not a `sessions/` subdirectory) and are gitignored.
+
+Verify a session is valid without opening a browser:
+
+```bash
+python scripts/ig_scan.py --health-check
+python scripts/fb_scan.py --health-check
+```
 
 ### Facebook — OAuth 2.0 (for page posting)
 

@@ -34,7 +34,15 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-persona}
       - POSTGRES_DB=${POSTGRES_DB:-persona}
     ports:
-      - "5432:5432"
+      # Host-side port only — api/worker connect via the internal postgres:5432
+      # network hostname, unaffected by this. Defaults to 5434, not 5432,
+      # since a local native Postgres (Homebrew, Postgres.app, etc.) commonly
+      # already owns 5432 on the host and silently wins the loopback route,
+      # making Docker's Postgres unreachable from host-run scripts even
+      # though the container itself reports healthy. 5433 is also commonly
+      # taken (a frequent alt-Postgres default for other docker projects).
+      # Override via POSTGRES_HOST_PORT in .env if 5434 also collides.
+      - "${POSTGRES_HOST_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Self-initializing schema — applied automatically by the postgres

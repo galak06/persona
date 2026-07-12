@@ -25,7 +25,7 @@ from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_DSN = "postgresql://localhost:5432/persona"
+DEFAULT_DSN = "postgresql://localhost:5434/persona"
 _MIN_SIZE = 1
 _MAX_SIZE = 10
 _CONNECT_TIMEOUT_SECONDS = 5  # per-connection TCP connect timeout (libpq)
