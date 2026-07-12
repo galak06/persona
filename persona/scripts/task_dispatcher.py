@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 # pyright: reportMissingImports=false
-"""Postgres+Redis task dispatcher — Phase A of the scheduling backend.
+"""Postgres+Redis task dispatcher — pure PRODUCER (PR7 split).
 
 Reads `schedule_tasks` rows for ONE brand (still one process = one brand,
 consistent with the rest of the system this stage), evaluates each row's
 `schedule.cron` against `worker_runs`'s last recorded run for that
 `(worker_label=task.id, brand)` pair via `lib.scheduling.is_task_due`, takes a
-short-lived Redis lock to guard against two dispatcher invocations firing the
-same row concurrently, then runs the row's `script` as a subprocess and
-records start/completion into `worker_runs` (`lib/worker_db.py`) — this is
-the mechanism PR3's brand onboarding relies on to make a brand's
-`ig-scanner`/`fb-scanner` actually run on schedule.
+short-lived Redis lock to guard against two dispatcher invocations enqueueing
+the SAME row concurrently, then pushes the row onto the brand's Redis
+`flow-run` queue (`lib.task_queue.TaskQueue`) for `scripts/task_worker.py`
+(the consumer) to actually execute -- this dispatcher never runs a script
+itself and never writes to `worker_runs` (the worker does both once it
+actually starts the subprocess).
 
 Shape mirrors `scripts/campaign_worker.py`'s croniter due-check loop (that
 script is untouched — separate, unrelated dogfoodandfun campaign/recipe
 system). The due-check itself is shared via `lib.scheduling.is_task_due`
 rather than duplicated.
 
-One failing row logs the error, Telegram-notifies (mirrors
-`campaign_worker.py`'s `_notify_telegram_failure`), and the loop continues to
-the next row — a single bad task never blocks the rest.
+One failing row (e.g. the Redis push itself fails) logs the error,
+Telegram-notifies (mirrors `campaign_worker.py`'s `_notify_telegram_failure`),
+and the loop continues to the next row — a single bad task never blocks the
+rest.
 
 Usage:
     python scripts/task_dispatcher.py            # single pass, then exit
@@ -33,7 +35,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import subprocess
 import sys
 import time
 from datetime import UTC, datetime
@@ -50,6 +51,7 @@ from lib import brands_db, schedule_db, worker_db
 from lib.brands_db.models import MANAGED_FLOW_IDS
 from lib.observability import get_logger
 from lib.scheduling import is_task_due
+from lib.task_queue import TaskQueue
 
 logger = get_logger(__name__)
 
@@ -65,6 +67,7 @@ _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _LOCK_TTL_SECONDS = 45
 _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 600
 _DEFAULT_LOOP_INTERVAL_SECONDS = 30
+QUEUE_WORKER = "flow-run"  # TaskQueue worker name shared with scripts/task_worker.py
 
 
 class RedisLock(Protocol):
@@ -76,6 +79,14 @@ class RedisLock(Protocol):
     """
 
     def set(self, name: str, value: str, *, nx: bool = ..., ex: int | None = ...) -> Any: ...
+
+
+class QueuePusher(Protocol):
+    """Structural type for the one `TaskQueue` operation this module needs
+    -- tests substitute a tiny in-memory fake instead of a live Redis queue.
+    """
+
+    def push(self, payload: dict[str, Any]) -> str: ...
 
 
 def _get_redis_client() -> redis.Redis:
@@ -94,44 +105,26 @@ def _notify_telegram_failure(task_id: str, error: str) -> None:
         logger.error("telegram_notify_failed", task_id=task_id, error=str(exc))
 
 
-def _run_subprocess_task(
-    task_id: str,
-    script: str,
-    args: list[str],
-    brand_dir: Path,
-    brand: str,
-    timeout_seconds: int,
-) -> None:
-    """Execute one due task's script, recording status via `lib.worker_db`.
+def build_queue_payload(
+    task: dict[str, Any], *, brand: str, brand_dir: Path, timeout_seconds: int
+) -> dict[str, Any]:
+    """Shape one `flow-run` queue item from a `schedule_tasks` row.
 
-    Raises after recording the failure in `worker_runs` on any error
-    (non-zero exit, timeout, launch failure) -- callers catch, log,
-    Telegram-notify, and continue to the next row.
+    `schedule_task_id` (the row's own `id`, e.g. `dogfoodandfun-ig-scanner`)
+    is carried explicitly -- distinct from `TaskQueue.push()`'s own
+    auto-generated `task_id` (a UUID, just a queue-item identity) -- because
+    `scripts/task_worker.py` needs it as `worker_runs.worker_label` to record
+    start/completion under the SAME label this dispatcher's own due-check
+    reads via `worker_db.get_one()`.
     """
-    worker_db.record_start(brand_dir, task_id, brand)
-    cmd = [sys.executable, str(PROJECT_ROOT / script), *args]
-    try:
-        result = subprocess.run(
-            cmd,
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
-    except Exception as exc:
-        message = f"failed to launch: {exc}"
-        worker_db.record_complete(brand_dir, task_id, brand, "error", message)
-        raise
-
-    if result.returncode == 0:
-        message = (result.stdout or "").strip()[-500:]
-        worker_db.record_complete(brand_dir, task_id, brand, "success", message)
-        logger.info("task_dispatched", task_id=task_id, status="success")
-        return
-
-    message = f"exit={result.returncode}: {(result.stderr or '').strip()[-500:]}"
-    worker_db.record_complete(brand_dir, task_id, brand, "error", message)
-    raise RuntimeError(message)
+    return {
+        "schedule_task_id": str(task.get("id")),
+        "script": task["script"],
+        "args": [str(a) for a in (task.get("args") or [])],
+        "brand": brand,
+        "brand_dir": str(brand_dir),
+        "timeout_seconds": timeout_seconds,
+    }
 
 
 def _flow_enabled(task: dict[str, Any], enabled_flows: frozenset[str] | None) -> bool:
@@ -160,13 +153,16 @@ def dispatch_task(
     brand_dir: Path,
     now: datetime,
     redis_client: RedisLock,
+    queue: QueuePusher | None = None,
 ) -> None:
-    """Dispatch one `schedule_tasks` row if it is due and not already locked.
+    """Enqueue one `schedule_tasks` row if it is due and not already locked.
 
     No-ops (returns without error) when: the row has no `schedule.cron` or
     `script`, it isn't due yet, or a concurrent dispatch already holds its
-    lock. Raises if the underlying subprocess fails -- `run_once` catches,
-    logs, Telegram-notifies, and continues to the next row.
+    lock. Raises if the enqueue itself fails -- `run_once` catches, logs,
+    Telegram-notifies, and continues to the next row. Never runs the row's
+    script directly -- `scripts/task_worker.py` (the consumer) does, once it
+    pops this item off the `flow-run` queue.
     """
     task_id = str(task.get("id"))
     cron_expr = (task.get("schedule") or {}).get("cron")
@@ -194,9 +190,12 @@ def dispatch_task(
     timeout_seconds = (
         int(timeout_minutes) * 60 if timeout_minutes else _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
     )
-    args = [str(a) for a in (task.get("args") or [])]
-    logger.info("task_dispatch_start", task_id=task_id, script=script)
-    _run_subprocess_task(task_id, script, args, brand_dir, brand, timeout_seconds)
+    payload = build_queue_payload(
+        task, brand=brand, brand_dir=brand_dir, timeout_seconds=timeout_seconds
+    )
+    resolved_queue = queue or TaskQueue(worker=QUEUE_WORKER, brand=brand)
+    resolved_queue.push(payload)
+    logger.info("task_enqueued", task_id=task_id, script=script)
 
 
 def run_once(
@@ -205,8 +204,9 @@ def run_once(
     brand_dir: Path,
     now: datetime | None = None,
     redis_client: RedisLock | None = None,
+    queue: QueuePusher | None = None,
 ) -> None:
-    """One dispatch pass: load this brand's due, enabled tasks and dispatch each.
+    """One dispatch pass: load this brand's due, enabled tasks and enqueue each.
 
     A single row raising never stops the rest -- logged + Telegram-notified,
     then the pass continues to the next row. A row for a managed flow
@@ -217,6 +217,7 @@ def run_once(
     """
     resolved_now = now or datetime.now(UTC)
     resolved_redis = redis_client or _get_redis_client()
+    resolved_queue = queue or TaskQueue(worker=QUEUE_WORKER, brand=brand)
     tasks = schedule_db.load_all()
     brand_tasks = [t for t in tasks if t.get("brand_id") == brand]
     logger.info("dispatch_pass_start", brand=brand, task_count=len(brand_tasks))
@@ -236,6 +237,7 @@ def run_once(
                 brand_dir=brand_dir,
                 now=resolved_now,
                 redis_client=resolved_redis,
+                queue=resolved_queue,
             )
         except Exception as exc:
             logger.exception("task_dispatch_failed", task_id=task_id)
@@ -264,7 +266,15 @@ def main() -> None:
     if settings.paths is None:
         raise RuntimeError("settings.paths is not configured; is BRAND_DIR set correctly?")
     brand_dir = settings.paths.brand_dir
-    brand = brand_dir.name
+    # PERSONA_BRAND (the codebase-wide brand-slug convention -- see
+    # lib/task_queue.py, lib/rate_limiter_redis.py, lib/oauth/store.py) wins
+    # when set. brand_dir.name is only a correct fallback for host-run
+    # scripts, where BRAND_DIR's basename naturally IS the slug (e.g.
+    # .../brands/dogfoodandfun) -- inside docker-compose.worker.yml,
+    # BRAND_DIR is a generic bind-mount path (/brand), so relying on its
+    # basename alone would silently resolve every brand to the literal
+    # string "brand".
+    brand = os.environ.get("PERSONA_BRAND") or brand_dir.name
 
     if args.loop:
         logger.info("dispatcher_loop_start", brand=brand, interval=args.interval)
