@@ -46,7 +46,7 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py scripts/fb_group_scout.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py
@@ -56,7 +56,7 @@ jobs:
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
-          tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py
+          tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py
 
       - name: Ruff format check
         run: >-
@@ -69,7 +69,7 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py
@@ -79,7 +79,7 @@ jobs:
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
-          tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py
+          tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py
 
   typecheck:
     name: Type Check
@@ -207,6 +207,7 @@ jobs:
             tests/test_api_brand_flows.py \
             tests/test_local_env.py \
             tests/test_flow_readiness.py \
+            tests/test_task_queue.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db \

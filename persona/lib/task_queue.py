@@ -87,8 +87,22 @@ class TaskQueue:
     # ── Consumer ─────────────────────────────────────────────────────────────
 
     def pop(self, timeout: int = 30) -> dict[str, Any] | None:
-        """Blocking pop. Returns None on timeout."""
-        result = self._r.brpop(self._key, timeout=timeout)
+        """Blocking pop. Returns None on timeout.
+
+        redis-py's BRPOP applies `timeout` as the underlying socket read
+        timeout too -- when the server genuinely has nothing to return
+        within that window, some redis-py versions raise
+        `redis.exceptions.TimeoutError` from the socket layer instead of
+        returning the nil reply BRPOP's own protocol-level timeout implies.
+        Confirmed live (redis-py 7.4.0): an idle `scripts/task_worker.py
+        --loop` crashed and got restarted by Docker every `timeout`
+        seconds. Treated identically to a real nil reply -- both mean
+        "nothing arrived in time," not an actual connection failure.
+        """
+        try:
+            result = self._r.brpop(self._key, timeout=timeout)
+        except redis.exceptions.TimeoutError:
+            return None
         if result is None:
             return None
         _, raw = result
@@ -123,6 +137,9 @@ class TaskQueue:
 
     def clear(self) -> None:
         self._r.delete(self._key)
+
+    def clear_dead(self) -> None:
+        self._r.delete(self._dead_key)
 
     def health_check(self) -> bool:
         try:
