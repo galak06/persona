@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { endpoints } from "../api/endpoints";
 import type { BrandCreateRequest, BrandCreateResponse } from "../api/brands";
@@ -10,8 +10,12 @@ import {
   FIELD_SECTIONS,
   LIST_FIELDS,
   URL_FIELD_KEYS,
+  clearDraft,
+  isEmptyForm,
   isValidUrl,
+  loadDraft,
   parseList,
+  saveDraft,
 } from "./brandFormFields";
 import type { FormState } from "./brandFormFields";
 
@@ -39,18 +43,33 @@ interface BrandFormProps {
 }
 
 export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Element {
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<FormState>(() => loadDraft());
   const [result, setResult] = useState<BrandCreateResponse | null>(null);
+  const [showDraftNotice, setShowDraftNotice] = useState(() => !isEmptyForm(form));
   const { mutate, loading, error, errorStatus, errorDetail } = useApiMutation<
     BrandCreateResponse,
     BrandCreateRequest
   >("post");
   const retry = useApiMutation<BrandCreateResponse, undefined>("post");
 
+  useEffect(() => {
+    if (isEmptyForm(form)) {
+      clearDraft();
+    } else {
+      saveDraft(form);
+    }
+  }, [form]);
+
   const update =
     (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       setForm((f) => ({ ...f, [key]: e.target.value }));
     };
+
+  const handleDiscardDraft = () => {
+    setForm(EMPTY_FORM);
+    clearDraft();
+    setShowDraftNotice(false);
+  };
 
   const urlErrors: Partial<Record<keyof FormState, string>> = {};
   for (const key of URL_FIELD_KEYS) {
@@ -89,6 +108,8 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
     if (created) {
       setResult(created);
       setForm(EMPTY_FORM);
+      clearDraft();
+      setShowDraftNotice(false);
       onCreated();
     }
   };
@@ -121,6 +142,21 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
         seeds its <code className="font-mono text-xs">ig-scanner</code> /{" "}
         <code className="font-mono text-xs">fb-scanner</code> schedule.
       </p>
+
+      {showDraftNotice && (
+        <Alert status="info" className="mb-3">
+          <div className="flex items-center justify-between gap-3">
+            <span>Restored your unsaved draft — nothing was lost on reload.</span>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="shrink-0 text-xs font-semibold underline hover:no-underline"
+            >
+              Discard draft
+            </button>
+          </div>
+        </Alert>
+      )}
 
       <form
         onSubmit={(e) => void handleSubmit(e)}

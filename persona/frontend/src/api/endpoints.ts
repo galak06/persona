@@ -114,24 +114,27 @@ export const endpoints = {
    *  here after being dropped by the Worker Explorer migration. */
   scheduleMissing: "/schedule/missing",
 
-  /** OAuth — list all stored tokens (redacted). */
-  oauthTokens: "/oauth/tokens",
+  /** OAuth — list all stored tokens (redacted) for one brand. */
+  oauthTokens: (brandId: string): string => `/oauth/tokens?brand_id=${enc(brandId)}`,
 
-  /** OAuth — start Facebook OAuth flow (redirect). */
-  oauthFacebookStart: "/oauth/facebook",
+  /** OAuth — start Facebook OAuth flow (redirect) for one brand. */
+  oauthFacebookStart: (brandId: string): string => `/oauth/facebook?brand_id=${enc(brandId)}`,
 
   /** OAuth — exchange stored user token for a page token. */
-  oauthFacebookPage: (pageId: string): string => `/oauth/facebook/page/${enc(pageId)}`,
+  oauthFacebookPage: (brandId: string, pageId: string): string =>
+    `/oauth/facebook/page/${enc(pageId)}?brand_id=${enc(brandId)}`,
 
   /** POST — refresh expiring Facebook user token. */
-  oauthFacebookRefresh: "/oauth/facebook/refresh",
+  oauthFacebookRefresh: (brandId: string): string =>
+    `/oauth/facebook/refresh?brand_id=${enc(brandId)}`,
 
   /** GET — inspect stored token validity via FB debug_token. */
-  oauthFacebookDebug: "/oauth/facebook/debug",
+  oauthFacebookDebug: (brandId: string): string =>
+    `/oauth/facebook/debug?brand_id=${enc(brandId)}`,
 
   /** DELETE — remove a stored token. */
-  oauthDelete: (platform: string, tokenType: string): string =>
-    `/oauth/${enc(platform)}/${enc(tokenType)}`,
+  oauthDelete: (brandId: string, platform: string, tokenType: string): string =>
+    `/oauth/${enc(platform)}/${enc(tokenType)}?brand_id=${enc(brandId)}`,
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

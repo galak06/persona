@@ -91,3 +91,38 @@ export function isValidUrl(value: string): boolean {
     return false;
   }
 }
+
+// Onboarding is a long form with no save button — a refresh (or an
+// accidental tab close) used to wipe it. Auto-persisting to localStorage on
+// every change means a reload restores exactly where the operator left off.
+const DRAFT_KEY = "persona:brand-form-draft";
+
+export function loadDraft(): FormState {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return EMPTY_FORM;
+    return { ...EMPTY_FORM, ...(JSON.parse(raw) as Partial<FormState>) };
+  } catch {
+    return EMPTY_FORM;
+  }
+}
+
+export function saveDraft(form: FormState): void {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(form));
+  } catch {
+    // localStorage unavailable (private browsing, quota) — draft just won't persist
+  }
+}
+
+export function clearDraft(): void {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function isEmptyForm(form: FormState): boolean {
+  return Object.values(form).every((v) => v.trim() === "");
+}

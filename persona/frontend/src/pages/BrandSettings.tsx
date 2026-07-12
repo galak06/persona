@@ -117,9 +117,17 @@ export default function BrandSettings(): React.JSX.Element {
         <Link to="/onboarding" className="text-xs text-amber-700 hover:underline">
           ← Back to Onboarding
         </Link>
-        <h1 className="font-display text-2xl font-semibold text-slate-800 mt-1">
-          Brand Settings{brand ? ` — ${brand.name}` : ""}
-        </h1>
+        <div className="flex items-center justify-between gap-3 flex-wrap mt-1">
+          <h1 className="font-display text-2xl font-semibold text-slate-800">
+            Brand Settings{brand ? ` — ${brand.name}` : ""}
+          </h1>
+          <Link
+            to={`/onboarding/${id}/connect`}
+            className="text-xs font-semibold text-amber-700 hover:underline whitespace-nowrap"
+          >
+            Connect Facebook &amp; Instagram →
+          </Link>
+        </div>
         <p className="text-sm text-slate-500">
           Edits take effect on the next scanner run — saving re-provisions{" "}
           <code className="font-mono text-xs">brand.json</code>,{" "}

@@ -36,6 +36,7 @@ export default function App() {
               <Route path="/published" element={<Published />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/onboarding/:id/settings" element={<BrandSettings />} />
+              <Route path="/onboarding/:id/connect" element={<Connect />} />
               <Route path="/tiktok" element={<TikTokCandidates />} />
               <Route path="/recipes" element={<Recipes />} />
               <Route path="/connect" element={<Connect />} />

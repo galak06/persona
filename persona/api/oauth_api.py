@@ -35,8 +35,12 @@ from lib.oauth.store import TokenStore
 router = APIRouter()
 
 # ── Simple in-memory state store for CSRF protection ─────────────────────────
-# In production, use Redis: store.set(state, "1", ex=600)
-_pending_states: set[str] = set()
+# In production, use Redis: store.set(state, brand_id, ex=600)
+# Maps state -> brand_id: Facebook's redirect back to /callback carries only
+# `code`/`state` (no way for our SPA to pass brand_id directly on that leg),
+# so the brand the operator was connecting is smuggled through the state
+# token set here and recovered in facebook_callback().
+_pending_states: dict[str, str] = {}
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -62,12 +66,13 @@ class RefreshResponse(BaseModel):
 
 @router.get("/facebook", summary="Start Facebook OAuth flow")
 def start_facebook_oauth(
+    brand_id: str = Query(..., description="Brand this connection belongs to"),
     scopes: str = Query(default="", description="Comma-separated extra scopes to request"),
 ) -> RedirectResponse:
     """Redirect the user to the Facebook consent screen."""
     oauth = FacebookOAuth()
     state = secrets.token_urlsafe(16)
-    _pending_states.add(state)
+    _pending_states[state] = brand_id
 
     extra_scopes = [s.strip() for s in scopes.split(",") if s.strip()]
     url = oauth.get_authorization_url(state=state, scopes=extra_scopes or None)
@@ -90,7 +95,7 @@ def facebook_callback(
 
     if state and state not in _pending_states:
         raise HTTPException(status_code=400, detail="Invalid OAuth state (CSRF check failed)")
-    _pending_states.discard(state)
+    brand_id = _pending_states.pop(state, None) or os.environ.get("PERSONA_BRAND", "default")
 
     try:
         oauth = FacebookOAuth()
@@ -99,7 +104,6 @@ def facebook_callback(
         long_lived.platform = "facebook"
         long_lived.token_type = "bearer"
 
-        brand_id = os.environ.get("PERSONA_BRAND", "default")
         store = TokenStore(brand_id=brand_id)
         store.save(long_lived)
     except Exception as exc:
@@ -116,9 +120,11 @@ def facebook_callback(
 
 
 @router.get("/facebook/page/{page_id}", summary="Exchange user token → page token")
-def get_page_token(page_id: str) -> JSONResponse:
+def get_page_token(
+    page_id: str,
+    brand_id: str = Query(..., description="Brand this connection belongs to"),
+) -> JSONResponse:
     """Exchange the stored user token for a (non-expiring) page access token."""
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
     store = TokenStore(brand_id=brand_id)
 
     user_token = store.load("facebook", "bearer")
@@ -155,15 +161,15 @@ def get_page_token(page_id: str) -> JSONResponse:
 
 
 @router.get("/tokens", summary="List stored tokens (access_token redacted)")
-def list_tokens() -> JSONResponse:
+def list_tokens(
+    brand_id: str = Query(..., description="Brand to list tokens for"),
+) -> JSONResponse:
     """Return a summary of all stored tokens without exposing access_token values."""
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
     store = TokenStore(brand_id=brand_id)
     tokens = store.list_all()
 
     summaries = []
     for t in tokens:
-        from lib.oauth.facebook import OAuthToken
         token = store.load(
             t.get("platform", ""),
             t.get("token_type", ""),
@@ -184,9 +190,10 @@ def list_tokens() -> JSONResponse:
 
 
 @router.post("/facebook/refresh", summary="Refresh expiring Facebook user token")
-def refresh_facebook_token() -> RefreshResponse:
+def refresh_facebook_token(
+    brand_id: str = Query(..., description="Brand this connection belongs to"),
+) -> RefreshResponse:
     """Extend the 60-day user token window. Safe to call any time before expiry."""
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
     store = TokenStore(brand_id=brand_id)
 
     token = store.load("facebook", "bearer")
@@ -209,6 +216,7 @@ def refresh_facebook_token() -> RefreshResponse:
 
     try:
         from lib.oauth.facebook import refresh_long_lived_token
+
         refreshed = refresh_long_lived_token(token)
         store.save(refreshed)
     except Exception as exc:
@@ -223,18 +231,27 @@ def refresh_facebook_token() -> RefreshResponse:
 
 
 @router.delete("/{platform}/{token_type}", summary="Delete a stored token")
-def delete_token(platform: str, token_type: str, token_id: str = "") -> JSONResponse:
+def delete_token(
+    platform: str,
+    token_type: str,
+    brand_id: str = Query(..., description="Brand this connection belongs to"),
+    token_id: str = "",
+) -> JSONResponse:
     """Remove a stored token. Does NOT revoke it on the platform side."""
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
     store = TokenStore(brand_id=brand_id)
     store.delete(platform, token_type, token_id)
-    return JSONResponse(content={"status": "deleted", "platform": platform, "token_type": token_type})
+    return JSONResponse(
+        content={"status": "deleted", "platform": platform, "token_type": token_type}
+    )
 
 
 @router.get("/facebook/debug", summary="Inspect a stored token's validity")
-def debug_facebook_token(token_type: str = "page", token_id: str = "") -> JSONResponse:
+def debug_facebook_token(
+    brand_id: str = Query(..., description="Brand this connection belongs to"),
+    token_type: str = "page",
+    token_id: str = "",
+) -> JSONResponse:
     """Call the FB /debug_token endpoint to inspect permissions and expiry."""
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
     store = TokenStore(brand_id=brand_id)
     token = store.load("facebook", token_type, token_id)
     if not token:
