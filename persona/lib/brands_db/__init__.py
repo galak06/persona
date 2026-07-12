@@ -29,6 +29,7 @@ __all__ = [
     "get",
     "list_brands",
     "set_brand_dir",
+    "update",
     "update_status",
 ]
 
@@ -49,6 +50,7 @@ def create(
     keywords: dict[str, Any] | None = None,
     competitor_accounts: list[Any] | None = None,
     enabled_flows: list[str] | None = None,
+    headless: bool = True,
     status: str = BrandStatus.DRAFT,
     brand_dir: str = "",
     extra: dict[str, Any] | None = None,
@@ -65,6 +67,7 @@ def create(
         keywords=keywords,
         competitor_accounts=competitor_accounts,
         enabled_flows=enabled_flows,
+        headless=headless,
         status=status,
         brand_dir=brand_dir,
         extra=extra,
@@ -90,3 +93,21 @@ def update_status(brand_id: str, status: str) -> bool:
 
 def set_brand_dir(brand_id: str, brand_dir: str) -> bool:
     return _repo().set_brand_dir(brand_id, brand_dir)
+
+
+def update(
+    brand_id: str,
+    *,
+    headless: bool | None = None,
+    keywords: dict[str, Any] | None = None,
+    competitor_accounts: list[Any] | None = None,
+    enabled_flows: list[str] | None = None,
+) -> bool:
+    """Partial update -- only params passed a non-`None` value change."""
+    return _repo().update(
+        brand_id,
+        headless=headless,
+        keywords=keywords,
+        competitor_accounts=competitor_accounts,
+        enabled_flows=enabled_flows,
+    )

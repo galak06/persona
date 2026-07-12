@@ -93,6 +93,7 @@ _load_secrets()
 # Import the new lib + helper modules *after* secrets load so any
 # module-level config-driven paths resolve correctly.
 from api import routes_helpers as rh
+from api.brand_settings_api import router as _brand_settings_router
 from api.brands_api import router as _brands_router
 from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
@@ -132,6 +133,7 @@ app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
+app.include_router(_brand_settings_router, prefix="/api/v1", tags=["brands"])
 
 
 @app.get("/api/v1/config")

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { endpoints } from "../api/endpoints";
 import type { BrandCreateResponse, BrandSummary } from "../api/brands";
 import { useApiMutation } from "../hooks/useApiMutation";
@@ -75,7 +76,13 @@ function Row({ brand, onChanged }: { brand: BrandSummary; onChanged: () => void 
       <td className="py-2 pr-3 whitespace-nowrap text-xs text-slate-400 tabular-nums">
         {brand.created_at ? brand.created_at.slice(0, 10) : "—"}
       </td>
-      <td className="py-2">
+      <td className="py-2 whitespace-nowrap space-x-2">
+        <Link
+          to={`/onboarding/${brand.id}/settings`}
+          className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-stone-50 inline-block"
+        >
+          Settings
+        </Link>
         <ReprovisionButton id={brand.id} onDone={onChanged} />
       </td>
     </tr>

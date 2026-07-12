@@ -104,6 +104,12 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '[
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS status              TEXT  NOT NULL DEFAULT 'draft';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS brand_dir           TEXT  DEFAULT '';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS extra               JSONB DEFAULT '{}';
+-- Additive (PR5 — brand settings): whether this brand's Playwright scanners
+-- run with a visible browser window. Existing rows default to TRUE
+-- (production-safe, matches `lib.local_env.get_runtime_headless()`'s own
+-- fallback), so this migration is a no-op behavior-wise for brands that
+-- never customize it.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS headless            BOOLEAN NOT NULL DEFAULT TRUE;
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (

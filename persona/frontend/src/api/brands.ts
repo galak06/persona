@@ -35,6 +35,7 @@ export interface Brand extends BrandSummary {
   target_audience: string;
   keywords: BrandKeywords;
   competitor_accounts: string[];
+  headless: boolean;
   extra: Record<string, unknown>;
   updated_at: string;
 }
@@ -58,6 +59,19 @@ export interface BrandCreateRequest {
   brand_persona?: string;
   instagram_profile_url?: string;
   facebook_page_url?: string;
+  primary_keywords?: string[];
+  secondary_keywords?: string[];
+  competitor_mentions?: string[];
+  competitor_accounts?: string[];
+}
+
+/**
+ * `PATCH /brands/{id}/settings` body. Every field optional and independent —
+ * an unset field is left untouched server-side. Mirrors
+ * `api.brand_schemas.BrandSettingsRequest` field-for-field.
+ */
+export interface BrandSettingsRequest {
+  headless?: boolean;
   primary_keywords?: string[];
   secondary_keywords?: string[];
   competitor_mentions?: string[];
@@ -96,5 +110,16 @@ export async function createBrand(
 
 export async function reprovisionBrand(id: string): Promise<BrandCreateResponse> {
   const { data } = await apiClient.post<BrandCreateResponse>(endpoints.brandProvision(id));
+  return data;
+}
+
+export async function updateBrandSettings(
+  id: string,
+  payload: BrandSettingsRequest,
+): Promise<BrandCreateResponse> {
+  const { data } = await apiClient.patch<BrandCreateResponse>(
+    endpoints.brandSettings(id),
+    payload,
+  );
   return data;
 }

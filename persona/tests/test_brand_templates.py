@@ -16,6 +16,7 @@ import pytest
 from lib.brand_templates import (
     BrandSpec,
     render_brand_facts_md,
+    render_brand_json,
     render_config_json,
     render_instagram_hashtags_csv,
 )
@@ -202,3 +203,15 @@ def test_render_instagram_hashtags_csv_derives_hashtags_mechanically() -> None:
     csv_text = render_instagram_hashtags_csv(spec)
     tags = [row["hashtag"] for row in csv.DictReader(io.StringIO(csv_text))]
     assert tags == ["#dogfood", "#gpstracker"]
+
+
+# ------------------------------------------------------------------- render_brand_json
+
+
+def test_render_brand_json_defaults_headless_true() -> None:
+    assert render_brand_json(MINIMAL_SPEC) == {"runtime": {"headless": True}}
+
+
+def test_render_brand_json_reflects_headless_false() -> None:
+    spec = BrandSpec(name="X Co", site_url="https://x.example", niche="widgets", headless=False)
+    assert render_brand_json(spec) == {"runtime": {"headless": False}}

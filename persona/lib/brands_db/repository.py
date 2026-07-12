@@ -45,6 +45,7 @@ class BrandsRepository:
         keywords: dict[str, Any] | None = None,
         competitor_accounts: list[Any] | None = None,
         enabled_flows: list[str] | None = None,
+        headless: bool = True,
         status: str = BrandStatus.DRAFT,
         brand_dir: str = "",
         extra: dict[str, Any] | None = None,
@@ -92,6 +93,7 @@ class BrandsRepository:
             "enabled_flows": Jsonb(
                 enabled_flows if enabled_flows is not None else default_enabled_flows()
             ),
+            "headless": headless,
             "status": status,
             "brand_dir": brand_dir,
             "extra": Jsonb(extra if extra is not None else {}),
@@ -151,4 +153,40 @@ class BrandsRepository:
         rowcount = db.execute(
             "UPDATE brands SET brand_dir = %s WHERE id = %s", (brand_dir, brand_id)
         )
+        return rowcount > 0
+
+    def update(
+        self,
+        brand_id: str,
+        *,
+        headless: bool | None = None,
+        keywords: dict[str, Any] | None = None,
+        competitor_accounts: list[Any] | None = None,
+        enabled_flows: list[str] | None = None,
+    ) -> bool:
+        """Partial update -- only params passed a non-`None` value change.
+
+        Settings-page edit path (`PATCH /api/v1/brands/{id}/settings`): a
+        caller PATCHing just `headless` must never clobber this brand's
+        `keywords`, and vice versa. `None` means "leave alone" for every
+        param here (none of these columns are ever meaningfully set back to
+        SQL NULL through this method); returns `False` with no query issued
+        if every param is `None`.
+        """
+        updates: dict[str, Any] = {}
+        if headless is not None:
+            updates["headless"] = headless
+        if keywords is not None:
+            updates["keywords"] = Jsonb(keywords)
+        if competitor_accounts is not None:
+            updates["competitor_accounts"] = Jsonb(competitor_accounts)
+        if enabled_flows is not None:
+            updates["enabled_flows"] = Jsonb(enabled_flows)
+
+        if not updates:
+            return False
+
+        set_clause = ", ".join(f"{col} = %({col})s" for col in updates)
+        updates["id"] = brand_id
+        rowcount = db.execute(f"UPDATE brands SET {set_clause} WHERE id = %(id)s", updates)
         return rowcount > 0

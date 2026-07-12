@@ -78,6 +78,7 @@ def _spec_from_row(row: dict[str, Any]) -> BrandSpec:
         secondary_keywords=list(keywords.get("secondary_keywords") or []),
         competitor_mentions=list(keywords.get("competitor_mentions") or []),
         competitor_accounts=list(row.get("competitor_accounts") or []),
+        headless=bool(row.get("headless", True)),
     )
 
 
@@ -96,6 +97,7 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         keywords=dict(row.get("keywords") or {}),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
+        headless=bool(row.get("headless", True)),
         status=str(row.get("status") or ""),
         brand_dir=brand_dir,
         extra=dict(row.get("extra") or {}),
@@ -215,6 +217,7 @@ def get_brand(brand_id: str) -> BrandDetail:
         keywords=dict(row.get("keywords") or {}),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
+        headless=bool(row.get("headless", True)),
         status=str(row.get("status") or ""),
         brand_dir=str(row.get("brand_dir") or ""),
         extra=dict(row.get("extra") or {}),
