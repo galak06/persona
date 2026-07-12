@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import { getErrorMessage } from "../api/client";
 import { endpoints } from "../api/endpoints";
@@ -222,7 +223,7 @@ function MissingBanner({ data }: MissingBannerProps): React.JSX.Element | null {
 }
 
 export default function Schedule(): React.JSX.Element {
-  const { data, loading, error } = useApiQuery<WorkerStatus[]>(
+  const { data, loading, error, refetch } = useApiQuery<WorkerStatus[]>(
     endpoints.workers,
     { refetchInterval: POLL_MS },
   );
@@ -359,9 +360,12 @@ export default function Schedule(): React.JSX.Element {
 
   if (error && !data) {
     return (
-      <Alert status="error" title="Could not load schedule">
-        {error}
-      </Alert>
+      <ErrorState
+        title="Could not load schedule"
+        message={error}
+        onRetry={() => void refetch()}
+        retrying={loading}
+      />
     );
   }
 

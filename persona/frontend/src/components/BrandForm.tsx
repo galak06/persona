@@ -4,6 +4,16 @@ import { endpoints } from "../api/endpoints";
 import type { BrandCreateRequest, BrandCreateResponse } from "../api/brands";
 import { useApiMutation } from "../hooks/useApiMutation";
 import Alert from "./ui/Alert";
+import BrandCreateResult from "./BrandCreateResult";
+import {
+  EMPTY_FORM,
+  FIELD_SECTIONS,
+  LIST_FIELDS,
+  URL_FIELD_KEYS,
+  isValidUrl,
+  parseList,
+} from "./brandFormFields";
+import type { FormState } from "./brandFormFields";
 
 /**
  * Brand-creation form — the other half of the Onboarding page. Covers every
@@ -15,137 +25,14 @@ import Alert from "./ui/Alert";
  * `BrandSpec` currently accepts; a blank value renders as an explicit
  * `<!-- TODO (owner) -->` placeholder server-side rather than an invented
  * one.
+ *
+ * Fields are grouped into labeled sections (Identity / Social profiles /
+ * Brand voice / Keywords) rather than one flat grid — each section explains
+ * in one line why it matters, since a first-time operator has no other
+ * source of that context. Field config + validation live in
+ * `brandFormFields.ts` (split out to keep this file under the project's
+ * 300-line limit).
  */
-
-// All fields kept as strings while editing; the 4 list fields are split on
-// submit. Keys match `BrandCreateRequest` so building the payload is a
-// straight map, not a hand-maintained duplicate list.
-type FormState = Record<keyof BrandCreateRequest, string>;
-
-const EMPTY_FORM: FormState = {
-  name: "",
-  site_url: "",
-  niche: "",
-  target_audience: "",
-  mascot_name: "",
-  brand_persona: "",
-  instagram_profile_url: "",
-  facebook_page_url: "",
-  primary_keywords: "",
-  secondary_keywords: "",
-  competitor_mentions: "",
-  competitor_accounts: "",
-};
-
-interface TextFieldSpec {
-  key: keyof FormState;
-  label: string;
-  required?: boolean;
-  placeholder?: string;
-}
-
-const TEXT_FIELDS: TextFieldSpec[] = [
-  { key: "name", label: "Name", required: true, placeholder: "Dog Food and Fun" },
-  { key: "site_url", label: "Site URL", required: true, placeholder: "https://example.com" },
-  { key: "niche", label: "Niche", required: true, placeholder: "Dog food & gear reviews" },
-  { key: "target_audience", label: "Target audience" },
-  { key: "mascot_name", label: "Mascot name" },
-  { key: "instagram_profile_url", label: "Instagram profile URL" },
-  { key: "facebook_page_url", label: "Facebook page URL" },
-];
-
-const LIST_FIELDS: { key: keyof FormState; label: string }[] = [
-  { key: "primary_keywords", label: "Primary keywords" },
-  { key: "secondary_keywords", label: "Secondary keywords" },
-  { key: "competitor_mentions", label: "Competitor mentions" },
-  { key: "competitor_accounts", label: "Competitor accounts" },
-];
-
-function parseList(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function CodeBlock({ code }: { code: string }): React.JSX.Element {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard
-      .writeText(code)
-      .then(() => {
-        setCopied(true);
-        window.setTimeout(() => setCopied(false), 1500);
-      })
-      .catch(() => {
-        // Clipboard API unavailable (e.g. insecure context) — no-op; the
-        // command is still visible + selectable in the block below.
-      });
-  };
-
-  return (
-    <div className="relative">
-      <pre className="rounded-lg bg-slate-900 text-slate-100 text-xs p-3 pr-16 overflow-x-auto">
-        <code>{code}</code>
-      </pre>
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="absolute top-2 right-2 rounded bg-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-100 hover:bg-slate-600"
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
-    </div>
-  );
-}
-
-function ResultPanel({ result }: { result: BrandCreateResponse }): React.JSX.Element {
-  return (
-    <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
-      <p className="text-sm font-semibold text-emerald-800">
-        Brand created — <span className="font-mono">{result.brand_dir}</span>
-      </p>
-
-      {result.files_written.length > 0 && (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
-            Files written
-          </p>
-          <ul className="text-xs font-mono text-slate-600 list-disc list-inside">
-            {result.files_written.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {result.warnings.length > 0 && (
-        <div className="space-y-1">
-          {result.warnings.map((w) => (
-            <Alert key={w} status="warning">
-              {w}
-            </Alert>
-          ))}
-        </div>
-      )}
-
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
-          Instagram login (run once, before ig-scanner can do anything live)
-        </p>
-        <CodeBlock code={result.ig_login_command} />
-      </div>
-
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
-          Facebook login (run once, before fb-scanner can do anything live)
-        </p>
-        <CodeBlock code={result.fb_login_command} />
-      </div>
-    </div>
-  );
-}
 
 interface BrandFormProps {
   onCreated: () => void;
@@ -154,17 +41,30 @@ interface BrandFormProps {
 export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Element {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [result, setResult] = useState<BrandCreateResponse | null>(null);
-  const { mutate, loading, error, errorStatus } = useApiMutation<
+  const { mutate, loading, error, errorStatus, errorDetail } = useApiMutation<
     BrandCreateResponse,
     BrandCreateRequest
   >("post");
+  const retry = useApiMutation<BrandCreateResponse, undefined>("post");
 
-  const update = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }));
-  };
+  const update =
+    (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setForm((f) => ({ ...f, [key]: e.target.value }));
+    };
+
+  const urlErrors: Partial<Record<keyof FormState, string>> = {};
+  for (const key of URL_FIELD_KEYS) {
+    if (!isValidUrl(form[key])) {
+      urlErrors[key] = "Enter a full URL, starting with https://";
+    }
+  }
 
   const canSubmit =
-    form.name.trim() !== "" && form.site_url.trim() !== "" && form.niche.trim() !== "" && !loading;
+    form.name.trim() !== "" &&
+    form.site_url.trim() !== "" &&
+    form.niche.trim() !== "" &&
+    Object.keys(urlErrors).length === 0 &&
+    !loading;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -193,64 +93,110 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
     }
   };
 
+  // Provisioning failed after the brand row was already created (a 502 from
+  // POST /brands) — the backend tells us exactly how to retry
+  // (`detail.retry`/`detail.brand_id`); offer that directly instead of
+  // making the operator re-fill and resubmit the whole form.
+  const provisioningFailure =
+    errorStatus === 502 && errorDetail && typeof errorDetail === "object"
+      ? (errorDetail as { brand_id?: string })
+      : null;
+
+  const handleRetryProvisioning = async () => {
+    if (!provisioningFailure?.brand_id) return;
+    const retried = await retry.mutate(endpoints.brandProvision(provisioningFailure.brand_id));
+    if (retried) {
+      setResult(retried);
+      onCreated();
+    }
+  };
+
   return (
-    <section>
-      <h2 className="font-display text-lg font-semibold text-slate-800 mb-1">Onboard a new brand</h2>
+    <section id="create-brand" className="scroll-mt-6">
+      <h2 className="font-display text-lg font-semibold text-slate-800 mb-1">
+        Onboard a new brand
+      </h2>
       <p className="text-sm text-slate-500 mb-3">
         Creates the brand row, scaffolds <code className="font-mono text-xs">brands/&lt;slug&gt;/</code>, and
         seeds its <code className="font-mono text-xs">ig-scanner</code> /{" "}
         <code className="font-mono text-xs">fb-scanner</code> schedule.
       </p>
 
-      <form onSubmit={(e) => void handleSubmit(e)} className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {TEXT_FIELDS.map((field) => (
-            <label key={field.key} className="text-sm">
-              <span className="block mb-1 font-medium text-slate-700">
-                {field.label}
-                {field.required && <span className="text-rose-500"> *</span>}
-              </span>
-              <input
-                type="text"
-                value={form[field.key]}
-                onChange={update(field.key)}
-                required={field.required}
-                placeholder={field.placeholder}
-                className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
-              />
-            </label>
-          ))}
-        </div>
+      <form
+        onSubmit={(e) => void handleSubmit(e)}
+        className="rounded-xl border border-stone-200 bg-white p-5 space-y-6"
+      >
+        {FIELD_SECTIONS.map((section) => (
+          <div key={section.title}>
+            <h3 className="text-sm font-semibold text-slate-700">{section.title}</h3>
+            <p className="text-xs text-slate-400 mb-2">{section.description}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {section.fields.map((field) => (
+                <label key={field.key} className="text-sm">
+                  <span className="block mb-1 font-medium text-slate-700">
+                    {field.label}
+                    {field.required && <span className="text-rose-500"> *</span>}
+                  </span>
+                  <input
+                    type="text"
+                    value={form[field.key]}
+                    onChange={update(field.key)}
+                    required={field.required}
+                    placeholder={field.placeholder}
+                    aria-invalid={Boolean(urlErrors[field.key])}
+                    className={`w-full rounded-lg border px-3 py-2 text-sm focus:ring ${
+                      urlErrors[field.key]
+                        ? "border-rose-300 focus:border-rose-400 focus:ring-rose-200/50"
+                        : "border-stone-300 focus:border-amber-300 focus:ring-amber-200/50"
+                    }`}
+                  />
+                  {urlErrors[field.key] && (
+                    <span className="mt-1 block text-xs text-rose-600">
+                      {urlErrors[field.key]}
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
 
-        <label className="block text-sm">
-          <span className="block mb-1 font-medium text-slate-700">
-            Brand persona / voice{" "}
-            <span className="font-normal text-slate-400">(optional — leave blank if none yet)</span>
-          </span>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700">Brand voice</h3>
+          <p className="text-xs text-slate-400 mb-2">
+            Grounds engagement comments in a real voice — leave blank if you haven't decided yet.
+          </p>
           <textarea
             value={form.brand_persona}
             onChange={update("brand_persona")}
             rows={3}
-            placeholder="e.g. a dog owner and software engineer, not a vet — grounds engagement comments in a real voice"
+            placeholder="e.g. a dog owner and software engineer, not a vet"
             className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
           />
-        </label>
+        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {LIST_FIELDS.map((field) => (
-            <label key={field.key} className="text-sm">
-              <span className="block mb-1 font-medium text-slate-700">
-                {field.label} <span className="font-normal text-slate-400">(comma-separated)</span>
-              </span>
-              <input
-                type="text"
-                value={form[field.key]}
-                onChange={update(field.key)}
-                placeholder="e.g. grain-free, raw diet, joint health"
-                className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
-              />
-            </label>
-          ))}
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700">Keywords & competitors</h3>
+          <p className="text-xs text-slate-400 mb-2">
+            Drive ig-scanner's hashtag list and relevance scoring — leaving these blank means
+            scanners start with nothing to look for.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {LIST_FIELDS.map((field) => (
+              <label key={field.key} className="text-sm">
+                <span className="block mb-1 font-medium text-slate-700">
+                  {field.label} <span className="font-normal text-slate-400">(comma-separated)</span>
+                </span>
+                <input
+                  type="text"
+                  value={form[field.key]}
+                  onChange={update(field.key)}
+                  placeholder="e.g. grain-free, raw diet, joint health"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
+                />
+              </label>
+            ))}
+          </div>
         </div>
 
         {error && (
@@ -258,6 +204,18 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
             {errorStatus === 409
               ? "A brand with this name already exists — choose a different name."
               : error}
+            {provisioningFailure?.brand_id && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => void handleRetryProvisioning()}
+                  disabled={retry.loading}
+                  className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  {retry.loading ? "Retrying…" : "Retry provisioning"}
+                </button>
+              </div>
+            )}
           </Alert>
         )}
 
@@ -270,7 +228,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
         </button>
       </form>
 
-      {result && <ResultPanel result={result} />}
+      {result && <BrandCreateResult result={result} />}
     </section>
   );
 }

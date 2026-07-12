@@ -8,6 +8,7 @@
 import { useMemo, useState, useEffect } from "react";
 
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import { endpoints } from "../api/endpoints";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -120,7 +121,7 @@ function FlowCard({ worker }: FlowCardProps): React.JSX.Element {
 }
 
 export default function Flows(): React.JSX.Element {
-  const { data, loading, error } = useApiQuery<WorkerStatus[]>(
+  const { data, loading, error, refetch } = useApiQuery<WorkerStatus[]>(
     endpoints.workers,
     { refetchInterval: POLL_MS },
   );
@@ -134,9 +135,12 @@ export default function Flows(): React.JSX.Element {
 
   if (error && !data) {
     return (
-      <Alert status="error" title="Could not load workers">
-        {error}
-      </Alert>
+      <ErrorState
+        title="Could not load workers"
+        message={error}
+        onRetry={() => void refetch()}
+        retrying={loading}
+      />
     );
   }
 

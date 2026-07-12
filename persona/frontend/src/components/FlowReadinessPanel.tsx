@@ -4,6 +4,8 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "./ui/Toast";
 import Alert from "./ui/Alert";
+import ErrorState from "./ui/ErrorState";
+import LoadingState from "./ui/LoadingState";
 
 /**
  * Flow-readiness panel — one card per managed flow (`ig-scanner`/
@@ -128,8 +130,14 @@ export default function FlowReadinessPanel({
         Last run, and whether each flow has anything to do yet.
       </p>
 
-      {loading && !data && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <Alert status="error">Could not load flow status: {error}</Alert>}
+      {loading && !data && <LoadingState message="Loading flow status…" />}
+      {error && (
+        <ErrorState
+          message={`Could not load flow status: ${error}`}
+          onRetry={() => void refetch()}
+          retrying={loading}
+        />
+      )}
 
       {data && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

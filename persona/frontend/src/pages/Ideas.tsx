@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { ideasUrl, updateIdeaStatus, slidesApiUrl, slideImageUrl } from "../api/ideas";
 import type { ContentIdea, IdeasResponse, SlidesResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
-import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 
@@ -193,7 +193,15 @@ export default function Ideas(): React.JSX.Element {
   const pendingCount = counts["publish"] ?? 0;
 
   if (loading && !data) return <LoadingState message="Loading ideas…" />;
-  if (error && !data) return <Alert status="error" title="Could not load ideas">{error}</Alert>;
+  if (error && !data)
+    return (
+      <ErrorState
+        title="Could not load ideas"
+        message={error}
+        onRetry={() => void refetch()}
+        retrying={loading}
+      />
+    );
 
   return (
     <div className="space-y-5">

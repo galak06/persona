@@ -3,7 +3,9 @@ import { endpoints } from "../api/endpoints";
 import type { BrandCreateResponse, BrandSummary } from "../api/brands";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "./ui/Toast";
-import Alert from "./ui/Alert";
+import EmptyState from "./ui/EmptyState";
+import ErrorState from "./ui/ErrorState";
+import LoadingState from "./ui/LoadingState";
 
 /**
  * Existing-brands table half of the Onboarding page. Read-only list +
@@ -97,11 +99,28 @@ export default function BrandsList({ brands, loading, error, onChanged }: Brands
         Onboarded brands and their provisioning status — {brands.length} total.
       </p>
 
-      {loading && brands.length === 0 && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <Alert status="error">Could not load brands: {error}</Alert>}
+      {loading && brands.length === 0 && <LoadingState message="Loading brands…" />}
+      {error && (
+        <ErrorState
+          message={`Could not load brands: ${error}`}
+          onRetry={onChanged}
+          retrying={loading}
+        />
+      )}
 
       {!loading && !error && brands.length === 0 && (
-        <p className="text-sm text-slate-400">No brands onboarded yet — use the form below.</p>
+        <EmptyState
+          title="No brands onboarded yet"
+          description="Create your first brand below to provision its folder, config, and scanner schedule."
+          actions={
+            <a
+              href="#create-brand"
+              className="inline-block rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+            >
+              Create your first brand ↓
+            </a>
+          }
+        />
       )}
 
       {brands.length > 0 && (

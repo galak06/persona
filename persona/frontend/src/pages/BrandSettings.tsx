@@ -7,6 +7,8 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "../components/ui/Toast";
 import Alert from "../components/ui/Alert";
+import ErrorState from "../components/ui/ErrorState";
+import LoadingState from "../components/ui/LoadingState";
 import FlowReadinessPanel from "../components/FlowReadinessPanel";
 
 /**
@@ -63,7 +65,12 @@ const LIST_FIELDS: {
 
 export default function BrandSettings(): React.JSX.Element {
   const { id } = useParams<{ id: string }>();
-  const { data: brand, loading, error } = useApiQuery<Brand>(id ? endpoints.brand(id) : null);
+  const {
+    data: brand,
+    loading,
+    error,
+    refetch,
+  } = useApiQuery<Brand>(id ? endpoints.brand(id) : null);
   const { toast } = useToast();
   const { mutate, loading: saving, error: saveError } = useApiMutation<
     BrandCreateResponse,
@@ -123,8 +130,14 @@ export default function BrandSettings(): React.JSX.Element {
 
       <FlowReadinessPanel brandId={id} />
 
-      {loading && !form && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <Alert status="error">Could not load brand: {error}</Alert>}
+      {loading && !form && <LoadingState message="Loading brand…" />}
+      {error && (
+        <ErrorState
+          message={`Could not load brand: ${error}`}
+          onRetry={() => void refetch()}
+          retrying={loading}
+        />
+      )}
 
       {form && (
         <form

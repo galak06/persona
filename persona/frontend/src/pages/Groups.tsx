@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchGroups, updateGroup, type FacebookGroup } from "../api/groups";
 import { getErrorMessage } from "../api/client";
+import ErrorState from "../components/ui/ErrorState";
+import LoadingState from "../components/ui/LoadingState";
 
 type Bucket = "member" | "waiting" | "rejected" | "not_joined";
 
@@ -71,21 +73,16 @@ export default function Groups() {
   }, [groups, selectedBucket]);
 
   if (loading) {
-    return <div className="text-slate-500">Loading groups...</div>;
+    return <LoadingState message="Loading groups…" />;
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 text-red-700 p-4 rounded-md">
-        <h3 className="font-semibold mb-1">Error loading groups</h3>
-        <p className="text-sm">{error}</p>
-        <button
-          onClick={loadGroups}
-          className="mt-3 text-sm font-medium hover:underline"
-        >
-          Try Again
-        </button>
-      </div>
+      <ErrorState
+        title="Error loading groups"
+        message={error}
+        onRetry={() => void loadGroups()}
+      />
     );
   }
 
