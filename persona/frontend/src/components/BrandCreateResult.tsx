@@ -63,6 +63,15 @@ export default function BrandCreateResult({
         <ol className="text-sm text-slate-600 list-decimal list-inside space-y-1">
           <li>Log in below (once per platform) so the scanners have a session to reuse.</li>
           <li>
+            <Link
+              to={`/onboarding/${result.id}/connect`}
+              className="font-medium text-amber-700 hover:underline"
+            >
+              Connect Facebook &amp; Instagram
+            </Link>{" "}
+            — required before any post or comment can actually publish.
+          </li>
+          <li>
             Open{" "}
             <Link
               to={`/onboarding/${result.id}/settings`}
