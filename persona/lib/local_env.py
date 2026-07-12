@@ -83,6 +83,36 @@ def get_runtime_headless() -> bool:
     return headless
 
 
+def get_group_join_limit(default: int = 10) -> int:
+    """Return `scripts/fb_group_scout.py`'s daily join-request cap from the
+    brand overlay.
+
+    Reads `<BRAND_DIR>/brand.json` -> `group_discovery.join_limit_per_day`.
+    Returns `default` if `BRAND_DIR` is unset, `brand.json` is missing or
+    malformed, or the field is absent or not an int -- same fallback
+    contract as `get_runtime_headless()`.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return default
+    brand_path = Path(brand_dir) / "brand.json"
+    if not brand_path.exists():
+        return default
+    try:
+        data: Any = json.loads(brand_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return default
+    if not isinstance(data, dict):
+        return default
+    group_discovery = data.get("group_discovery")
+    if not isinstance(group_discovery, dict):
+        return default
+    limit = group_discovery.get("join_limit_per_day")
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        return default
+    return limit
+
+
 def get_brand_campaign() -> dict[str, Any]:
     """Return the `campaign` block from the brand overlay (or {}).
 

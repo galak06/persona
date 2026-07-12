@@ -57,6 +57,7 @@ class BrandDetail(BaseModel):
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
     headless: bool = True
+    group_join_limit: int = 10
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -75,6 +76,8 @@ class BrandSettingsRequest(BaseModel):
     secondary_keywords: list[str] | None = None
     competitor_mentions: list[str] | None = None
     competitor_accounts: list[str] | None = None
+    enabled_flows: list[str] | None = None
+    group_join_limit: int | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -97,6 +100,7 @@ class BrandProvisionResponse(BaseModel):
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
     headless: bool = True
+    group_join_limit: int = 10
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}

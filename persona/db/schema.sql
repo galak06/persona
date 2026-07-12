@@ -110,6 +110,11 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS extra               JSONB DEFAULT '{
 -- fallback), so this migration is a no-op behavior-wise for brands that
 -- never customize it.
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS headless            BOOLEAN NOT NULL DEFAULT TRUE;
+-- Additive (PR6 — fb-group-scout wiring): daily cap on new-group join
+-- requests scripts/fb_group_scout.py sends. Existing rows default to 10,
+-- matching that script's own pre-PR6 hardcoded JOIN_LIMIT_PER_DAY, so this
+-- migration is a no-op behavior-wise for brands that never customize it.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS group_join_limit    INTEGER NOT NULL DEFAULT 10;
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (

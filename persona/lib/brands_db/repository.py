@@ -46,6 +46,7 @@ class BrandsRepository:
         competitor_accounts: list[Any] | None = None,
         enabled_flows: list[str] | None = None,
         headless: bool = True,
+        group_join_limit: int = 10,
         status: str = BrandStatus.DRAFT,
         brand_dir: str = "",
         extra: dict[str, Any] | None = None,
@@ -94,6 +95,7 @@ class BrandsRepository:
                 enabled_flows if enabled_flows is not None else default_enabled_flows()
             ),
             "headless": headless,
+            "group_join_limit": group_join_limit,
             "status": status,
             "brand_dir": brand_dir,
             "extra": Jsonb(extra if extra is not None else {}),
@@ -163,6 +165,7 @@ class BrandsRepository:
         keywords: dict[str, Any] | None = None,
         competitor_accounts: list[Any] | None = None,
         enabled_flows: list[str] | None = None,
+        group_join_limit: int | None = None,
     ) -> bool:
         """Partial update -- only params passed a non-`None` value change.
 
@@ -182,6 +185,8 @@ class BrandsRepository:
             updates["competitor_accounts"] = Jsonb(competitor_accounts)
         if enabled_flows is not None:
             updates["enabled_flows"] = Jsonb(enabled_flows)
+        if group_join_limit is not None:
+            updates["group_join_limit"] = group_join_limit
 
         if not updates:
             return False

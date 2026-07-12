@@ -83,6 +83,8 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         competitor_accounts=(
             list(body.competitor_accounts) if body.competitor_accounts is not None else None
         ),
+        enabled_flows=(list(body.enabled_flows) if body.enabled_flows is not None else None),
+        group_join_limit=body.group_join_limit,
     )
 
     updated_row = brands_db.get(brand_id)

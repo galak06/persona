@@ -36,6 +36,9 @@ from lib.brand_template_defaults import (
     RATE_LIMITS,
     VOICE_VALIDATION,
 )
+from lib.brands_db.models import default_enabled_flows
+
+_DEFAULT_GROUP_JOIN_LIMIT = 10  # matches scripts/fb_group_scout.py's own fallback
 
 _HASHTAG_CSV_HEADER = ("hashtag", "tier", "scan_frequency", "category", "notes")
 
@@ -63,6 +66,8 @@ class BrandSpec:
     competitor_mentions: list[str] = field(default_factory=list)
     competitor_accounts: list[str] = field(default_factory=list)
     headless: bool = True
+    enabled_flows: list[str] = field(default_factory=default_enabled_flows)
+    group_join_limit: int = _DEFAULT_GROUP_JOIN_LIMIT
 
 
 def render_config_json(spec: BrandSpec) -> dict[str, Any]:
@@ -127,14 +132,18 @@ def render_config_json(spec: BrandSpec) -> dict[str, Any]:
 def render_brand_json(spec: BrandSpec) -> dict[str, Any]:
     """Build the `brand_dir/brand.json` runtime-overrides dict.
 
-    Read by `lib.local_env.get_runtime_headless()`: `runtime.headless`. This
-    is the file's entire shape today -- one field, because headless is the
-    only per-brand runtime override that exists yet. Written by
+    `runtime.headless` is read by `lib.local_env.get_runtime_headless()`;
+    `group_discovery.join_limit_per_day` is read by
+    `scripts/fb_group_scout.py` (via `lib.local_env.get_group_join_limit()`)
+    -- both fall back to a production-safe default when unset. Written by
     `brand_provisioning.provision_brand()` on every call (create AND
-    re-provision), which is what makes a settings-page headless edit
+    re-provision), which is what makes a settings-page edit to either field
     actually take effect on the next scanner run.
     """
-    return {"runtime": {"headless": spec.headless}}
+    return {
+        "runtime": {"headless": spec.headless},
+        "group_discovery": {"join_limit_per_day": spec.group_join_limit},
+    }
 
 
 def _fact_bullet(label: str, value: str, todo_hint: str) -> str:

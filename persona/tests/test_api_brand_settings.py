@@ -118,7 +118,30 @@ def test_settings_no_fields_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> 
         "headless": None,
         "keywords": None,
         "competitor_accounts": None,
+        "enabled_flows": None,
+        "group_join_limit": None,
     }
+
+
+def test_settings_enabled_flows_and_group_join_limit_pass_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _mock_backend(monkeypatch, _ROW)
+    brand_settings_api.update_brand_settings(
+        "acme-dogs",
+        brand_settings_api.BrandSettingsRequest(
+            enabled_flows=["ig-scanner", "fb-scanner", "fb-group-scout"],
+            group_join_limit=3,
+        ),
+    )
+    assert captured["update_kwargs"]["enabled_flows"] == [
+        "ig-scanner",
+        "fb-scanner",
+        "fb-group-scout",
+    ]
+    assert captured["update_kwargs"]["group_join_limit"] == 3
+    assert captured["update_kwargs"]["headless"] is None
+    assert captured["update_kwargs"]["keywords"] is None
 
 
 def test_settings_provisioning_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,7 +203,12 @@ def test_settings_patch_end_to_end_over_real_http(pg: None, brands_root: Path) -
 
     patch_resp = client.patch(
         "/api/v1/brands/acme-dogs/settings",
-        json={"headless": False, "primary_keywords": ["new-primary"]},
+        json={
+            "headless": False,
+            "primary_keywords": ["new-primary"],
+            "enabled_flows": ["ig-scanner", "fb-scanner", "fb-group-scout"],
+            "group_join_limit": 3,
+        },
     )
     assert patch_resp.status_code == 200
     payload = patch_resp.json()
@@ -190,9 +218,13 @@ def test_settings_patch_end_to_end_over_real_http(pg: None, brands_root: Path) -
     # primary_keywords-only PATCH (the merge-not-clobber contract).
     assert payload["keywords"]["secondary_keywords"] == ["gps"]
     assert payload["keywords"]["competitor_mentions"] == ["brand x"]
+    assert payload["enabled_flows"] == ["ig-scanner", "fb-scanner", "fb-group-scout"]
+    assert payload["group_join_limit"] == 3
+    assert "acme-dogs-fb-group-scout" in payload["schedule_tasks_created"]
 
-    brand_json = (brands_root / "acme-dogs" / "brand.json").read_text(encoding="utf-8")
-    assert '"headless": false' in brand_json
+    brand_json_text = (brands_root / "acme-dogs" / "brand.json").read_text(encoding="utf-8")
+    assert '"headless": false' in brand_json_text
+    assert '"join_limit_per_day": 3' in brand_json_text
 
     missing_resp = client.patch("/api/v1/brands/does-not-exist/settings", json={"headless": False})
     assert missing_resp.status_code == 404

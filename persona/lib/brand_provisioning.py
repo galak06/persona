@@ -47,13 +47,18 @@ BRANDS_ROOT = _PERSONA_ROOT / "brands"
 
 _PROFILES_DIR = _PERSONA_ROOT / "profiles"
 
-# (profile file, flow id, script path) for the two Stage-1 flows. Cron
-# strings are read from these files at provision time rather than
-# hardcoded, so a profile change is automatically picked up by the next
-# onboarding run instead of silently drifting out of sync.
+# (profile file, flow id) for every flow this stage of onboarding knows how
+# to provision. Cron strings are read from these files at provision time
+# rather than hardcoded, so a profile change is automatically picked up by
+# the next onboarding run instead of silently drifting out of sync. Not
+# every brand gets every row -- `_build_stage1_tasks` filters this list down
+# to `spec.enabled_flows` (default: just the first two -- see
+# `default_enabled_flows()`), so a brand that never opts into
+# `fb-group-scout` never gets that `schedule_tasks` row at all.
 _STAGE1_FLOWS: tuple[tuple[str, str], ...] = (
     ("instagram.json", "ig-scanner"),
     ("facebook.json", "fb-scanner"),
+    ("facebook.json", "fb-group-scout"),
 )
 
 
@@ -84,13 +89,14 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
     `id` is brand-prefixed (`<brand_id>-<flow_id>`) so multiple brands'
     dispatcher rows never collide. `depends_on`/`inputs` are cleared even
     when the source flow has them (e.g. `ig-scanner` depends on
-    `site-analyzer`) -- Stage 1 onboarding provisions ONLY `ig-scanner`/
-    `fb-scanner` (see the plan's Stage 1 goal), so a dangling dependency on a
-    flow this brand doesn't have would be misleading. `task_dispatcher.py`
-    doesn't currently evaluate `depends_on` at all, so this is a data-hygiene
-    choice, not a behavior change. `requires_browser` is forced `true` per
-    the plan's B3 spec regardless of the source flow's value (both flows are
-    Playwright-driven scans, so this is always accurate for these two ids).
+    `site-analyzer`) -- onboarding only ever provisions flows from
+    `_STAGE1_FLOWS`, so a dangling dependency on a flow this brand doesn't
+    have would be misleading. `task_dispatcher.py` doesn't currently
+    evaluate `depends_on` at all, so this is a data-hygiene choice, not a
+    behavior change. `requires_browser` is forced `true` per the plan's B3
+    spec regardless of the source flow's value (`ig-scanner`/`fb-scanner`/
+    `fb-group-scout` are all Playwright-driven, so this is always accurate
+    for every id `_STAGE1_FLOWS` can name).
     """
     flow_id = str(flow["id"])
     return {
@@ -115,20 +121,32 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
     }
 
 
-def _build_stage1_tasks(brand_id: str) -> list[dict[str, Any]]:
+def _build_stage1_tasks(brand_id: str, enabled_flows: list[str]) -> list[dict[str, Any]]:
+    """Build one `schedule_tasks` row per `_STAGE1_FLOWS` entry the brand
+    actually opted into. A flow id absent from `enabled_flows` is skipped
+    entirely -- no row is ever inserted for it -- rather than inserted and
+    later filtered at dispatch time, so `GET .../schedule` never lists a
+    task the brand can't run.
+    """
     return [
         _flow_to_task(_load_flow(profile_filename, flow_id), brand_id=brand_id)
         for profile_filename, flow_id in _STAGE1_FLOWS
+        if flow_id in enabled_flows
     ]
 
 
 def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResult:
-    """Scaffold `brands/<slug>/` + insert its 2 `schedule_tasks` rows.
+    """Scaffold `brands/<slug>/` + insert its `schedule_tasks` rows.
 
     Idempotent: re-running only rewrites the files this function owns
-    (config.json, brand_facts.md, instagram_accounts.csv) and re-upserts the
-    same 2 schedule_tasks rows -- never deletes anything, never errors just
-    because the folder or brand row already exists.
+    (config.json, brand_facts.md, instagram_accounts.csv, brand.json) and
+    re-upserts the same `schedule_tasks` rows for `spec.enabled_flows` --
+    never deletes anything, never errors just because the folder or brand
+    row already exists. Enabling a previously-disabled flow (e.g. via a
+    settings edit) creates its row the next time this runs; disabling one
+    leaves its existing row in place -- `scripts/task_dispatcher.py` is what
+    actually gates execution on `enabled_flows` at dispatch time, since a
+    once-enabled flow's row is never deleted by this function.
 
     `dry_run=True` renders everything and returns the same `ProvisionResult`
     shape the real run would, but performs no writes to disk or the DB
@@ -144,7 +162,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     brand_facts_md = render_brand_facts_md(spec)
     hashtags_csv = render_instagram_hashtags_csv(spec)
     brand_json = render_brand_json(spec)
-    tasks = _build_stage1_tasks(slug)
+    tasks = _build_stage1_tasks(slug, spec.enabled_flows)
 
     warnings: list[str] = []
     if not spec.primary_keywords and not spec.secondary_keywords:
@@ -205,7 +223,9 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
                 "competitor_mentions": list(spec.competitor_mentions),
             },
             competitor_accounts=list(spec.competitor_accounts),
+            enabled_flows=list(spec.enabled_flows),
             headless=spec.headless,
+            group_join_limit=spec.group_join_limit,
             brand_dir=str(brand_dir),
         )
     repo.set_brand_dir(slug, str(brand_dir))

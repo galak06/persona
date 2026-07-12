@@ -51,6 +51,7 @@ def create(
     competitor_accounts: list[Any] | None = None,
     enabled_flows: list[str] | None = None,
     headless: bool = True,
+    group_join_limit: int = 10,
     status: str = BrandStatus.DRAFT,
     brand_dir: str = "",
     extra: dict[str, Any] | None = None,
@@ -68,6 +69,7 @@ def create(
         competitor_accounts=competitor_accounts,
         enabled_flows=enabled_flows,
         headless=headless,
+        group_join_limit=group_join_limit,
         status=status,
         brand_dir=brand_dir,
         extra=extra,
@@ -102,6 +104,7 @@ def update(
     keywords: dict[str, Any] | None = None,
     competitor_accounts: list[Any] | None = None,
     enabled_flows: list[str] | None = None,
+    group_join_limit: int | None = None,
 ) -> bool:
     """Partial update -- only params passed a non-`None` value change."""
     return _repo().update(
@@ -110,4 +113,5 @@ def update(
         keywords=keywords,
         competitor_accounts=competitor_accounts,
         enabled_flows=enabled_flows,
+        group_join_limit=group_join_limit,
     )

@@ -25,7 +25,11 @@ interface FormState {
   secondary_keywords: string;
   competitor_mentions: string;
   competitor_accounts: string;
+  enabled_flows: string[];
+  group_join_limit: string;
 }
+
+const FB_GROUP_SCOUT = "fb-group-scout";
 
 function parseList(value: string): string[] {
   return value
@@ -41,10 +45,15 @@ function formStateFromBrand(brand: Brand): FormState {
     secondary_keywords: brand.keywords.secondary_keywords.join(", "),
     competitor_mentions: brand.keywords.competitor_mentions.join(", "),
     competitor_accounts: brand.competitor_accounts.join(", "),
+    enabled_flows: brand.enabled_flows,
+    group_join_limit: String(brand.group_join_limit),
   };
 }
 
-const LIST_FIELDS: { key: keyof Omit<FormState, "headless">; label: string }[] = [
+const LIST_FIELDS: {
+  key: "primary_keywords" | "secondary_keywords" | "competitor_mentions" | "competitor_accounts";
+  label: string;
+}[] = [
   { key: "primary_keywords", label: "Primary keywords" },
   { key: "secondary_keywords", label: "Secondary keywords" },
   { key: "competitor_mentions", label: "Competitor mentions" },
@@ -74,12 +83,15 @@ export default function BrandSettings(): React.JSX.Element {
     e.preventDefault();
     if (!form) return;
 
+    const parsedLimit = Number.parseInt(form.group_join_limit, 10);
     const payload: BrandSettingsRequest = {
       headless: form.headless,
       primary_keywords: parseList(form.primary_keywords),
       secondary_keywords: parseList(form.secondary_keywords),
       competitor_mentions: parseList(form.competitor_mentions),
       competitor_accounts: parseList(form.competitor_accounts),
+      enabled_flows: form.enabled_flows,
+      group_join_limit: Number.isNaN(parsedLimit) ? undefined : parsedLimit,
     };
 
     const updated = await mutate(endpoints.brandSettings(id), payload);
@@ -129,6 +141,41 @@ export default function BrandSettings(): React.JSX.Element {
             Off by default (headless) — production-safe. Turn on for local debugging to watch the
             scanner's browser live.
           </p>
+
+          <div className="border-t border-stone-100 pt-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.enabled_flows.includes(FB_GROUP_SCOUT)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    enabled_flows: e.target.checked
+                      ? [...form.enabled_flows, FB_GROUP_SCOUT]
+                      : form.enabled_flows.filter((f) => f !== FB_GROUP_SCOUT),
+                  })
+                }
+                className="h-4 w-4 rounded border-stone-300 text-amber-600 focus:ring-amber-300"
+              />
+              <span className="font-medium text-slate-700">
+                Enable fb-group-scout (find new Facebook groups to join)
+              </span>
+            </label>
+
+            <label className="block text-sm max-w-xs">
+              <span className="block mb-1 font-medium text-slate-700">
+                Daily group-join limit
+              </span>
+              <input
+                type="number"
+                min={0}
+                value={form.group_join_limit}
+                onChange={(e) => setForm({ ...form, group_join_limit: e.target.value })}
+                disabled={!form.enabled_flows.includes(FB_GROUP_SCOUT)}
+                className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50 disabled:bg-stone-50 disabled:text-slate-400"
+              />
+            </label>
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {LIST_FIELDS.map((field) => (

@@ -36,9 +36,14 @@ export interface Brand extends BrandSummary {
   keywords: BrandKeywords;
   competitor_accounts: string[];
   headless: boolean;
+  group_join_limit: number;
   extra: Record<string, unknown>;
   updated_at: string;
 }
+
+/** Every flow id `enabled_flows` can govern — mirrors
+ * `lib.brands_db.models.MANAGED_FLOW_IDS` (Python side). */
+export const MANAGED_FLOW_IDS = ["ig-scanner", "fb-scanner", "fb-group-scout"] as const;
 
 export interface BrandsResponse {
   brands: BrandSummary[];
@@ -76,6 +81,8 @@ export interface BrandSettingsRequest {
   secondary_keywords?: string[];
   competitor_mentions?: string[];
   competitor_accounts?: string[];
+  enabled_flows?: string[];
+  group_join_limit?: number;
 }
 
 /** What onboarding/provisioning did (or would do). */

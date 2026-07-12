@@ -46,7 +46,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 import redis
 
-from lib import schedule_db, worker_db
+from lib import brands_db, schedule_db, worker_db
+from lib.brands_db.models import MANAGED_FLOW_IDS
 from lib.observability import get_logger
 from lib.scheduling import is_task_due
 
@@ -133,6 +134,25 @@ def _run_subprocess_task(
     raise RuntimeError(message)
 
 
+def _flow_enabled(task: dict[str, Any], enabled_flows: frozenset[str] | None) -> bool:
+    """Whether `task` (a `schedule_tasks` row) is allowed to dispatch.
+
+    Only gates rows whose flow id (`task["title"]`, set by
+    `brand_provisioning._flow_to_task`) is one of the 3 onboarding-managed
+    flows (`MANAGED_FLOW_IDS`) -- any other row (a legacy WP/recipe
+    schedule, say) is unaffected by `enabled_flows` and always allowed.
+    `enabled_flows=None` (the brand row couldn't be read) fails open --
+    dispatch as before rather than silently stopping every managed flow for
+    the brand over a transient lookup problem.
+    """
+    flow_id = task.get("title")
+    if flow_id not in MANAGED_FLOW_IDS:
+        return True
+    if enabled_flows is None:
+        return True
+    return flow_id in enabled_flows
+
+
 def dispatch_task(
     task: dict[str, Any],
     *,
@@ -186,10 +206,14 @@ def run_once(
     now: datetime | None = None,
     redis_client: RedisLock | None = None,
 ) -> None:
-    """One dispatch pass: load this brand's due tasks and dispatch each.
+    """One dispatch pass: load this brand's due, enabled tasks and dispatch each.
 
     A single row raising never stops the rest -- logged + Telegram-notified,
-    then the pass continues to the next row.
+    then the pass continues to the next row. A row for a managed flow
+    (`ig-scanner`/`fb-scanner`/`fb-group-scout`) not currently in the
+    brand's `enabled_flows` is skipped (not treated as an error) -- this is
+    what makes disabling a flow in settings take effect on the very next
+    dispatch pass, with no re-provisioning or row deletion needed.
     """
     resolved_now = now or datetime.now(UTC)
     resolved_redis = redis_client or _get_redis_client()
@@ -197,8 +221,14 @@ def run_once(
     brand_tasks = [t for t in tasks if t.get("brand_id") == brand]
     logger.info("dispatch_pass_start", brand=brand, task_count=len(brand_tasks))
 
+    brand_row = brands_db.get(brand)
+    enabled_flows = frozenset(brand_row["enabled_flows"] or []) if brand_row else None
+
     for task in brand_tasks:
         task_id = str(task.get("id"))
+        if not _flow_enabled(task, enabled_flows):
+            logger.info("task_flow_disabled", task_id=task_id, flow_id=task.get("title"))
+            continue
         try:
             dispatch_task(
                 task,
