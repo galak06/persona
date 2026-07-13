@@ -113,6 +113,33 @@ def get_group_join_limit(default: int = 10) -> int:
     return limit
 
 
+def load_brand_env(brand_dir: Path) -> dict[str, str]:
+    """Parse `<brand_dir>/.env` (plain `KEY=VALUE` lines) into a dict.
+
+    Per CLAUDE.md's documented credential model, brand-specific platform
+    secrets (FB_PAGE_TOKEN, WP_APP_PASSWORD, IG_ACCOUNT_ID, etc.) live in
+    `$BRAND_DIR/.env`. Used by a shared, brand-agnostic worker to build a
+    per-task subprocess environment -- deliberately does NOT touch
+    `os.environ` itself, so one brand's secrets never leak into the shared
+    worker process's own global environment; callers merge the returned
+    dict into a per-subprocess `env=` argument instead.
+
+    Returns `{}` if the file is missing. Blank lines and `#`-comments are
+    skipped; malformed lines (no `=`) are skipped rather than raising.
+    """
+    env_path = brand_dir / ".env"
+    if not env_path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        result[key.strip()] = value.strip()
+    return result
+
+
 def get_brand_campaign() -> dict[str, Any]:
     """Return the `campaign` block from the brand overlay (or {}).
 

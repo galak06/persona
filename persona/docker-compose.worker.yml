@@ -1,30 +1,39 @@
-# Persona — Per-brand worker Compose
+# Persona — Shared worker Compose
 #
-# One instance per onboarded brand (own BRAND_DIR, own Playwright session) —
-# a single service definition in the shared docker-compose.yml can't express
-# that, so it lives here instead. Start it per brand, as its own Compose
-# project, pointed at the shared stack's network:
+# ONE dispatcher + ONE worker for the whole deployment, serving every brand
+# (replaces the earlier one-container-per-brand model). Which brands to
+# dispatch/poll comes from Postgres (`brands.brand_dir`/`status`), not this
+# process's own fixed identity -- see scripts/task_dispatcher.py::run_all_brands()
+# and scripts/task_worker.py::run_loop_all_brands(). Start once, no per-brand
+# `-p <slug>` project or `BRAND_DIR`/`PERSONA_BRAND` env vars needed:
 #
-#   BRAND_DIR=./brands/<slug> PERSONA_BRAND=<slug> \
-#     docker compose -f docker-compose.worker.yml -p <slug> up -d
+#   docker compose -f docker-compose.worker.yml up -d
 #
 # Requires the shared stack (docker-compose.yml) to already be running —
 # this file joins its `persona_net` network (declared `external: true` below)
 # to resolve the `postgres`/`redis`/`api` hostnames.
 #
-# BRAND_DIR/PERSONA_BRAND are required — no hardcoded default brand, since a
-# worker with no brand specified isn't a meaningful thing to start.
+# Two services (PR7 producer/consumer split, now brand-agnostic):
+#   dispatcher — scripts/task_dispatcher.py --loop: reads every brand's due
+#                schedule_tasks rows and pushes each onto that brand's own
+#                Redis `flow-run` queue. Never launches a browser, so it
+#                builds off the lightweight Dockerfile.api image (no
+#                Playwright/Chromium).
+#   worker     — scripts/task_worker.py --loop: round-robin pops every
+#                brand's queue and actually runs each task's script
+#                (ig_scan.py/fb_scan.py/fb_group_scout.py/...) as a
+#                subprocess, with that task's own brand_dir/credentials
+#                (lib.local_env.load_brand_env) injected into just that
+#                subprocess call. Builds off Dockerfile.worker (has
+#                Playwright/Chromium).
 #
-# Two services (PR7 producer/consumer split — replaces the single "worker"
-# service that used to both decide-what's-due AND run it):
-#   dispatcher — scripts/task_dispatcher.py --loop: reads due schedule_tasks
-#                rows and pushes them onto this brand's Redis `flow-run`
-#                queue. Never launches a browser, so it builds off the
-#                lightweight Dockerfile.api image (no Playwright/Chromium).
-#   worker     — scripts/task_worker.py --loop: pops that queue and actually
-#                runs each task's script (ig_scan.py/fb_scan.py/
-#                fb_group_scout.py/...) as a subprocess. Builds off
-#                Dockerfile.worker (has Playwright/Chromium).
+# Both mount the whole `./brands` root at `/app/brands` -- the SAME
+# container-internal path docker-compose.yml's `api` service already uses
+# (both Dockerfiles set WORKDIR /app) -- instead of one bind-mounted
+# `${BRAND_DIR}` per brand. This is load-bearing, not cosmetic:
+# `brands.brand_dir` (Postgres) stores ONE path value read by every
+# container, so every container must agree on the same mount point for
+# that value to resolve correctly.
 
 version: "3.9"
 
@@ -36,15 +45,19 @@ services:
       dockerfile: Dockerfile.api
     restart: unless-stopped
     environment:
-      - BRAND_DIR=/brand
-      - PERSONA_BRAND=${PERSONA_BRAND}
+      # Satisfies lib.config's module-level settings singleton, which
+      # requires SOME valid BRAND_DIR to import at all -- never consulted
+      # for actual dispatch decisions (those resolve per-brand from
+      # Postgres). brands/_shared is a dedicated placeholder config, not a
+      # real brand.
+      - BRAND_DIR=/app/brands/_shared
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
     volumes:
-      # Read-only: the dispatcher only reads config to resolve BRAND_DIR's
-      # settings -- it never writes to the brand folder (no session/browser
-      # state, no worker_runs writes -- those are Postgres, done by `worker`).
-      - ${BRAND_DIR}:/brand:ro
+      # Read-only: the dispatcher only reads brand config -- it never
+      # writes to any brand folder (no session/browser state, no
+      # worker_runs writes -- those are Postgres, done by `worker`).
+      - ./brands:/app/brands:ro
     networks:
       - persona_net
     command: ["python", "scripts/task_dispatcher.py", "--loop"]
@@ -56,40 +69,17 @@ services:
       dockerfile: Dockerfile.worker
     restart: unless-stopped
     environment:
-      - BRAND_DIR=/brand
-      - PERSONA_BRAND=${PERSONA_BRAND}
+      - BRAND_DIR=/app/brands/_shared
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
-      - WP_URL=${WP_URL}
-      - WP_USER=${WP_USER}
-      - WP_APP_PASSWORD=${WP_APP_PASSWORD}
-      - FB_PAGE_ID=${FB_PAGE_ID}
-      - FB_PAGE_TOKEN=${FB_PAGE_TOKEN}
-      - FB_APP_ID=${FB_APP_ID}
-      - FB_APP_SECRET=${FB_APP_SECRET}
-      - IG_ACCOUNT_ID=${IG_ACCOUNT_ID}
-      - PEXELS_API_KEY=${PEXELS_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - GOOGLE_SERVICE_ACCOUNT_PATH=/brand/data/config/google_service_account.json
-      - VOICE_PROVIDER=${VOICE_PROVIDER:-anthropic}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID}
-      - AMAZON_ASSOCIATES_TAG=${AMAZON_ASSOCIATES_TAG}
       - PLAYWRIGHT_HEADLESS=1
     volumes:
-      - ${BRAND_DIR}:/brand:ro
-      # Bind mounts, NOT named volumes: the one-time interactive login
-      # (ig_login.py/fb_login.py) runs on the HOST — worker is headless-only
-      # — and writes its session file into ${BRAND_DIR}/state on the host.
-      # A named volume is a separate location the container can't share with
-      # a host-side write; a bind mount is the same files on both sides.
-      - ${BRAND_DIR}/state:/brand/state
-      - ${BRAND_DIR}/logs:/brand/logs
-      - playwright_cache:/home/persona/.cache/ms-playwright
+      # Read-write: the worker writes session/browser state, logs, and
+      # queue files into whichever brand a given task's brand_dir points
+      # at. One shared mount, not a per-brand bind mount -- every brand's
+      # subdirectory under here is already writable.
+      - ./brands:/app/brands:rw
+      - playwright_cache:/ms-playwright
     networks:
       - persona_net
     command: ["python", "scripts/task_worker.py", "--loop"]

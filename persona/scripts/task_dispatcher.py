@@ -48,7 +48,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 import redis
 
 from lib import brands_db, schedule_db, worker_db
-from lib.brands_db.models import MANAGED_FLOW_IDS
+from lib.brands_db.models import MANAGED_FLOW_IDS, BrandStatus
 from lib.observability import get_logger
 from lib.scheduling import is_task_due
 from lib.task_queue import TaskQueue
@@ -245,6 +245,43 @@ def run_once(
             continue
 
 
+_DISPATCHABLE_STATUSES = frozenset({BrandStatus.PROVISIONED, BrandStatus.ACTIVE})
+
+
+def run_all_brands(
+    *,
+    now: datetime | None = None,
+    redis_client: RedisLock | None = None,
+) -> None:
+    """One dispatch pass across every provisioned/active brand.
+
+    A single shared dispatcher replaces the one-container-per-brand model:
+    `brand_dir` for each brand comes from `brands.brand_dir` (Postgres,
+    already the authoritative per-brand filesystem path — see
+    `db/schema.sql`), not a Docker bind-mount convention. `run_once()`
+    itself is untouched -- it already takes `brand`/`brand_dir` as plain
+    parameters, so looping it over every brand needed no signature change.
+    A brand missing its `brand_dir` (not yet provisioned) is skipped, not
+    treated as an error.
+    """
+    resolved_now = now or datetime.now(UTC)
+    resolved_redis = redis_client or _get_redis_client()
+    for brand_row in brands_db.list_brands():
+        if brand_row.get("status") not in _DISPATCHABLE_STATUSES:
+            continue
+        brand = str(brand_row["id"])
+        brand_dir_str = brand_row.get("brand_dir")
+        if not brand_dir_str:
+            logger.warning("brand_missing_brand_dir", brand=brand)
+            continue
+        run_once(
+            brand=brand,
+            brand_dir=Path(brand_dir_str),
+            now=resolved_now,
+            redis_client=resolved_redis,
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Dispatch due schedule_tasks rows for one brand")
     parser.add_argument(
@@ -260,29 +297,23 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # BRAND_DIR must still be *set* (lib.config's module-level settings
+    # singleton requires it to import at all -- see lib/bootstrap.py), but
+    # its value is never consulted for dispatch decisions below: every
+    # brand's own `brand_dir` comes from Postgres (`run_all_brands()`). Any
+    # valid brand directory works here; it's satisfying an import
+    # requirement, not selecting which brand this process serves.
     from lib.bootstrap import init_script
 
-    settings, _log = init_script(__name__)
-    if settings.paths is None:
-        raise RuntimeError("settings.paths is not configured; is BRAND_DIR set correctly?")
-    brand_dir = settings.paths.brand_dir
-    # PERSONA_BRAND (the codebase-wide brand-slug convention -- see
-    # lib/task_queue.py, lib/rate_limiter_redis.py, lib/oauth/store.py) wins
-    # when set. brand_dir.name is only a correct fallback for host-run
-    # scripts, where BRAND_DIR's basename naturally IS the slug (e.g.
-    # .../brands/dogfoodandfun) -- inside docker-compose.worker.yml,
-    # BRAND_DIR is a generic bind-mount path (/brand), so relying on its
-    # basename alone would silently resolve every brand to the literal
-    # string "brand".
-    brand = os.environ.get("PERSONA_BRAND") or brand_dir.name
+    init_script(__name__)
 
     if args.loop:
-        logger.info("dispatcher_loop_start", brand=brand, interval=args.interval)
+        logger.info("dispatcher_loop_start", interval=args.interval)
         while True:
-            run_once(brand=brand, brand_dir=brand_dir)
+            run_all_brands()
             time.sleep(args.interval)
     else:
-        run_once(brand=brand, brand_dir=brand_dir)
+        run_all_brands()
 
 
 if __name__ == "__main__":
