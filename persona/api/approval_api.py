@@ -804,11 +804,20 @@ def get_schedule_log(
     import re as _re
     # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment--0")
     label = _re.sub(r"--\d+$", "", label)
-    label = _normalize_label(label)
-    if not _LABEL_RE.fullmatch(label):
-        raise HTTPException(status_code=400, detail="Invalid label format")
 
-    suffix = label[len("com.persona."):]
+    # Modern multi-brand task ids (e.g. "dogfoodandfun-ig-scanner", as written
+    # by scripts/task_worker.py's _write_flow_log) never match the legacy
+    # launchd-style com.persona.* convention _normalize_label/_LABEL_RE
+    # validate below -- handle them directly rather than mangling them
+    # through that legacy path first.
+    if label.startswith(f"{_BRAND}-"):
+        suffix = label[len(_BRAND) + 1 :]
+    else:
+        label = _normalize_label(label)
+        if not _LABEL_RE.fullmatch(label):
+            raise HTTPException(status_code=400, detail="Invalid label format")
+        suffix = label[len("com.persona."):]
+
     log_name = f"cron_{suffix.replace('-', '_')}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
     log_path = brand_dir / "logs" / log_name
