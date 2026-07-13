@@ -162,6 +162,43 @@ def test_run_task_surfaces_captured_output_on_timeout(
     assert "stderr line" in row["message"]
 
 
+@requires_postgres
+def test_run_task_writes_flow_log_file(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Explorer page's "View Log" button reads `<brand_dir>/logs/cron_<flow>.log` --
+    this is the file `run_task` must actually write for that button to show real output."""
+    fake_run = _fake_run(returncode=0, stdout="scan complete")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    task_worker.run_task(_queue_item(f"{_BRAND}-ig-scanner", tmp_path))
+
+    log_path = tmp_path / "logs" / "cron_ig_scanner.log"
+    assert log_path.exists()
+    content = log_path.read_text(encoding="utf-8")
+    assert "[success]" in content
+    assert "scan complete" in content
+
+
+@requires_postgres
+def test_run_task_writes_flow_log_file_on_timeout(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _timeout(cmd: list[str], **_kwargs: Any) -> None:
+        raise subprocess.TimeoutExpired(cmd, 60, output="partial output", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _timeout)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        task_worker.run_task(_queue_item(f"{_BRAND}-ig-scanner", tmp_path))
+
+    log_path = tmp_path / "logs" / "cron_ig_scanner.log"
+    assert log_path.exists()
+    content = log_path.read_text(encoding="utf-8")
+    assert "[timeout]" in content
+    assert "partial output" in content
+
+
 # --------------------------------------------------------------------------- _process_one
 
 

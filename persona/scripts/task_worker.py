@@ -29,6 +29,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,27 @@ def _notify_telegram_failure(task_id: str, error: str) -> None:
         notifier.send(f"❌ Task worker failed for <b>{task_id}</b>.\n{error}", silent=False)
     except Exception as exc:
         logger.error("telegram_notify_failed", task_id=task_id, error=str(exc))
+
+
+def _write_flow_log(
+    brand_dir: Path, brand: str, task_id: str, *, status: str, stdout: str, stderr: str
+) -> None:
+    """Append this run's full captured output to `<brand_dir>/logs/cron_<flow>.log`.
+
+    Matches the filename convention `api/approval_api.py::get_schedule_log`
+    already expects (a leftover from the pre-Docker host-cron era, where
+    each flow script wrote directly to this same path) -- restoring it here
+    is what makes the Explorer page's "View Log" button show real, current
+    output again instead of the 500-char tail `worker_runs.message` carries.
+    """
+    flow_id = task_id[len(brand) + 1 :] if task_id.startswith(f"{brand}-") else task_id
+    log_path = brand_dir / "logs" / f"cron_{flow_id.replace('-', '_')}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(f"\n=== {datetime.now(UTC).isoformat()} [{status}] ===\n")
+        for chunk in (stdout, stderr):
+            if chunk:
+                f.write(chunk if chunk.endswith("\n") else chunk + "\n")
 
 
 def run_task(task: dict[str, Any]) -> None:
@@ -109,8 +131,10 @@ def run_task(task: dict[str, Any]) -> None:
         # already written before being killed -- surfacing it is the
         # difference between "timed out" (no visibility into why) and
         # actually being able to see what the script was doing.
-        captured = exc.stderr or exc.stdout or ""
-        captured = captured.decode() if isinstance(captured, bytes) else captured
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        _write_flow_log(brand_dir, brand, task_id, status="timeout", stdout=stdout, stderr=stderr)
+        captured = stderr or stdout
         message = f"timed out after {timeout_seconds}s: {captured.strip()[-500:]}"
         worker_db.record_complete(brand_dir, task_id, brand, "error", message)
         raise
@@ -118,6 +142,15 @@ def run_task(task: dict[str, Any]) -> None:
         message = f"failed to launch: {exc}"
         worker_db.record_complete(brand_dir, task_id, brand, "error", message)
         raise
+
+    _write_flow_log(
+        brand_dir,
+        brand,
+        task_id,
+        status="success" if result.returncode == 0 else f"exit={result.returncode}",
+        stdout=result.stdout or "",
+        stderr=result.stderr or "",
+    )
 
     if result.returncode == 0:
         message = (result.stdout or "").strip()[-500:]
