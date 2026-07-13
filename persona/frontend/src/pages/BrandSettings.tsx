@@ -9,7 +9,6 @@ import { useToast } from "../components/ui/Toast";
 import Alert from "../components/ui/Alert";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
-import FlowReadinessPanel from "../components/FlowReadinessPanel";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -136,7 +135,13 @@ export default function BrandSettings(): React.JSX.Element {
         </p>
       </header>
 
-      <FlowReadinessPanel brandId={id} />
+      <Alert status="info">
+        Flow status and Run Now moved to{" "}
+        <Link to="/human-mimic" className="font-medium underline">
+          Human Mimic
+        </Link>
+        .
+      </Alert>
 
       {loading && !form && <LoadingState message="Loading brand…" />}
       {error && (
