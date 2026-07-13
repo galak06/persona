@@ -49,10 +49,10 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py scripts/fb_group_scout.py
-          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py
+          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_worker.py tests/lib/scheduling/
@@ -60,6 +60,7 @@ jobs:
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
+          tests/test_session_status.py tests/test_api_session_status.py
 
       - name: Ruff format check
         run: >-
@@ -72,10 +73,10 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py
-          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py
+          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_worker.py tests/lib/scheduling/
@@ -83,6 +84,7 @@ jobs:
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
+          tests/test_session_status.py tests/test_api_session_status.py
 
   typecheck:
     name: Type Check
@@ -106,10 +108,10 @@ jobs:
           lib/groups_db/db.py lib/groups_db/repository.py
           lib/engagements_db/db.py lib/engagements_db/repository.py
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
-          lib/brands_db/ lib/brand_resolver.py lib/local_env.py lib/flow_readiness.py
+          lib/brands_db/ lib/brand_resolver.py lib/local_env.py lib/flow_readiness.py lib/session_status.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
-          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py
+          api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
           --ignore-missing-imports
 
   test:
@@ -212,15 +214,17 @@ jobs:
             tests/test_flow_readiness.py \
             tests/test_task_queue.py \
             tests/test_api_oauth.py \
+            tests/test_session_status.py \
+            tests/test_api_session_status.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db \
             --cov=lib.scheduling \
-            --cov=lib.brands_db --cov=lib.brand_resolver --cov=lib.local_env --cov=lib.flow_readiness \
+            --cov=lib.brands_db --cov=lib.brand_resolver --cov=lib.local_env --cov=lib.flow_readiness --cov=lib.session_status \
             --cov=lib.brand_templates --cov=lib.brand_template_defaults --cov=lib.brand_provisioning \
             --cov=comment_generator --cov=comment_generator_defaults \
             --cov=api.brands_api --cov=api.brand_settings_api --cov=api.brand_schemas --cov=api.brand_flows_api \
-            --cov=api.oauth_api \
+            --cov=api.oauth_api --cov=api.session_status_api \
             --cov-report=term-missing --cov-fail-under=80
 
   security:

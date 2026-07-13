@@ -102,6 +102,7 @@ from api.ideas_api import router as _ideas_router
 from api.oauth_api import router as _oauth_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
+from api.session_status_api import router as _session_status_router
 from api.tiktok_candidates_api import router as _tiktok_router
 from lib import activity_log
 from lib.config import default_brand_dir, settings
@@ -136,6 +137,7 @@ app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_settings_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_flows_router, prefix="/api/v1", tags=["brands"])
+app.include_router(_session_status_router, prefix="/api/v1", tags=["sessions"])
 
 
 @app.get("/api/v1/config")
