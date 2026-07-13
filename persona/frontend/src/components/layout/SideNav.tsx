@@ -86,31 +86,27 @@ export default function SideNav(): React.JSX.Element {
   const counts = pending?.counts ?? { blog_posts: 0, groups_to_join: 0 };
   const pendingTotal = counts.blog_posts + counts.groups_to_join;
 
-  const brandName = config?.name || "Persona";
-
   // ── Desktop sidebar ────────────────────────────────────────────────
   return (
     <>
       <aside className="hidden md:flex w-60 shrink-0 border-r border-brand-border bg-brand-surface sticky top-0 h-screen overflow-y-auto flex-col">
-        {/* Brand header */}
+        {/* App header + brand selector */}
         <div className="px-5 pt-6 pb-5 border-b border-brand-border">
           <span className="font-display text-xl leading-tight font-semibold text-amber-800">
-            {brandName}
+            Persona
           </span>
-          {availableBrands.length > 1 && (
-            <label className="mt-3 block">
-              <span className="sr-only">Brand</span>
-              <select
-                value={selectedBrand}
-                onChange={(e) => setSelectedBrand(e.target.value)}
-                className="w-full text-sm border-stone-300 rounded-lg shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
-              >
-                {availableBrands.map((brand) => (
-                  <option key={brand} value={brand}>{brand}</option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="mt-3 block">
+            <span className="sr-only">Brand</span>
+            <select
+              value={selectedBrand}
+              onChange={(e) => setSelectedBrand(e.target.value)}
+              className="w-full text-sm border-stone-300 rounded-lg shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
+            >
+              {availableBrands.map((brand) => (
+                <option key={brand} value={brand}>{brand}</option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {/* Nav sections */}
@@ -201,22 +197,20 @@ export default function SideNav(): React.JSX.Element {
               <div className="w-10 h-1 rounded-full bg-stone-200" />
             </div>
 
-            {/* Brand name + brand selector */}
+            {/* App name + brand selector */}
             <div className="px-5 pb-3 border-b border-brand-border flex items-center justify-between gap-3">
               <span className="font-display text-lg font-semibold text-amber-800 truncate">
-                {brandName}
+                Persona
               </span>
-              {availableBrands.length > 1 && (
-                <select
-                  value={selectedBrand}
-                  onChange={(e) => setSelectedBrand(e.target.value)}
-                  className="text-sm border-stone-300 rounded-lg focus:border-amber-300 focus:ring focus:ring-amber-200/50"
-                >
-                  {availableBrands.map((brand) => (
-                    <option key={brand} value={brand}>{brand}</option>
-                  ))}
-                </select>
-              )}
+              <select
+                value={selectedBrand}
+                onChange={(e) => setSelectedBrand(e.target.value)}
+                className="text-sm border-stone-300 rounded-lg focus:border-amber-300 focus:ring focus:ring-amber-200/50"
+              >
+                {availableBrands.map((brand) => (
+                  <option key={brand} value={brand}>{brand}</option>
+                ))}
+              </select>
             </div>
 
             {/* All sections */}
