@@ -1,20 +1,21 @@
 import { endpoints } from "../api/endpoints";
 import type { SessionStatus, SessionStatusResponse } from "../api/sessions";
 import { useApiQuery } from "../hooks/useApiQuery";
+import { useBrand } from "../context/BrandContext";
 import Alert from "../components/ui/Alert";
 import CodeBlock from "../components/ui/CodeBlock";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
+import FlowReadinessPanel from "../components/FlowReadinessPanel";
 
 /**
- * Human Mimic — browser-session (login) status for the active brand.
- *
- * The one thing that actually drives scanning/scouting/commenting: a saved
- * Playwright session per platform. Previously the only way to see this was
- * a copy-paste command shown once, at brand creation — no way to check
- * later whether a session exists or has gone stale. Single-tenant like its
- * Engagement-section siblings (FB Groups, Activity) — shows the API
- * process's active brand, not a picked one.
+ * Human Mimic — everything about the browser-automation ("looks like a
+ * person, not a bot") side of a brand in one place: saved login sessions
+ * (this page's own session-status query, single-tenant like its
+ * Engagement-section siblings) and flow status/Run Now for
+ * ig-scanner/fb-scanner/fb-group-scout (moved here from Brand Settings —
+ * `FlowReadinessPanel` is brand-scoped via `useBrand()`'s sidebar
+ * selection, same fallback the standalone `/connect` route uses).
  */
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -64,6 +65,7 @@ function SessionCard({ session }: { session: SessionStatus }): React.JSX.Element
 }
 
 export default function HumanMimic(): React.JSX.Element {
+  const { selectedBrand } = useBrand();
   const { data, loading, error, refetch } = useApiQuery<SessionStatusResponse>(
     endpoints.sessionStatus,
   );
@@ -73,8 +75,8 @@ export default function HumanMimic(): React.JSX.Element {
       <header className="mb-2">
         <h1 className="font-display text-2xl font-semibold text-slate-800">Human Mimic</h1>
         <p className="text-sm text-slate-500">
-          Browser-login sessions that scanning, group-scouting, and commenting run on — this is
-          what makes Persona look like a person, not a bot.
+          Browser-login sessions and flow status for scanning, group-scouting, and commenting —
+          this is what makes Persona look like a person, not a bot.
         </p>
       </header>
 
@@ -96,6 +98,8 @@ export default function HumanMimic(): React.JSX.Element {
           ))}
         </div>
       )}
+
+      <FlowReadinessPanel brandId={selectedBrand} />
     </div>
   );
 }
