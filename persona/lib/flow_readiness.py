@@ -65,7 +65,7 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
             brand_id,
             no_groups_hint=(
                 "No groups joined yet — the first fb-group-scout run finds "
-                "candidates; approve them (Telegram) to actually join."
+                "candidates; approve them in the Inbox to actually join."
             ),
         )
     if flow_id == "fb-scanner":

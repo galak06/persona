@@ -21,10 +21,21 @@ import logging
 from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-ENGAGEMENT_LOG_PATH: Path = _REPO_ROOT / "logs" / "engagement_log.jsonl"
+from lib.config import settings
 
-__all__ = ["ENGAGEMENT_LOG_PATH", "VALID_ACTIONS", "read_recent", "log_trace"]
+# Was hardcoded relative to this repo's own root (`<repo>/logs/...`) --
+# a pre-multi-brand-pivot leftover that silently diverged from every other
+# brand-scoped path in the codebase (all resolved via settings.paths). In
+# the Docker deployment the repo-relative directory never existed at all,
+# so every `log_trace()` call (hit at the start of ig_scan.py/fb_scan.py)
+# crashed with FileNotFoundError -- while the real, actively-written
+# engagement log sat untouched at BRAND_DIR/logs/engagement_log.jsonl the
+# whole time. `GET /activity` was reading the same wrong path, so the
+# Activity page showed nothing even though real data existed.
+assert settings.paths is not None
+ENGAGEMENT_LOG_PATH: Path = settings.paths.logs_dir / "engagement_log.jsonl"
+
+__all__ = ["ENGAGEMENT_LOG_PATH", "VALID_ACTIONS", "log_trace", "read_recent"]
 
 # Must mirror ``api.schemas.ActionLiteral``. Listed here so the reader
 # can drop unknown rows cheaply without importing pydantic.
@@ -170,5 +181,6 @@ def log_trace(
     if target_url:
         entry["target_url"] = target_url
 
+    ENGAGEMENT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with ENGAGEMENT_LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
