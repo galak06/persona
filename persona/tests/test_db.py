@@ -21,8 +21,15 @@ import pytest
 from lib import db, db_pool
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
-_EXPECTED_TABLES = {"schedule_tasks", "worker_runs", "engagements", "brands", "fb_groups"}
-_EXCLUDED_TABLES = {"recipes", "content_ideas", "oauth_tokens", "raw_scrapes", "completed_tasks"}
+_EXPECTED_TABLES = {
+    "schedule_tasks",
+    "worker_runs",
+    "engagements",
+    "brands",
+    "fb_groups",
+    "completed_tasks",
+}
+_EXCLUDED_TABLES = {"recipes", "content_ideas", "oauth_tokens", "raw_scrapes"}
 
 
 def _postgres_reachable() -> bool:
