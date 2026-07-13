@@ -135,6 +135,9 @@ export const endpoints = {
   /** DELETE — remove a stored token. */
   oauthDelete: (brandId: string, platform: string, tokenType: string): string =>
     `/oauth/${enc(platform)}/${enc(tokenType)}?brand_id=${enc(brandId)}`,
+
+  /** GET — FB/IG browser-session (login) status for the active brand. */
+  sessionStatus: "/sessions",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

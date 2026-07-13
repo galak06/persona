@@ -8,6 +8,7 @@ import Ideas from "./pages/Ideas";
 import Operations from "./pages/Operations";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
+import HumanMimic from "./pages/HumanMimic";
 import Onboarding from "./pages/Onboarding";
 import BrandSettings from "./pages/BrandSettings";
 import Published from "./pages/Published";
@@ -28,6 +29,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/human-mimic" element={<HumanMimic />} />
               <Route path="/activity" element={<Activity />} />
               <Route path="/campaigns" element={<Campaigns />} />
               <Route path="/inbox" element={<Inbox />} />
