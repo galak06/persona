@@ -104,6 +104,16 @@ def run_task(task: dict[str, Any]) -> None:
             timeout=timeout_seconds,
             env=env,
         )
+    except subprocess.TimeoutExpired as exc:
+        # `TimeoutExpired` carries whatever stdout/stderr the subprocess had
+        # already written before being killed -- surfacing it is the
+        # difference between "timed out" (no visibility into why) and
+        # actually being able to see what the script was doing.
+        captured = exc.stderr or exc.stdout or ""
+        captured = captured.decode() if isinstance(captured, bytes) else captured
+        message = f"timed out after {timeout_seconds}s: {captured.strip()[-500:]}"
+        worker_db.record_complete(brand_dir, task_id, brand, "error", message)
+        raise
     except Exception as exc:
         message = f"failed to launch: {exc}"
         worker_db.record_complete(brand_dir, task_id, brand, "error", message)
