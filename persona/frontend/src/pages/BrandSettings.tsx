@@ -123,9 +123,9 @@ export default function BrandSettings(): React.JSX.Element {
           </h1>
           <Link
             to={`/onboarding/${id}/connect`}
-            className="text-xs font-semibold text-amber-700 hover:underline whitespace-nowrap"
+            className="text-xs text-slate-400 hover:text-amber-700 hover:underline whitespace-nowrap"
           >
-            Connect Facebook &amp; Instagram →
+            Connect Facebook &amp; Instagram (optional) →
           </Link>
         </div>
         <p className="text-sm text-slate-500">

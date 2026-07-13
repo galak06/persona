@@ -61,16 +61,7 @@ export default function BrandCreateResult({
       <div className="rounded-lg border border-emerald-300 bg-white p-3">
         <p className="text-sm font-semibold text-slate-700 mb-1">What's next</p>
         <ol className="text-sm text-slate-600 list-decimal list-inside space-y-1">
-          <li>Log in below (once per platform) so the scanners have a session to reuse.</li>
-          <li>
-            <Link
-              to={`/onboarding/${result.id}/connect`}
-              className="font-medium text-amber-700 hover:underline"
-            >
-              Connect Facebook &amp; Instagram
-            </Link>{" "}
-            — required before any post or comment can actually publish.
-          </li>
+          <li>Log in below (once per platform) — this is what scanning and commenting actually run on.</li>
           <li>
             Open{" "}
             <Link
@@ -80,6 +71,17 @@ export default function BrandCreateResult({
               flow status
             </Link>{" "}
             to see when each flow is ready to run, and to Run Now on demand.
+          </li>
+          <li className="text-slate-400">
+            Optional —{" "}
+            <Link
+              to={`/onboarding/${result.id}/connect`}
+              className="font-medium text-amber-700 hover:underline"
+            >
+              connect Facebook &amp; Instagram
+            </Link>{" "}
+            only if you later want to publish Page/IG feed posts via the API. Not needed for
+            scanning or commenting.
           </li>
         </ol>
       </div>
