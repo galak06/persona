@@ -7,6 +7,7 @@
     "instagram:comment": "3-10s random",
     "instagram:follow": "60-180s random",
     "instagram:like": "10-45s random",
+    "instagram:own_reply": "5-10s random",
     "wordpress:reply": "15-45s random"
   },
   "limits": {
@@ -19,7 +20,8 @@
     "instagram:comment": 15,
     "instagram:feed_post": 2,
     "instagram:follow": 22,
-    "instagram:like": 20,
+    "instagram:like": 30,
+    "instagram:own_reply": 15,
     "wordpress:reply": 20
   }
 }
