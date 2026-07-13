@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { endpoints } from "../api/endpoints";
 import type { FlowStatus, FlowStatusResponse, RunNowResponse } from "../api/brands";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -66,6 +68,28 @@ function RunNowButton({
   );
 }
 
+function FlowLog({ message }: { message: string }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="text-xs font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
+        aria-expanded={open}
+      >
+        {open ? "Hide log" : "View log"}
+      </button>
+      {open && (
+        <pre className="mt-2 font-mono text-xs bg-slate-50 border border-slate-200 rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+          {message}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function FlowCard({
   flow,
   brandId,
@@ -99,6 +123,8 @@ function FlowCard({
         </span>
         {flow.last_run && <span>{flow.last_run.last_run.slice(0, 19).replace("T", " ")}</span>}
       </div>
+
+      {flow.last_run?.message && <FlowLog message={flow.last_run.message} />}
 
       {!flow.readiness.ready && (
         <Alert status="warning" className="text-xs">
