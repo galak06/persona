@@ -143,6 +143,25 @@ def test_run_task_records_error_on_launch_failure(
     assert "no such file" in row["message"]
 
 
+@requires_postgres
+def test_run_task_surfaces_captured_output_on_timeout(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _timeout(cmd: list[str], **_kwargs: Any) -> None:
+        raise subprocess.TimeoutExpired(cmd, 60, output="progress so far...", stderr="stderr line")
+
+    monkeypatch.setattr(subprocess, "run", _timeout)
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        task_worker.run_task(_queue_item("t1", tmp_path))
+
+    row = worker_db.get_one(tmp_path, "t1", _BRAND)
+    assert row is not None
+    assert row["status"] == "error"
+    assert "timed out after" in row["message"]
+    assert "stderr line" in row["message"]
+
+
 # --------------------------------------------------------------------------- _process_one
 
 
