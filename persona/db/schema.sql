@@ -7,9 +7,9 @@
 -- `IF NOT EXISTS`, safe to re-run.
 --
 -- Scope: only the tables consumed by the modules migrating off Supabase this
--- stage — groups_db, engagements_db, worker_db, schedule_db. `recipes_db`
--- (recipes, raw_scrapes), `content_ideas`, and `oauth_tokens` stay on whatever
--- they use today and are intentionally NOT included here.
+-- stage — groups_db, engagements_db, worker_db, schedule_db, dedup_pg.
+-- `recipes_db` (recipes, raw_scrapes), `content_ideas`, and `oauth_tokens`
+-- stay on whatever they use today and are intentionally NOT included here.
 --
 -- Column names/types/defaults are a lift-and-shift from
 -- scripts/create_supabase_schema.sql, not a redesign.
@@ -147,3 +147,20 @@ CREATE TABLE IF NOT EXISTS fb_groups (
 
 CREATE INDEX IF NOT EXISTS idx_fb_groups_status   ON fb_groups(status);
 CREATE INDEX IF NOT EXISTS idx_fb_groups_brand_id ON fb_groups(brand_id);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- completed_tasks (from lib/dedup_pg.py -- permanent like/comment dedup)
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS completed_tasks (
+    task_type    VARCHAR(50)     NOT NULL,
+    platform     VARCHAR(20)     NOT NULL,
+    entity_id    VARCHAR(255)    NOT NULL,
+    brand        VARCHAR(100)    NOT NULL,
+    worker_label VARCHAR(100)    NOT NULL    DEFAULT '',
+    meta         JSONB           NOT NULL    DEFAULT '{}',
+    completed_at TEXT            NOT NULL    DEFAULT NOW()::TEXT,
+    PRIMARY KEY (task_type, platform, entity_id, brand)
+);
+
+CREATE INDEX IF NOT EXISTS idx_completed_tasks_brand ON completed_tasks(brand, task_type, platform);
+CREATE INDEX IF NOT EXISTS idx_completed_tasks_at    ON completed_tasks(completed_at DESC);
