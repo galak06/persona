@@ -3,23 +3,23 @@
 """Flow-run queue consumer — pure WORKER half of the PR7 producer/consumer split.
 
 Pops `flow-run` queue items pushed by `scripts/task_dispatcher.py` (or the
-`POST /brands/{id}/flows/{flow_id}/run` "Run Now" API route) for ONE brand,
-runs each item's `script` as a subprocess, and records start/completion into
-`worker_runs` (`lib/worker_db.py`) -- the execution half of what
-`scripts/task_dispatcher.py` did directly before this split. Every item's
-`brand_dir`/`timeout_seconds` travel with the queue payload itself
-(`scripts/task_dispatcher.py::build_queue_payload`), so this consumer needs
-no `schedule_tasks`/`brands` lookups of its own.
+`POST /brands/{id}/flows/{flow_id}/run` "Run Now" API route) for ANY brand,
+runs each item's `script` as a subprocess with that task's own brand
+environment (`BRAND_DIR`/`PERSONA_BRAND`/credentials from `<brand_dir>/.env`
+-- see `run_task()`), and records start/completion into `worker_runs`
+(`lib/worker_db.py`). A single shared worker process serves every brand:
+which brands to poll comes from Postgres (`lib.brands_db.list_brands()`),
+not this process's own fixed identity -- replacing the one-container-per-
+brand model. Every item's `brand`/`brand_dir`/`timeout_seconds` already
+travel with the queue payload itself
+(`scripts/task_dispatcher.py::build_queue_payload`).
 
 One failing item logs the error, Telegram-notifies, and the loop continues
 to the next item -- a single bad task never blocks the rest.
 
 Usage:
     python scripts/task_worker.py            # drain what's queued now, then exit
-    python scripts/task_worker.py --loop      # block on the queue, run continuously
-
-`BRAND_DIR` (and the rest of the usual brand env) must be set, same as any
-other script in this codebase.
+    python scripts/task_worker.py --loop      # poll every brand continuously
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +36,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from lib import worker_db
+from lib import brands_db, worker_db
+from lib.brands_db.models import BrandStatus
+from lib.local_env import load_brand_env
 from lib.observability import get_logger
 from lib.task_queue import TaskQueue
 
@@ -47,8 +50,9 @@ logger = get_logger(__name__)
 # independently runnable (mirrors this file's own duplication of
 # `_notify_telegram_failure`, an established pattern for this pair).
 QUEUE_WORKER = "flow-run"
-_DEFAULT_POLL_TIMEOUT_SECONDS = 30
 _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 600
+_DEFAULT_IDLE_SLEEP_SECONDS = 5
+_DISPATCHABLE_STATUSES = frozenset({BrandStatus.PROVISIONED, BrandStatus.ACTIVE})
 
 
 def _notify_telegram_failure(task_id: str, error: str) -> None:
@@ -64,6 +68,14 @@ def _notify_telegram_failure(task_id: str, error: str) -> None:
 def run_task(task: dict[str, Any]) -> None:
     """Execute one queued `flow-run` item, recording status via `lib.worker_db`.
 
+    Builds a per-subprocess environment from this task's own `brand`/
+    `brand_dir` (not this worker process's own env, which has no fixed
+    brand identity) plus `<brand_dir>/.env`'s brand-specific platform
+    credentials (`lib.local_env.load_brand_env`) -- deliberately assembled
+    fresh per call rather than merged into `os.environ`, so one brand's
+    secrets never leak into another task's subprocess or this long-lived
+    process's own global environment.
+
     Raises after recording the failure in `worker_runs` on any error
     (non-zero exit, timeout, launch failure) -- callers catch, log,
     Telegram-notify, and continue to the next item.
@@ -77,6 +89,12 @@ def run_task(task: dict[str, Any]) -> None:
 
     worker_db.record_start(brand_dir, task_id, brand)
     cmd = [sys.executable, str(PROJECT_ROOT / script), *args]
+    env = {
+        **os.environ,
+        "BRAND_DIR": str(brand_dir),
+        "PERSONA_BRAND": brand,
+        **load_brand_env(brand_dir),
+    }
     try:
         result = subprocess.run(
             cmd,
@@ -84,6 +102,7 @@ def run_task(task: dict[str, Any]) -> None:
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            env=env,
         )
     except Exception as exc:
         message = f"failed to launch: {exc}"
@@ -122,48 +141,75 @@ def drain_once(queue: TaskQueue) -> int:
     return processed
 
 
-def run_loop(queue: TaskQueue, *, poll_timeout: int) -> None:
-    """Blocking forever: pop (blocks up to `poll_timeout`s), process, repeat."""
+def _active_brands() -> list[dict[str, Any]]:
+    return [b for b in brands_db.list_brands() if b.get("status") in _DISPATCHABLE_STATUSES]
+
+
+def drain_all_brands() -> int:
+    """Non-blocking: process everything currently queued, across every brand."""
+    total = 0
+    for brand_row in _active_brands():
+        queue = TaskQueue(worker=QUEUE_WORKER, brand=str(brand_row["id"]))
+        total += drain_once(queue)
+    return total
+
+
+def run_loop_all_brands(*, idle_sleep: int) -> None:
+    """Blocking forever: round-robin non-blocking poll across every brand's queue.
+
+    Uses `pop_nowait()` (not `pop(timeout=...)`) per brand -- a blocking pop
+    on one brand's queue would starve every other brand while it waited. A
+    full sweep across every brand that finds nothing sleeps `idle_sleep`
+    seconds before the next pass.
+    """
     while True:
-        task = queue.pop(timeout=poll_timeout)
-        if task is None:
-            continue
-        _process_one(task)
+        found_any = False
+        for brand_row in _active_brands():
+            queue = TaskQueue(worker=QUEUE_WORKER, brand=str(brand_row["id"]))
+            task = queue.pop_nowait()
+            if task is not None:
+                found_any = True
+                _process_one(task)
+        if not found_any:
+            time.sleep(idle_sleep)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Consume + execute queued flow-run tasks for one brand"
+        description="Consume + execute queued flow-run tasks across every brand"
     )
     parser.add_argument(
         "--loop",
         action="store_true",
-        help="Block on the queue and run continuously (default: drain what's queued now, then exit)",
+        help="Poll every brand continuously (default: drain what's queued now, then exit)",
     )
     parser.add_argument(
-        "--poll-timeout",
+        "--idle-sleep",
         type=int,
-        default=_DEFAULT_POLL_TIMEOUT_SECONDS,
-        help=f"Seconds to block per pop() in --loop mode (default: {_DEFAULT_POLL_TIMEOUT_SECONDS})",
+        default=_DEFAULT_IDLE_SLEEP_SECONDS,
+        help=(
+            "Seconds to sleep after a full sweep across every brand finds "
+            f"nothing (default: {_DEFAULT_IDLE_SLEEP_SECONDS})"
+        ),
     )
     args = parser.parse_args()
 
+    # BRAND_DIR must still be *set* (lib.config's module-level settings
+    # singleton requires it to import at all -- see lib/bootstrap.py), but
+    # its value is never consulted below: every task's real brand_dir
+    # travels in its own queue payload (run_task() builds the subprocess
+    # env from that, not this process's own env), and which brands to poll
+    # comes from Postgres (_active_brands()), not a fixed identity.
     from lib.bootstrap import init_script
 
-    settings, _log = init_script(__name__)
-    if settings.paths is None:
-        raise RuntimeError("settings.paths is not configured; is BRAND_DIR set correctly?")
-    # PERSONA_BRAND wins when set -- see scripts/task_dispatcher.py::main()'s
-    # matching comment for why brand_dir.name alone isn't safe in Docker.
-    brand = os.environ.get("PERSONA_BRAND") or settings.paths.brand_dir.name
-    queue = TaskQueue(worker=QUEUE_WORKER, brand=brand)
+    init_script(__name__)
 
     if args.loop:
-        logger.info("worker_loop_start", brand=brand)
-        run_loop(queue, poll_timeout=args.poll_timeout)
+        logger.info("worker_loop_start")
+        run_loop_all_brands(idle_sleep=args.idle_sleep)
     else:
-        processed = drain_once(queue)
-        logger.info("worker_drain_complete", brand=brand, processed=processed)
+        processed = drain_all_brands()
+        logger.info("worker_drain_complete", processed=processed)
 
 
 if __name__ == "__main__":

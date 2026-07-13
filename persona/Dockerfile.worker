@@ -23,14 +23,19 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt 2>/dev/null || \
     pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright + Chromium
+# Install Playwright + Chromium. `--with-deps` needs apt-get, so this runs
+# as root -- but the container later switches to the unprivileged `persona`
+# user, whose $HOME differs from root's. Without a fixed, user-independent
+# PLAYWRIGHT_BROWSERS_PATH, browsers install under /root/.cache and the
+# runtime user can never find them ("Please run playwright install").
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN playwright install --with-deps chromium
 
 # Copy project source
 COPY . .
 
 # Non-root user for security
-RUN useradd -m -u 1000 persona && chown -R persona:persona /app
+RUN useradd -m -u 1000 persona && chown -R persona:persona /app /ms-playwright
 USER persona
 
 # Default: run the cron worker. Override in docker-compose if needed.

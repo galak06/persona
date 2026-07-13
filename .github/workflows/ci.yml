@@ -55,7 +55,8 @@ jobs:
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
-          tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_worker.py tests/lib/scheduling/
+          tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
+          tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
@@ -79,7 +80,8 @@ jobs:
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py
-          tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_worker.py tests/lib/scheduling/
+          tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
+          tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
           tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
@@ -197,7 +199,9 @@ jobs:
             tests/test_schedule_db.py \
             tests/test_task_dispatcher.py \
             tests/test_task_dispatcher_enabled_flows.py \
+            tests/test_task_dispatcher_multi_brand.py \
             tests/test_task_worker.py \
+            tests/test_task_worker_multi_brand.py \
             tests/lib/scheduling/ \
             tests/test_brands_db.py \
             tests/test_brands_db_update.py \
