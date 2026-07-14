@@ -165,6 +165,14 @@ export interface RunNowResponse {
   enqueued: boolean;
 }
 
+/** Optional body for `POST /brands/{id}/flows/{flow_id}/run` — mirrors
+ * `api.brand_schemas.RunNowRequest` (Python side). `headless: false`
+ * requests a visible browser for this one run; omit to leave the
+ * worker's own PLAYWRIGHT_HEADLESS in effect. */
+export interface RunNowRequestBody {
+  headless?: boolean;
+}
+
 export async function fetchFlowStatus(id: string): Promise<FlowStatusResponse> {
   const { data } = await apiClient.get<FlowStatusResponse>(endpoints.brandFlows(id));
   return data;

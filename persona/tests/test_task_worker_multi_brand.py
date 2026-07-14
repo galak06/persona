@@ -118,6 +118,36 @@ def test_run_task_does_not_leak_brand_env_into_os_environ(
     assert "SOME_BRAND_SECRET" not in os.environ
 
 
+@requires_postgres
+def test_run_task_headless_override_sets_playwright_env(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`headless: false` in the queue payload (from the Run Now checkbox)
+    overrides the worker container's own PLAYWRIGHT_HEADLESS for this task."""
+    captured: dict[str, str] = {}
+    monkeypatch.setattr(subprocess, "run", _capturing_run(captured))
+    monkeypatch.setenv("PLAYWRIGHT_HEADLESS", "1")
+
+    task = _queue_item("t1", tmp_path)
+    task["headless"] = False
+    task_worker.run_task(task)
+
+    assert captured["PLAYWRIGHT_HEADLESS"] == "0"
+
+
+@requires_postgres
+def test_run_task_without_headless_field_leaves_env_untouched(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, str] = {}
+    monkeypatch.setattr(subprocess, "run", _capturing_run(captured))
+    monkeypatch.setenv("PLAYWRIGHT_HEADLESS", "1")
+
+    task_worker.run_task(_queue_item("t1", tmp_path))
+
+    assert captured["PLAYWRIGHT_HEADLESS"] == "1"
+
+
 # --------------------------------------------------------------------------- multi-brand orchestration
 
 

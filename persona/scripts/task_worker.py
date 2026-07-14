@@ -117,6 +117,13 @@ def run_task(task: dict[str, Any]) -> None:
         "PERSONA_BRAND": brand,
         **load_brand_env(brand_dir),
     }
+    headless = task.get("headless")
+    if headless is not None:
+        # Per-run override (from POST .../flows/{flow_id}/run's optional
+        # `headless` body field) -- takes precedence over this worker
+        # container's own PLAYWRIGHT_HEADLESS, matching
+        # lib.local_env.get_runtime_headless()'s env-var-first precedence.
+        env["PLAYWRIGHT_HEADLESS"] = "1" if headless else "0"
     try:
         result = subprocess.run(
             cmd,
