@@ -24,7 +24,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
-from api.brand_schemas import FlowStatus, FlowStatusResponse, RunNowResponse
+from api.brand_schemas import FlowStatus, FlowStatusResponse, RunNowRequest, RunNowResponse
 from lib import brands_db, schedule_db
 from lib.brands_db.models import MANAGED_FLOW_IDS
 from lib.flow_readiness import flow_status
@@ -57,7 +57,7 @@ def get_flow_status(brand_id: str) -> FlowStatusResponse:
 
 
 @router.post("/brands/{brand_id}/flows/{flow_id}/run", response_model=RunNowResponse)
-def run_flow_now(brand_id: str, flow_id: str) -> RunNowResponse:
+def run_flow_now(brand_id: str, flow_id: str, body: RunNowRequest | None = None) -> RunNowResponse:
     """Enqueue one flow's `schedule_tasks` row onto the `flow-run` queue now.
 
     404 if the brand row doesn't exist, or if `flow_id` has no provisioned
@@ -65,6 +65,9 @@ def run_flow_now(brand_id: str, flow_id: str) -> RunNowResponse:
     enabled). 409 if the flow is a managed flow currently disabled in
     `enabled_flows` -- re-enable it in settings first, same rule
     `scripts/task_dispatcher.py`'s own gate enforces for scheduled runs.
+
+    `body.headless` (optional) overrides the worker's own `PLAYWRIGHT_HEADLESS`
+    for this one run only -- see `RunNowRequest`.
     """
     row = brands_db.get(brand_id)
     if row is None:
@@ -101,6 +104,8 @@ def run_flow_now(brand_id: str, flow_id: str) -> RunNowResponse:
         "brand_dir": brand_dir,
         "timeout_seconds": timeout_seconds,
     }
+    if body is not None and body.headless is not None:
+        payload["headless"] = body.headless
     TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
 
     return RunNowResponse(brand_id=brand_id, flow_id=flow_id, schedule_task_id=schedule_task_id)

@@ -1,7 +1,12 @@
 import { useState } from "react";
 
 import { endpoints } from "../api/endpoints";
-import type { FlowStatus, FlowStatusResponse, RunNowResponse } from "../api/brands";
+import type {
+  FlowStatus,
+  FlowStatusResponse,
+  RunNowRequestBody,
+  RunNowResponse,
+} from "../api/brands";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "./ui/Toast";
@@ -43,10 +48,14 @@ function RunNowButton({
   onDone: () => void;
 }): React.JSX.Element {
   const { toast } = useToast();
-  const { mutate, loading } = useApiMutation<RunNowResponse, undefined>("post");
+  const { mutate, loading } = useApiMutation<RunNowResponse, RunNowRequestBody>("post");
+  const [visible, setVisible] = useState(false);
 
   const handleClick = async () => {
-    const result = await mutate(endpoints.brandFlowRun(brandId, flowId));
+    const result = await mutate(
+      endpoints.brandFlowRun(brandId, flowId),
+      visible ? { headless: false } : undefined,
+    );
     if (result) {
       toast.success(`Queued ${flowId}`, "Picked up by the worker within seconds.");
       onDone();
@@ -56,15 +65,29 @@ function RunNowButton({
   };
 
   return (
-    <button
-      type="button"
-      onClick={() => void handleClick()}
-      disabled={disabled || loading}
-      title={disabled ? "Enable this flow in settings first" : undefined}
-      className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-stone-50 disabled:opacity-50"
-    >
-      {loading ? "Queuing…" : "Run now"}
-    </button>
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={() => void handleClick()}
+        disabled={disabled || loading}
+        title={disabled ? "Enable this flow in settings first" : undefined}
+        className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-stone-50 disabled:opacity-50"
+      >
+        {loading ? "Queuing…" : "Run now"}
+      </button>
+      <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 select-none cursor-pointer">
+        <input
+          type="checkbox"
+          checked={visible}
+          onChange={(e) => setVisible(e.target.checked)}
+          disabled={disabled || loading}
+          className="rounded border-stone-300 text-slate-700 focus:ring-slate-400 disabled:opacity-40"
+        />
+        <span title="Only works where the worker process has a display (e.g. local dev) — a plain Docker container has none.">
+          Show browser
+        </span>
+      </label>
+    </div>
   );
 }
 

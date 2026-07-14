@@ -146,6 +146,21 @@ class FlowStatusResponse(BaseModel):
     flows: list[FlowStatus]
 
 
+class RunNowRequest(BaseModel):
+    """Optional body for `POST /brands/{id}/flows/{flow_id}/run`.
+
+    `headless=None` (the default -- omit the field entirely) leaves the
+    worker container's own `PLAYWRIGHT_HEADLESS` env var in effect.
+    Explicitly `False` requests a visible browser for this one run only --
+    only meaningful where the worker process actually has a display (e.g.
+    local dev); a bare Docker container has none, so Playwright will raise
+    a clear "Missing X server" error, visible via the flow's log, rather
+    than silently doing nothing.
+    """
+
+    headless: bool | None = None
+
+
 class RunNowResponse(BaseModel):
     """`POST /brands/{id}/flows/{flow_id}/run` — always enqueues; no cron-due
     or lock check (the equivalent guards `scripts/task_dispatcher.py`
