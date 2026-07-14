@@ -9,7 +9,7 @@
 // `refetchInterval` (ms) re-runs the fetch on a timer — useful for the
 // Inbox poll loop in Phase 5.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import apiClient, { getErrorMessage } from "../api/client";
 
@@ -38,20 +38,29 @@ export function useApiQuery<T = unknown>(
   const [loading, setLoading] = useState<boolean>(!!url && enabled);
   const [error, setError] = useState<string>("");
 
+  // Guards against out-of-order responses: if `url` changes before an
+  // in-flight request resolves (e.g. BrandContext correcting a placeholder
+  // brand id right after mount), a slower stale request must not overwrite
+  // state a faster, newer request already set.
+  const requestIdRef = useRef(0);
+
   const fetch = useCallback(async () => {
     if (!url || !enabled) {
       setLoading(false);
       return;
     }
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     setError("");
     try {
       const res = await apiClient.get<T>(url);
+      if (requestIdRef.current !== requestId) return;
       setData(res.data);
     } catch (err) {
+      if (requestIdRef.current !== requestId) return;
       setError(getErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [url, enabled]);
 
