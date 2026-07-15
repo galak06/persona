@@ -165,7 +165,8 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     tasks = _build_stage1_tasks(slug, spec.enabled_flows)
 
     warnings: list[str] = []
-    if not spec.primary_keywords and not spec.secondary_keywords:
+    hashtags_csv_exists = (brand_dir / "data" / "config" / "instagram_accounts.csv").exists()
+    if not spec.primary_keywords and not spec.secondary_keywords and not hashtags_csv_exists:
         warnings.append(
             "No primary_keywords or secondary_keywords supplied — "
             "comment_generator relevance scoring and the Instagram hashtag "
@@ -199,9 +200,19 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
 
     (brand_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     (brand_dir / "data" / "config" / "brand_facts.md").write_text(brand_facts_md, encoding="utf-8")
-    (brand_dir / "data" / "config" / "instagram_accounts.csv").write_text(
-        hashtags_csv, encoding="utf-8"
-    )
+    # instagram_accounts.csv is NOT re-rendered on an already-provisioned
+    # brand: unlike config.json/brand.json (pure functions of `spec`, safe
+    # to regenerate), an operator may have hand-curated this file with
+    # hashtags no `primary_keywords`/`secondary_keywords` mechanically
+    # derive (dogfoodandfun's real 26-hashtag list has none of its rows
+    # traceable to any keyword). Overwriting it here wiped that file down
+    # to a header-only stub on every settings edit, silently breaking
+    # ig-scanner (0 sources to scan, but still exits 0 -- no error, no
+    # crash, just quietly doing nothing) until the file was manually
+    # restored from a backup.
+    hashtags_csv_path = brand_dir / "data" / "config" / "instagram_accounts.csv"
+    if not hashtags_csv_path.exists():
+        hashtags_csv_path.write_text(hashtags_csv, encoding="utf-8")
     (brand_dir / "brand.json").write_text(json.dumps(brand_json, indent=2) + "\n", encoding="utf-8")
 
     for task in tasks:
