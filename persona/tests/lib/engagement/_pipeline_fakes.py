@@ -183,14 +183,20 @@ def run(
     rate_tracker: FakeRateTracker | None = None,
     drafter: FakeDrafter | None = None,
     queue_io: FakeQueueIO | None = None,
+    log: FakeLog | None = None,
     score: Callable[[Post], float] = stub_score,
 ) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter, FakeQueueIO]:
-    """Run pipeline with sensible defaults; return report + collaborators."""
+    """Run pipeline with sensible defaults; return report + collaborators.
+
+    Pass `log=` a `FakeLog()` instance to inspect its `.calls` afterward --
+    not part of the return tuple since most tests don't need it.
+    """
     p = policy or make_policy()
     d = dedup or FakeDedup()
     rt = rate_tracker or FakeRateTracker()
     dr = drafter or FakeDrafter()
     q = queue_io or FakeQueueIO()
+    lg = log or FakeLog()
     report = run_outbound_scan(
         adapter,
         p,
@@ -198,7 +204,7 @@ def run(
         rate_tracker=rt,
         drafter=dr,
         queue_io=q,
-        log=FakeLog(),
+        log=lg,
         now_iso=stub_now,
         score_relevance=score,
     )

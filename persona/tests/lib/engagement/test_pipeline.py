@@ -10,6 +10,7 @@ from __future__ import annotations
 from lib.engagement.adapters.fake import FakeAdapter
 from tests.lib.engagement._pipeline_fakes import (
     FakeDedup,
+    FakeLog,
     FakeQueueIO,
     FakeRateTracker,
     make_ig_posts,
@@ -185,6 +186,36 @@ def test_fb_visit_budget_aborts_iteration() -> None:
     report, _d, _rt, _dr, _q = run(adapter, rate_tracker=rt)
     assert report.sources_visited == 2
     assert report.posts_scanned == 2  # one post per visited source
+
+
+def test_scanned_and_liked_posts_are_logged() -> None:
+    """Every visited post logs post_scanned; a successful like logs post_liked --
+    the trail an operator needs to verify the scanner is really running and
+    see which posts it liked (previously silent, see lib/bootstrap.py)."""
+    src = make_src("s1")
+    adapter = FakeAdapter("instagram", [src], {"s1": [make_post("p1", "food question?")]})
+    log = FakeLog()
+    run(adapter, log=log)
+    events = [msg.split(" ", 1)[0] for _level, msg in log.calls]
+    assert "post_scanned" in events
+    assert "post_liked" in events
+
+
+def test_failed_like_logs_post_like_failed() -> None:
+    src = make_src("g1", name="grp1")
+    posts = [
+        make_post(
+            "p1", "food question?",
+            platform="facebook", source_id="g1", source_name="grp1",
+        )
+    ]
+    adapter = FakeAdapter("facebook", [src], {"g1": posts}, like_should_fail=True)
+    rt = FakeRateTracker(visits_left=10, likes_left=10)
+    log = FakeLog()
+    run(adapter, policy=make_policy(fb_like_quota=10), rate_tracker=rt, log=log)
+    events = [msg.split(" ", 1)[0] for _level, msg in log.calls]
+    assert "post_like_failed" in events
+    assert "post_liked" not in events
 
 
 def test_scan_report_counts_accurate() -> None:

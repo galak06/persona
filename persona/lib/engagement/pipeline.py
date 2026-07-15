@@ -208,6 +208,13 @@ def _process_post(
 ) -> _PostOutcome:
     """Score, like, and mark one post. Returns the per-post counters."""
     platform = adapter.platform
+    log.info(
+        "post_scanned platform=%s post_id=%s source=%s url=%s",
+        platform,
+        post.post_id,
+        source.name or "",
+        post.post_url,
+    )
     if dedup.is_duplicate(platform, post.post_id):
         return _PostOutcome()
 
@@ -235,6 +242,20 @@ def _process_post(
             rate_tracker.record_action(platform, "like")
             dedup.mark_engaged(
                 platform, post.post_id, "like", source.name or ""
+            )
+            log.info(
+                "post_liked platform=%s post_id=%s url=%s",
+                platform,
+                post.post_id,
+                post.post_url,
+            )
+        else:
+            log.info(
+                "post_like_failed platform=%s post_id=%s reason=%s url=%s",
+                platform,
+                post.post_id,
+                result.reason,
+                post.post_url,
             )
 
     candidate_score: float | None = None
