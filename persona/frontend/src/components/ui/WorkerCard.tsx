@@ -100,13 +100,17 @@ export function CollapsiblePanel({
 
 // ── LogPanel — live-polling log viewer ────────────────────────────────────────
 
-interface LogPanelProps {
+export interface LogPanelProps {
   label: string;
   workerStatus: WorkerStatus["status"];
   defaultOpen?: boolean;
 }
 
-function LogPanel({ label, workerStatus, defaultOpen = false }: LogPanelProps): React.JSX.Element {
+export function LogPanel({
+  label,
+  workerStatus,
+  defaultOpen = false,
+}: LogPanelProps): React.JSX.Element {
   const [open, setOpen] = useState(defaultOpen);
   const [lines, setLines] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
