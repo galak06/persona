@@ -263,6 +263,39 @@ def test_real_run_idempotent_rerun_preserves_manually_updated_status(
 
 
 @requires_postgres
+def test_real_run_preserves_hand_curated_instagram_accounts_csv(
+    pg: None, brands_root: Path
+) -> None:
+    """Re-provisioning must never clobber an existing instagram_accounts.csv --
+    it may hold hand-curated hashtags no keyword mechanically derives (this
+    regressed live: enabling a flow via a settings edit wiped a real brand's
+    26-hashtag file down to its header row, see lib/brand_provisioning.py)."""
+    provision_brand(FULL_SPEC, dry_run=False)
+    csv_path = brands_root / "acme-dogs" / "data" / "config" / "instagram_accounts.csv"
+    hand_curated = "hashtag,tier,scan_frequency,category,notes\n#handcurated,1,daily,food,not derivable from any keyword\n"
+    csv_path.write_text(hand_curated, encoding="utf-8")
+
+    provision_brand(FULL_SPEC, dry_run=False)
+
+    assert csv_path.read_text(encoding="utf-8") == hand_curated
+
+
+@requires_postgres
+def test_real_run_seeds_instagram_accounts_csv_from_keywords_when_new(
+    pg: None, brands_root: Path
+) -> None:
+    """First-time provisioning still seeds the CSV from spec keywords --
+    only re-provisioning an already-existing file is a no-op."""
+    result = provision_brand(FULL_SPEC, dry_run=False)
+
+    content = (result.brand_dir / "data" / "config" / "instagram_accounts.csv").read_text(
+        encoding="utf-8"
+    )
+    assert "#dogfood" in content
+    assert "#gps" in content
+
+
+@requires_postgres
 def test_real_run_does_not_error_when_brand_folder_already_exists(
     pg: None, brands_root: Path
 ) -> None:
