@@ -38,6 +38,14 @@ jobs:
       # api/oauth_api.py: lint- and format-clean, but also transitively
       # imports lib/oauth/* -- included in both lists here, excluded from
       # the mypy list below for the same reason as fb_group_scout.py.
+      # lib/engagement/pipeline.py: lint-clean, but has pre-existing
+      # (unrelated) ruff-format drift and transitively imports pre-existing
+      # mypy-dirty modules (lib/engagement/history.py, lib/engagement/log.py)
+      # -- included in this list only, same as fb_group_scout.py.
+      # tests/lib/engagement/test_pipeline.py: same pre-existing ruff-format
+      # drift as pipeline.py itself -- lint-list only, not format-check.
+      # tests/lib/engagement/_pipeline_fakes.py (its helper module) is clean
+      # on both.
       - name: Ruff check (lint)
         run: >-
           ruff check
@@ -49,12 +57,13 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py
+          lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py scripts/fb_group_scout.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
+          tests/lib/engagement/test_pipeline.py tests/lib/engagement/_pipeline_fakes.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
@@ -74,12 +83,13 @@ jobs:
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
+          tests/lib/engagement/_pipeline_fakes.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
@@ -110,7 +120,7 @@ jobs:
           lib/groups_db/db.py lib/groups_db/repository.py
           lib/engagements_db/db.py lib/engagements_db/repository.py
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
-          lib/brands_db/ lib/brand_resolver.py lib/local_env.py lib/flow_readiness.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py
+          lib/brands_db/ lib/brand_resolver.py lib/local_env.py lib/flow_readiness.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
@@ -222,6 +232,7 @@ jobs:
             tests/test_session_status.py \
             tests/test_api_session_status.py \
             tests/test_activity_log.py \
+            tests/lib/engagement/test_pipeline.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \
