@@ -7,12 +7,27 @@ import type {
   RunNowRequestBody,
   RunNowResponse,
 } from "../api/brands";
+import type { WorkerStatus } from "../api/workers";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "./ui/Toast";
 import Alert from "./ui/Alert";
 import ErrorState from "./ui/ErrorState";
 import LoadingState from "./ui/LoadingState";
+import { LogPanel } from "./ui/WorkerCard";
+
+const _KNOWN_STATUSES: readonly WorkerStatus["status"][] = [
+  "never",
+  "running",
+  "success",
+  "error",
+];
+
+function toWorkerStatus(status: string | undefined): WorkerStatus["status"] {
+  return (_KNOWN_STATUSES as readonly string[]).includes(status ?? "")
+    ? (status as WorkerStatus["status"])
+    : "never";
+}
 
 /**
  * Flow-readiness panel — one card per managed flow (`ig-scanner`/
@@ -91,28 +106,6 @@ function RunNowButton({
   );
 }
 
-function FlowLog({ message }: { message: string }): React.JSX.Element {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="text-xs font-medium text-cyan-700 hover:text-cyan-900 hover:underline"
-        aria-expanded={open}
-      >
-        {open ? "Hide log" : "View log"}
-      </button>
-      {open && (
-        <pre className="mt-2 font-mono text-xs bg-slate-50 border border-slate-200 rounded-md p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
-          {message}
-        </pre>
-      )}
-    </div>
-  );
-}
-
 function FlowCard({
   flow,
   brandId,
@@ -147,7 +140,12 @@ function FlowCard({
         {flow.last_run && <span>{flow.last_run.last_run.slice(0, 19).replace("T", " ")}</span>}
       </div>
 
-      {flow.last_run?.message && <FlowLog message={flow.last_run.message} />}
+      {flow.last_run && (
+        <LogPanel
+          label={`${brandId}-${flow.flow_id}`}
+          workerStatus={toWorkerStatus(flow.last_run.status)}
+        />
+      )}
 
       {!flow.readiness.ready && (
         <Alert status="warning" className="text-xs">
