@@ -32,6 +32,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -134,6 +135,71 @@ def _call_gemini(prompt: str, *, max_tokens: int = 1200) -> str | None:
                 return text
     except Exception as e:
         logger.warning("gemini call failed: %s", e)
+    return None
+
+
+_ENGAGE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "engage": {"type": "boolean"},
+        "comment": {"type": "string"},
+        "reason": {"type": "string"},
+    },
+    "required": ["engage", "comment", "reason"],
+}
+
+
+def _call_gemini_json(prompt: str, *, max_tokens: int = 400) -> dict[str, Any] | None:
+    """Like ``_call_gemini``, but requests structured JSON output matching
+    ``{engage: bool, comment: string, reason: string}`` via Gemini's
+    ``responseMimeType``/``responseSchema`` generation-config fields, so the
+    model's engage/decline decision is a first-class field instead of
+    something inferred from empty text.
+
+    Returns the parsed dict, or ``None`` on any failure (missing key,
+    non-2xx, no candidates, malformed/incomplete JSON) — same
+    "caller falls back" contract as ``_call_gemini``.
+    """
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        logger.info("reply_drafter: GEMINI_API_KEY not set — falling back")
+        return None
+    url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": max_tokens,
+            "thinkingConfig": {"thinkingBudget": 0},
+            "responseMimeType": "application/json",
+            "responseSchema": _ENGAGE_RESPONSE_SCHEMA,
+        },
+    }
+    try:
+        r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
+        if r.status_code >= 400:
+            logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
+            return None
+        data = r.json()
+        cands = data.get("candidates") or []
+        if not cands:
+            return None
+        parts = cands[0].get("content", {}).get("parts", [])
+        for p in parts:
+            text = (p.get("text") or "").strip()
+            if not text:
+                continue
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                logger.warning("gemini json response not valid JSON: %s", text[:200])
+                return None
+            if not isinstance(parsed, dict) or "engage" not in parsed:
+                logger.warning("gemini json response missing 'engage' field: %s", text[:200])
+                return None
+            return parsed
+    except Exception as e:
+        logger.warning("gemini json call failed: %s", e)
     return None
 
 
@@ -267,6 +333,7 @@ __all__ = [
     "_VOICE_RULES",
     "SitePost",
     "_call_gemini",
+    "_call_gemini_json",
     "draft_comment",
     "draft_reply",
 ]
