@@ -23,6 +23,13 @@ def _no_gemini(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_langfuse(monkeypatch):
+    """llm_tracing.trace_llm_call must no-op to a plain call() in tests."""
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+
+
 def test_reply_falls_back_to_template_without_gemini() -> None:
     text = rd.draft_reply(
         our_comment="We tracked Nalla's shed volume for a month.",
