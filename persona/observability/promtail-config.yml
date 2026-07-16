@@ -1,0 +1,51 @@
+# Ships two log sources into Loki:
+#   1. Every container's own stdout/stderr (via Docker's own log files,
+#      discovered through the Docker socket) -- structured JSON lines from
+#      task_worker.py/task_dispatcher.py/api, labeled by container name.
+#   2. Each brand's per-flow log files (<brand_dir>/logs/cron_<flow>.log,
+#      written by scripts/task_worker.py::_write_flow_log) -- the same
+#      content the Human Mimic/Explorer "View log" UI reads, labeled by
+#      brand + flow so they're filterable in Grafana's Explore view.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # ── 1. Every persona-* container's own stdout/stderr ──────────────────────
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+        filters:
+          - name: label
+            values: ["com.docker.compose.project=persona"]
+    relabel_configs:
+      - source_labels: [__meta_docker_container_name]
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: [__meta_docker_container_log_stream]
+        target_label: stream
+    pipeline_stages:
+      - docker: {}
+
+  # ── 2. Per-brand flow logs (cron_<flow>.log) ───────────────────────────────
+  - job_name: flow-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: flow-logs
+          __path__: /brands/*/logs/cron_*.log
+    pipeline_stages:
+      - regex:
+          source: filename
+          expression: '.*/brands/(?P<brand>[^/]+)/logs/cron_(?P<flow>[^/]+)\.log$'
+      - labels:
+          brand:
+          flow:
