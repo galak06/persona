@@ -85,3 +85,76 @@ def test_strip_meta_chrome_removes_quotes_and_preamble() -> None:
     assert rd._strip_meta_chrome('"hello there"') == "hello there"
     assert rd._strip_meta_chrome("Reply: hello there") == "hello there"
     assert rd._strip_meta_chrome("Here is the reply: ok") == "ok"
+
+
+# --------------------------------------------------------------------------- _call_gemini_json
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, body: object) -> None:
+        self.status_code = status_code
+        self._body = body
+        self.text = str(body)[:200]
+
+    def json(self) -> object:
+        return self._body
+
+
+def _fake_post(body: object, *, status_code: int = 200):
+    def _post(*_args: object, **_kwargs: object) -> _FakeResponse:
+        return _FakeResponse(status_code, body)
+
+    return _post
+
+
+def _candidate_text(text: str) -> dict:
+    return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+
+def test_call_gemini_json_returns_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # _no_gemini autouse fixture already unsets GEMINI_API_KEY.
+    assert rd._call_gemini_json("prompt") is None
+
+
+def test_call_gemini_json_parses_valid_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    body = _candidate_text('{"engage": true, "comment": "hi", "reason": "good fit"}')
+    monkeypatch.setattr(rd.httpx, "post", _fake_post(body))
+
+    result = rd._call_gemini_json("prompt")
+
+    assert result == {"engage": True, "comment": "hi", "reason": "good fit"}
+
+
+def test_call_gemini_json_returns_none_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rd.httpx, "post", _fake_post({}, status_code=500))
+
+    assert rd._call_gemini_json("prompt") is None
+
+
+def test_call_gemini_json_returns_none_on_malformed_json_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    body = _candidate_text("not actually json")
+    monkeypatch.setattr(rd.httpx, "post", _fake_post(body))
+
+    assert rd._call_gemini_json("prompt") is None
+
+
+def test_call_gemini_json_returns_none_when_engage_field_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    body = _candidate_text('{"comment": "hi", "reason": "no engage field"}')
+    monkeypatch.setattr(rd.httpx, "post", _fake_post(body))
+
+    assert rd._call_gemini_json("prompt") is None
+
+
+def test_call_gemini_json_returns_none_on_no_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(rd.httpx, "post", _fake_post({"candidates": []}))
+
+    assert rd._call_gemini_json("prompt") is None
