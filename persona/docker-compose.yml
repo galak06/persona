@@ -10,6 +10,16 @@
 # NOT started by this file — see docker-compose.worker.yml, started per brand:
 #   docker compose -f docker-compose.worker.yml -p <slug> up -d
 #
+# Log aggregation (Loki + Promtail + Grafana) is opt-in, same pattern as the
+# `tracing` profile below — starts nothing extra on a plain `docker compose
+# up -d`:
+#   docker compose --profile logging up -d
+#   open http://localhost:3001   (Grafana; Loki pre-wired as its datasource)
+# Promtail ships every persona-* container's own stdout plus each brand's
+# <brand_dir>/logs/cron_<flow>.log files (labeled by `container` or by
+# `brand`+`flow` respectively) into Loki — query both from Grafana's Explore
+# view instead of `docker logs`/curl-ing the workers API one flow at a time.
+#
 # External dependencies (cloud-hosted, not containerised):
 #   Telegram  — Approval bot        (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
 #   Supabase  — recipes_db / content_ideas / oauth_tokens only, NOT the tables
@@ -152,6 +162,62 @@ services:
     environment:
       - PHOENIX_WORKING_DIR=/mnt/data
 
+  # ── Loki (log aggregation — optional) ───────────────────────────────────────
+  loki:
+    image: grafana/loki:2.9.8
+    restart: unless-stopped
+    profiles: ["logging"]   # only starts with: docker compose --profile logging up
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - persona_net
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+
+  # ── Promtail (ships container + flow-log files into Loki — optional) ───────
+  promtail:
+    image: grafana/promtail:2.9.8
+    restart: unless-stopped
+    profiles: ["logging"]
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      # Read-only Docker socket access, needed for docker_sd_configs container
+      # discovery (which container is which, for the `container` label) --
+      # Promtail reads log files directly from Docker's own on-disk log
+      # driver output, not through the socket itself.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Same brands root api/worker mount, read-only -- this is what lets
+      # Promtail tail every brand's cron_<flow>.log files.
+      - ./brands:/brands:ro
+    networks:
+      - persona_net
+    command: ["-config.file=/etc/promtail/config.yml"]
+    depends_on:
+      - loki
+
+  # ── Grafana (log search/dashboards over Loki — optional) ───────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    restart: unless-stopped
+    profiles: ["logging"]
+    ports:
+      # 3001, not 3000 -- the frontend service already owns 3000.
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    networks:
+      - persona_net
+    depends_on:
+      - loki
+
 networks:
   persona_net:
     name: persona_net
@@ -160,3 +226,5 @@ volumes:
   postgres_data:
   redis_data:
   phoenix_data:
+  loki_data:
+  grafana_data:
