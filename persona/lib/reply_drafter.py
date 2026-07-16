@@ -23,6 +23,10 @@ Both paths:
 
 Env: GEMINI_API_KEY. If missing, both entry points return the template
 fallback so callers still get *something* without crashing.
+
+Both Gemini calls are also traced to Langfuse (lib.llm_tracing) when
+LANGFUSE_SECRET_KEY/LANGFUSE_PUBLIC_KEY are set — best-effort, never
+required for drafting to work.
 """
 
 from __future__ import annotations
@@ -37,6 +41,7 @@ from typing import Any
 import httpx
 
 from comment_generator import validate_voice
+from llm_tracing import trace_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -119,23 +124,27 @@ def _call_gemini(prompt: str, *, max_tokens: int = 1200) -> str | None:
             "thinkingConfig": {"thinkingBudget": 0},
         },
     }
-    try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
-        if r.status_code >= 400:
-            logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
-            return None
-        data = r.json()
-        cands = data.get("candidates") or []
-        if not cands:
-            return None
-        parts = cands[0].get("content", {}).get("parts", [])
-        for p in parts:
-            text = (p.get("text") or "").strip()
-            if text:
-                return text
-    except Exception as e:
-        logger.warning("gemini call failed: %s", e)
-    return None
+
+    def _do_call() -> str | None:
+        try:
+            r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
+            if r.status_code >= 400:
+                logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
+                return None
+            data = r.json()
+            cands = data.get("candidates") or []
+            if not cands:
+                return None
+            parts = cands[0].get("content", {}).get("parts", [])
+            for p in parts:
+                text = (p.get("text") or "").strip()
+                if text:
+                    return text
+        except Exception as e:
+            logger.warning("gemini call failed: %s", e)
+        return None
+
+    return trace_llm_call("gemini-draft", model=_GEMINI_MODEL, input_text=prompt, call=_do_call)
 
 
 _ENGAGE_RESPONSE_SCHEMA = {
@@ -175,32 +184,38 @@ def _call_gemini_json(prompt: str, *, max_tokens: int = 400) -> dict[str, Any] |
             "responseSchema": _ENGAGE_RESPONSE_SCHEMA,
         },
     }
-    try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
-        if r.status_code >= 400:
-            logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
-            return None
-        data = r.json()
-        cands = data.get("candidates") or []
-        if not cands:
-            return None
-        parts = cands[0].get("content", {}).get("parts", [])
-        for p in parts:
-            text = (p.get("text") or "").strip()
-            if not text:
-                continue
-            try:
-                parsed = json.loads(text)
-            except json.JSONDecodeError:
-                logger.warning("gemini json response not valid JSON: %s", text[:200])
+
+    def _do_call() -> dict[str, Any] | None:
+        try:
+            r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
+            if r.status_code >= 400:
+                logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
                 return None
-            if not isinstance(parsed, dict) or "engage" not in parsed:
-                logger.warning("gemini json response missing 'engage' field: %s", text[:200])
+            data = r.json()
+            cands = data.get("candidates") or []
+            if not cands:
                 return None
-            return parsed
-    except Exception as e:
-        logger.warning("gemini json call failed: %s", e)
-    return None
+            parts = cands[0].get("content", {}).get("parts", [])
+            for p in parts:
+                text = (p.get("text") or "").strip()
+                if not text:
+                    continue
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError:
+                    logger.warning("gemini json response not valid JSON: %s", text[:200])
+                    return None
+                if not isinstance(parsed, dict) or "engage" not in parsed:
+                    logger.warning("gemini json response missing 'engage' field: %s", text[:200])
+                    return None
+                return parsed
+        except Exception as e:
+            logger.warning("gemini json call failed: %s", e)
+        return None
+
+    return trace_llm_call(
+        "gemini-engage-decision", model=_GEMINI_MODEL, input_text=prompt, call=_do_call
+    )
 
 
 _VOICE_RULES = """

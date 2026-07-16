@@ -28,3 +28,4 @@ redis>=5.0
 postgrest>=2.31.0
 supabase>=2.0.0
 structlog>=25.0.0
+langfuse>=3.0.0
