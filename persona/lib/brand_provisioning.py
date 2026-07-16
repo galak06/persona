@@ -201,8 +201,8 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     (brand_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     (brand_dir / "data" / "config" / "brand_facts.md").write_text(brand_facts_md, encoding="utf-8")
     # instagram_accounts.csv is NOT re-rendered on an already-provisioned
-    # brand: unlike config.json/brand.json (pure functions of `spec`, safe
-    # to regenerate), an operator may have hand-curated this file with
+    # brand: unlike config.json (a pure function of `spec`, safe to
+    # regenerate), an operator may have hand-curated this file with
     # hashtags no `primary_keywords`/`secondary_keywords` mechanically
     # derive (dogfoodandfun's real 26-hashtag list has none of its rows
     # traceable to any keyword). Overwriting it here wiped that file down
@@ -213,7 +213,23 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     hashtags_csv_path = brand_dir / "data" / "config" / "instagram_accounts.csv"
     if not hashtags_csv_path.exists():
         hashtags_csv_path.write_text(hashtags_csv, encoding="utf-8")
-    (brand_dir / "brand.json").write_text(json.dumps(brand_json, indent=2) + "\n", encoding="utf-8")
+    # brand.json is a SHALLOW MERGE onto any existing file, not an overwrite:
+    # render_brand_json() only ever computes `runtime`/`group_discovery` --
+    # those two keys must always reflect the latest settings-page edit, but
+    # an operator may have hand-added other top-level keys (`profiles.*
+    # .rate_limits` overrides, `campaign`, `brand` identity fields) that
+    # render_brand_json() never owns and was never asked to preserve. A full
+    # overwrite here silently dropped all of that on every settings edit --
+    # same class of bug the instagram_accounts.csv fix above addresses.
+    brand_json_path = brand_dir / "brand.json"
+    existing_brand_json: dict[str, Any] = {}
+    if brand_json_path.exists():
+        try:
+            existing_brand_json = json.loads(brand_json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing_brand_json = {}
+    merged_brand_json = {**existing_brand_json, **brand_json}
+    brand_json_path.write_text(json.dumps(merged_brand_json, indent=2) + "\n", encoding="utf-8")
 
     for task in tasks:
         schedule_db.save_task(None, task)

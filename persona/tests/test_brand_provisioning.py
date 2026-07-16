@@ -296,6 +296,40 @@ def test_real_run_seeds_instagram_accounts_csv_from_keywords_when_new(
 
 
 @requires_postgres
+def test_real_run_merges_brand_json_preserving_hand_added_keys(pg: None, brands_root: Path) -> None:
+    """brand.json is a shallow merge, not an overwrite: render_brand_json()
+    only ever computes runtime/group_discovery, but an operator may have
+    hand-added other top-level keys (rate_limits overrides, campaign config)
+    render_brand_json() never owns. A full overwrite here silently dropped
+    all of that on every settings edit -- same bug class as the CSV fix."""
+    result = provision_brand(FULL_SPEC, dry_run=False)
+    brand_json_path = result.brand_dir / "brand.json"
+    data = json.loads(brand_json_path.read_text(encoding="utf-8"))
+    data["profiles"] = {"facebook": {"rate_limits": {"comments_per_day": 8}}}
+    brand_json_path.write_text(json.dumps(data), encoding="utf-8")
+
+    provision_brand(FULL_SPEC, dry_run=False)
+
+    data = json.loads(brand_json_path.read_text(encoding="utf-8"))
+    assert data["profiles"]["facebook"]["rate_limits"]["comments_per_day"] == 8
+
+
+@requires_postgres
+def test_real_run_still_updates_brand_json_settings_fields(pg: None, brands_root: Path) -> None:
+    """The merge must not freeze runtime/group_discovery at their first-ever
+    value -- a settings-page edit (headless toggle, join limit) still has to
+    take effect on every re-provision."""
+    provision_brand(FULL_SPEC, dry_run=False)
+
+    changed_spec = BrandSpec(**{**FULL_SPEC.__dict__, "headless": False, "group_join_limit": 3})
+    result = provision_brand(changed_spec, dry_run=False)
+
+    data = json.loads((result.brand_dir / "brand.json").read_text(encoding="utf-8"))
+    assert data["runtime"]["headless"] is False
+    assert data["group_discovery"]["join_limit_per_day"] == 3
+
+
+@requires_postgres
 def test_real_run_does_not_error_when_brand_folder_already_exists(
     pg: None, brands_root: Path
 ) -> None:
