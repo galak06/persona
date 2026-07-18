@@ -24,31 +24,24 @@ Both paths:
 Env: GEMINI_API_KEY. If missing, both entry points return the template
 fallback so callers still get *something* without crashing.
 
-Both Gemini calls are also traced to Langfuse (lib.llm_tracing) when
-LANGFUSE_SECRET_KEY/LANGFUSE_PUBLIC_KEY are set — best-effort, never
-required for drafting to work.
+The actual Gemini HTTP transport (and its Langfuse tracing) lives in
+``lib.gemini_client``; this module only builds prompts and post-processes.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-import httpx
 
 from comment_generator import validate_voice
-from llm_tracing import trace_llm_call
+from gemini_client import _call_gemini
 
 logger = logging.getLogger(__name__)
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SITE_CACHE = _PROJECT_ROOT / "data" / "site_content_cache.json"
-_GEMINI_MODEL = os.getenv("GEMINI_REPLY_MODEL", "gemini-2.5-flash")
-_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _MAX_SITE_POSTS = 8  # trim site cache before sending to Gemini
 
 
@@ -105,117 +98,6 @@ def _format_site_posts(posts: list[SitePost]) -> str:
         tags = ", ".join(p.categories[:3] + p.tags[:3])
         lines.append(f"- {p.title} [{tags}] — {p.excerpt[:180]}")
     return "\n".join(lines)
-
-
-def _call_gemini(prompt: str, *, max_tokens: int = 1200) -> str | None:
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        logger.info("reply_drafter: GEMINI_API_KEY not set — falling back")
-        return None
-    url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
-    # gemini-2.5-flash defaults to "thinking" mode which consumes output
-    # budget before writing any visible text. Disable it for these short
-    # drafting tasks — thinking doesn't improve a 2-sentence reply.
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingBudget": 0},
-        },
-    }
-
-    def _do_call() -> str | None:
-        try:
-            r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
-            if r.status_code >= 400:
-                logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
-                return None
-            data = r.json()
-            cands = data.get("candidates") or []
-            if not cands:
-                return None
-            parts = cands[0].get("content", {}).get("parts", [])
-            for p in parts:
-                text = (p.get("text") or "").strip()
-                if text:
-                    return text
-        except Exception as e:
-            logger.warning("gemini call failed: %s", e)
-        return None
-
-    return trace_llm_call("gemini-draft", model=_GEMINI_MODEL, input_text=prompt, call=_do_call)
-
-
-_ENGAGE_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "engage": {"type": "boolean"},
-        "comment": {"type": "string"},
-        "reason": {"type": "string"},
-    },
-    "required": ["engage", "comment", "reason"],
-}
-
-
-def _call_gemini_json(prompt: str, *, max_tokens: int = 400) -> dict[str, Any] | None:
-    """Like ``_call_gemini``, but requests structured JSON output matching
-    ``{engage: bool, comment: string, reason: string}`` via Gemini's
-    ``responseMimeType``/``responseSchema`` generation-config fields, so the
-    model's engage/decline decision is a first-class field instead of
-    something inferred from empty text.
-
-    Returns the parsed dict, or ``None`` on any failure (missing key,
-    non-2xx, no candidates, malformed/incomplete JSON) — same
-    "caller falls back" contract as ``_call_gemini``.
-    """
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
-        logger.info("reply_drafter: GEMINI_API_KEY not set — falling back")
-        return None
-    url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": max_tokens,
-            "thinkingConfig": {"thinkingBudget": 0},
-            "responseMimeType": "application/json",
-            "responseSchema": _ENGAGE_RESPONSE_SCHEMA,
-        },
-    }
-
-    def _do_call() -> dict[str, Any] | None:
-        try:
-            r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
-            if r.status_code >= 400:
-                logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
-                return None
-            data = r.json()
-            cands = data.get("candidates") or []
-            if not cands:
-                return None
-            parts = cands[0].get("content", {}).get("parts", [])
-            for p in parts:
-                text = (p.get("text") or "").strip()
-                if not text:
-                    continue
-                try:
-                    parsed = json.loads(text)
-                except json.JSONDecodeError:
-                    logger.warning("gemini json response not valid JSON: %s", text[:200])
-                    return None
-                if not isinstance(parsed, dict) or "engage" not in parsed:
-                    logger.warning("gemini json response missing 'engage' field: %s", text[:200])
-                    return None
-                return parsed
-        except Exception as e:
-            logger.warning("gemini json call failed: %s", e)
-        return None
-
-    return trace_llm_call(
-        "gemini-engage-decision", model=_GEMINI_MODEL, input_text=prompt, call=_do_call
-    )
 
 
 _VOICE_RULES = """
@@ -341,14 +223,14 @@ def _strip_meta_chrome(text: str) -> str:
 
 
 # Re-export the private helpers so sibling modules (e.g. lib.draft_helper)
-# can compose the same Gemini call + voice-rules prompt without duplicating
-# the HTTP payload shape or the brand-voice text. The leading underscore is
-# preserved to signal "internal — don't import from outside lib/".
+# can reuse the brand-voice text and the meta-chrome stripper without
+# duplicating them. The leading underscore is preserved to signal
+# "internal — don't import from outside lib/". The Gemini transport lives in
+# lib.gemini_client, not here.
 __all__ = [
     "_VOICE_RULES",
     "SitePost",
-    "_call_gemini",
-    "_call_gemini_json",
+    "_strip_meta_chrome",
     "draft_comment",
     "draft_reply",
 ]
