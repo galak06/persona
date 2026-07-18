@@ -50,8 +50,15 @@ log = logging.getLogger(__name__)
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 
-_MAX_TOKENS = 500
-_SHORT_MAX_TOKENS = 200
+# maxOutputTokens is a CEILING the model stops before, not a target — the
+# comment length is already bounded by the prompt ("15-25 words" / "1-3
+# sentences"), so a generous ceiling doesn't make outputs longer, it just
+# stops the JSON envelope from truncating. The budget must cover the comment
+# PLUS the `reason` field PLUS the {"engage":...,"comment":...,"reason":...}
+# scaffolding in one response; too small and a slightly-long reply/reason
+# truncates to unparseable JSON and the post is silently dropped.
+_MAX_TOKENS = 800
+_SHORT_MAX_TOKENS = 400
 
 _ENGAGE_INSTRUCTIONS = """
 Before drafting, decide whether THIS SPECIFIC post is genuinely worth
@@ -63,7 +70,7 @@ engaging with as our brand. Decline (engage=false) if:
 
 Respond with ONLY a JSON object — no markdown fences, no preamble, no text
 before or after it:
-{"engage": true or false, "comment": "<the reply text, or \\"\\" if engage is false>", "reason": "<one short sentence explaining the decision>"}
+{"engage": true or false, "comment": "<the reply text, or \\"\\" if engage is false>", "reason": "<one short sentence, 12 words max, explaining the decision>"}
 """
 
 

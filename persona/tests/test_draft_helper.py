@@ -62,6 +62,18 @@ def test_short_draft_prompt_asks_for_one_sentence(monkeypatch: pytest.MonkeyPatc
     assert "ONE short sentence (15-25 words)" in seen["prompt"]
     assert "post body here" in seen["prompt"]  # grounded in THIS post
     assert '"engage"' in seen["prompt"]  # asks for the structured decision
+    assert (
+        "12 words max" in seen["prompt"]
+    )  # reason is length-capped so it can't eat the token budget
+
+
+def test_token_budgets_leave_headroom_for_json_envelope() -> None:
+    """The engage/comment/reason JSON envelope shares maxOutputTokens with the
+    comment, so the budgets must leave room for the reason field + braces —
+    otherwise a slightly-long reply truncates to unparseable JSON and the post
+    is silently dropped. Regression guard against shrinking them back."""
+    assert draft_helper._SHORT_MAX_TOKENS >= 300
+    assert draft_helper._MAX_TOKENS >= 600
 
 
 def test_short_draft_retries_once_on_voice_failure(monkeypatch: pytest.MonkeyPatch) -> None:
