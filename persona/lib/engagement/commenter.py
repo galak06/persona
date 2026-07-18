@@ -44,21 +44,21 @@ _UA = (
 class CommenterSpec:
     """Everything platform-specific about one comment action."""
 
-    platform: str                       # "facebook" | "instagram"
-    skill_name: str                     # "fb-comment" | "ig-comment"
-    label: str                          # short tag for logs/CLI, e.g. "FB" | "IG"
-    guard_key: str                      # per-platform re-run-guard key
+    platform: str  # "facebook" | "instagram"
+    skill_name: str  # "fb-comment" | "ig-comment"
+    label: str  # short tag for logs/CLI, e.g. "FB" | "IG"
+    guard_key: str  # per-platform re-run-guard key
     session_file: Path
     last_run_file: Path
     log_file: Path
-    home_url: str                       # homepage used for the session check
-    login_markers: tuple[str, ...]      # url fragments that mean "logged out"
-    target_field: str                   # queue key with the human label (group_name/hashtag)
-    draft_fn: Callable[[dict[str, Any]], str]      # item -> draft ("" => skip)
-    post_fn: Callable[[Any, str, str], bool]       # (page, post_url, text) -> ok
+    home_url: str  # homepage used for the session check
+    login_markers: tuple[str, ...]  # url fragments that mean "logged out"
+    target_field: str  # queue key with the human label (group_name/hashtag)
+    draft_fn: Callable[[dict[str, Any]], str]  # item -> draft ("" => skip)
+    post_fn: Callable[[Any, str, str], bool]  # (page, post_url, text) -> ok
     session_missing_msg: str
-    queue_file: Path | None = None   # required when task_queue is None (JSON path)
-    task_queue: Any = None           # if set, drain Redis instead of queue_file
+    queue_file: Path | None = None  # required when task_queue is None (JSON path)
+    task_queue: Any = None  # if set, drain Redis instead of queue_file
 
 
 def _load_json(path: Path, default: Any) -> Any:
@@ -134,9 +134,7 @@ def _pending_items(spec: CommenterSpec, queue: list[dict[str, Any]]) -> list[dic
     out: list[dict[str, Any]] = []
     for item in candidates:
         pid = str(item.get("post_id") or "")
-        if pid and (
-            pid in posted_in_db or deduplication.already_commented(spec.platform, pid)
-        ):
+        if pid and (pid in posted_in_db or deduplication.already_commented(spec.platform, pid)):
             item["status"] = "already_commented"
             item["_blocked_reason"] = "already commented on this post (dedup_cache/engagements.db)"
             continue
@@ -147,8 +145,10 @@ def _pending_items(spec: CommenterSpec, queue: list[dict[str, Any]]) -> list[dic
 def _pending_items_pg(spec: CommenterSpec, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Dedup filter for Redis-backed queue items using Postgres completed_tasks."""
     from lib.dedup_pg import already_done
+
     return [
-        item for item in items
+        item
+        for item in items
         if not already_done("comment", spec.platform, str(item.get("post_id") or ""))  # type: ignore[arg-type]
     ]
 
@@ -157,6 +157,7 @@ def _record_done_pg(platform: str, post_id: str) -> None:
     """Best-effort Postgres dedup record after a successful comment."""
     try:
         from lib.dedup_pg import record_done
+
         record_done("comment", platform, post_id)  # type: ignore[arg-type]
     except Exception:
         pass
@@ -298,7 +299,13 @@ def _post_loop(
         draft = spec.draft_fn(item)
         if not draft:
             item["status"] = "USER_SKIPPED"
-            item["_blocked_reason"] = "draft failed voice validation"
+            # An empty draft is any of: agent declined (engage:false), blank
+            # comment, upstream/LLM failure, or two voice-validation failures.
+            # The specific cause is in the drafter's structured log (Grafana/
+            # Loki); don't assert a single reason here that's wrong 3 times in 4.
+            item["_blocked_reason"] = (
+                "draft empty (declined / blank / upstream error / voice-failed)"
+            )
             skipped += 1
             if spec.task_queue is None:
                 _save_json(spec.queue_file, queue)

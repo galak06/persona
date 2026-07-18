@@ -1,6 +1,6 @@
 """Best-effort Langfuse tracing for the live Gemini calls in lib.reply_drafter.
 
-`lib.reply_drafter._call_gemini`/`_call_gemini_json` are the only LLM calls in
+`lib.gemini_client._call_gemini`/`_call_gemini_json` are the only LLM calls in
 the active pipeline (the LangGraph/Anthropic path in `comment_graph.py` is
 inactive and traced separately via Phoenix — untouched here). Wrapping them
 gives visibility into prompts, completions, and the agent's engage/decline

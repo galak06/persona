@@ -9,11 +9,17 @@ Two entry points, both in the configured brand voice:
 
 Both are agentic: the model first decides whether this specific post is
 genuinely worth engaging with (``engage: true|false``) before drafting.
+``engage`` is read fail-closed (``is not True`` → decline), so a schema hiccup
+that returns a non-boolean can never post a comment the model meant to skip.
 ``engage: false`` means the model itself declined — that decision IS the
 approval gate for outbound comments (there is no separate human-in-the-loop
 step), and it flows through unchanged: both entry points still return ``""``
 on decline, exactly like every other failure path below, so callers
 (``lib/engagement/commenter.py``'s drain loop) need no changes at all.
+
+A missing ``GEMINI_API_KEY`` is treated like any other upstream failure —
+``_call_gemini_json`` returns ``None`` and the item is skipped with a logged
+warning — rather than raising mid-batch and aborting the whole run.
 
 Both route the draft through ``lib.comment_generator.validate_voice`` with
 ``allow_own_url=False`` — engagement comments must never carry our URL — and
@@ -37,7 +43,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from lib.comment_generator import validate_voice
-from lib.reply_drafter import _VOICE_RULES, _call_gemini_json
+from lib.gemini_client import _call_gemini_json
+from lib.reply_drafter import _VOICE_RULES, _strip_meta_chrome
 
 log = logging.getLogger(__name__)
 
@@ -78,21 +85,6 @@ def _nalla_facts() -> str:
     return ""
 
 
-def _require_gemini_key(platform: str, group_or_hashtag: str | None) -> None:
-    """Raise ``RuntimeError`` if the Gemini key is absent (callers catch it)."""
-    if not os.environ.get("GEMINI_API_KEY"):
-        error_msg = "GEMINI_API_KEY environment variable is not set"
-        log.error(
-            {
-                "event": "draft_gemini_key_missing",
-                "platform": platform,
-                "group_or_hashtag": group_or_hashtag,
-                "error": error_msg,
-            }
-        )
-        raise RuntimeError(error_msg)
-
-
 def draft_comment_for_post(
     *,
     platform: Platform,
@@ -104,10 +96,9 @@ def draft_comment_for_post(
     """Generate a 1-3 sentence Nalla's-Dad engagement comment for a post.
 
     Returns the validated draft text (stripped), or an empty string if the
-    agent declined to engage, or after two voice-validation failures (one
-    retry).
+    agent declined to engage, the Gemini call failed (including a missing
+    key), or after two voice-validation failures (one retry).
     """
-    _require_gemini_key(platform, group_or_hashtag)
     prompt = _build_prompt(
         platform=platform,
         post_text=post_text,
@@ -135,11 +126,10 @@ def draft_short_comment_for_post(
 
     Used by the FB commenter at post time. Same agent decision + voice
     validation + single retry as the long path; returns ``""`` on decline or
-    any failure so the caller can skip the item. Voice rules still require a
-    trailing question, a specific detail, and a first-person claim, so the
-    one sentence must carry all three.
+    any failure (including a missing key) so the caller can skip the item.
+    Voice rules still require a trailing question, a specific detail, and a
+    first-person claim, so the one sentence must carry all three.
     """
-    _require_gemini_key(platform, group_or_hashtag)
     prompt = _build_prompt(
         platform=platform,
         post_text=post_text,
@@ -156,6 +146,9 @@ def draft_short_comment_for_post(
     )
 
 
+_MAX_ATTEMPTS = 2
+
+
 def _draft_validated(
     prompt: str,
     *,
@@ -163,46 +156,40 @@ def _draft_validated(
     group_or_hashtag: str | None,
     max_tokens: int,
 ) -> str:
-    """Call Gemini for an engage/comment/reason decision, voice-validate a
-    drafted comment, retry once naming the violations.
+    """Call Gemini for an engage/comment/reason decision, voice-validate the
+    drafted comment, and retry once (naming the violations) if it fails.
 
-    Returns the cleaned draft, or ``""`` on no response / agent decline /
-    two voice-validation failures.
+    Returns the cleaned draft, or ``""`` on no response / agent decline / blank
+    comment / two voice-validation failures. A decline or upstream failure is
+    final — only a *voice* failure earns the retry.
     """
-    response = _call_gemini_json(prompt, max_tokens=max_tokens)
-    draft = _engaged_comment(response, platform=platform, group_or_hashtag=group_or_hashtag)
-    if not draft:
-        return ""
-
-    valid, violations = validate_voice(draft, allow_own_url=False)
-    if valid:
-        cleaned = draft.strip()
-        log.info(
-            {"event": "draft_inline_ok", "platform": platform, "len": len(cleaned), "attempts": 1}
+    current_prompt = prompt
+    violations: list[str] = []
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        response = _call_gemini_json(current_prompt, max_tokens=max_tokens)
+        draft = _engaged_comment(
+            response, platform=platform, group_or_hashtag=group_or_hashtag, attempt=attempt
         )
-        return cleaned
-
-    # Retry once with a stricter prompt that calls out the violations.
-    log.info({"event": "draft_voice_retry", "platform": platform, "violations": violations})
-    retry_prompt = (
-        f"{prompt}\n\nIMPORTANT: your previous draft failed brand-voice "
-        f"validation. Avoid the following violations on this rewrite: "
-        f"{'; '.join(violations)}"
-    )
-    retry_response = _call_gemini_json(retry_prompt, max_tokens=max_tokens)
-    retry_draft = _engaged_comment(
-        retry_response, platform=platform, group_or_hashtag=group_or_hashtag, is_retry=True
-    )
-    if not retry_draft:
-        return ""
-
-    valid, violations = validate_voice(retry_draft, allow_own_url=False)
-    if valid:
-        cleaned = retry_draft.strip()
-        log.info(
-            {"event": "draft_inline_ok", "platform": platform, "len": len(cleaned), "attempts": 2}
-        )
-        return cleaned
+        if not draft:
+            return ""  # None / decline / blank — all logged in _engaged_comment
+        valid, violations = validate_voice(draft, allow_own_url=False)
+        if valid:
+            log.info(
+                {
+                    "event": "draft_inline_ok",
+                    "platform": platform,
+                    "len": len(draft),
+                    "attempt": attempt,
+                }
+            )
+            return draft
+        if attempt < _MAX_ATTEMPTS:
+            log.info({"event": "draft_voice_retry", "platform": platform, "violations": violations})
+            current_prompt = (
+                f"{prompt}\n\nIMPORTANT: your previous draft failed brand-voice "
+                f"validation. Avoid the following violations on this rewrite: "
+                f"{'; '.join(violations)}"
+            )
 
     log.warning({"event": "draft_voice_fail_final", "platform": platform, "violations": violations})
     return ""
@@ -213,33 +200,36 @@ def _engaged_comment(
     *,
     platform: str,
     group_or_hashtag: str | None,
-    is_retry: bool = False,
+    attempt: int,
 ) -> str:
     """Extract the drafted comment from an agent response, or ``""`` if the
-    call failed or the agent declined to engage. Logs the outcome either way
-    so the reason a post was skipped is always attributable."""
+    call failed, the agent declined, or the comment was blank. Every outcome
+    is logged (with the model's ``reason`` where present) so the cause of a
+    skip is always attributable. ``engage`` is read fail-closed: only a literal
+    ``True`` counts as engage, so a non-boolean (e.g. the string ``"false"``)
+    can never post a comment the model meant to decline."""
+    base = {"platform": platform, "group_or_hashtag": group_or_hashtag, "attempt": attempt}
     if response is None:
+        log.info({"event": "draft_gemini_returned_none", **base})
+        return ""
+    if response.get("engage") is not True:
         log.info(
-            {
-                "event": "draft_gemini_retry_returned_none"
-                if is_retry
-                else "draft_gemini_returned_none",
-                "platform": platform,
-                "group_or_hashtag": group_or_hashtag,
-            }
+            {"event": "draft_agent_declined", **base, "reason": str(response.get("reason") or "")}
         )
         return ""
-    if not response.get("engage"):
-        log.info(
+    comment = _strip_meta_chrome(str(response.get("comment") or ""))
+    if not comment:
+        # engage:true but no usable comment text — a malformed response, not a
+        # deliberate decline; log it so this drop isn't silent/unattributable.
+        log.warning(
             {
-                "event": "draft_agent_declined_on_retry" if is_retry else "draft_agent_declined",
-                "platform": platform,
-                "group_or_hashtag": group_or_hashtag,
+                "event": "draft_engaged_but_blank",
+                **base,
                 "reason": str(response.get("reason") or ""),
             }
         )
         return ""
-    return str(response.get("comment") or "").strip()
+    return comment
 
 
 def _build_prompt(

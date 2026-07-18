@@ -9,6 +9,8 @@ failure path, without ever reaching voice validation.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 import draft_helper
@@ -87,12 +89,60 @@ def test_short_draft_empty_after_two_voice_failures(monkeypatch: pytest.MonkeyPa
     assert out == ""
 
 
-def test_short_draft_missing_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_short_draft_missing_key_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing key degrades to a per-item skip ("") like any other upstream
+    failure — it must NOT raise and abort the whole batch. Uses the real
+    _call_gemini_json (unmocked), which returns None when the key is absent."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    with pytest.raises(RuntimeError):
-        draft_helper.draft_short_comment_for_post(
+    out = draft_helper.draft_short_comment_for_post(
+        platform="facebook", post_text="x", group_or_hashtag="Dogs"
+    )
+    assert out == ""
+
+
+def test_short_draft_fails_closed_on_non_boolean_engage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """engage is read fail-closed: a truthy non-True value (e.g. the JSON
+    string "false" from a schema hiccup) must be treated as a decline and
+    never posted, even though the comment field is populated."""
+    _set_key(monkeypatch)
+    monkeypatch.setattr(
+        draft_helper,
+        "_call_gemini_json",
+        lambda *a, **k: {"engage": "false", "comment": _VALID_SHORT, "reason": "x"},
+    )
+    out = draft_helper.draft_short_comment_for_post(
+        platform="facebook", post_text="x", group_or_hashtag="Dogs"
+    )
+    assert out == ""
+
+
+def test_short_draft_strips_meta_chrome_before_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leading preamble / wrapping quotes in the comment value are stripped
+    before voice validation, so chrome can't slip an off-brand opener past
+    validate_voice's startswith-based generic-opener guard."""
+    _set_key(monkeypatch)
+    monkeypatch.setattr(
+        draft_helper, "_call_gemini_json", lambda *a, **k: _engaged(f'"{_VALID_SHORT}"')
+    )
+    out = draft_helper.draft_short_comment_for_post(
+        platform="facebook", post_text="x", group_or_hashtag="Dogs"
+    )
+    assert out == _VALID_SHORT  # wrapping quotes stripped, then validated
+
+
+def test_short_draft_logs_when_engaged_but_blank(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """engage:true with a blank comment is an attributable drop, not a silent
+    one — it must emit a structured warning so the skip is traceable."""
+    _set_key(monkeypatch)
+    monkeypatch.setattr(draft_helper, "_call_gemini_json", lambda *a, **k: _engaged(""))
+    with caplog.at_level(logging.WARNING, logger=draft_helper.log.name):
+        out = draft_helper.draft_short_comment_for_post(
             platform="facebook", post_text="x", group_or_hashtag="Dogs"
         )
+    assert out == ""
+    assert any("draft_engaged_but_blank" in str(r.msg) for r in caplog.records)
 
 
 # --------------------------------------------------------------------------- agent decline
