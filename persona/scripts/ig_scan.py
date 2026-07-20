@@ -1,13 +1,19 @@
-"""Instagram Hashtag Scanner — thin wrapper around `run_outbound_scan`.
+"""Instagram Hashtag Scanner — SINGLE PASS like + comment.
 
 Orchestration lives in `lib.engagement.pipeline`; platform mechanics live
 in `InstagramHashtagAdapter`. This wrapper builds the collaborators,
-calls the pipeline, persists last-run + dedup marks.
+calls the pipeline, and persists the last-run stamp.
+
+Each post is opened exactly once: the scan scores it, likes it, and — when
+it clears the auto-approve threshold — drafts and posts the comment in that
+same visit. There is no Redis queue and no `scripts/ig_comment.py` handoff
+for Instagram any more (Facebook keeps its two-stage scan -> queue -> comment
+flow). Iterate-once is enforced by `lib.scan_dedup.ScanDedup`, which marks
+every OPENED post so the next run skips it.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -18,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
-from lib.task_queue import TaskQueue
 from lib.worker_db import record_complete, record_start
 
 settings, log = init_script(__name__)
@@ -28,7 +33,7 @@ settings, log = init_script(__name__)
 # label is orphaned by this rename — new runs record under the new label.
 WORKER_LABEL = f"{settings.paths.brand_dir.name}-ig-scanner"
 
-import deduplication
+import draft_helper
 import rate_limiter
 from comment_generator import score_relevance as _score_relevance
 from lib.engagement.adapter import OutboundAdapter
@@ -36,36 +41,15 @@ from lib.engagement.adapters.instagram import InstagramHashtagAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.io.jsonio import read_json, write_json
+from lib.scan_dedup import ScanDedup
 from notifier import skill_finished, skill_skipped, skill_started
-from rate_limiter import can_act, print_status
+from rate_limiter import can_act, daily_limit, print_status
 
 LAST_RUN_FILE = settings.paths.last_run
 SESSION_FILE = settings.paths.instagram_session
 CONFIG_FILE = settings.paths.brand_dir / "config.json"
 HASHTAG_FILE = settings.paths.instagram_accounts
-
-
-class _RedisQueueIO:
-    """`run_outbound_scan` queue collaborator: push to Redis TaskQueue."""
-
-    def __init__(self, queue: TaskQueue) -> None:
-        self._q = queue
-        self.newly_queued: list[dict[str, Any]] = []
-
-    def append(self, record: dict[str, object]) -> None:
-        task = dict(record)
-        self._q.push(task)
-        self.newly_queued.append(task)
-
-    def save(self) -> None:
-        pass  # Redis push is immediate; no batch save needed
-
-    def existing_today(self, platform: str) -> int:
-        return self._q.depth()
-
-
-def _load_json(path: Path, default: Any) -> Any:
-    return json.loads(path.read_text()) if path.exists() else default
 
 
 def _score_post(post: Post) -> float:
@@ -90,42 +74,60 @@ def _already_ran_today(last_run: dict[str, Any]) -> bool:
     ) == "success"
 
 
-def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
-    """Run one IG hashtag scan via the shared pipeline."""
+def run_ig_scan(
+    adapter: OutboundAdapter | None = None, *, dry_run: bool | None = None
+) -> ScanReport | None:
+    """Run one IG hashtag scan via the shared pipeline.
+
+    ``dry_run`` defaults to ``"--dry-run" in sys.argv``. A dry run likes
+    nothing and posts no comment, and consumes no state (no last-run stamp,
+    no dedup marks) — so it can be re-run freely. It DOES still call the
+    drafter, so the preview shows the comment each qualifying post would
+    have received.
+    """
+    if dry_run is None:
+        dry_run = "--dry-run" in sys.argv
     log_trace("instagram", "Started Instagram hashtag scan")
-    last_run = _load_json(LAST_RUN_FILE, {})
-    if _already_ran_today(last_run) and "--force" not in sys.argv:
+    last_run: dict[str, Any] = read_json(LAST_RUN_FILE, default={})  # type: ignore[assignment]
+    # Both daily guards are live-run concerns: a dry run neither stamps
+    # last_run.json nor sends a like, so blocking it would force --force --
+    # which ALSO lifts the like rate cap. Preview stays freely re-runnable.
+    if not dry_run and _already_ran_today(last_run) and "--force" not in sys.argv:
         skill_skipped("ig-scanner", "already ran successfully today")
         log_trace("instagram", "Skipped: already ran today")
         return None
-    if not can_act("instagram", "like") and "--force" not in sys.argv:
+    if not dry_run and not can_act("instagram", "like") and "--force" not in sys.argv:
         skill_skipped("ig-scanner", "Daily IG like limit reached")
         print_status()
         return None
 
-    skill_started("ig-scanner", "Scanning Instagram hashtags for posts to like/comment")
+    label = "DRY RUN — " if dry_run else ""
+    skill_started(
+        "ig-scanner",
+        f"{label}Scanning Instagram hashtags for posts to like/comment",
+    )
     print_status()
 
-    config = _load_json(CONFIG_FILE, {})
+    config: dict[str, Any] = read_json(CONFIG_FILE, default={})  # type: ignore[assignment]
     policy = EngagementPolicy.from_config(config)
     active = adapter or InstagramHashtagAdapter(
         {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE}
     )
-    queue_io = _RedisQueueIO(TaskQueue("ig-comment"))
-
     try:
         report = run_outbound_scan(
             active,
             policy,
-            # Scan-only: no drafter. Comments are drafted at post time by
-            # scripts/ig_comment.py, so the queue holds bare target posts.
-            dedup=deduplication,
+            # Single pass: the drafter runs INSIDE the scan so a qualifying
+            # post is liked and commented in the one visit that opened it.
+            # No queue, no ig_comment.py handoff (see module docstring).
+            dedup=ScanDedup(WORKER_LABEL, log=log),
             rate_tracker=rate_limiter,
-            drafter=None,
-            queue_io=queue_io,
+            drafter=draft_helper,
             log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,
+            dry_run=dry_run,
+            inline_comment=True,
         )
     except RuntimeError as exc:
         msg = str(exc)
@@ -135,38 +137,41 @@ def run_ig_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
             return None
         raise
 
-    from lib.dedup_pg import record_done as _pg_record_done
+    # A dry run consumes no state: no dedup marks (the pipeline suppresses
+    # them, so posts stay eligible) and no last-run stamp (the
+    # already-ran-today guard is not burned).
+    if not dry_run:
+        last_run["ig_scanner"] = {
+            "last_run_at": datetime.now(UTC).isoformat(),
+            "hashtags_scanned": report.sources_visited,
+            "posts_liked": report.likes_succeeded,
+            "posts_commented": report.comments_posted,
+            "comments_declined": report.comments_declined,
+            "status": "success",
+        }
+        write_json(LAST_RUN_FILE, last_run)
 
-    for rec in queue_io.newly_queued:
-        deduplication.mark_engaged(
-            "instagram",
-            str(rec["post_id"]),
-            action="comment_queued",
-            group_or_hashtag=str(rec.get("hashtag") or rec.get("group_or_hashtag") or ""),
+    # Report the cap that is actually ENFORCED (rate_limiter reads the
+    # generated data/rate_limits.json artifact), not EngagementPolicy's
+    # config.json-derived copy — the two drift, and the enforced one is the
+    # number `_maybe_comment`'s quota gate consults.
+    quota = daily_limit("instagram", "comment")
+    if dry_run:
+        summary = (
+            f"DRY RUN (nothing liked, commented or recorded) | "
+            f"Hashtags: {report.sources_visited} | "
+            f"Would like: {report.likes_attempted} | "
+            f"Would comment: {report.comments_attempted}/{quota} | "
+            f"Agent declined: {report.comments_declined}"
         )
-        _pg_record_done(
-            "scan",
-            "instagram",
-            str(rec["post_id"]),
-            worker_label=WORKER_LABEL,
+    else:
+        summary = (
+            f"Hashtags: {report.sources_visited} | "
+            f"Liked: {report.likes_succeeded} | "
+            f"Commented: {report.comments_posted}/{quota} | "
+            f"Agent declined: {report.comments_declined}"
         )
-
-    last_run["ig_scanner"] = {
-        "last_run_at": datetime.now(UTC).isoformat(),
-        "hashtags_scanned": report.sources_visited,
-        "posts_liked": report.likes_succeeded,
-        "posts_queued_for_comment": report.queued,
-        "status": "success",
-    }
-    LAST_RUN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LAST_RUN_FILE.write_text(json.dumps(last_run, indent=2))
-
-    quota = policy.daily_comment_quota.get("instagram", 10)
-    skill_finished(
-        "ig-scanner",
-        f"Hashtags: {report.sources_visited} | "
-        f"Liked: {report.likes_succeeded}/8 | Queued: {report.queued}/{quota}",
-    )
+    skill_finished("ig-scanner", summary)
     print_status()
     return report
 

@@ -15,7 +15,7 @@ from contextlib import AbstractContextManager
 from typing import Protocol, runtime_checkable
 
 from lib.engagement.post import Post
-from lib.engagement.result import LikeResult
+from lib.engagement.result import CommentResult, LikeResult
 
 
 @runtime_checkable
@@ -63,4 +63,20 @@ class OutboundAdapter(Protocol):
         IG: clicks the like button. FB: returns LikeResult.skipped("not_supported")
         until slice 4 adds Page-as-actor liking.
         """
+        ...
+
+
+@runtime_checkable
+class SupportsComment(Protocol):
+    """Optional capability: post a comment during the scan visit.
+
+    Deliberately NOT part of `OutboundAdapter` — Facebook drafts and posts in
+    a separate stage (`scripts/fb_comment.py`), so `FacebookGroupAdapter` has
+    no `comment` and must stay a valid `OutboundAdapter`. The pipeline probes
+    this with `isinstance(adapter, SupportsComment)` and only comments inline
+    when the adapter opts in by implementing the method.
+    """
+
+    def comment(self, post: Post, text: str) -> CommentResult:
+        """Submit `text` as a comment on `post` in the current session."""
         ...

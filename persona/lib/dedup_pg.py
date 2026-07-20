@@ -55,6 +55,29 @@ def already_done(
     return row is not None
 
 
+def completed_entity_ids(
+    task_type: TaskType,
+    platform: Platform,
+    brand: str = _BRAND,
+) -> set[str]:
+    """Every entity_id already recorded for this (task_type, platform, brand).
+
+    The bulk counterpart to `already_done`, for callers that would otherwise
+    issue one SELECT per candidate. A scan checks ~570 posts per run inside a
+    live browser session; prefetching the seen set once turns those sequential
+    round-trips into a single indexed read (idx_completed_tasks_brand covers
+    exactly this key order).
+    """
+    rows = fetch_all(
+        """
+        SELECT entity_id FROM completed_tasks
+        WHERE task_type = %s AND platform = %s AND brand = %s
+        """,
+        (task_type, platform, brand),
+    )
+    return {r["entity_id"] for r in rows}
+
+
 def record_done(
     task_type: TaskType,
     platform: Platform,

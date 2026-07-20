@@ -1,11 +1,19 @@
 """Instagram Comment — draft a reply at post time and post it.
 
-Single-responsibility counterpart to ``scripts/ig_scan.py``. The scanner only
-finds + likes + queues target posts (no draft); this action drains the IG
-comment queue: for each pending post (IG queues only questions — '?' posts) it
-drafts a reply from the live post text, then submits it via Playwright. No
+RETAINED ONLY TO DRAIN THE PRE-MIGRATION BACKLOG. Instagram moved to a
+single-pass flow: ``scripts/ig_scan.py`` now opens each post once and likes
+AND comments in that same visit, so nothing writes to the IG comment queue
+any more. This script is a consumer without a producer — once the backlog is
+drained it has no work, forever, and its daily launchd job would otherwise
+stay green while verifying nothing. It therefore skips loudly (naming
+``ig_scan.py``) rather than silently reporting success on an empty queue.
+
+Historically the counterpart to ``scripts/ig_scan.py``: the scanner found +
+liked + queued target posts (no draft); this action drained the IG comment
+queue, drafting a reply from the live post text for each pending post (IG
+queued only questions — '?' posts) and submitting it via Playwright. No
 separate approver. Shares the drain loop with the FB commenter via
-``lib.engagement.commenter``.
+``lib.engagement.commenter``, which Facebook still uses two-stage.
 
 Usage:
     python scripts/ig_comment.py                # draft + post pending IG items
@@ -37,6 +45,7 @@ from lib.comment_queue_routing import guard_key_for
 from lib.engagement.commenter import CommenterSpec, main_for
 from lib.ig.comment_post import post_comment_ig
 from lib.task_queue import TaskQueue
+from notifier import skill_skipped
 
 PLATFORM = "instagram"
 
@@ -71,9 +80,35 @@ SPEC = CommenterSpec(
 )
 
 
+_NO_PRODUCER_MSG = (
+    "IG comment queue is empty and nothing produces into it any more — "
+    "Instagram moved to a single-pass flow where scripts/ig_scan.py likes "
+    "AND comments in one visit. This script exists only to drain the "
+    "pre-migration backlog; the backlog is gone. Retire its scheduled job."
+)
+
+
+def _backlog_is_drained() -> bool:
+    """True if the queue is empty, i.e. there is no backlog left to drain.
+
+    Reported explicitly so an empty run is never mistaken for a healthy one.
+    Uses the non-destructive ``depth()``; a Redis failure is left to the
+    normal drain path to surface rather than being swallowed here.
+    """
+    if SPEC.task_queue is None:
+        return False
+    try:
+        return SPEC.task_queue.depth() == 0
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
     _brand_dir = settings.paths.brand_dir
     _brand = _brand_dir.name
+    if _backlog_is_drained():
+        skill_skipped("ig-comment", _NO_PRODUCER_MSG)
+        sys.exit(0)
     record_start(_brand_dir, WORKER_LABEL, _brand)
     try:
         _exit_code = main_for(SPEC)
