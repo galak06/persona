@@ -2,88 +2,65 @@
 
 `run_outbound_scan` glues an `OutboundAdapter` to platform-agnostic
 collaborators (dedup, rate tracker, drafter, queue, log) and returns a
-`ScanReport`. Cherry-picks the top-N candidates per platform per day,
-where N is the remaining `EngagementPolicy.daily_comment_quota` budget
-after subtracting records already queued today. Both `scripts/fb_scan.py`
-and `scripts/ig_scan.py` are thin wrappers around it.
+`ScanReport`. Both `scripts/fb_scan.py` and `scripts/ig_scan.py` are thin
+wrappers around it, in two different modes:
+
+  - Two-stage (`inline_comment=False`, Facebook): the scan likes and
+    cherry-picks the top-N candidates per day into `queue_io`, where N is
+    the remaining `EngagementPolicy.daily_comment_quota` budget after
+    subtracting records already queued today. A separate commenter stage
+    (`scripts/fb_comment.py`) drains the queue and posts.
+
+  - Single-pass (`inline_comment=True`, Instagram): each post is opened
+    once and liked AND commented in that same visit, with no queue and no
+    handoff. Requires an adapter implementing `SupportsComment` plus a
+    `drafter`; `cherry_pick_and_queue` is skipped entirely.
+
+This module owns orchestration only. The collaborator protocols, result
+types, per-post processing, the inline comment step and the queue
+cherry-pick each live in their own module (the file-size cap is 300
+lines); they are re-exported below so existing imports keep working.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
-from typing import Protocol
 
-from lib.engagement.adapter import OutboundAdapter, Source
-from lib.engagement.log import log_engagement
+from lib.engagement.adapter import OutboundAdapter, SupportsComment
+from lib.engagement.collaborators import (
+    Dedup as _Dedup,
+)
+from lib.engagement.collaborators import (
+    Drafter as _Drafter,
+)
+from lib.engagement.collaborators import (
+    Log as _Log,
+)
+from lib.engagement.collaborators import (
+    QueueIO as _QueueIO,
+)
+from lib.engagement.collaborators import (
+    RateTracker as _RateTracker,
+)
+from lib.engagement.collaborators import (
+    SupportsMarkSeen as _SupportsMarkSeen,
+)
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.post_processor import gate_source, process_post
+from lib.engagement.queueing import cherry_pick_and_queue
+from lib.engagement.scan_results import PostOutcome, ScanReport
 
-
-@dataclass(frozen=True)
-class ScanReport:
-    """Aggregated counters from one `run_outbound_scan` invocation.
-
-    `pre_filtered` maps adapter rejection reason (e.g. "competitor",
-    "own_account", "too_old") to count of posts dropped for that reason.
-    `pre_filtered_posts` lists the (post_id, reason) pairs for those drops so
-    callers can act on individual posts (e.g. permanently dedup-mark them).
-    """
-
-    platform: str
-    sources_visited: int
-    posts_scanned: int
-    candidates: int
-    likes_attempted: int
-    likes_succeeded: int
-    queued: int
-    pre_filtered: dict[str, int] = field(default_factory=dict)
-    # (post_id, reason) pairs for each pre-filtered drop.
-    pre_filtered_posts: list[tuple[str, str]] = field(default_factory=list)
-
-
-# Structural collaborator protocols so production singleton modules satisfy
-# the shape without wrapping (rate_limiter, deduplication, draft_helper).
-
-
-class _Dedup(Protocol):
-    def is_duplicate(self, platform: str, post_id: str) -> bool: ...
-    def mark_engaged(
-        self,
-        platform: str,
-        post_id: str,
-        action: str,
-        group_or_hashtag: str = ...,
-        status: str = ...,
-    ) -> None: ...
-
-
-class _RateTracker(Protocol):
-    def can_act(self, platform: str, action: str) -> bool: ...
-    def record_action(self, platform: str, action: str) -> int: ...
-    def wait_random_delay(self, platform: str, action: str) -> None: ...
-
-
-class _Drafter(Protocol):
-    def draft_comment_for_post(
-        self,
-        *,
-        platform: str,
-        post_text: str,
-        group_or_hashtag: str | None,
-        post_url: str,
-    ) -> str: ...
-
-
-class _QueueIO(Protocol):
-    def append(self, record: dict[str, object]) -> None: ...
-    def save(self) -> None: ...
-    def existing_today(self, platform: str) -> int: ...
-
-
-class _Log(Protocol):
-    def info(self, msg: str, /, *args: object, **kwargs: object) -> None: ...
-    def warning(self, msg: str, /, *args: object, **kwargs: object) -> None: ...
+__all__ = [
+    "ScanReport",
+    "_Dedup",
+    "_Drafter",
+    "_Log",
+    "_QueueIO",
+    "_RateTracker",
+    "_SupportsMarkSeen",
+    "run_outbound_scan",
+]
 
 
 def run_outbound_scan(
@@ -93,275 +70,206 @@ def run_outbound_scan(
     dedup: _Dedup,
     rate_tracker: _RateTracker,
     drafter: _Drafter | None,
-    queue_io: _QueueIO,
+    queue_io: _QueueIO | None = None,
     log: _Log,
     now_iso: Callable[[], str],
     score_relevance: Callable[[Post], float],
+    dry_run: bool = False,
+    inline_comment: bool = False,
 ) -> ScanReport:
     """Run one outbound-engagement scan and return a `ScanReport`.
 
     The adapter owns platform mechanics (session, source enumeration, post
-    extraction, pre-filter, score adjustment, inline like). The pipeline
-    owns orchestration: dedup gating, scoring, like rate limits, candidate
-    collection, cherry-pick, draft, queue append, persist.
+    extraction, pre-filter, score adjustment, inline like/comment). The
+    pipeline owns orchestration: dedup gating, scoring, rate limits, and
+    then EITHER the inline comment (single-pass) or candidate collection +
+    cherry-pick + queue append + persist (two-stage).
+
+    When `inline_comment` is True the scan comments during the same visit
+    that liked the post, and `cherry_pick_and_queue` is skipped entirely —
+    nothing is queued and `queue_io` is unused (and may be None). This
+    needs an adapter implementing `SupportsComment` and a non-None
+    `drafter`; if either is missing the scan degrades to like-only and logs
+    `inline_comment_unavailable` once.
+
+    When `dry_run` is True the scan is read-only: `adapter.like` and
+    `adapter.comment` are never called (the post records a
+    `LikeResult.skipped("dry_run")` instead, so the report still shows what
+    *would* have been liked), nothing is appended to `queue_io` and
+    `queue_io.save()` is not called. The drafter IS still called under a dry
+    run so the preview shows the comment that would have been posted.
+    Counters (`likes_attempted`, `comments_attempted`, `queued`) report the
+    would-be totals.
     """
     platform = adapter.platform
-    candidates: list[tuple[Post, float]] = []
-    pre_filtered: dict[str, int] = {}
-    pre_filtered_posts: list[tuple[str, str]] = []
-    sources_visited = 0
-    posts_scanned = 0
-    likes_attempted = 0
-    likes_succeeded = 0
+    commenter = _resolve_commenter(adapter, drafter, log, inline_comment=inline_comment)
+    # Single-pass mode never cherry-picks, so retaining every candidate
+    # would build a list nothing ever reads.
+    counters = _Counters(platform, collect_candidates=not inline_comment)
 
     with adapter.session():
         for source in adapter.list_sources():
-            if not _gate_source(platform, rate_tracker, log):
+            if not gate_source(platform, rate_tracker, log):
                 break
-            sources_visited += 1
-
+            counters.sources_visited += 1
             for post in adapter.iterate_posts(source):
-                posts_scanned += 1
-                outcome = _process_post(
-                    post=post,
-                    source=source,
-                    adapter=adapter,
-                    policy=policy,
-                    dedup=dedup,
-                    rate_tracker=rate_tracker,
-                    log=log,
-                    score_relevance=score_relevance,
+                counters.add(
+                    post,
+                    process_post(
+                        post=post,
+                        source=source,
+                        adapter=adapter,
+                        policy=policy,
+                        dedup=dedup,
+                        rate_tracker=rate_tracker,
+                        log=log,
+                        score_relevance=score_relevance,
+                        dry_run=dry_run,
+                        commenter=commenter,
+                        drafter=drafter,
+                    ),
                 )
-                if outcome.pre_filter_reason is not None:
-                    reason = outcome.pre_filter_reason
-                    pre_filtered[reason] = pre_filtered.get(reason, 0) + 1
-                    pre_filtered_posts.append((post.post_id, reason))
-                    continue
-                if outcome.like_attempted:
-                    likes_attempted += 1
-                if outcome.like_succeeded:
-                    likes_succeeded += 1
-                if outcome.candidate_score is not None:
-                    candidates.append((post, outcome.candidate_score))
+            _pace_between_sources(platform, rate_tracker)
 
-            if platform == "facebook" and rate_tracker.can_act(
-                platform, "group_visit"
-            ):
-                rate_tracker.wait_random_delay(platform, "group_visit")
-
-        queued = _cherry_pick_and_queue(
+        queued = _drain_to_queue(
             platform=platform,
-            candidates=candidates,
+            candidates=counters.candidates,
             policy=policy,
             drafter=drafter,
             queue_io=queue_io,
             now_iso=now_iso,
             log=log,
+            dry_run=dry_run,
+            inline_comment=inline_comment,
         )
-        queue_io.save()
 
-    return ScanReport(
-        platform=platform,
-        sources_visited=sources_visited,
-        posts_scanned=posts_scanned,
-        candidates=len(candidates),
-        likes_attempted=likes_attempted,
-        likes_succeeded=likes_succeeded,
-        queued=queued,
-        pre_filtered=pre_filtered,
-        pre_filtered_posts=pre_filtered_posts,
-    )
+    return counters.to_report(queued)
 
 
-# --- Internal helpers -------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class _PostOutcome:
-    pre_filter_reason: str | None = None
-    like_attempted: bool = False
-    like_succeeded: bool = False
-    candidate_score: float | None = None
-
-
-def _gate_source(platform: str, rate_tracker: _RateTracker, log: _Log) -> bool:
-    """Per-source rate-limit gate. FB records a `group_visit`; IG is free."""
-    if platform != "facebook":
-        return True
-    if not rate_tracker.can_act(platform, "group_visit"):
-        log.info("rate_limit_exhausted platform=%s action=group_visit", platform)
-        return False
-    rate_tracker.record_action(platform, "group_visit")
-    return True
-
-
-def _process_post(
-    *,
-    post: Post,
-    source: Source,
+def _resolve_commenter(
     adapter: OutboundAdapter,
-    policy: EngagementPolicy,
-    dedup: _Dedup,
-    rate_tracker: _RateTracker,
+    drafter: _Drafter | None,
     log: _Log,
-    score_relevance: Callable[[Post], float],
-) -> _PostOutcome:
-    """Score, like, and mark one post. Returns the per-post counters."""
-    platform = adapter.platform
-    log.info(
-        "post_scanned platform=%s post_id=%s source=%s url=%s",
-        platform,
-        post.post_id,
-        source.name or "",
-        post.post_url,
+    *,
+    inline_comment: bool,
+) -> SupportsComment | None:
+    """Probe the adapter's inline-comment capability, warning once if absent."""
+    if not inline_comment:
+        return None
+    supports_comment = isinstance(adapter, SupportsComment)
+    if supports_comment and drafter is not None:
+        return adapter
+    log.warning(
+        "inline_comment_unavailable platform=%s supports_comment=%s "
+        "drafter=%s (scan degrades to like-only)",
+        adapter.platform,
+        supports_comment,
+        drafter is not None,
     )
-    if dedup.is_duplicate(platform, post.post_id):
-        return _PostOutcome()
-
-    reason = adapter.pre_filter(post)
-    if reason is not None:
-        return _PostOutcome(pre_filter_reason=reason)
-
-    base = score_relevance(post)
-    score = adapter.adjust_score(post, base)
-    if not policy.is_candidate(score):
-        return _PostOutcome()
-
-    like_attempted = False
-    like_succeeded = False
-    # Quota-gate before rate-tracker probe: `rate_limiter.DAILY_LIMITS` has no
-    # `facebook:like` key (FB doesn't like inline today) and `can_act` raises
-    # on unknown keys. Skip both for platforms with daily_like_quota == 0.
-    if policy.daily_like_quota.get(platform, 0) > 0 and rate_tracker.can_act(
-        platform, "like"
-    ):
-        like_attempted = True
-        result = adapter.like(post)
-        if result.liked:
-            like_succeeded = True
-            rate_tracker.record_action(platform, "like")
-            dedup.mark_engaged(
-                platform, post.post_id, "like", source.name or ""
-            )
-            log.info(
-                "post_liked platform=%s post_id=%s url=%s",
-                platform,
-                post.post_id,
-                post.post_url,
-            )
-        else:
-            log.info(
-                "post_like_failed platform=%s post_id=%s reason=%s url=%s",
-                platform,
-                post.post_id,
-                result.reason,
-                post.post_url,
-            )
-
-    candidate_score: float | None = None
-    if _is_comment_candidate(platform, post, score, policy):
-        candidate_score = score
-        log.info(
-            "post_candidate platform=%s post_id=%s score=%.2f url=%s",
-            platform,
-            post.post_id,
-            score,
-            post.post_url,
-        )
-    elif score >= 0.5:
-        # Log near-misses at info level so users can see why posts were skipped.
-        log.info(
-            "post_skipped platform=%s post_id=%s score=%.2f url=%s",
-            platform,
-            post.post_id,
-            score,
-            post.post_url,
-        )
-
-    return _PostOutcome(
-        like_attempted=like_attempted,
-        like_succeeded=like_succeeded,
-        candidate_score=candidate_score,
-    )
+    return None
 
 
-def _is_comment_candidate(
-    platform: str, post: Post, score: float, policy: EngagementPolicy
-) -> bool:
-    """Platform-specific comment-candidacy gate.
-
-    IG requires '?' in the post text (Nalla's-Dad voice answers genuine
-    questions only); FB has no such gate today.
-    """
-    if not policy.is_comment_candidate(score):
-        return False
-    if platform == "instagram":
-        return "?" in post.text
-    return True
+def _pace_between_sources(platform: str, rate_tracker: _RateTracker) -> None:
+    """Human-cadence pause between Facebook group visits."""
+    if platform == "facebook" and rate_tracker.can_act(platform, "group_visit"):
+        rate_tracker.wait_random_delay(platform, "group_visit")
 
 
-def _cherry_pick_and_queue(
+def _drain_to_queue(
     *,
     platform: str,
     candidates: list[tuple[Post, float]],
     policy: EngagementPolicy,
     drafter: _Drafter | None,
-    queue_io: _QueueIO,
+    queue_io: _QueueIO | None,
     now_iso: Callable[[], str],
     log: _Log,
+    dry_run: bool,
+    inline_comment: bool,
 ) -> int:
-    """Sort by score desc, take top-N within today's quota, draft + queue.
+    """Cherry-pick candidates into the comment queue and persist it.
 
-    When ``drafter`` is ``None`` the scan only enqueues the target post with an
-    empty ``draft_comment`` (scan-only mode); drafting happens later, at post
-    time, in the platform's dedicated commenter (e.g. ``scripts/fb_comment.py``).
+    Single-pass mode already commented in-visit: there is no handoff to a
+    later commenter stage, so nothing is queued or persisted.
     """
-    quota = policy.daily_comment_quota.get(platform, 0)
-    existing = queue_io.existing_today(platform)
-    budget = max(0, quota - existing)
-    if budget == 0:
+    if inline_comment or queue_io is None:
         return 0
-
-    selected = sorted(candidates, key=lambda c: c[1], reverse=True)[:budget]
-    queued = 0
-    for post, score in selected:
-        draft = (
-            drafter.draft_comment_for_post(
-                platform=platform,
-                post_text=post.text,
-                group_or_hashtag=post.source_name,
-                post_url=post.post_url,
-            )
-            if drafter is not None
-            else ""
-        )
-        if not draft and drafter is not None:
-            log.info(
-                "draft_inline_empty platform=%s post_url=%s",
-                platform,
-                post.post_url,
-            )
-        record = post.to_queue_record(
-            score=score,
-            draft=draft,
-            requires_approval=(
-                policy.requires_approval(score) or platform == "instagram"
-            ),
-            queued_at=now_iso(),
-        )
-        queue_io.append(record)
-        log_engagement(
-            "queued",
-            platform,
-            post.post_url,
-            f"Queued post for commenting: {post.post_url} (score={score:.2f})",
-        )
-        log.info(
-            "post_queued platform=%s post_id=%s score=%.2f url=%s",
-            platform,
-            post.post_id,
-            score,
-            post.post_url,
-        )
-        queued += 1
+    queued = cherry_pick_and_queue(
+        platform=platform,
+        candidates=candidates,
+        policy=policy,
+        drafter=drafter,
+        queue_io=queue_io,
+        now_iso=now_iso,
+        log=log,
+        dry_run=dry_run,
+    )
+    if not dry_run:
+        queue_io.save()
     return queued
+
+
+class _Counters:
+    """Mutable running totals for one scan, folded into a `ScanReport`.
+
+    `collect_candidates` controls only whether the (post, score) pairs are
+    retained for the cherry-pick — the candidate COUNT is always tracked,
+    since the report exposes it in both modes.
+    """
+
+    def __init__(self, platform: str, *, collect_candidates: bool) -> None:
+        self.platform = platform
+        self._collect_candidates = collect_candidates
+        self.candidates: list[tuple[Post, float]] = []
+        self.candidate_count = 0
+        self.sources_visited = 0
+        self.posts_scanned = 0
+        self.likes_attempted = 0
+        self.likes_succeeded = 0
+        self.comments_attempted = 0
+        self.comments_posted = 0
+        self.comments_declined = 0
+        self.pre_filtered: dict[str, int] = {}
+        self.pre_filtered_posts: list[tuple[str, str]] = []
+
+    def add(self, post: Post, outcome: PostOutcome) -> None:
+        """Fold one post's outcome into the running totals."""
+        self.posts_scanned += 1
+        if outcome.pre_filter_reason is not None:
+            self._add_pre_filtered(post, outcome.pre_filter_reason)
+            return
+        self.likes_attempted += int(outcome.like_attempted)
+        self.likes_succeeded += int(outcome.like_succeeded)
+        self.comments_attempted += int(outcome.comment_attempted)
+        self.comments_posted += int(outcome.comment_posted)
+        self.comments_declined += int(outcome.comment_declined)
+        if outcome.candidate_score is not None:
+            self._add_candidate(post, outcome.candidate_score)
+
+    def _add_pre_filtered(self, post: Post, reason: str) -> None:
+        """Record one adapter rejection, by reason and by post."""
+        self.pre_filtered[reason] = self.pre_filtered.get(reason, 0) + 1
+        self.pre_filtered_posts.append((post.post_id, reason))
+
+    def _add_candidate(self, post: Post, score: float) -> None:
+        """Count a comment candidate, retaining it only for the two-stage path."""
+        self.candidate_count += 1
+        if self._collect_candidates:
+            self.candidates.append((post, score))
+
+    def to_report(self, queued: int) -> ScanReport:
+        """Freeze the running totals into the scan's public result."""
+        return ScanReport(
+            platform=self.platform,
+            sources_visited=self.sources_visited,
+            posts_scanned=self.posts_scanned,
+            candidates=self.candidate_count,
+            likes_attempted=self.likes_attempted,
+            likes_succeeded=self.likes_succeeded,
+            queued=queued,
+            pre_filtered=self.pre_filtered,
+            pre_filtered_posts=self.pre_filtered_posts,
+            comments_attempted=self.comments_attempted,
+            comments_posted=self.comments_posted,
+            comments_declined=self.comments_declined,
+        )

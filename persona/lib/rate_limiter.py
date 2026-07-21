@@ -131,6 +131,20 @@ def _action_key(platform: Platform, action: ActionType) -> str:
     return f"{platform}:{action}"
 
 
+def daily_limit(platform: Platform, action: ActionType) -> int:
+    """The daily cap this module actually enforces for `platform:action`.
+
+    Callers that display a quota must read it from here rather than from
+    `EngagementPolicy`, which is built from `config.json` and can drift from
+    the generated `data/rate_limits.json` artifact enforced by `can_act`.
+    """
+    key = _action_key(platform, action)
+    limit = DAILY_LIMITS.get(key)
+    if limit is None:
+        raise ValueError(f"Unknown action key: {key}")
+    return limit
+
+
 def can_act(platform: Platform, action: ActionType) -> bool:
     """Returns True if the daily limit has not been reached."""
     key = _action_key(platform, action)

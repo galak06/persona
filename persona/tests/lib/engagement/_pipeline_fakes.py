@@ -36,17 +36,45 @@ class FakeDedup:
         self.engaged.append((platform, post_id, action, group_or_hashtag))
 
 
+class FakeIterateOnceDedup(FakeDedup):
+    """Dedup double that ALSO implements the optional `mark_seen` capability.
+
+    Mirrors `scripts.ig_scan._ScanDedup`: a post marked seen is a duplicate
+    on the next run, whatever the outcome of this one. Plain `FakeDedup` has
+    no `mark_seen` — that models the bare `deduplication` module Facebook
+    passes, so tests can prove the capability probe leaves FB untouched.
+    """
+
+    def __init__(self, seen: set[str] | None = None) -> None:
+        super().__init__(seen)
+        self.seen_marked: list[tuple[str, str]] = []
+
+    def mark_seen(self, platform: str, post_id: str) -> None:
+        self.seen_marked.append((platform, post_id))
+        self.seen.add(post_id)
+
+
 class FakeRateTracker:
-    def __init__(self, *, visits_left: int = 99, likes_left: int = 99) -> None:
+    def __init__(
+        self,
+        *,
+        visits_left: int = 99,
+        likes_left: int = 99,
+        comments_left: int = 99,
+    ) -> None:
         self.visits_left = visits_left
         self.likes_left = likes_left
+        self.comments_left = comments_left
         self.recorded: list[tuple[str, str]] = []
+        self.delays: list[tuple[str, str]] = []
 
     def can_act(self, platform: str, action: str) -> bool:
         if action == "group_visit":
             return self.visits_left > 0
         if action == "like":
             return self.likes_left > 0
+        if action == "comment":
+            return self.comments_left > 0
         return True
 
     def record_action(self, platform: str, action: str) -> int:
@@ -55,15 +83,22 @@ class FakeRateTracker:
             self.visits_left -= 1
         if action == "like":
             self.likes_left -= 1
+        if action == "comment":
+            self.comments_left -= 1
         return 0
 
     def wait_random_delay(self, platform: str, action: str) -> None:
-        pass
+        self.delays.append((platform, action))
 
 
 class FakeDrafter:
-    def __init__(self) -> None:
+    """Drafter double. `engage=False` models the agent declining a post,
+    which the real `draft_helper.draft_comment_for_post` signals by
+    returning an empty string."""
+
+    def __init__(self, *, engage: bool = True) -> None:
         self.calls: list[dict[str, object]] = []
+        self._engage = engage
 
     def draft_comment_for_post(
         self,
@@ -74,6 +109,8 @@ class FakeDrafter:
         post_url: str,
     ) -> str:
         self.calls.append({"platform": platform, "post_url": post_url})
+        if not self._engage:
+            return ""
         return f"DRAFT for {post_url}"
 
 
@@ -185,6 +222,8 @@ def run(
     queue_io: FakeQueueIO | None = None,
     log: FakeLog | None = None,
     score: Callable[[Post], float] = stub_score,
+    dry_run: bool = False,
+    inline_comment: bool = False,
 ) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter, FakeQueueIO]:
     """Run pipeline with sensible defaults; return report + collaborators.
 
@@ -207,5 +246,7 @@ def run(
         log=lg,
         now_iso=stub_now,
         score_relevance=score,
+        dry_run=dry_run,
+        inline_comment=inline_comment,
     )
     return report, d, rt, dr, q

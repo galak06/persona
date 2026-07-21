@@ -1,14 +1,14 @@
 """InstagramHashtagAdapter — outbound engagement on IG hashtag pages.
 
-Implements OutboundAdapter. Owns the Playwright session, hashtag iteration,
-post detail extraction, the inline like action, and the IG-specific
-pre-filters (competitor, own-account, age) + score adjustment.
+Implements OutboundAdapter (plus the optional SupportsComment capability).
+Owns hashtag iteration, post detail extraction, the inline like + comment
+actions, and the IG-specific pre-filters (competitor, own-account, age) +
+score adjustment. The Playwright session lifecycle lives in
+instagram_session.py; DOM constants in instagram_dom.py; text parsing in
+instagram_parsing.py.
 
-Absorbs the former IG-like-helpers module (deleted during this refactor); its
-constants, JS payloads, and helpers now live in instagram_dom.py + this file.
-
-Scanner orchestration (loop over sources, score, draft, queue write) stays in
-scripts/ig_scan.py until the next refactor wave.
+Scanner orchestration (loop over sources, score, draft, comment) lives in
+lib/engagement/pipeline.py; scripts/ig_scan.py is the thin wrapper.
 """
 
 from __future__ import annotations
@@ -17,21 +17,16 @@ import csv
 import logging
 import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 
 from lib.engagement.adapters.instagram_dom import (
     CLICK_LIKE_JS,
     COMPETITOR_ACCOUNTS,
     EXTRACT_HASHTAG_POSTS_JS,
     EXTRACT_POST_DETAILS_JS,
-    OVERLAY_SELECTORS,
     OWN_ACCOUNT,
 )
 from lib.engagement.adapters.instagram_parsing import (
@@ -41,9 +36,10 @@ from lib.engagement.adapters.instagram_parsing import (
     parse_post_age_weeks,
     should_scan_today,
 )
+from lib.engagement.adapters.instagram_session import InstagramSession
 from lib.engagement.post import Post
-from lib.engagement.result import LikeResult
-from lib.local_env import get_runtime_headless
+from lib.engagement.result import CommentResult, LikeResult
+from lib.ig.comment_post import post_comment_ig
 
 _log = logging.getLogger(__name__)
 
@@ -59,7 +55,7 @@ class _IGSource:
 
 
 class InstagramHashtagAdapter:
-    """OutboundAdapter for Instagram hashtag scanning + inline likes."""
+    """OutboundAdapter for Instagram hashtag scanning + inline likes/comments."""
 
     platform: str = "instagram"
 
@@ -74,55 +70,12 @@ class InstagramHashtagAdapter:
         `get_runtime_headless()` (see lib/local_env.py), not from `config`.
         """
         self._config = config
-        self._session_file: Path = Path(str(config["session_file"]))
         self._hashtag_file: Path = Path(str(config["hashtag_file"]))
-        self._playwright: Playwright | None = None
-        self._browser: Browser | None = None
-        self._context: BrowserContext | None = None
-        self._page: Page | None = None
+        self._session = InstagramSession(Path(str(config["session_file"])))
 
-    @contextmanager
-    def session(self) -> Iterator[None]:
-        """Open Playwright, restore IG cookies, validate login. Tear down on exit.
-
-        Lifted from ig_scan.py:381-411. Raises RuntimeError if the session has
-        expired so the scanner can log SESSION_EXPIRED + abort.
-        """
-        from playwright.sync_api import sync_playwright
-
-        if not self._session_file.exists():
-            raise RuntimeError(
-                f"No saved Instagram session at {self._session_file}; "
-                "run scripts/ig_login.py first."
-            )
-
-        playwright = sync_playwright().start()
-        self._playwright = playwright
-        try:
-            browser = playwright.chromium.launch(headless=get_runtime_headless())
-            self._browser = browser
-            context = browser.new_context(
-                storage_state=str(self._session_file),
-                viewport={"width": 1280, "height": 900},
-                user_agent=(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/131.0.0.0 Safari/537.36"
-                ),
-            )
-            self._context = context
-            page = context.new_page()
-            self._page = page
-            page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
-            time.sleep(4)
-            url = (page.url or "").lower()
-            if "login" in url or "accounts/login" in url:
-                raise RuntimeError("SESSION_EXPIRED: Instagram login required")
-            self._dismiss_overlays()
-            time.sleep(2)
-            yield
-        finally:
-            self._teardown_session()
+    def session(self) -> AbstractContextManager[None]:
+        """Open + tear down the authenticated Playwright session."""
+        return self._session.open()
 
     def list_sources(self) -> list[_IGSource]:
         """Read instagram_accounts.csv and filter to rows scheduled for today."""
@@ -153,7 +106,7 @@ class InstagramHashtagAdapter:
         twice, extracts up to 15 post links, then opens each post and extracts
         caption/author/like/comment text.
         """
-        page = self._require_page()
+        page = self._session.require_page()
         try:
             page.goto(source.url, wait_until="domcontentloaded", timeout=60_000)
         except Exception:
@@ -170,7 +123,7 @@ class InstagramHashtagAdapter:
             _log.warning("instagram_hashtag_blocked", extra={"hashtag": source.name})
             return
 
-        self._dismiss_overlays()
+        self._session.dismiss_overlays()
         for _ in range(2):
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             time.sleep(2)
@@ -189,7 +142,7 @@ class InstagramHashtagAdapter:
                     page.wait_for_load_state("networkidle", timeout=15_000)
                 except Exception:
                     pass
-            self._dismiss_overlays()
+            self._session.dismiss_overlays()
             try:
                 details = page.evaluate(EXTRACT_POST_DETAILS_JS) or {}
             except Exception:
@@ -247,12 +200,12 @@ class InstagramHashtagAdapter:
 
     def like(self, post: Post) -> LikeResult:
         """Click the like button on `post`. Page navigates to the post URL if needed."""
-        page = self._require_page()
+        page = self._session.require_page()
         try:
             if (page.url or "") != post.post_url:
                 page.goto(post.post_url, wait_until="domcontentloaded")
                 time.sleep(3)
-                self._dismiss_overlays()
+                self._session.dismiss_overlays()
             result = page.evaluate(CLICK_LIKE_JS)
         except Exception as exc:
             return LikeResult.failed(f"exception:{exc.__class__.__name__}")
@@ -262,45 +215,27 @@ class InstagramHashtagAdapter:
             return LikeResult.skipped("already_liked")
         return LikeResult.failed(f"button:{result}")
 
-    def _require_page(self) -> Page:
-        if self._page is None:
-            raise RuntimeError("InstagramHashtagAdapter: session() not active")
-        return self._page
+    def comment(self, post: Post, text: str) -> CommentResult:
+        """Submit `text` as a comment on `post` (satisfies `SupportsComment`).
 
-    def _teardown_session(self) -> None:
-        """Persist cookies, close browser + playwright. Safe to call on partial init."""
-        context = self._context
-        if context is not None:
-            try:
-                context.storage_state(path=str(self._session_file))
-            except Exception:
-                _log.exception("instagram_session_save_failed")
-        browser = self._browser
-        if browser is not None:
-            try:
-                browser.close()
-            except Exception:
-                _log.debug("instagram_browser_close_failed", exc_info=True)
-        playwright = self._playwright
-        if playwright is not None:
-            try:
-                playwright.stop()
-            except Exception:
-                _log.debug("instagram_playwright_stop_failed", exc_info=True)
-        self._page = self._context = self._browser = self._playwright = None
+        Delegates the DOM walk to `lib.ig.comment_post.post_comment_ig`, the
+        same posting path `scripts/ig_comment.py` uses — this adapter only
+        supplies the authenticated page and maps the bool to a CommentResult.
 
-    def _dismiss_overlays(self) -> None:
-        """Click through Instagram popups (notifications, cookies, login prompts)."""
-        page = self._page
-        if page is None:
-            return
-        for sel in OVERLAY_SELECTORS:
-            try:
-                btn = page.locator(sel)
-                if btn.count() > 0:
-                    btn.first.click(timeout=2000)
-                    time.sleep(1)
-                    return
-            except Exception:
-                _log.debug("instagram_overlay_dismiss_failed", extra={"selector": sel})
-                continue
+        In single-pass mode `like()` has just left the page on this post's
+        URL, so the navigation is skipped when we are already there (same
+        guard `like()` uses); a full page load per comment is pure cost.
+        """
+        page = self._session.require_page()
+        try:
+            posted = post_comment_ig(
+                page,
+                post.post_url,
+                text,
+                skip_navigation=(page.url or "") == post.post_url,
+            )
+        except Exception as exc:
+            return CommentResult.failed(f"exception:{exc.__class__.__name__}")
+        if posted:
+            return CommentResult.ok()
+        return CommentResult.failed("comment_box_not_found")

@@ -8,7 +8,6 @@ marks.
 
 from __future__ import annotations
 
-import json
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -37,6 +36,7 @@ from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.io.jsonio import read_json, write_json
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, print_status
 
@@ -70,7 +70,7 @@ class _QueueIO:
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._existing: list[dict[str, Any]] = json.loads(path.read_text()) if path.exists() else []
+        self._existing: list[dict[str, Any]] = read_json(path, default=[])  # type: ignore[assignment]
         self.newly_queued: list[dict[str, Any]] = []
 
     def append(self, record: dict[str, object]) -> None:
@@ -79,8 +79,7 @@ class _QueueIO:
         self.newly_queued.append(rec)  # type: ignore[arg-type]
 
     def save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._existing, indent=2))
+        write_json(self._path, self._existing)
 
     def existing_today(self, platform: str) -> int:
         today = date.today().isoformat()
@@ -91,10 +90,6 @@ class _QueueIO:
             and str(q.get("queued_at", "")).startswith(today)
             and q not in self.newly_queued
         )
-
-
-def _load_json(path: Path, default: Any) -> Any:
-    return json.loads(path.read_text()) if path.exists() else default
 
 
 def _score_post(post: Post) -> float:
@@ -130,7 +125,7 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
         skill_skipped("fb-scanner", msg)
         return None
 
-    last_run = _load_json(LAST_RUN_FILE, {})
+    last_run: dict[str, Any] = read_json(LAST_RUN_FILE, default={})  # type: ignore[assignment]
     if _already_ran_today(last_run) and "--force" not in sys.argv:
         skill_skipped("fb-scanner", "already ran successfully today")
         log_trace("facebook", "Skipped: already ran today")
@@ -143,7 +138,7 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     skill_started("fb-scanner", "Scanning Facebook dog groups for posts to engage with")
     print_status()
 
-    config = _load_json(CONFIG_FILE, {})
+    config: dict[str, Any] = read_json(CONFIG_FILE, default={})  # type: ignore[assignment]
     # Inject resolved paths so the adapter doesn't get empty strings
     config["paths"] = {
         "facebook_session": str(settings.paths.facebook_session),
@@ -201,8 +196,7 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
         "posts_queued": report.queued,
         "status": "success",
     }
-    LAST_RUN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LAST_RUN_FILE.write_text(json.dumps(last_run, indent=2))
+    write_json(LAST_RUN_FILE, last_run)
 
     quota = policy.daily_comment_quota.get("facebook", 5)
     disabled = report.pre_filtered.get("comments_disabled", 0)

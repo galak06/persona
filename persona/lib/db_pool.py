@@ -9,8 +9,12 @@ stay on Supabase this stage and are untouched by this module.
 
 Environment variables:
     DATABASE_URL -- libpq connection string, e.g.
-        ``postgresql://persona:persona@localhost:5432/persona``.
-        Falls back to `DEFAULT_DSN` (local dev default) when unset.
+        ``postgresql://persona:persona@localhost:5434/persona`` for host runs.
+        REQUIRED: if unset or empty, `get_pool()` raises loudly at first use
+        rather than falling back to a credential-less default DSN (which used
+        to connect with no password and die opaquely later with
+        ``PoolTimeout: no password supplied``). docker-compose injects it for
+        the api/worker containers.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_DSN = "postgresql://localhost:5434/persona"
+_ENV_VAR = "DATABASE_URL"
 _MIN_SIZE = 1
 _MAX_SIZE = 10
 _CONNECT_TIMEOUT_SECONDS = 5  # per-connection TCP connect timeout (libpq)
@@ -36,8 +40,25 @@ _pool_lock = threading.Lock()
 
 
 def _dsn() -> str:
-    """Resolve the connection string, DATABASE_URL first, local default otherwise."""
-    return os.environ.get("DATABASE_URL", DEFAULT_DSN)
+    """Resolve the libpq connection string from ``DATABASE_URL``.
+
+    Fails loudly when the variable is unset or empty instead of falling back to
+    a credential-less default DSN -- that silent fallback connected with no
+    password and died deep in the pool with an opaque
+    ``PoolTimeout: no password supplied`` on host runs. Raised lazily (at
+    pool-creation time, not import) so importing this module never blows up.
+    """
+    dsn = os.environ.get(_ENV_VAR, "").strip()
+    if not dsn:
+        message = (
+            f"{_ENV_VAR} is not set -- the DB pool has no credentials to "
+            f"connect with. Set {_ENV_VAR} before running (host runs: "
+            "postgresql://persona:persona@localhost:5434/persona), or run "
+            "inside the api/worker container where docker-compose injects it."
+        )
+        logger.error("db_pool_dsn_unset", error=message)
+        raise RuntimeError(message)
+    return dsn
 
 
 def get_pool() -> ConnectionPool:

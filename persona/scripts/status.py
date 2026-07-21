@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
 SCHEDULE_FILE = settings.paths.schedule_file
@@ -66,6 +67,24 @@ def status_icon(last_run_entry: dict) -> str:
     if last_run_entry:
         return "⚠️ "
     return "⬜"
+
+
+def _ig_scanner_stat(entry: dict) -> str:
+    """One-line IG scanner stat, for both the single-pass and legacy shapes.
+
+    Instagram is single-pass now: ``ig_scan.py`` likes and comments in one
+    visit and writes ``posts_commented`` / ``comments_declined``. Entries
+    written before that migration (and Facebook's, which is still two-stage)
+    carry ``posts_queued_for_comment`` instead, so fall back to it rather
+    than rendering a bare "?" against old runs.
+    """
+    liked = entry.get("posts_liked", "?")
+    if "posts_commented" in entry:
+        return (
+            f"liked={liked} commented={entry['posts_commented']} "
+            f"declined={entry.get('comments_declined', '?')}"
+        )
+    return f"liked={liked} queued={entry.get('posts_queued_for_comment', '?')}"
 
 
 def main() -> None:
@@ -118,7 +137,7 @@ def main() -> None:
                 f"groups={entry.get('groups_scanned', '?')} queued={entry.get('posts_queued', '?')}"
             )
         elif key == "ig_scanner":
-            stat = f"liked={entry.get('posts_liked', '?')} queued={entry.get('posts_queued_for_comment', '?')}"
+            stat = _ig_scanner_stat(entry)
         elif key == "comment_composer":
             stat = f"posted={entry.get('comments_posted', '?')} skipped={entry.get('comments_skipped', '?')}"
         elif key == "fb_group_scout":
