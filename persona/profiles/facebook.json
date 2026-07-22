@@ -3,13 +3,13 @@
   "rate_limits": {
     "page_posts_per_day": 3,
     "group_posts_per_day": 10,
-    "comments_per_day": 15,
+    "comments_per_day": 5,
     "likes_per_day": 5,
-    "group_visits_per_day": 15,
+    "group_visits_per_day": 6,
     "group_join_requests_per_week": 15,
     "group_join_requests_per_day": 5,
     "delay_between_comments": "30-120s random",
-    "delay_between_group_visits": "3-5s random",
+    "delay_between_group_visits": "45-180s random",
     "delay_between_likes": "30-90s random"
   },
   "flows": [
