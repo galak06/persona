@@ -28,12 +28,14 @@ REFERENCE_CONFIG = REFERENCE_BRAND_DIR / "config.json"
 
 CLI_MODULE = "scripts.publish_campaign"
 
-_NOOP_HOOK = "def main(**kwargs):\n    return True\n"
+# `function == "main"` hooks are CLI entry points returning a Unix exit code
+# (0 = success), matching real hooks like scripts/publish_prepared.py::main.
+_NOOP_HOOK = "def main(**kwargs):\n    return 0\n"
 _MARKER_HOOK_TEMPLATE = (
     "from pathlib import Path\n"
     "def main(**kwargs):\n"
     "    Path({marker!r}).write_text('done', encoding='utf-8')\n"
-    "    return True\n"
+    "    return 0\n"
 )
 
 

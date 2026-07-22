@@ -3,10 +3,10 @@
   "rate_limits": {
     "feed_posts_per_day": 2,
     "likes_per_day": 20,
-    "comments_per_day": 15,
+    "comments_per_day": 10,
     "follows_per_day": 22,
     "delay_between_likes": "10-45s random",
-    "delay_between_comments": "3-10s random",
+    "delay_between_comments": "120-180s random",
     "delay_between_follows": "60-180s random"
   },
   "flows": [

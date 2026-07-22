@@ -199,14 +199,45 @@ def build_fb_environment(
     }
 
 
+def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sever ``ScanDedup``'s Postgres side so IG single-pass tests stay hermetic.
+
+    Post-PR#36 IG runs the single-pass pipeline with ``lib.scan_dedup.ScanDedup``,
+    whose iterate-once seen-marks live in Postgres ``completed_tasks``. Tests want
+    neither the DB dependency nor the cross-test pollution real marks cause (post
+    ids repeat across cases), so we stub the two Postgres calls ``scan_dedup``
+    binds by name: reads return an empty set, writes are no-ops. Iterate-once
+    still works WITHIN a run via ScanDedup's in-memory ``_seen_ids`` set; the JSON
+    ``deduplication`` side keeps using the tmp cache (via ``patch_bare_path_modules``).
+
+    Also silence the inline-comment engagement-log writer: a posted comment calls
+    ``log_engagement`` with no path override, which would append to the REAL brand
+    ``engagement_log.jsonl`` — a live-brand side effect a test must not have.
+    """
+    import lib.engagement.inline_comment as inline_comment
+    import lib.scan_dedup as scan_dedup
+
+    monkeypatch.setattr(scan_dedup, "completed_entity_ids", lambda *_a, **_k: set())
+    monkeypatch.setattr(scan_dedup, "record_done", lambda *_a, **_k: True)
+    monkeypatch.setattr(inline_comment, "log_engagement", lambda *_a, **_k: None)
+
+
 def build_ig_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
-    """Tmp-path environment for ``scripts.ig_scan`` tests.
+    """Tmp-path environment for ``scripts.ig_scan`` tests (SINGLE-PASS).
 
-    Returns ``{"state_dir", "tmp_path", "config_path", "queue_path"}`` so
-    individual tests can read the resulting queue / dedup / tracker files
-    for assertions, or rewrite the config file to override the policy.
+    Post-PR#36 Instagram likes AND comments in one visit and persists no queue,
+    so ``ig_scan`` no longer exposes a ``QUEUE_FILE`` to patch. We redirect the
+    two path constants it still owns (``LAST_RUN_FILE``, ``CONFIG_FILE``) plus
+    the bare dedup/rate/log path modules, and neutralize the single-pass
+    collaborators the run now reaches for (``ScanDedup``'s Postgres backend, the
+    trace + engagement JSONL writers) so a run touches no real brand state.
+
+    Returns ``{"state_dir", "tmp_path", "config_path", "rate_path",
+    "last_run_path"}`` so individual tests can pre-spend the rate-limiter budget
+    (``rate_path``), assert the last-run stamp (``last_run_path``), or rewrite
+    the config file to override the policy.
     """
     state_dir = tmp_path / "state"
     state_dir.mkdir(parents=True)
@@ -216,25 +247,28 @@ def build_ig_environment(
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(build_config_payload()))
 
-    queue_path = state_dir / "comment_queue.json"
     last_run_path = state_dir / "last_run.json"
     dedup_path = state_dir / "dedup_cache.json"
     rate_path = state_dir / "rate_limit_tracker.json"
     engagement_log_path = logs_dir / "engagement_log.jsonl"
 
-    seed_empty_state(queue_path, last_run_path, dedup_path, rate_path)
+    seed_empty_state(last_run_path, dedup_path, rate_path)
 
     from scripts import ig_scan
 
-    monkeypatch.setattr(ig_scan, "QUEUE_FILE", queue_path)
+    # No QUEUE_FILE: IG is single-pass, no Redis/queue handoff (PR#36). The
+    # scan likes+comments inline, so only these two path constants remain.
     monkeypatch.setattr(ig_scan, "LAST_RUN_FILE", last_run_path)
     monkeypatch.setattr(ig_scan, "CONFIG_FILE", config_path)
+    # `log_trace` writes to the real brand engagement log; no-op it in tests.
+    monkeypatch.setattr(ig_scan, "log_trace", lambda *_a, **_k: None)
     patch_bare_path_modules(
         monkeypatch,
         dedup_file=dedup_path,
         rate_limit_file=rate_path,
         engagement_log_path=engagement_log_path,
     )
+    neutralize_scan_dedup_backend(monkeypatch)
 
     def _fake_draft(
         *,
@@ -263,5 +297,6 @@ def build_ig_environment(
         "state_dir": state_dir,
         "tmp_path": tmp_path,
         "config_path": config_path,
-        "queue_path": queue_path,
+        "rate_path": rate_path,
+        "last_run_path": last_run_path,
     }

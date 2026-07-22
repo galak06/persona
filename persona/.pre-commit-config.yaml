@@ -10,16 +10,16 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-        files: ^social-automation/(lib|scripts|tests)/.*\.py$
+        files: ^persona/(lib|scripts|tests)/.*\.py$
       - id: ruff-format
-        files: ^social-automation/(lib|scripts|tests)/.*\.py$
+        files: ^persona/(lib|scripts|tests)/.*\.py$
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.11.2
     hooks:
       - id: mypy
-        files: ^social-automation/lib/(errors|observability|runtime)/.*\.py$
-        args: [--config-file=social-automation/pyproject.toml]
+        files: ^persona/lib/(errors|observability|runtime)/.*\.py$
+        args: [--config-file=persona/pyproject.toml]
         additional_dependencies:
           - structlog>=24.1.0
           - python-json-logger>=2.0.7
