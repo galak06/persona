@@ -9,6 +9,7 @@ regardless of whether/how tracing succeeds or fails.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -17,6 +18,15 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 
 import llm_tracing as lt
+
+# langfuse is an OPTIONAL dependency. Only the test that monkeypatches
+# `langfuse.get_client` actually imports the package (monkeypatch.setattr on a
+# dotted string target imports the module); every other test either short-
+# circuits before the import or patches `lt._client` directly.
+_HAS_LANGFUSE = importlib.util.find_spec("langfuse") is not None
+requires_langfuse = pytest.mark.skipif(
+    not _HAS_LANGFUSE, reason="langfuse not installed (optional dependency)"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +78,7 @@ def test_client_returns_none_without_both_keys(monkeypatch: pytest.MonkeyPatch) 
     assert lt._client() is None
 
 
+@requires_langfuse
 def test_client_returns_none_when_get_client_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
