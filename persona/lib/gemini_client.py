@@ -74,7 +74,7 @@ def _gemini_request(
 
     def _do_call() -> dict[str, Any] | None:
         try:
-            r = httpx.post(url, params={"key": key}, json=payload, timeout=30.0)
+            r = httpx.post(url, headers={"x-goog-api-key": key}, json=payload, timeout=30.0)
             if r.status_code >= 400:
                 logger.warning("gemini HTTP %s: %s", r.status_code, r.text[:200])
                 return None
