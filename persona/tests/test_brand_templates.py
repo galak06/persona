@@ -68,16 +68,34 @@ def test_render_config_json_writes_keywords_and_competitor_accounts_explicitly()
     assert data["content_analysis"]["competitor_accounts"] == ["@rival1"]
 
 
-def test_render_config_json_writes_empty_keyword_lists_explicitly_not_omitted() -> None:
-    """A brand with no keywords still gets the keys (as empty lists) -- this is
-    what opts it OUT of comment_generator.py's missing-key-only fallback."""
+def test_render_config_json_omits_empty_keyword_categories() -> None:
+    """A brand with no keywords renders an EMPTY keywords dict (categories
+    omitted, never written as `[]`). An omitted category is what lets
+    comment_generator.score_relevance fall back to its broad DEFAULT_* lists,
+    so a freshly onboarded brand scores posts usefully instead of a
+    present-but-empty list shadowing the defaults and collapsing every
+    relevance score to ~0. competitor_accounts is a separate key (defaults []).
+    """
     data = render_config_json(MINIMAL_SPEC)
-    assert data["content_analysis"]["keywords"] == {
-        "primary_keywords": [],
-        "secondary_keywords": [],
-        "competitor_mentions": [],
-    }
+    assert data["content_analysis"]["keywords"] == {}
     assert data["content_analysis"]["competitor_accounts"] == []
+    # The (required) outer keywords key must still round-trip through AppSettings.
+    AppSettings(**data)
+
+
+def test_render_config_json_omits_only_the_empty_keyword_categories() -> None:
+    """Partial keyword input: supplied categories are written verbatim, empty
+    ones are omitted so each falls back to its own DEFAULT_* list independently
+    (rather than one blank category shadowing its default)."""
+    spec = BrandSpec(
+        name="Partial",
+        site_url="https://partial.example",
+        niche="dog food",
+        primary_keywords=["dog food", "kibble"],
+        # secondary_keywords / competitor_mentions deliberately left empty.
+    )
+    keywords = render_config_json(spec)["content_analysis"]["keywords"]
+    assert keywords == {"primary_keywords": ["dog food", "kibble"]}
 
 
 def test_render_config_json_forces_twitter_and_tiktok_disabled() -> None:

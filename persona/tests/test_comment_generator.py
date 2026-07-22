@@ -125,12 +125,17 @@ class TestValidateVoice:
         assert any("Salesy" in v for v in violations)
 
     def test_persona_url_rejected(self):
+        # Engagement comments must never carry the brand's OWN site URL.
+        # validate_voice blocks whatever brand is loaded (settings.site.url),
+        # so the test references that live value rather than a hardcoded
+        # placeholder that only matches one brand.
         comment = (
-            "We wrote about this at your-brand.com — Nalla loved it. What recipe are you using?"
+            f"We wrote about this at {settings.site.url} — Nalla loved it. "
+            "What recipe are you using?"
         )
         valid, violations = validate_voice(comment)
         assert not valid
-        assert any("your-brand.com" in v for v in violations)
+        assert any(settings.site.url in v for v in violations)
 
     def test_persona_url_allowed_when_flag_set(self):
         """Brand publishers (FB group posts, FB page link cards, IG carousel
@@ -353,6 +358,38 @@ class TestScoreRelevanceMissingKeyFallback:
         # case (0.75) — proves DEFAULT_* constants reproduce identical
         # scoring when the config key is missing outright.
         assert score == 0.75, f"Missing-key fallback did not use defaults: {score}"
+
+
+class TestOnboardedConfigScoresNonDegenerate:
+    """End-to-end guard for the onboarding regression: a brand provisioned
+    WITHOUT hand-curated keywords must still score posts usefully.
+
+    render_config_json used to write empty `[]` keyword lists, which shadowed
+    the DEFAULT_* lists (present-but-empty never falls back) and collapsed
+    every relevance score to ~0, so scanners queued nothing. The template now
+    OMITS empty keyword categories, so score_relevance falls back to the broad
+    DEFAULT_* lists for a keyword-less brand. This test ties the rendered
+    config to actual scoring, not just its shape.
+    """
+
+    def test_keywordless_rendered_config_uses_defaults(self, monkeypatch):
+        from lib.brand_templates import BrandSpec, render_config_json
+
+        spec = BrandSpec(name="Fresh Co", site_url="https://fresh.example", niche="dog food")
+        rendered = render_config_json(spec)
+        # No keyword categories supplied -> empty keywords dict.
+        assert rendered["content_analysis"]["keywords"] == {}
+        monkeypatch.setattr(
+            settings.content_analysis,
+            "keywords",
+            rendered["content_analysis"]["keywords"],
+        )
+        post = "My dog has been on a raw diet for 3 months, what protein should I try next?"
+        score = score_relevance(post, group_category="food")
+        # Same post/category as the "food_with_question" characterization case
+        # (0.75) -- proves a freshly onboarded, keyword-less brand no longer
+        # produces the degenerate 0-score behavior.
+        assert score == 0.75, f"Onboarded keyword-less config scored degenerate: {score}"
 
 
 # ── build_claude_prompt ──────────────────────────────────────────────────────

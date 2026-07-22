@@ -70,6 +70,35 @@ class BrandSpec:
     group_join_limit: int = _DEFAULT_GROUP_JOIN_LIMIT
 
 
+def _render_keywords(spec: BrandSpec) -> dict[str, list[str]]:
+    """Build `content_analysis.keywords`, omitting categories with no keywords.
+
+    `comment_generator.score_relevance` reads each category with
+    `keywords.get("<category>", DEFAULT_<CATEGORY>)`, so a category that is
+    ABSENT from this dict falls back to the broad DEFAULT_* list in
+    `comment_generator_defaults.py`, whereas a present-but-EMPTY list scores
+    against nothing (a deliberate "no bonus" state). Writing `[]` for a brand
+    that supplied no keywords therefore shadowed the good defaults and
+    collapsed every relevance score to ~0 -- the onboarding regression this
+    guards against. So we emit a category key only when the operator actually
+    supplied keywords for it; a brand onboarded with none renders `{}` here
+    and scores against the full DEFAULT_* lists by default.
+
+    The outer `keywords` key itself is always present (an empty dict when the
+    spec supplied nothing) because `ContentAnalysisConfig.keywords`
+    (`lib/config.py`) is a required field -- omitting it entirely would fail
+    config load and the `AppSettings` round-trip guard.
+    """
+    keywords: dict[str, list[str]] = {}
+    if spec.primary_keywords:
+        keywords["primary_keywords"] = list(spec.primary_keywords)
+    if spec.secondary_keywords:
+        keywords["secondary_keywords"] = list(spec.secondary_keywords)
+    if spec.competitor_mentions:
+        keywords["competitor_mentions"] = list(spec.competitor_mentions)
+    return keywords
+
+
 def render_config_json(spec: BrandSpec) -> dict[str, Any]:
     """Build a complete `AppSettings`-shaped dict from onboarding input.
 
@@ -109,14 +138,14 @@ def render_config_json(spec: BrandSpec) -> dict[str, Any]:
         "rate_limits": RATE_LIMITS,
         "content_analysis": {
             **CONTENT_ANALYSIS_DEFAULTS,
-            # Brand-driven, always written explicitly (even empty) -- opts a
-            # new brand OUT of comment_generator.py's missing-key-only
-            # fallback so it never silently scores against dog-food keywords.
-            "keywords": {
-                "primary_keywords": list(spec.primary_keywords),
-                "secondary_keywords": list(spec.secondary_keywords),
-                "competitor_mentions": list(spec.competitor_mentions),
-            },
+            # Brand-driven. Each category is written ONLY when the operator
+            # actually supplied keywords for it (see `_render_keywords`); an
+            # empty category is omitted so comment_generator.score_relevance
+            # falls back to its broad DEFAULT_* list for that category. This
+            # is what gives a freshly onboarded brand USABLE scoring out of
+            # the box instead of a present-but-empty list shadowing the
+            # defaults and collapsing every relevance score to ~0.
+            "keywords": _render_keywords(spec),
             "competitor_accounts": list(spec.competitor_accounts),
         },
         "approval_gates": APPROVAL_GATES,
