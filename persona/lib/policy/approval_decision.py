@@ -15,7 +15,7 @@ ApprovalReason = Literal[
     "manual_flag",  # item.requires_approval=True from upstream
     "ig_platform",  # all IG comments require approval
     "wp_platform",  # all WP replies require approval (own-site, brand-facing)
-    "url_in_draft",  # draft contains a your-brand.com URL
+    "url_in_draft",  # draft contains a brand-site URL (host from settings.site.url)
     "first_post_to_target",  # never engaged with this group/hashtag before
     "template_reused_recently",  # same template used in same target within 30d
     "auto_approved",  # no rule fired — safe to post without approval

@@ -7,11 +7,18 @@ from typing import Any
 
 import pytest
 
+from lib.config import settings
 from lib.policy import (
     ApprovalContext,
     ApprovalDecision,
     requires_approval,
 )
+from lib.policy.approval import _brand_site_domain, _host_from_url
+
+# The url_in_draft gate matches against the LOADED brand's host, derived from
+# settings.site.url — not a hardcoded placeholder. Drive the URL tests off the
+# same value production uses so they assert the gate fires for the real site.
+BRAND_DOMAIN = _brand_site_domain()
 
 
 def _item(**overrides: Any) -> dict[str, Any]:
@@ -76,14 +83,15 @@ class TestPlatformRules:
 class TestUrlInDraft:
     def test_url_in_draft_requires_approval(self) -> None:
         item = _item(
-            draft_comment="We covered this at https://your-brand.com/x — full breakdown there"
+            draft_comment=f"We covered this at https://{BRAND_DOMAIN}/x — full breakdown there"
         )
         ctx = ApprovalContext(previously_posted=frozenset({"Some Dog Group"}))
         result = requires_approval(item, ctx)
         assert result == ApprovalDecision(needed=True, reason="url_in_draft")
 
     def test_url_match_is_case_insensitive(self) -> None:
-        item = _item(draft_comment="See Persona.com")
+        # Upper-cased brand host must still trip the gate (draft is lowered).
+        item = _item(draft_comment=f"See {BRAND_DOMAIN.upper()}")
         ctx = ApprovalContext(previously_posted=frozenset({"Some Dog Group"}))
         assert requires_approval(item, ctx).reason == "url_in_draft"
 
@@ -91,6 +99,20 @@ class TestUrlInDraft:
         item = _item(draft_comment="No site link — just our Nalla story.")
         ctx = ApprovalContext(previously_posted=frozenset({"Some Dog Group"}))
         assert requires_approval(item, ctx).needed is False
+
+    def test_gate_uses_loaded_brand_domain_not_placeholder(self) -> None:
+        # Regression: the gate used to hardcode "your-brand.com", a placeholder
+        # that never equals the real brand host — so it NEVER fired in prod.
+        # It must now derive the host from settings.site.url and fire for it.
+        assert BRAND_DOMAIN == _host_from_url(settings.site.url)
+        assert BRAND_DOMAIN  # non-empty host resolved from config
+        ctx = ApprovalContext(previously_posted=frozenset({"Some Dog Group"}))
+        real = _item(draft_comment=f"More at https://{BRAND_DOMAIN}/recipes/x")
+        assert requires_approval(real, ctx).reason == "url_in_draft"
+        # And the old placeholder must NOT be what drives the gate anymore.
+        if BRAND_DOMAIN != "your-brand.com":
+            placeholder = _item(draft_comment="See your-brand.com/x for more")
+            assert requires_approval(placeholder, ctx).reason != "url_in_draft"
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -215,7 +237,7 @@ class TestPrecedence:
     def test_platform_wins_over_url(self) -> None:
         item = _item(
             platform="instagram",
-            draft_comment="See your-brand.com/x for more",
+            draft_comment=f"See {BRAND_DOMAIN}/x for more",
         )
         ctx = ApprovalContext()
         assert requires_approval(item, ctx).reason == "ig_platform"
@@ -224,7 +246,7 @@ class TestPrecedence:
         # Draft has URL AND we've never posted to this group.
         # URL rule precedes first_post.
         item = _item(
-            draft_comment="See your-brand.com/x",
+            draft_comment=f"See {BRAND_DOMAIN}/x",
             group_name="Brand New Group",
         )
         ctx = ApprovalContext(previously_posted=frozenset())
