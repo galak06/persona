@@ -1,0 +1,151 @@
+{
+  // Debug configs for the persona engagement pipeline.
+  //
+  // IMPORTANT: ig_pipeline.py runs ig_scan.py / ig_comment.py as SUBPROCESSES,
+  // so breakpoints in ig_scan.py, lib/engagement/pipeline.py or the Instagram
+  // adapter will NOT hit when you debug ig_pipeline.py. Debug the leaf script
+  // directly (the "IG scan" configs below) for anything inside the scan.
+  //
+  // cwd is the repo root because the scripts do
+  // sys.path.insert(parent) / sys.path.insert(parent/"lib") relative to
+  // persona/, and were always invoked as `python persona/scripts/...`.
+  //
+  // envFile supplies DATABASE_URL / REDIS_URL etc. Nothing in the code loads
+  // persona/.env itself -- a bare run without it dies with psycopg_pool.PoolTimeout.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Safest starting point: full scan, no likes, nothing queued.
+      "name": "IG scan — dry run (safe)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "args": ["--dry-run"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        // 0 = watch the browser drive Instagram. Set to 1 to run headless.
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // LIVE: lands real likes on the account and pushes to the Redis queue.
+      "name": "IG scan — LIVE (likes + queues)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "args": [],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // No browser, no network -- just verifies the saved IG session file.
+      "name": "IG scan — health check",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "args": ["--health-check"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "justMyCode": false
+    },
+    {
+      // Drafts comments for queued posts and prints them; posts nothing.
+      // Break in lib/draft_helper.py::draft_comment_for_post to inspect the
+      // {engage, comment, reason} decision before it is acted on.
+      "name": "IG comment — dry run (drafts only)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_comment.py",
+      "args": ["--dry-run"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // LIVE: posts real comments under the persona. --limit 1 caps blast radius.
+      "name": "IG comment — LIVE (limit 1)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_comment.py",
+      "args": ["--limit", "1"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // FULL pipeline, both stages, nothing suppressed:
+      //   Stage 1 ig_scan.py   -> real likes + Redis queue pushes
+      //   Stage 2 ig_comment.py -> REAL PUBLIC COMMENTS under the persona
+      // Note: if the scan already succeeded today, _already_ran_today makes
+      // Stage 1 skip (rc 0) and the run becomes effectively comment-only.
+      // Breakpoints in ig_scan.py / ig_comment.py will NOT hit (subprocesses).
+      "name": "IG pipeline — FULL LIVE (scan + POSTS COMMENTS)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_pipeline.py",
+      "args": [],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // Full pipeline, both stages, nothing published. Safe rehearsal.
+      "name": "IG pipeline — FULL dry run (safe)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/c",
+      "args": ["--dry-run"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PLAYWRIGHT_HEADLESS": "0"
+      },
+      "justMyCode": false
+    },
+    {
+      // Orchestrator itself. Breakpoints only hit in ig_pipeline.py --
+      // the stages it launches are separate processes. Use for flag/arg
+      // routing bugs, not for scan or draft logic.
+      "name": "IG pipeline — orchestrator only (subprocess stages NOT debuggable)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/persona/scripts/ig_pipeline.py",
+      "args": ["--scan-only", "--dry-run"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/persona/.env",     
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      },
+      "justMyCode": false
+    }
+  ]
+}
