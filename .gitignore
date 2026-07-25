@@ -69,6 +69,12 @@ $CLAUDE_SCRATCHPAD_DIR/
 htmlcov/
 coverage.xml
 
+# Dated backup snapshots (e.g. dogfoodandfun.bak-20260710/)
+*.bak-*/
+
+# Repo-root local cache (currently just data/cache/)
+/data/
+
 # Stray AI-generated images at repo root
 Gemini_Generated_Image_*.png
 Gemini_Generated_Image_*.jpg

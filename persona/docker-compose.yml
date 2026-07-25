@@ -71,7 +71,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # 6381, not 6379 -- a native redis-server already binds 127.0.0.1:6379,
+      # so host-side processes (VSCode debug runs, manual scripts) silently hit
+      # THAT instance instead of this one, splitting the task queue in two.
+      # Same collision, same remedy as Postgres on 5434 (b9e6187).
+      # Containers are unaffected: they use redis://redis:6379/0 internally.
+      - "6381:6379"
     volumes:
       - redis_data:/data
     networks:
