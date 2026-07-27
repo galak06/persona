@@ -221,7 +221,7 @@ for handle in js_result:
 After all hashtags complete, call this Python script via Bash. Run from the `social-automation/` directory:
 
 ```bash
-cd /Users/gilcohen/Projects/dogfoodandfun/social-automation && PYTHONPATH=. python3 - <<'PYEOF'
+cd /Users/gilcohen/Projects/persona/app && PYTHONPATH=. python3 - <<'PYEOF'
 import json, sys
 from datetime import UTC, datetime
 from pathlib import Path

@@ -18,7 +18,7 @@ social-automation/.claude/state/
 
 # Content drafts and site assets (local only). Two entries: the directory
 # itself (when it lived at repo root) and, now that the real data moved to
-# persona/brands/dogfoodandfun/, the backward-compat symlink left in its
+# app/brands/dogfoodandfun/, the backward-compat symlink left in its
 # place for the 19 native launchd jobs that still hardcode this path --
 # gitignore's trailing-slash form only matches directories, not symlinks.
 dogfoodandfun/
