@@ -39,15 +39,26 @@ from queue_state import commit_telegram_decision, read_decision
 # Store in .claude/state/telegram_config.json to keep out of source code.
 # Resolved lazily so that importing this module does not require BRAND_DIR /
 # a valid brand config — settings is only loaded on first call.
-def _get_config_file() -> Path:
-    from lib.config import settings
+def _get_config_file() -> Path | None:
+    """Path to the brand's telegram_config.json, or None when there is no brand.
 
-    return settings.paths.state_dir / "telegram_config.json"
+    Returns None rather than raising so consumers that are not brand-scoped
+    still reach the env-var fallback in `_load_config` instead of dying on
+    import of `lib.config`, which raises when BRAND_DIR is unset.
+    """
+    try:
+        from lib.config import settings
+    except Exception:
+        return None
+    paths = settings.paths
+    if paths is None:
+        return None
+    return paths.state_dir / "telegram_config.json"
 
 
 def _load_config() -> dict:
     config_file = _get_config_file()
-    if config_file.exists():
+    if config_file is not None and config_file.exists():
         return json.loads(config_file.read_text())
     # Fallback to env vars
     return {
