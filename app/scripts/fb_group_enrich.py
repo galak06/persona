@@ -136,7 +136,7 @@ def main() -> None:
 
     skill_started("fb-group-enrich", "enriching groups in the DB")
     if not SESSION_FILE.exists():
-        skill_error("fb-group-enrich", "FB session not found — run fb_login.py")
+        skill_error("fb-group-enrich", "FB session not found — run login.py fb")
         return
 
     tracker = groups_db.load_all()

@@ -14,18 +14,26 @@ Two entry points:
       on other people's posts.
 
 Both paths:
-  - Use Gemini 2.5 Flash (free tier, fast enough for realtime).
+  - Call whichever provider ``lib.llm_client`` selects (Gemini 2.5 Flash by
+    default — free tier, fast enough for realtime).
+  - Send the standing persona/voice rules as the SYSTEM prompt, loaded from
+    the comment-composer skill's ``## LLM Prompt`` section via
+    ``lib.skill_loader`` (a `MODE:` line in the user prompt selects the
+    reply vs first-touch subsection). A broken skill file fails fast.
   - Pull from `data/site_content_cache.json` to ground the response in our
     actual content.
   - Pass the output through `comment_generator.validate_voice` so off-brand
     language never escapes the drafter.
-  - Fall back to a conservative template if Gemini fails or the key isn't set.
+  - Fall back to a conservative template if the call fails or no key is set.
 
-Env: GEMINI_API_KEY. If missing, both entry points return the template
-fallback so callers still get *something* without crashing.
+Env: ``VOICE_PROVIDER`` picks the provider (default: whichever key is set,
+Gemini first); ``GEMINI_API_KEY`` / ``ANTHROPIC_API_KEY`` supply the key. With
+none set, both entry points return the template fallback so callers still get
+*something* without crashing.
 
-The actual Gemini HTTP transport (and its Langfuse tracing) lives in
-``lib.gemini_client``; this module only builds prompts and post-processes.
+Provider selection and the HTTP/SDK transports (and their Langfuse tracing)
+live in ``lib.llm_client``; this module only builds prompts and
+post-processes.
 """
 
 from __future__ import annotations
@@ -33,10 +41,12 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from comment_generator import validate_voice
-from gemini_client import _call_gemini
+from llm_client import LLMRequest, get_llm
+from skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +62,17 @@ class SitePost:
     excerpt: str
     categories: list[str]
     tags: list[str]
+
+
+def _llm_text(prompt: str, *, max_tokens: int, system: str | None = None) -> str | None:
+    """This module's LLM seam: one plain-text completion from whichever
+    provider ``lib.llm_client`` selects (Gemini by default). ``None`` on any
+    failure, so both entry points take their template fallback.
+    ``trace_name`` keeps the pre-provider-split Langfuse generation name.
+    """
+    return get_llm().complete(
+        LLMRequest(user=prompt, system=system, max_tokens=max_tokens, trace_name="gemini-draft")
+    )
 
 
 def _load_site_posts() -> list[SitePost]:
@@ -100,22 +121,15 @@ def _format_site_posts(posts: list[SitePost]) -> str:
     return "\n".join(lines)
 
 
-_VOICE_RULES = """
-BRAND VOICE — authentic, warm, and specific to the brand persona:
-- Warm, specific, slightly analytical; not salesy, not clinical
-- Mention the brand mascot by name ONLY if it fits naturally — don't force
-- No "check out our site" / "buy now" / "link in bio" / "I'm a vet" / medical claims
-- No generic praise ("Great post!", "Love this!", "Amazing!")
-- No emojis at the start; 0-1 emoji max total
-- End with one specific question tied to what they said — not "what do you think?"
-- 1-3 sentences, under 450 chars total
-- NEVER invent facts — no made-up diets, durations, ages, gear,
-  or experiences ("we've fed raw for a year", "3 weeks to implement"). Only state
-  things that are actually true (see BRAND FACTS if provided).
-- When you have no true specific to share, stay first-person but general
-  ("in our experience", "we've noticed") and lead with genuine
-  curiosity about THEIR experience instead of fabricating a story.
-"""
+@lru_cache(maxsize=1)
+def _system_prompt() -> str:
+    """Rendered comment-composer ``## LLM Prompt`` section, cached per process.
+
+    Raises ``SkillPromptError`` (from ``lib.skill_loader``) on a missing or
+    broken skill file — a deployment defect must abort loudly, never degrade
+    into a promptless call.
+    """
+    return load_skill_prompt("comment-composer")
 
 
 def draft_reply(
@@ -130,8 +144,9 @@ def draft_reply(
     relevant = _relevant_posts(combined, posts)
     _parts = (their_author or "").split()
     author_hint = _parts[0] if _parts else "there"
+    system = _system_prompt()
 
-    prompt = f"""You are Nalla's Dad writing a reply on Facebook. Someone replied to your comment.
+    prompt = f"""MODE: reply
 
 WHAT YOU ORIGINALLY COMMENTED:
 "{our_comment}"
@@ -139,20 +154,14 @@ WHAT YOU ORIGINALLY COMMENTED:
 WHAT THEY REPLIED (from {their_author}):
 "{their_reply}"
 
+THEIR FIRST NAME: {author_hint}
+
 RELEVANT RECENT POSTS FROM YOUR SITE (reference naturally if useful, but do NOT paste URLs):
 {_format_site_posts(relevant)}
 
-{_VOICE_RULES}
-
-Additional rules for REPLIES specifically:
-- Acknowledge their point first, then add one concrete detail from our experience
-- If a site post above is directly relevant, mention casually: "we wrote this up after tracking it for a month" (no URL — save URLs for DM)
-- Use their first name ({author_hint}) at most once, and only if natural
-- Keep it conversational — you're in a real thread, not broadcasting
-
 Output ONLY the reply text. No preamble, no quotes."""
 
-    text = _call_gemini(prompt, max_tokens=250)
+    text = _llm_text(prompt, max_tokens=250, system=system)
     if text:
         text = _strip_meta_chrome(text)
         valid, _violations = validate_voice(text)
@@ -178,8 +187,9 @@ def draft_comment(
     """Draft a context-aware first-touch comment on someone else's post."""
     posts = site_posts if site_posts is not None else _load_site_posts()
     relevant = _relevant_posts(post_text + " " + category, posts)
+    system = _system_prompt()
 
-    prompt = f"""You are Nalla's Dad commenting on a Facebook post from someone else.
+    prompt = f"""MODE: first-touch
 
 WHERE YOU'RE COMMENTING: {group_or_hashtag} (category: {category})
 
@@ -189,18 +199,9 @@ THEIR POST (verbatim):
 RELEVANT RECENT POSTS FROM YOUR SITE (reference naturally if useful, but do NOT paste URLs — even to your-brand.com):
 {_format_site_posts(relevant)}
 
-{_VOICE_RULES}
-
-Additional rules for FIRST-TOUCH COMMENTS:
-- This is the first time this person sees your voice — earn the follow
-- Reference a concrete detail from THEIR post so they know you read it
-- If a site post is directly relevant and adds real value, hint at it ("we tracked this for three months" not "we wrote a post about this")
-- End with a specific question about their situation
-- Never paste a URL; drives via profile click, not link
-
 Output ONLY the comment text. No preamble, no quotes."""
 
-    text = _call_gemini(prompt, max_tokens=300)
+    text = _llm_text(prompt, max_tokens=300, system=system)
     if text:
         text = _strip_meta_chrome(text)
         valid, violations = validate_voice(text)
@@ -222,13 +223,11 @@ def _strip_meta_chrome(text: str) -> str:
     return text
 
 
-# Re-export the private helpers so sibling modules (e.g. lib.draft_helper)
-# can reuse the brand-voice text and the meta-chrome stripper without
-# duplicating them. The leading underscore is preserved to signal
-# "internal — don't import from outside lib/". The Gemini transport lives in
-# lib.gemini_client, not here.
+# Re-export the meta-chrome stripper so sibling modules (e.g. lib.draft_helper)
+# can reuse it without duplicating it. The leading underscore is preserved to
+# signal "internal — don't import from outside lib/". The LLM transport lives
+# in lib.llm_client (and, for Gemini, lib.gemini_client), not here.
 __all__ = [
-    "_VOICE_RULES",
     "SitePost",
     "_strip_meta_chrome",
     "draft_comment",

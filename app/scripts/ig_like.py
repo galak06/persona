@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
@@ -44,7 +45,7 @@ SESSION_FILE = settings.paths.instagram_session
 LAST_RUN_FILE = settings.paths.last_run
 ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 CONFIG_FILE = (settings.paths.brand_dir / "config.json")
-HASHTAG_FILE = PROJECT_ROOT / "data/instagram_accounts.csv"
+HASHTAG_FILE = settings.paths.instagram_accounts
 SKILL_NAME = "ig-like"
 
 # Competitor + own-account guards (carried over from ig_scan.py)
@@ -223,7 +224,7 @@ def _dismiss_overlays(page: Any) -> None:
 def _health_check() -> int:
     problems: list[str] = []
     if not SESSION_FILE.exists():
-        problems.append(f"IG session missing: {SESSION_FILE} (run scripts/ig_login.py)")
+        problems.append(f"IG session missing: {SESSION_FILE} (run scripts/login.py ig)")
     if not CONFIG_FILE.exists():
         problems.append(f"config missing: {CONFIG_FILE}")
     if not HASHTAG_FILE.exists():
@@ -289,7 +290,7 @@ def run(args: argparse.Namespace) -> int:
 
     if not args.dry_run and not SESSION_FILE.exists():
         _log_json("ig_like_aborted", reason="session_missing")
-        print("ERROR: no IG session. Run scripts/ig_login.py first.", flush=True)
+        print("ERROR: no IG session. Run scripts/login.py ig first.", flush=True)
         return 1
 
     if not can_act("instagram", "like"):

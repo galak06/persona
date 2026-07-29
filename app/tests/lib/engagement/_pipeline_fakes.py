@@ -93,8 +93,8 @@ class FakeRateTracker:
 
 class FakeDrafter:
     """Drafter double. `engage=False` models the agent declining a post,
-    which the real `draft_helper.draft_comment_for_post` signals by
-    returning an empty string."""
+    which the real `draft_helper.SkillDrafter.draft_comment_for_post`
+    signals by returning an empty string."""
 
     def __init__(self, *, engage: bool = True) -> None:
         self.calls: list[dict[str, object]] = []

@@ -113,7 +113,7 @@ class FacebookGroupAdapter:
 
         if not self._session_file.exists():
             raise RuntimeError(
-                f"No saved Facebook session at {self._session_file}. Run fb_login.py first."
+                f"No saved Facebook session at {self._session_file}. Run login.py fb first."
             )
 
         pw_ctx = sync_playwright().start()

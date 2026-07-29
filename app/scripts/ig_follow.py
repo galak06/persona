@@ -77,7 +77,7 @@ def _health_check() -> int:
     """Verify the pieces needed to run. Returns 0 on success, 1 otherwise."""
     problems: list[str] = []
     if not SESSION_FILE.exists():
-        problems.append(f"IG session file missing: {SESSION_FILE} — run scripts/ig_login.py first")
+        problems.append(f"IG session file missing: {SESSION_FILE} — run scripts/login.py ig first")
     sources = ig_sources()
     if not sources:
         problems.append("No active sources with ig_handle in data/competitors.json")

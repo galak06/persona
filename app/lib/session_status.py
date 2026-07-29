@@ -21,8 +21,8 @@ from typing import Any
 
 _PLATFORMS: tuple[tuple[str, str, str], ...] = (
     # (platform, session filename, login script)
-    ("facebook", "facebook_session.json", "scripts/fb_login.py"),
-    ("instagram", "instagram_session.json", "scripts/ig_login.py"),
+    ("facebook", "facebook_session.json", "scripts/login.py fb"),
+    ("instagram", "instagram_session.json", "scripts/login.py ig"),
 )
 
 

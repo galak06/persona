@@ -120,7 +120,7 @@ def run_fb_scan(adapter: OutboundAdapter | None = None) -> ScanReport | None:
     log_trace("facebook", "Started Facebook group scan")
 
     if adapter is None and not SESSION_FILE.exists():
-        msg = "No saved Facebook session — run scripts/fb_login.py first"
+        msg = "No saved Facebook session — run scripts/login.py fb first"
         log_trace("facebook", f"Aborted: {msg}")
         skill_skipped("fb-scanner", msg)
         return None

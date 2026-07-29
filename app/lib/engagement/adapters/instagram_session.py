@@ -54,7 +54,7 @@ class InstagramSession:
         if not self._session_file.exists():
             raise RuntimeError(
                 f"No saved Instagram session at {self._session_file}; "
-                "run scripts/ig_login.py first."
+                "run scripts/login.py ig first."
             )
 
         self._playwright = sync_playwright().start()

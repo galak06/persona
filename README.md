@@ -1,6 +1,6 @@
 # Persona
 
-Social media automation engine for [dogfoodandfun.com](https://dogfoodandfun.com). Runs engagement, content publishing, and moderation workflows under a brand voice — on Instagram, Facebook, WordPress, Pinterest, and TikTok.
+Social media automation engine. Runs engagement, content publishing, and moderation workflows under a brand voice — on Instagram, Facebook, WordPress, Pinterest, and TikTok.
 
 Multi-brand, Docker-ready.
 
@@ -70,11 +70,11 @@ git clone https://github.com/galak06/persona.git
 cd persona/app
 
 # Copy the example config for your brand
-cp config.example.json dogfoodandfun/config.json
+cp config.example.json <brand>
 # Edit with your brand details
 
 # Set required env vars (or use .claude/settings.local.json)
-export BRAND_DIR=/Users/you/Projects/persona/dogfoodandfun
+export BRAND_DIR=/Users/you/Projects/persona/<brandname>
 export DATABASE_URL=postgresql://persona:persona@localhost:5555/persona
 ```
 
@@ -111,8 +111,8 @@ export PYTHONPATH="$(pwd)"
 export BRAND_DIR="$(pwd)/dogfoodandfun"
 export PLAYWRIGHT_HEADLESS=0    # forces a visible browser
 
-python scripts/ig_login.py
-python scripts/fb_login.py
+python scripts/login.py ig
+python scripts/login.py fb
 ```
 
 Each opens Chromium. Log in (2FA, recaptcha — all fine), session saves to `$BRAND_DIR/state/{instagram,facebook}_session.json`. Verify:

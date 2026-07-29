@@ -46,6 +46,11 @@ jobs:
       # drift as pipeline.py itself -- lint-list only, not format-check.
       # tests/lib/engagement/_pipeline_fakes.py (its helper module) is clean
       # on both.
+      # scripts/wp_scan.py: the fourth SKILL.md-bound flow, but it carries
+      # pre-existing (unrelated) ruff-format drift -- excluded from both
+      # lists here, while its test (tests/test_wp_scan_skill.py) is clean
+      # and included. scripts/fb_comment.py and scripts/ig_comment.py are
+      # clean on both and included.
       - name: Ruff check (lint)
         run: >-
           ruff check
@@ -56,10 +61,11 @@ jobs:
           lib/errors/platforms.py
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
-          lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/llm_tracing.py lib/gemini_client.py
+          lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py scripts/fb_group_scout.py
+          scripts/fb_comment.py scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
@@ -71,7 +77,10 @@ jobs:
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
-          tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_llm_tracing.py tests/test_gemini_client.py
+          tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
+          tests/test_skill_loader.py tests/test_ig_scan_skill.py tests/test_wp_scan_skill.py
+          recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
+          recipe-publisher/tests/test_ideator_skill_prompts.py
 
       - name: Ruff format check
         run: >-
@@ -83,10 +92,11 @@ jobs:
           lib/errors/platforms.py
           lib/brands_db/ lib/brand_resolver.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
-          lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/llm_tracing.py lib/gemini_client.py
+          lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_scan.py scripts/ig_scan.py
+          scripts/fb_comment.py scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
@@ -98,7 +108,10 @@ jobs:
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
-          tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_llm_tracing.py tests/test_gemini_client.py
+          tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
+          tests/test_skill_loader.py tests/test_ig_scan_skill.py tests/test_wp_scan_skill.py
+          recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
+          recipe-publisher/tests/test_ideator_skill_prompts.py
 
   typecheck:
     name: Type Check
@@ -124,6 +137,7 @@ jobs:
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
           lib/brands_db/ lib/brand_resolver.py lib/local_env.py lib/flow_readiness.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
+          lib/llm_client.py lib/skill_loader.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
           --ignore-missing-imports

@@ -23,8 +23,8 @@ def test_login_command_uses_brand_dir(tmp_path: Path) -> None:
 
     fb = next(s for s in result if s["platform"] == "facebook")
     ig = next(s for s in result if s["platform"] == "instagram")
-    assert fb["login_command"] == f"BRAND_DIR={tmp_path} python scripts/fb_login.py"
-    assert ig["login_command"] == f"BRAND_DIR={tmp_path} python scripts/ig_login.py"
+    assert fb["login_command"] == f"BRAND_DIR={tmp_path} python scripts/login.py fb"
+    assert ig["login_command"] == f"BRAND_DIR={tmp_path} python scripts/login.py ig"
 
 
 def test_existing_session_file_reports_exists_and_timestamp(tmp_path: Path) -> None:

@@ -148,7 +148,7 @@ def _health_check(session: FbSession) -> int:
     if not session.is_authenticated():
         print(
             f"FB session not authenticated (storage: {session.storage_path}) — "
-            "run fb_login.py",
+            "run login.py fb",
             file=sys.stderr,
         )
         return 1
@@ -160,7 +160,7 @@ def main(session: FbSession, *, dry_run: bool = False) -> int:
     skill_started(SKILL_NAME, "scanning FB for group approvals")
 
     if not session.is_authenticated():
-        skill_error(SKILL_NAME, "FB session not found — run fb_login.py")
+        skill_error(SKILL_NAME, "FB session not found — run login.py fb")
         return 1
 
     tracker = _load_tracker()

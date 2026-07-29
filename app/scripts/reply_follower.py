@@ -246,7 +246,7 @@ def main() -> None:
     tracker = load_json(TRACKER_FILE, {})
 
     if not SESSION_FILE.exists():
-        skill_error("reply-follower", "FB session not found — run fb_login.py first")
+        skill_error("reply-follower", "FB session not found — run login.py fb first")
         return
 
     from playwright.sync_api import sync_playwright

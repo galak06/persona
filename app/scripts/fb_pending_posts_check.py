@@ -187,7 +187,7 @@ def main(
     skill_started(SKILL_NAME, "checking admin-approval queue")
 
     if not session.is_authenticated():
-        skill_error(SKILL_NAME, "FB session missing — run fb_login.py")
+        skill_error(SKILL_NAME, "FB session missing — run login.py fb")
         return 1
 
     tracker: list[dict[str, Any]] = groups_db.load_all()

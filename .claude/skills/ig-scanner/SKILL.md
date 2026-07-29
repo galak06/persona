@@ -23,7 +23,7 @@ required — works in `claude -p` and interactive mode.
 Run the Playwright-based scanner script:
 
 ```bash
-cd /Users/gilcohen/Projects/{{brand.name_lower}}/social-automation
+cd /Users/gilcohen/Projects/persona/app
 python scripts/ig_scan.py
 ```
 

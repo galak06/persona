@@ -2,8 +2,10 @@
 
 No network: ``httpx.post`` is monkeypatched. LANGFUSE_* is left unset so
 ``trace_llm_call`` no-ops to a plain call. Covers both the plain-text
-``_call_gemini`` and the structured ``_call_gemini_json``, which share
-``_gemini_request``/``_first_candidate_text``.
+``_call_gemini`` and the schema-driven ``call_json``, which share
+``_gemini_request``/``_first_candidate_text``. Provider selection (and the
+engage/decline envelope built on top of ``call_json``) is not this module's
+business any more -- see tests/test_llm_client.py and tests/test_draft_helper.py.
 """
 
 from __future__ import annotations
@@ -46,59 +48,73 @@ def _candidate_text(text: str) -> dict:
     return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
 
 
-# --------------------------------------------------------------------------- _call_gemini_json
+# The engage envelope its callers use, as a stand-in caller-supplied schema.
+_ENGAGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "engage": {"type": "boolean"},
+        "comment": {"type": "string"},
+        "reason": {"type": "string"},
+    },
+    "required": ["engage", "comment", "reason"],
+}
 
 
-def test_call_gemini_json_returns_none_without_key() -> None:
+def _call_json(prompt: str = "prompt", **kwargs: object) -> dict | None:
+    return gc.call_json(prompt, schema=_ENGAGE_SCHEMA, max_tokens=400, **kwargs)  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- call_json
+
+
+def test_call_json_returns_none_without_key() -> None:
     # _clean_env autouse fixture already unsets GEMINI_API_KEY.
-    assert gc._call_gemini_json("prompt") is None
+    assert _call_json() is None
 
 
-def test_call_gemini_json_parses_valid_response(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_json_parses_valid_response(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     body = _candidate_text('{"engage": true, "comment": "hi", "reason": "good fit"}')
     monkeypatch.setattr(gc.httpx, "post", _fake_post(body))
 
-    result = gc._call_gemini_json("prompt")
+    result = _call_json()
 
     assert result == {"engage": True, "comment": "hi", "reason": "good fit"}
 
 
-def test_call_gemini_json_returns_none_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_json_returns_none_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(gc.httpx, "post", _fake_post({}, status_code=500))
 
-    assert gc._call_gemini_json("prompt") is None
+    assert _call_json() is None
 
 
-def test_call_gemini_json_returns_none_on_malformed_json_text(
+def test_call_json_returns_none_on_malformed_json_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     body = _candidate_text("not actually json")
     monkeypatch.setattr(gc.httpx, "post", _fake_post(body))
 
-    assert gc._call_gemini_json("prompt") is None
+    assert _call_json() is None
 
 
-def test_call_gemini_json_returns_none_when_engage_field_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_call_json_returns_none_on_non_object_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A valid-JSON non-object (list/scalar) is still not a usable response."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    body = _candidate_text('{"comment": "hi", "reason": "no engage field"}')
-    monkeypatch.setattr(gc.httpx, "post", _fake_post(body))
+    monkeypatch.setattr(gc.httpx, "post", _fake_post(_candidate_text('["not", "an", "object"]')))
 
-    assert gc._call_gemini_json("prompt") is None
+    assert _call_json() is None
 
 
-def test_call_gemini_json_returns_none_on_no_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_json_returns_none_on_no_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setattr(gc.httpx, "post", _fake_post({"candidates": []}))
 
-    assert gc._call_gemini_json("prompt") is None
+    assert _call_json() is None
 
 
-def test_call_gemini_json_sends_response_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_call_json_sends_response_schema(monkeypatch: pytest.MonkeyPatch) -> None:
     """The JSON call must set responseMimeType + responseSchema on the payload."""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     seen: dict[str, object] = {}
@@ -110,11 +126,11 @@ def test_call_gemini_json_sends_response_schema(monkeypatch: pytest.MonkeyPatch)
         )
 
     monkeypatch.setattr(gc.httpx, "post", _capture)
-    gc._call_gemini_json("prompt")
+    _call_json()
 
     cfg = seen["json"]["generationConfig"]  # type: ignore[index]
     assert cfg["responseMimeType"] == "application/json"
-    assert cfg["responseSchema"] is gc._ENGAGE_RESPONSE_SCHEMA
+    assert cfg["responseSchema"] is _ENGAGE_SCHEMA
 
 
 # --------------------------------------------------------------------------- _call_gemini (text)
@@ -152,3 +168,73 @@ def test_call_gemini_returns_none_on_http_error(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(gc.httpx, "post", _fake_post({}, status_code=429))
 
     assert gc._call_gemini("prompt") is None
+
+
+# --------------------------------------------------------------------------- system= kwarg
+
+
+def _capture_payload(monkeypatch: pytest.MonkeyPatch, body: dict) -> dict[str, object]:
+    seen: dict[str, object] = {}
+
+    def _capture(*_args: object, **kwargs: object) -> _FakeResponse:
+        seen["json"] = kwargs.get("json")
+        return _FakeResponse(200, body)
+
+    monkeypatch.setattr(gc.httpx, "post", _capture)
+    return seen
+
+
+def test_call_gemini_system_sends_system_instruction(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    seen = _capture_payload(monkeypatch, _candidate_text("hi"))
+
+    gc._call_gemini("user prompt", system="standing rules")
+
+    assert seen["json"]["systemInstruction"] == {  # type: ignore[index]
+        "parts": [{"text": "standing rules"}]
+    }
+
+
+def test_call_json_system_sends_system_instruction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """system= must coexist with the JSON response schema on the same payload."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    body = _candidate_text('{"engage": false, "comment": "", "reason": "x"}')
+    seen = _capture_payload(monkeypatch, body)
+
+    _call_json("user prompt", system="standing rules")
+
+    payload = seen["json"]
+    assert payload["systemInstruction"] == {"parts": [{"text": "standing rules"}]}  # type: ignore[index]
+    assert payload["generationConfig"]["responseSchema"] is _ENGAGE_SCHEMA  # type: ignore[index]
+
+
+def test_payloads_omit_system_instruction_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backward compatibility: without system=, payloads are unchanged."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    seen = _capture_payload(monkeypatch, _candidate_text("hi"))
+
+    gc._call_gemini("prompt")
+    assert "systemInstruction" not in seen["json"]  # type: ignore[operator]
+
+    _call_json()
+    assert "systemInstruction" not in seen["json"]  # type: ignore[operator]
+
+
+def test_tracing_receives_dict_input_when_system_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(gc.httpx, "post", _fake_post(_candidate_text("hi")))
+    seen: dict[str, object] = {}
+
+    def _fake_trace(name: str, *, model: str, input_text: object, call: object) -> object:
+        seen["input_text"] = input_text
+        return call()  # type: ignore[operator]
+
+    monkeypatch.setattr(gc, "trace_llm_call", _fake_trace)
+
+    gc._call_gemini("user prompt", system="sys rules")
+    assert seen["input_text"] == {"system": "sys rules", "user": "user prompt"}
+
+    gc._call_gemini("user prompt")
+    assert seen["input_text"] == "user prompt"  # plain string without system=

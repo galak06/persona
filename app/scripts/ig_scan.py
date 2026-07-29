@@ -51,6 +51,13 @@ SESSION_FILE = settings.paths.instagram_session
 CONFIG_FILE = settings.paths.brand_dir / "config.json"
 HASHTAG_FILE = settings.paths.instagram_accounts
 
+# Bound at import: the system prompt comes from .claude/skills/ig-scanner/
+# SKILL.md, so a broken or missing skill file (SkillPromptError) aborts the
+# run at startup — before any hashtag is scanned — matching
+# scripts/ig_comment.py's abort-loudly pattern. The per-post USER prompt is
+# built by the drafter per call.
+_DRAFTER = draft_helper.for_skill("ig-scanner")
+
 
 def _score_post(post: Post) -> float:
     """Adapt the pipeline's `(Post) -> float` callable to the real
@@ -122,7 +129,7 @@ def run_ig_scan(
             # No queue, no ig_comment.py handoff (see module docstring).
             dedup=ScanDedup(WORKER_LABEL, log=log),
             rate_tracker=rate_limiter,
-            drafter=draft_helper,
+            drafter=_DRAFTER,
             log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,

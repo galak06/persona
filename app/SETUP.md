@@ -73,8 +73,8 @@ The session is saved and reused by all workers — you only do this once.
 
 ```bash
 export BRAND_DIR=~/my-brand
-python scripts/ig_login.py   # saves to $BRAND_DIR/state/sessions/instagram_session.json
-python scripts/fb_login.py   # saves to $BRAND_DIR/state/sessions/facebook_session.json
+python scripts/login.py ig   # saves to $BRAND_DIR/state/sessions/instagram_session.json
+python scripts/login.py fb   # saves to $BRAND_DIR/state/sessions/facebook_session.json
 ```
 
 Sessions last until Instagram/Facebook invalidates them (usually weeks to months).
@@ -129,7 +129,7 @@ launchctl load ~/Library/LaunchAgents/com.persona.ig-pipeline.plist
 
 ## Troubleshooting
 
-**Session expired** — re-run `ig_login.py` or `fb_login.py`
+**Session expired** — re-run `login.py ig` or `login.py fb`
 
 **No posts queued** — lower `content_analysis.relevance_threshold` in config.json
 (try 0.50 instead of 0.70 to start, raise it once you see the queue filling)

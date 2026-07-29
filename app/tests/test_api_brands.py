@@ -84,8 +84,8 @@ def test_create_brand_success_returns_201_shape(monkeypatch: pytest.MonkeyPatch)
     assert resp.files_written == _fake_result().files_written
     assert resp.schedule_tasks_created == ["acme-dogs-ig-scanner", "acme-dogs-fb-scanner"]
     assert resp.warnings == []
-    assert resp.ig_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/ig_login.py"
-    assert resp.fb_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/fb_login.py"
+    assert resp.ig_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/login.py ig"
+    assert resp.fb_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/login.py fb"
     # Full brand row is included too (matches the frontend's `Brand &
     # ProvisionResult` intersection type) -- not just the ProvisionResult subset.
     assert resp.mascot_name == "Rex"

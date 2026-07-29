@@ -23,7 +23,7 @@ State shared with FB/IG: `.claude/state/comment_queue.json`, `rate_limit_tracker
 ## How to Run
 
 ```bash
-cd /Users/gilcohen/Projects/{{brand.name_lower}}/social-automation
+cd /Users/gilcohen/Projects/persona/app
 
 # 1. Scan {{brand.domain}} for held comments.
 python scripts/wp_scan.py                 # scans + queues

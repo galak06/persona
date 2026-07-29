@@ -24,7 +24,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import logging
 import os
 import re
 import sys
@@ -37,17 +36,22 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from lib.logger import log_progress
-
-
+import draft_helper
 from comment_generator import score_relevance
 from deduplication import is_duplicate, mark_engaged
-from draft_helper import draft_comment_for_post
+from lib.logger import log_progress
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import print_status
 
+# Bound at import: the system prompt comes from .claude/skills/
+# wp-comment-handler/SKILL.md, so a broken or missing skill file
+# (SkillPromptError) aborts the run at startup — before any pending comment
+# is fetched — matching scripts/ig_comment.py's abort-loudly binding. The
+# per-comment USER prompt (incl. site_context) is built per item at call time.
+_DRAFTER = draft_helper.for_skill("wp-comment-handler")
 
 QUEUE_FILE = settings.paths.comment_queue
 LAST_RUN_FILE = settings.paths.last_run
@@ -371,7 +375,7 @@ def run(dry_run: bool = False) -> None:
                     print(f"    DRY: would queue (score={score}, post={post_title!r})", flush=True)
                     continue
 
-                candidate["draft_comment"] = draft_comment_for_post(
+                candidate["draft_comment"] = _DRAFTER.draft_comment_for_post(
                     platform="wordpress",
                     post_text=body,
                     group_or_hashtag=None,

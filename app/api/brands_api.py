@@ -109,8 +109,8 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         files_written=list(result.files_written),
         schedule_tasks_created=list(result.schedule_tasks_created),
         warnings=list(result.warnings),
-        ig_login_command=f"BRAND_DIR={brand_dir} python scripts/ig_login.py",
-        fb_login_command=f"BRAND_DIR={brand_dir} python scripts/fb_login.py",
+        ig_login_command=f"BRAND_DIR={brand_dir} python scripts/login.py ig",
+        fb_login_command=f"BRAND_DIR={brand_dir} python scripts/login.py fb",
     )
 
 

@@ -173,14 +173,14 @@ def main(
         print(f"Joining {len(to_join)} pre-approved group(s) (cap: {budget}).")
         skill_started("fb-group-scout", f"Joining {len(to_join)} pre-approved group(s) — budget: {budget} ({caps})")
         if not session.is_authenticated():
-            print("ERROR: No saved Facebook session found. Run: python scripts/fb_login.py")
+            print("ERROR: No saved Facebook session found. Run: python scripts/login.py fb")
             return
         with session.page() as page:
             print("\nChecking Facebook session...")
             page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
             time.sleep(3)
             if "login" in page.url.lower():
-                print("ABORT: Facebook session expired. Re-run fb_login.py")
+                print("ABORT: Facebook session expired. Re-run login.py fb")
                 log_error("SESSION_EXPIRED")
                 return
             print("Facebook session OK.\n")
@@ -224,7 +224,7 @@ def main(
         print(f"\n📋 Pending queue: {len(pending)} group(s) from previous runs")
 
     if not session.is_authenticated():
-        print("ERROR: No saved Facebook session found. Run: python scripts/fb_login.py")
+        print("ERROR: No saved Facebook session found. Run: python scripts/login.py fb")
         return
 
     queries: list[tuple[str, str]] = [("keyword", q) for q in SEARCH_QUERIES]
@@ -236,7 +236,7 @@ def main(
         page.goto("https://www.facebook.com/", wait_until="domcontentloaded")
         time.sleep(3)
         if "login" in page.url.lower():
-            print("ABORT: Facebook session expired. Re-run fb_login.py")
+            print("ABORT: Facebook session expired. Re-run login.py fb")
             log_error("SESSION_EXPIRED")
             return
 

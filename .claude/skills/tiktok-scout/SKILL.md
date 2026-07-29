@@ -77,8 +77,8 @@ These hashtags are scraped in order, based on audience relevance:
 - No VPN or proxy blocking (must be same network as {{brand.name}} user)
 
 **Python Environment:**
-- `social-automation/lib/tiktok_scout/` modules available (state.py, candidate.py)
-- PYTHONPATH set to `social-automation/` for imports
+- `app/lib/tiktok_scout/` modules available (state.py, candidate.py)
+- PYTHONPATH set to `app/` for imports
 - Python 3.9+ with pathlib and json support
 
 **Rate Limiting:**
@@ -218,7 +218,7 @@ for handle in js_result:
 
 ### Step 5: Save Candidates to Database
 
-After all hashtags complete, call this Python script via Bash. Run from the `social-automation/` directory:
+After all hashtags complete, call this Python script via Bash. Run from the `app/` directory:
 
 ```bash
 cd /Users/gilcohen/Projects/persona/app && PYTHONPATH=. python3 - <<'PYEOF'
@@ -428,7 +428,7 @@ HTTP 429: Too Many Requests
 | `0 handles from all hashtags` | Hashtag pages not loading | Check: Is TikTok accessible? Try refreshing. If persists, 30-min wait (rate limit). |
 | `[BLOCKED: ...]` handles in results | TikTok moderation flag | Filter automatically; report count of blocked handles filtered |
 | `Daily ceiling hit (50/50)` | Already 50 candidates today | Report to user: "You've reached today's quota. Run again after midnight UTC." |
-| `PYTHONPATH error` | Python can't find lib module | Verify `social-automation/` in working dir. Retry from correct path. |
+| `PYTHONPATH error` | Python can't find lib module | Verify `app/` in working dir. Retry from correct path. |
 | `is_already_seen() fails` | SQLite DB locked | Wait 5 seconds, retry. If persists, other process using DB. |
 
 ---
@@ -459,7 +459,7 @@ A successful scout run demonstrates:
 - **Randomize hashtag order:** Rotate order weekly to avoid TikTok algorithm targeting repeating patterns
 
 ### Storage
-- **Candidate DB location:** `social-automation/data/tiktok/candidates.json` (JSON store; can be backed up to `.cloudinary/tiktok_candidates_backup.json`)
+- **Candidate DB location:** `app/data/tiktok/candidates.json` (JSON store; can be backed up to `.cloudinary/tiktok_candidates_backup.json`)
 - **Seen set:** Persisted in SQLite for fast O(1) lookups; never delete (only add)
 
 ---
@@ -476,8 +476,8 @@ A successful scout run demonstrates:
 - **Chrome via MCP** — User's real browser + mcp__claude-in-chrome setup
 
 ### Data Files
-- `social-automation/data/tiktok/` — Directory for candidate storage (auto-created if missing)
-- `social-automation/lib/tiktok_scout/` — Core modules (must exist in codebase)
+- `app/data/tiktok/` — Directory for candidate storage (auto-created if missing)
+- `app/lib/tiktok_scout/` — Core modules (must exist in codebase)
 
 ### Environment
 - Python 3.9+
@@ -565,7 +565,7 @@ If either answer is "no", guide the user to prepare Chrome first.
 After running scout, this file tree exists:
 
 ```
-social-automation/
+app/
 ├── lib/
 │   └── tiktok_scout/
 │       ├── __init__.py

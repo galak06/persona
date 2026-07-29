@@ -128,8 +128,8 @@ def test_create_brand_end_to_end_over_real_http(pg: None, brands_root: Path) -> 
     assert payload["id"] == "acme-dogs"
     assert payload["status"] == "provisioned"
     assert payload["schedule_tasks_created"] == ["acme-dogs-ig-scanner", "acme-dogs-fb-scanner"]
-    assert payload["ig_login_command"].endswith("scripts/ig_login.py")
-    assert payload["fb_login_command"].endswith("scripts/fb_login.py")
+    assert payload["ig_login_command"].endswith("scripts/login.py ig")
+    assert payload["fb_login_command"].endswith("scripts/login.py fb")
     # Full brand row (matches the frontend's `Brand & ProvisionResult`
     # intersection type), not just the ProvisionResult subset.
     assert payload["mascot_name"] == "Rex"

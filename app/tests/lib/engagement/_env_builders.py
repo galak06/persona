@@ -86,28 +86,21 @@ def patch_bare_path_modules(
 def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the bare-module collaborators the new pipeline injects.
 
-    Post-slice-3 the scanners pass ``draft_helper`` / ``rate_limiter`` /
-    ``deduplication`` modules into ``run_outbound_scan`` instead of looking
-    those names up on the scanner module. Patching must happen on the
-    bare modules now. The real ``can_act`` is used unchanged — the pipeline
-    gates the like step by ``policy.daily_like_quota[platform] > 0`` before
-    probing it, so ``facebook:like`` (absent from ``DAILY_LIMITS``) is never
-    looked up in production.
+    Post-slice-3 the scanners pass ``rate_limiter`` / ``deduplication``
+    modules into ``run_outbound_scan`` instead of looking those names up on
+    the scanner module. Patching must happen on the bare modules now. The
+    real ``can_act`` is used unchanged — the pipeline gates the like step by
+    ``policy.daily_like_quota[platform] > 0`` before probing it, so
+    ``facebook:like`` (absent from ``DAILY_LIMITS``) is never looked up in
+    production.
+
+    Drafting is NOT stubbed here: ``fb_scan`` is scan-only (``drafter=None``)
+    and every drafting flow now injects a ``draft_helper.SkillDrafter``
+    instance, so tests that need a fake draft patch that instance (see
+    ``test_ig_scan_with_fake``).
     """
-    import draft_helper as bare_drafter
     import rate_limiter as bare_rate_limiter
 
-    def _fake_draft(
-        *,
-        platform: str,
-        post_text: str,
-        group_or_hashtag: str | None,
-        post_url: str,
-        site_context: str | None = None,
-    ) -> str:
-        return f"DRAFT for {post_url}"
-
-    monkeypatch.setattr(bare_drafter, "draft_comment_for_post", _fake_draft)
     monkeypatch.setattr(
         bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None
     )
@@ -270,24 +263,12 @@ def build_ig_environment(
     )
     neutralize_scan_dedup_backend(monkeypatch)
 
-    def _fake_draft(
-        *,
-        platform: str,
-        post_text: str,
-        group_or_hashtag: str | None,
-        post_url: str,
-    ) -> str:
-        return f"DRAFT-{post_url or '?'}"
-
-    # Stub collaborators on the BARE-name modules — the thin scanner now
-    # delegates drafting + delays to the pipeline, which calls these via
-    # `draft_helper.draft_comment_for_post` and the rate_tracker protocol.
-    import draft_helper as bare_draft_helper
+    # Stub delays on the BARE-name module — the thin scanner delegates them
+    # to the pipeline, which calls them via the rate_tracker protocol.
+    # Drafting is left alone: the scan injects its own ``SkillDrafter``
+    # instance, so tests patch that instance (see ``test_ig_scan_with_fake``).
     import rate_limiter as bare_rate_limiter
 
-    monkeypatch.setattr(
-        bare_draft_helper, "draft_comment_for_post", _fake_draft
-    )
     monkeypatch.setattr(
         bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None
     )

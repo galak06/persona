@@ -40,7 +40,7 @@ WORKER_LABEL = "persona-ig-comment"
 
 settings, log = init_script(__name__)
 
-from draft_helper import draft_comment_for_post
+import draft_helper
 from lib.comment_queue_routing import guard_key_for
 from lib.engagement.commenter import CommenterSpec, main_for
 from lib.ig.comment_post import post_comment_ig
@@ -53,8 +53,15 @@ if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
 
 
+# Bound at import: the system prompt comes from .claude/skills/ig-comment/
+# SKILL.md, so a broken or missing skill file (SkillPromptError) aborts the
+# run at startup — before any queue item is touched — matching this script's
+# abort-loudly doctrine. The per-post USER prompt is built per item.
+_DRAFTER = draft_helper.for_skill("ig-comment")
+
+
 def _draft(item: dict[str, Any]) -> str:
-    return draft_comment_for_post(
+    return _DRAFTER.draft_comment_for_post(
         platform=PLATFORM,
         post_text=str(item.get("post_text") or ""),
         group_or_hashtag=str(item.get("hashtag") or "") or None,
@@ -75,7 +82,7 @@ SPEC = CommenterSpec(
     target_field="hashtag",
     draft_fn=_draft,
     post_fn=post_comment_ig,
-    session_missing_msg="No saved Instagram session — run scripts/ig_login.py first",
+    session_missing_msg="No saved Instagram session — run scripts/login.py ig first",
     task_queue=TaskQueue("ig-comment"),
 )
 
