@@ -121,8 +121,8 @@ Next steps:
   2. Run the one-time interactive login scripts on the HOST for that brand
      (requires local Playwright: pip install playwright && playwright
      install chromium):
-       BRAND_DIR=./brands/<slug> python scripts/ig_login.py
-       BRAND_DIR=./brands/<slug> python scripts/fb_login.py
+       BRAND_DIR=./brands/<slug> python scripts/login.py ig
+       BRAND_DIR=./brands/<slug> python scripts/login.py fb
   3. Start that brand's worker (own container, own Playwright session):
        BRAND_DIR=./brands/<slug> PERSONA_BRAND=<slug> \
          docker compose -f docker-compose.worker.yml -p <slug> up -d
