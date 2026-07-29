@@ -140,6 +140,42 @@ def load_brand_env(brand_dir: Path) -> dict[str, str]:
     return result
 
 
+def load_brand_env_into_environ(brand_dir: Path | None = None) -> int:
+    """Merge `<brand_dir>/.env` into os.environ. Returns count loaded.
+
+    The single-brand-per-process counterpart to `load_brand_env()`: host
+    scripts, launchd jobs and the per-brand worker container each serve exactly
+    one brand, and every consumer reads its platform credentials straight off
+    `os.environ` (`os.environ["FB_PAGE_TOKEN"]`, ...). The pure-dict version is
+    kept for the *shared*, brand-agnostic worker, which must never let one
+    brand's secrets reach its own global environment.
+
+    Call this BEFORE `load_local_env()`: both skip keys already present, so
+    loading the brand file first makes it authoritative for brand-owned keys
+    while the shared settings file still supplies engine-wide ones. An explicit
+    `FB_PAGE_TOKEN=... python ...` invocation still wins over both.
+
+    `brand_dir` defaults to `$BRAND_DIR`, falling back to `default_brand_dir()`
+    so bootstrap works before BRAND_DIR has been sourced from settings.
+    """
+    if brand_dir is None:
+        raw = os.environ.get("BRAND_DIR")
+        if raw:
+            brand_dir = Path(raw)
+        else:
+            from lib.config import default_brand_dir
+
+            brand_dir = default_brand_dir()
+
+    loaded = 0
+    for key, value in load_brand_env(brand_dir).items():
+        if key in os.environ:
+            continue
+        os.environ[key] = value
+        loaded += 1
+    return loaded
+
+
 def get_brand_campaign() -> dict[str, Any]:
     """Return the `campaign` block from the brand overlay (or {}).
 

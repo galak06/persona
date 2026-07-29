@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from lib import schedule_db
+from lib.brand_env_template import write_brand_env_stub
 from lib.brand_templates import (
     BrandSpec,
     render_brand_facts_md,
@@ -199,6 +200,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     (brand_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     (brand_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    write_brand_env_stub(brand_dir)
     (brand_dir / "data" / "config" / "brand_facts.md").write_text(brand_facts_md, encoding="utf-8")
     # instagram_accounts.csv is NOT re-rendered on an already-provisioned
     # brand: unlike config.json (a pure function of `spec`, safe to
