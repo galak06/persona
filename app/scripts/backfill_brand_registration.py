@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Register an already-provisioned brand in Postgres (idempotent, additive).
+
+Why this exists: brands onboarded before `lib/schedule_db.py` moved from
+SQLite to Postgres are complete on disk (config.json, .env, sessions, logs)
+but have zero rows in the `brands` and `schedule_tasks` tables. Three visible
+symptoms, one cause:
+
+  * `GET /api/v1/brands` returns `[]`, so the UI brand picker falls back to
+    the literal string in `BrandContext.tsx`'s `FALLBACK_BRAND`.
+  * `scripts/task_dispatcher.py` has no tasks to dispatch.
+  * `scripts/regenerate_plists.py` prints "schedule.json has no tasks".
+
+Both tables are otherwise written only by `lib/brand_provisioning.py`, and
+re-running full provisioning on an EXISTING brand rewrites `config.json` from
+a `BrandSpec` -- losing any live hand-tuning the spec doesn't reproduce. This
+script therefore reads what is already on disk and writes only the two DB
+rows, touching no files.
+
+Usage::
+
+    python scripts/backfill_brand_registration.py --dry-run
+    python scripts/backfill_brand_registration.py --apply
+    python scripts/backfill_brand_registration.py --apply --brand-dir /path/to/brand
+
+Exit codes: 0 success, 1 failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+_ENGINE_ROOT = Path(__file__).resolve().parent.parent
+if str(_ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ENGINE_ROOT))
+
+from lib import schedule_db
+from lib.brands_db.models import BrandStatus
+from lib.brands_db.repository import BrandsRepository
+from lib.config import default_brand_dir
+from lib.local_env import get_group_join_limit, get_runtime_headless
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"{path} is not valid JSON: {exc}") from exc
+    return data if isinstance(data, dict) else {}
+
+
+def build_brand_row(brand_dir: Path) -> dict[str, Any]:
+    """Derive the `brands` row from files already on disk.
+
+    `config.json`'s `site` block is authoritative (it is what every runtime
+    consumer reads); `brand.json` only supplies the runtime overlay flags.
+    """
+    site = _load_json(brand_dir / "config.json").get("site", {})
+    if not site:
+        raise SystemExit(
+            f"no `site` block in {brand_dir / 'config.json'} — cannot build a brand row"
+        )
+
+    return {
+        "brand_id": brand_dir.name,
+        "name": site.get("name") or brand_dir.name,
+        "site_url": site.get("url", ""),
+        "niche": site.get("niche", ""),
+        "persona": site.get("brand_persona", ""),
+        "mascot_name": site.get("mascot_name", ""),
+        "target_audience": site.get("target_audience", ""),
+        "headless": get_runtime_headless(),
+        "group_join_limit": get_group_join_limit(),
+        # Already running in production -- not a draft.
+        "status": BrandStatus.ACTIVE,
+        "brand_dir": str(brand_dir),
+    }
+
+
+def build_schedule_rows(brand_dir: Path, brand_id: str) -> list[dict[str, Any]]:
+    """Read `<brand_dir>/schedule.json` into `schedule_tasks` row dicts.
+
+    Two shape fixes the JSON needs before it can be stored:
+      * `order` -> `order_num` (the column name; `_load_from_db` maps it back).
+        Left alone it would silently spill into `extra` and leave order_num NULL.
+      * `brand_id` is NOT NULL in the table but absent from the JSON, which
+        predates multi-brand support.
+    """
+    schedule_path = brand_dir / "schedule.json"
+    tasks = _load_json(schedule_path).get("tasks", [])
+    if not tasks:
+        raise SystemExit(f"no tasks found in {schedule_path}")
+
+    rows: list[dict[str, Any]] = []
+    for task in tasks:
+        row = dict(task)
+        row["order_num"] = row.pop("order", 0)
+        row["brand_id"] = brand_id
+        row.setdefault("title", str(row.get("id", "")).removeprefix("dogfood-"))
+        rows.append(row)
+    return rows
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--brand-dir",
+        type=Path,
+        default=None,
+        help="brand folder (default: $BRAND_DIR, else inferred)",
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--dry-run", action="store_true", help="print what would be written")
+    group.add_argument("--apply", action="store_true", help="write the rows")
+    args = parser.parse_args()
+
+    brand_dir = (args.brand_dir or default_brand_dir()).resolve()
+    if not (brand_dir / "config.json").is_file():
+        print(f"ERROR: no config.json under {brand_dir}", file=sys.stderr)
+        return 1
+
+    brand_row = build_brand_row(brand_dir)
+    schedule_rows = build_schedule_rows(brand_dir, brand_row["brand_id"])
+
+    repo = BrandsRepository()
+    already = repo.get(brand_row["brand_id"]) is not None
+    existing_task_ids = {t["id"] for t in schedule_db.load_all()}
+
+    print(f"brand dir      : {brand_dir}")
+    print(
+        f"brands row     : {brand_row['brand_id']} ({brand_row['name']}) "
+        f"— {'already present, will skip' if already else 'will INSERT'}"
+    )
+    print(
+        f"schedule_tasks : {len(schedule_rows)} in schedule.json, "
+        f"{len(existing_task_ids)} already in DB — upsert by id"
+    )
+
+    if not args.apply:
+        print("\n(dry run — nothing written; pass --apply to write)")
+        return 0
+
+    if not already:
+        repo.create(**brand_row)
+        print(f"inserted brands row: {brand_row['brand_id']}")
+    for row in schedule_rows:
+        schedule_db.save_task(None, row)
+    print(f"upserted {len(schedule_rows)} schedule_tasks rows")
+
+    print(
+        f"\nverify: brands={len(repo.list_brands())}, schedule_tasks={len(schedule_db.load_all())}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
