@@ -46,7 +46,7 @@ def maybe_comment(
 
     text = _draft(post, platform, drafter)
     if not text:
-        _log_decline(post, platform, score, log)
+        _log_decline(post, platform, score, log, drafter)
         return CommentOutcome(declined=True)
 
     if dry_run:
@@ -78,8 +78,7 @@ def _blocked_by_approval_gate(
     if not policy.requires_approval(score):
         return False
     log.info(
-        "comment_skipped_needs_approval platform=%s post_id=%s score=%.2f "
-        "threshold=%.2f url=%s",
+        "comment_skipped_needs_approval platform=%s post_id=%s score=%.2f threshold=%.2f url=%s",
         platform,
         post.post_id,
         score,
@@ -89,9 +88,7 @@ def _blocked_by_approval_gate(
     return True
 
 
-def _blocked_by_comment_quota(
-    platform: str, rate_tracker: RateTracker, log: Log
-) -> bool:
+def _blocked_by_comment_quota(platform: str, rate_tracker: RateTracker, log: Log) -> bool:
     """True if today's comment budget is spent (checked before any LLM call)."""
     if rate_tracker.can_act(platform, "comment"):
         return False
@@ -109,30 +106,34 @@ def _draft(post: Post, platform: str, drafter: Drafter) -> str:
     )
 
 
-def _log_decline(post: Post, platform: str, score: float, log: Log) -> None:
-    """Record that the agent declined to engage with this post.
+def _log_decline(
+    post: Post, platform: str, score: float, log: Log, drafter: Drafter | None = None
+) -> None:
+    """Record why this post got no comment.
 
-    The drafter is agentic and returns "" when it declines — that decline
-    IS the approval gate, and the model's own `reason` is logged inside
-    `lib/draft_helper.py`. The pipeline only sees the empty draft.
+    The drafter is agentic and returns "" for several very different reasons:
+    a genuine `engage:false` editorial decision, an upstream call that failed,
+    a blank comment, or two voice-validation failures. This used to log all of
+    them as `agent_declined_or_empty_draft`, so a total outage looked exactly
+    like the agent being selective — which is how a retired model went
+    unnoticed for a full run. Drafters that track it expose `last_outcome`;
+    anything else (fakes, other implementations) falls back to the old label.
     """
+    reason = getattr(drafter, "last_outcome", None) or "agent_declined_or_empty_draft"
     log.info(
-        "comment_declined platform=%s post_id=%s score=%.2f "
-        "reason=agent_declined_or_empty_draft url=%s",
+        "comment_declined platform=%s post_id=%s score=%.2f reason=%s url=%s",
         platform,
         post.post_id,
         score,
+        reason,
         post.post_url,
     )
 
 
-def _log_dry_run(
-    post: Post, platform: str, score: float, text: str, log: Log
-) -> None:
+def _log_dry_run(post: Post, platform: str, score: float, text: str, log: Log) -> None:
     """Show the comment a live run would have posted, without posting it."""
     log.info(
-        "post_comment_dry_run platform=%s post_id=%s score=%.2f url=%s "
-        "draft=%r (no comment sent)",
+        "post_comment_dry_run platform=%s post_id=%s score=%.2f url=%s draft=%r (no comment sent)",
         platform,
         post.post_id,
         score,

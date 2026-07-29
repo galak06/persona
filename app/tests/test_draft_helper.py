@@ -280,3 +280,64 @@ def test_long_draft_returns_empty_when_agent_declines(
         platform="instagram", post_text="generic low-effort post", group_or_hashtag="#dogfood"
     )
     assert out == ""
+
+
+# --------------------------------------------------------- last_outcome tagging
+
+
+def _drafter_returning(
+    monkeypatch: pytest.MonkeyPatch, payload: object
+) -> draft_helper.SkillDrafter:
+    """A SkillDrafter whose LLM call returns `payload`, with a stub system prompt."""
+    monkeypatch.setattr(draft_helper, "_system_prompt", lambda _skill: "SYSTEM")
+    monkeypatch.setattr(draft_helper, "_llm_json", lambda *_a, **_k: payload)
+    return draft_helper.for_skill("ig-scanner")
+
+
+def test_last_outcome_distinguishes_upstream_failure_from_decline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead model must not look like the agent choosing not to engage."""
+    d = _drafter_returning(monkeypatch, None)
+    assert (
+        d.draft_comment_for_post(
+            platform="instagram", post_text="p", group_or_hashtag="h", post_url="u"
+        )
+        == ""
+    )
+    assert d.last_outcome == draft_helper.DRAFT_FAILED
+
+
+def test_last_outcome_marks_a_genuine_agent_decline(monkeypatch: pytest.MonkeyPatch) -> None:
+    d = _drafter_returning(monkeypatch, {"engage": False, "reason": "off topic"})
+    assert (
+        d.draft_comment_for_post(
+            platform="instagram", post_text="p", group_or_hashtag="h", post_url="u"
+        )
+        == ""
+    )
+    assert d.last_outcome == draft_helper.AGENT_DECLINED
+
+
+def test_last_outcome_marks_engaged_but_blank(monkeypatch: pytest.MonkeyPatch) -> None:
+    d = _drafter_returning(monkeypatch, {"engage": True, "comment": "", "reason": "r"})
+    assert (
+        d.draft_comment_for_post(
+            platform="instagram", post_text="p", group_or_hashtag="h", post_url="u"
+        )
+        == ""
+    )
+    assert d.last_outcome == draft_helper.DRAFT_BLANK
+
+
+def test_last_outcome_is_none_after_a_successful_draft(monkeypatch: pytest.MonkeyPatch) -> None:
+    good = "We tried something similar with our dog and it worked well — how did yours react?"
+    d = _drafter_returning(monkeypatch, {"engage": True, "comment": good, "reason": "fit"})
+    monkeypatch.setattr(draft_helper, "validate_voice", lambda *_a, **_k: (True, []))
+    assert (
+        d.draft_comment_for_post(
+            platform="instagram", post_text="p", group_or_hashtag="h", post_url="u"
+        )
+        == good
+    )
+    assert d.last_outcome is None

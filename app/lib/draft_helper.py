@@ -60,6 +60,15 @@ Platform = Literal["facebook", "instagram", "wordpress"]
 _MAX_TOKENS = 2400
 _SHORT_MAX_TOKENS = 1600
 
+# Why a draft came back empty. The pipeline used to flatten all of these into
+# one `agent_declined_or_empty_draft` log line, which made a total outage
+# (retired model, bad key) look identical to the agent thoughtfully declining
+# — the failure mode that hid a dead model for an entire run on 2026-07-29.
+AGENT_DECLINED = "agent_declined"  # engage:false — a real editorial decision
+DRAFT_FAILED = "draft_failed"  # upstream call failed / unparseable
+DRAFT_BLANK = "draft_blank"  # engage:true but no usable text
+VOICE_FAILED = "voice_validation_failed"  # drafted, but failed voice rules twice
+
 
 @lru_cache(maxsize=1)
 def _nalla_facts() -> str:
@@ -105,6 +114,28 @@ class SkillDrafter:
     def __init__(self, skill: str) -> None:
         self.skill = skill
         self._system = _system_prompt(skill)
+        # Why the last draft came back empty (one of the *_DECLINED/FAILED
+        # tags above), or None after a successful draft. Read by
+        # lib/engagement/inline_comment.py so a skip is logged with its real
+        # cause instead of a catch-all. Safe as instance state: a drafter is
+        # called once per post, synchronously, by a single-threaded scan loop.
+        self.last_outcome: str | None = None
+
+    def _run(
+        self, prompt: str, *, platform: str, group_or_hashtag: str | None, max_tokens: int
+    ) -> str:
+        """Draft, recording why an empty result happened."""
+        outcome: list[str] = []
+        draft = _draft_validated(
+            prompt,
+            platform=platform,
+            group_or_hashtag=group_or_hashtag,
+            max_tokens=max_tokens,
+            system=self._system,
+            outcome=outcome,
+        )
+        self.last_outcome = outcome[0] if outcome else None
+        return draft
 
     def draft_comment_for_post(
         self,
@@ -128,12 +159,8 @@ class SkillDrafter:
             post_url=post_url,
             site_context=site_context,
         )
-        return _draft_validated(
-            prompt,
-            platform=platform,
-            group_or_hashtag=group_or_hashtag,
-            max_tokens=_MAX_TOKENS,
-            system=self._system,
+        return self._run(
+            prompt, platform=platform, group_or_hashtag=group_or_hashtag, max_tokens=_MAX_TOKENS
         )
 
     def draft_short_comment_for_post(
@@ -158,12 +185,11 @@ class SkillDrafter:
             post_url=post_url,
             site_context=None,
         )
-        return _draft_validated(
+        return self._run(
             prompt,
             platform=platform,
             group_or_hashtag=group_or_hashtag,
             max_tokens=_SHORT_MAX_TOKENS,
-            system=self._system,
         )
 
 
@@ -216,6 +242,7 @@ def _draft_validated(
     group_or_hashtag: str | None,
     max_tokens: int,
     system: str | None = None,
+    outcome: list[str] | None = None,
 ) -> str:
     """Call the LLM for an engage/comment/reason decision, voice-validate the
     drafted comment, and retry once (naming the violations) if it fails.
@@ -229,7 +256,11 @@ def _draft_validated(
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         response = _llm_json(current_prompt, max_tokens=max_tokens, system=system)
         draft = _engaged_comment(
-            response, platform=platform, group_or_hashtag=group_or_hashtag, attempt=attempt
+            response,
+            platform=platform,
+            group_or_hashtag=group_or_hashtag,
+            attempt=attempt,
+            outcome=outcome,
         )
         if not draft:
             return ""  # None / decline / blank — all logged in _engaged_comment
@@ -253,6 +284,8 @@ def _draft_validated(
             )
 
     log.warning({"event": "draft_voice_fail_final", "platform": platform, "violations": violations})
+    if outcome is not None:
+        outcome.append(VOICE_FAILED)
     return ""
 
 
@@ -262,6 +295,7 @@ def _engaged_comment(
     platform: str,
     group_or_hashtag: str | None,
     attempt: int,
+    outcome: list[str] | None = None,
 ) -> str:
     """Extract the drafted comment from an agent response, or ``""`` if the
     call failed, the agent declined, or the comment was blank. Every outcome
@@ -269,14 +303,20 @@ def _engaged_comment(
     attributable. ``engage`` is read fail-closed: only a literal ``True``
     engages, so a non-boolean can never post a declined comment."""
     base = {"platform": platform, "group_or_hashtag": group_or_hashtag, "attempt": attempt}
+
+    def _record(tag: str) -> str:
+        if outcome is not None:
+            outcome.append(tag)
+        return ""
+
     if response is None:
         log.info({"event": "draft_gemini_returned_none", **base})
-        return ""
+        return _record(DRAFT_FAILED)
     if response.get("engage") is not True:
         log.info(
             {"event": "draft_agent_declined", **base, "reason": str(response.get("reason") or "")}
         )
-        return ""
+        return _record(AGENT_DECLINED)
     comment = _strip_meta_chrome(str(response.get("comment") or ""))
     if not comment:
         # engage:true but no usable comment text — a malformed response, not a
@@ -288,5 +328,5 @@ def _engaged_comment(
                 "reason": str(response.get("reason") or ""),
             }
         )
-        return ""
+        return _record(DRAFT_BLANK)
     return comment
