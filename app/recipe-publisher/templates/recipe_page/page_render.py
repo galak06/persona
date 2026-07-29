@@ -1,5 +1,5 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
-# (mirrors social-automation/pyrightconfig.json; the PostToolUse hook type-checks
+# (mirrors app/pyrightconfig.json; the PostToolUse hook type-checks
 #  a /tmp copy where the project venv + config don't apply, so resolve inline.)
 """Render a full recipe PAGE (HTML + CSS) from DB fields and image artifacts.
 

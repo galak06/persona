@@ -13,7 +13,7 @@ No auth (binds to localhost only). The API runs on port 5001 by default and is s
 ## Run
 
 ```bash
-cd social-automation
+cd app
 python -m api.approval_api
 # defaults: host=127.0.0.1 port=5001 (override via WEB_UI_HOST / WEB_UI_PORT)
 ```

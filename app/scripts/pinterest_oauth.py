@@ -1,12 +1,12 @@
 """One-shot OAuth 2.0 helper for the persona-publisher Pinterest app.
 
 Reads PINTEREST_APP_ID + PINTEREST_APP_SECRET from
-social-automation/.claude/settings.local.json, runs the Pinterest consent flow
+app/.claude/settings.local.json, runs the Pinterest consent flow
 in a browser, captures the redirect on localhost:8765, exchanges the code for
 access + refresh tokens, and writes them back into the same settings file.
 
 Run once:
-    python social-automation/scripts/pinterest_oauth.py
+    python app/scripts/pinterest_oauth.py
 """
 
 from __future__ import annotations

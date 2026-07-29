@@ -192,11 +192,23 @@ class AppSettings(BaseModel):
 
 
 def default_brand_dir() -> Path:
-    """Fallback BRAND_DIR default: a brand/ directory sibling of app/.
-    Only used by scripts/entry points that need a default before BRAND_DIR
-    is explicitly set — load_config() itself stays strict and always requires
-    the env var."""
-    return Path(__file__).resolve().parent.parent.parent / "brand"
+    """Fallback BRAND_DIR default: `app/brands/<brand>`.
+
+    Brand data lives under `app/brands/` (it used to sit beside the engine
+    directory, which is why older callers pointed one level up). Prefers
+    `PERSONA_BRAND`; otherwise, if exactly one brand folder is present, uses
+    it. Best-effort and never raises — some callers evaluate this at import
+    time — so `load_config()` stays strict and always requires the env var.
+    """
+    brands_root = Path(__file__).resolve().parent.parent / "brands"
+    brand = os.environ.get("PERSONA_BRAND")
+    if brand:
+        return brands_root / brand
+    candidates = sorted(
+        d for d in brands_root.glob("*")
+        if d.is_dir() and not d.name.startswith((".", "_")) and ".bak" not in d.name
+    )
+    return candidates[0] if len(candidates) == 1 else brands_root
 
 
 def _resolve_paths(brand_dir: Path) -> BrandPaths:
@@ -259,10 +271,15 @@ def load_config() -> AppSettings:
     return settings
 
 
-# Load local environment variables from .claude/settings.local.json
+# Populate os.environ from the two credential files, brand-first.
+# Brand-owned platform secrets live in `$BRAND_DIR/.env`; engine-wide ones
+# (LLM key, OAuth *app* credentials, tracing) live in .claude/settings.local.json.
+# Both loaders skip keys already set, so brand values win over engine ones and an
+# explicit `FOO=... python ...` invocation still wins over both.
 try:
-    from lib.local_env import load_local_env
+    from lib.local_env import load_brand_env_into_environ, load_local_env
 
+    load_brand_env_into_environ()
     load_local_env()
 except ImportError:
     pass

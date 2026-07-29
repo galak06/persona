@@ -41,7 +41,7 @@ EXPECTED_SLIDES = 4
 
 def load_env_from_settings() -> None:
     """Mirror the convention in scripts/content_pipeline.py: hydrate os.environ
-    from the 'env' block in social-automation/.claude/settings.local.json."""
+    from the 'env' block in app/.claude/settings.local.json."""
     if not SETTINGS_PATH.exists():
         return
     try:

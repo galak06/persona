@@ -2,7 +2,7 @@
 """Shared CLI helpers for pipeline phases.
 
 Importing this module bridges ``sys.path`` so both the recipe-publisher root
-(``recipe_db``/``pipeline``) and the social-automation root (``lib.*``) are
+(``recipe_db``/``pipeline``) and the engine root (``lib.*``) are
 importable regardless of the current working directory — mirrors
 api/recipes_api.py's path handling. Keeps every phase CLI free of duplicated
 bootstrap code.

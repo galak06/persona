@@ -90,7 +90,7 @@ DAILY_LIMITS, DELAY_RANGES = _load_artifact()
 
 # STATE_FILE now resolves to the brand-dir-aware state path
 # (e.g. app/state/rate_limit_tracker.json), via the BrandPaths
-# resolver in lib.config. The legacy social-automation/.claude/state path
+# resolver in lib.config. The legacy app/.claude/state path
 # never existed under the multi-brand layout and caused FileNotFoundError
 # on every _save_state() call.
 STATE_FILE = settings.paths.rate_limit_tracker

@@ -2,7 +2,7 @@
 
 Run AFTER creating the schema in Supabase SQL Editor (scripts/create_supabase_schema.sql):
 
-    cd /path/to/social-automation
+    cd /path/to/persona/app
     BRAND_DIR=/path/to/app python scripts/migrate_sqlite_to_supabase.py
 """
 

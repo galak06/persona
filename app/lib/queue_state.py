@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 # Make ``api/`` importable when this module is loaded via the lib-prepended
-# sys.path used by the rest of social-automation (scripts insert ``lib/`` first,
+# sys.path used by the rest of the engine (scripts insert ``lib/`` first,
 # not the project root). ``api/`` is one level up from this file.
 _API_PARENT = Path(__file__).resolve().parent.parent
 if str(_API_PARENT) not in sys.path:

@@ -9,7 +9,7 @@ No auth (binds to a localhost-only FastAPI backend), no multi-tenant context —
 The correct way to start the complete local environment is:
 
 ```bash
-cd social-automation
+cd app
 ./start.sh
 ```
 
@@ -17,7 +17,7 @@ cd social-automation
 
 1. **Docker Phoenix** (OTel tracing) on port 6006 — optional, best-effort. If Docker isn't running or the compose file is missing, the startup emits a warning but continues.
 2. **FastAPI Backend API** on port 5001 — uses the consolidated `BRAND_DIR` resolver, which:
-   - Falls back to `../persona` (sibling directory to `social-automation/`) by default
+   - Falls back to `../persona` (sibling directory to `app/`) by default
    - Can be overridden by setting the `BRAND_DIR` environment variable explicitly
 3. **Vite Frontend** on port 5173 — only started if `frontend/node_modules` already exists (you must run `npm install` manually first on a fresh checkout)
 
@@ -113,14 +113,14 @@ src/
 
 The backend uses a consolidated `BRAND_DIR` resolver in `lib/config.py::default_brand_dir()`. For local development:
 
-- **Default:** expects a directory named after your brand (e.g., `persona`) as a sibling to `social-automation/` in your project root
+- **Default:** expects a directory named after your brand (e.g., `persona`) as a sibling to `app/` in your project root
 - **Override:** set `BRAND_DIR` explicitly as an environment variable (used by production scripts and cron jobs)
 
 The fallback resolver in `scripts/dev.py` (line 19–22) uses this same logic, so you can often omit the env var during local development.
 
 ## CI/CD
 
-GitHub Actions runs a `frontend` job on every push/PR touching `social-automation/**`:
+GitHub Actions runs a `frontend` job on every push/PR touching `app/**`:
 
 - **Type check & build** - `npm run build` (runs `tsc -b && vite build`; clean, exits 0)
 - **Lint** - `npm run lint`

@@ -23,6 +23,7 @@ in CI by default.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -55,7 +56,7 @@ def _default_brand_dir() -> Path:
         from lib.config import default_brand_dir as _resolve
         return _resolve()
     except Exception:
-        return _PROJECT_ROOT.parent / "persona"
+        return _PROJECT_ROOT / "brands" / os.environ.get("PERSONA_BRAND", "default")
 
 
 _BRAND_DIR = _default_brand_dir()

@@ -7,7 +7,7 @@ independent and idempotent. See the individual ``worker_*.py`` modules.
 
 Importing this package also installs a sys.path bridge so the workers resolve
 both the recipe-publisher packages (recipe_db / generators / publishers) and the
-social-automation packages (lib.*) when run via ``python -m workers.<name>``,
+the engine root packages (lib.*) when run via ``python -m workers.<name>``,
 regardless of cwd.
 """
 
@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 _RP = Path(__file__).resolve().parent.parent  # recipe-publisher/
-_SA = _RP.parent  # social-automation/
+_SA = _RP.parent  # app/
 for _p in (str(_SA), str(_RP)):
     if _p not in sys.path:
         sys.path.insert(0, _p)

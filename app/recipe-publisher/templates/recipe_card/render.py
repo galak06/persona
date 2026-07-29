@@ -15,7 +15,7 @@ data contract used to wire this into prepare.py later.
 """
 
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
-# (mirrors social-automation/pyrightconfig.json; the PostToolUse hook type-checks
+# (mirrors app/pyrightconfig.json; the PostToolUse hook type-checks
 #  a /tmp copy where the project venv + config don't apply, so resolve inline.)
 from __future__ import annotations
 

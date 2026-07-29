@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Bridge: ensure both the recipe-publisher root (for ``recipe_db``/``pipeline``)
-# and the social-automation root (for ``lib.*``) are importable regardless of
+# and the engine root (for ``lib.*``) are importable regardless of
 # the current working directory — mirrors api/recipes_api.py's path handling.
 _RECIPE_PUBLISHER = Path(__file__).resolve().parent.parent
 _SOCIAL_AUTOMATION = _RECIPE_PUBLISHER.parent

@@ -1,4 +1,4 @@
-"""Typed exception hierarchy for social-automation.
+"""Typed exception hierarchy for the persona engine.
 
 Every operation that can fail in production raises one of these. The
 categorical bases (`RetryableError`, `PermanentError`, `BugError`) let

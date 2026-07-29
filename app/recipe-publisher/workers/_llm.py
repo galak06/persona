@@ -1,19 +1,37 @@
-"""LLM helpers shared by content workers — text generation and caption drafting."""
+"""LLM helpers shared by content workers — text generation and caption drafting.
+
+The transports below stay local because this flow has its own budgets (a
+1024-token, temperature-0.9 lyric/caption call against ``GEMINI_LYRICS_MODEL``),
+but WHICH provider runs is not decided here: ``lib.llm_client.resolve_provider``
+owns that rule for the whole engine (``VOICE_PROVIDER`` → key auto-detect), so
+this module can't drift into a third selection dialect.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generators.recipe import Recipe
 
+# ---- path bootstrap so `lib` resolves whether run as a module or a script ----
+# (same dance as workers/worker_content_ideator.py; `lib.llm_client` is
+# import-light -- no httpx, no provider SDK -- so this stays cheap.)
+_rp_root = Path(__file__).resolve().parent.parent
+_sa_root = _rp_root.parent
+for _p in (_rp_root, _sa_root):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from lib.llm_client import resolve_provider  # (after the path fixup above)
+
 logger = logging.getLogger("workers.llm")
 
-_GEMINI_ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-)
+_GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _GEMINI_MODEL = os.getenv("GEMINI_LYRICS_MODEL", "gemini-2.5-flash")
 _ANTHROPIC_MODEL = os.getenv("RECIPE_MODEL", "claude-sonnet-4-6")
 
@@ -32,7 +50,7 @@ def _call_gemini_text(prompt: str) -> str:
     }
     r = httpx.post(
         _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL),
-        params={"key": key},
+        headers={"x-goog-api-key": key},  # header, never ?key= — httpx logs URLs
         json=payload,
         timeout=60.0,
     )
@@ -58,12 +76,17 @@ def _call_anthropic_text(prompt: str) -> str:
 
 
 def llm_text(prompt: str) -> str:
-    """Call Gemini (preferred) or Anthropic. Raises if neither key is set."""
-    if os.environ.get("GEMINI_API_KEY"):
-        return _call_gemini_text(prompt)
-    if os.environ.get("ANTHROPIC_API_KEY"):
+    """Call whichever provider ``lib.llm_client.resolve_provider`` selects.
+
+    Raises if neither key is set (callers here catch and fall back to a
+    placeholder) — the shared rule would still name a provider, but firing a
+    keyless HTTP call to find that out is worse than failing fast.
+    """
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")):
+        raise RuntimeError("no LLM key available (GEMINI_API_KEY / ANTHROPIC_API_KEY)")
+    if resolve_provider() == "anthropic":
         return _call_anthropic_text(prompt)
-    raise RuntimeError("no LLM key available (GEMINI_API_KEY / ANTHROPIC_API_KEY)")
+    return _call_gemini_text(prompt)
 
 
 def enforce_hashtag_limit(caption: str, max_tags: int = 8) -> str:

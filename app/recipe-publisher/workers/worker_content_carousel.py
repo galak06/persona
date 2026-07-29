@@ -24,7 +24,7 @@ from typing import Any
 
 # ── path bootstrap ────────────────────────────────────────────────────────────
 _rp_root = Path(__file__).resolve().parent.parent   # recipe-publisher/
-_sa_root = _rp_root.parent                          # social-automation/
+_sa_root = _rp_root.parent                          # app/
 for _p in (_rp_root, _sa_root):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))

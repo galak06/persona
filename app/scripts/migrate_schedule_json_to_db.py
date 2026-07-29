@@ -5,8 +5,8 @@ import os
 import sys
 from pathlib import Path
 
-# add social-automation to sys.path so lib.schedule_db is importable
-# script lives at social-automation/scripts/, so parent is social-automation/
+# add the engine root to sys.path so lib.schedule_db is importable
+# script lives at app/scripts/, so parent is app/
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib import schedule_db

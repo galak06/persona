@@ -98,7 +98,7 @@ class EngagementPolicy:
 
     @classmethod
     def from_config(cls, config: dict[str, object]) -> EngagementPolicy:
-        """Build from social-automation `config.json`.
+        """Build from the brand `config.json`.
 
         Reads `content_analysis.{relevance_threshold,approval_threshold}` for
         gates, and `rate_limits.{facebook,instagram}.{comments,likes}_per_day`

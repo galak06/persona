@@ -31,7 +31,7 @@ def refresh_token(warnings: list[str]) -> str:
     """Exchange PINTEREST_REFRESH_TOKEN for a new access_token.
 
     On success, updates os.environ and persists both tokens back to
-    social-automation/.claude/settings.local.json so the next process
+    app/.claude/settings.local.json so the next process
     picks them up. Returns the new access_token.
     """
     refresh = os.environ.get("PINTEREST_REFRESH_TOKEN")

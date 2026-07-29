@@ -1,7 +1,9 @@
 """Research-driven candidate generation via Gemini + native google_search tool.
 
 Single Gemini API call:
-    - System prompt: Nalla's Dad voice + dog-recipe ideation rules
+    - System prompt: the content-ideator skill's ``## LLM Prompt: research``
+      section (brand persona + dog-recipe ideation rules), loaded via
+      ``lib.skill_loader`` so the copy lives in SKILL.md, not in Python
     - User prompt: today's date, exclusion list, count target
     - Tool: google_search (Gemini grounds against live web results)
     - Output: JSON array of Candidate dicts, parsed from text response
@@ -17,11 +19,19 @@ import json
 import logging
 import os
 import re
+import sys
 from dataclasses import dataclass
 from datetime import date
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Final
 
 import httpx
+
+PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+
+from skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -51,35 +61,15 @@ class Candidate:
         }
 
 
-_SYSTEM_PROMPT: Final[str] = """\
-You research recipe ideas for your-brand.com — a niche site by "Nalla's Dad"
-(software engineer + dog owner) about homemade dog food, treats, GPS gear, and
-running with dogs. Audience: USA + Canada dog owners.
+@lru_cache(maxsize=1)
+def _system_prompt() -> str:
+    """Rendered content-ideator ``## LLM Prompt: research`` section, cached.
 
-Your job: surface recipe candidates that are *trending RIGHT NOW* based on
-real signals from Google Search, Reddit, dog-blog publishing patterns,
-seasonal cues, and dietary trends.
-
-Hard rules for every candidate:
-- Must be safe for dogs. NEVER suggest recipes containing xylitol, chocolate,
-  cocoa, raisins, grapes, macadamias, raw onion, raw garlic in toxic doses,
-  alcohol, caffeine, or nutmeg.
-- Must fit one of these categories exactly:
-    treats-baked, treats-frozen, treats-no-bake, treats-dehydrated,
-    meals-cooked, meals-raw, broths-soups, stews
-- Must be DIFFERENT from any title in the EXCLUDED list — fuzzy match, no
-  near-duplicates either ("pumpkin oat biscuits" ≠ "pumpkin biscuits").
-- Each candidate needs a specific *why_now* signal — trend, seasonal, search
-  spike, gap, dietary pattern. Never generic ("dogs like this").
-- evidence: NAME the source(s) in plain prose — e.g. "AKC dog-treat guide",
-  "Rover.com summer-cooling treats article", "2026 Pet Food Trends report
-  by Matchwell", "r/dogs threads about hot-weather snacks". DO NOT paste raw
-  URLs — Telegram-rendered grounding URLs are short-lived and 404. Source
-  names + a sentence about what they said is what we want.
-- seasonal_relevance: 1 (off-season) to 10 (perfect for current month).
-
-Mix categories. Don't return 5 baked treats — diversify.
-"""
+    Raises ``SkillPromptError`` (from ``lib.skill_loader``) on a missing or
+    broken skill file — a deployment defect must abort loudly, never degrade
+    into a promptless call.
+    """
+    return load_skill_prompt("content-ideator", section="research")
 
 
 def _user_prompt(existing_titles: list[str], n: int) -> str:
@@ -151,14 +141,16 @@ def research_candidates(existing_titles: list[str], *, n: int = 6) -> list[Candi
         raise RuntimeError("GEMINI_API_KEY not set in env")
 
     payload = {
-        "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": _system_prompt()}]},
         "contents": [{"role": "user", "parts": [{"text": _user_prompt(existing_titles, n)}]}],
         "tools": [{"google_search": {}}],
         "generationConfig": {"temperature": 0.9, "maxOutputTokens": 4096},
     }
 
     url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
-    logger.info("gemini research call model=%s n=%d excluded=%d", _GEMINI_MODEL, n, len(existing_titles))
+    logger.info(
+        "gemini research call model=%s n=%d excluded=%d", _GEMINI_MODEL, n, len(existing_titles)
+    )
     r = httpx.post(url, params={"key": api_key}, json=payload, timeout=180.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini research HTTP {r.status_code}: {r.text[:500]}")

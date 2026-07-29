@@ -21,7 +21,7 @@ from lib.engagement.policy import EngagementPolicy
 
 
 def _production_like_config() -> dict[str, object]:
-    """A dict matching social-automation/config.json shape (subset used by policy)."""
+    """A dict matching app/config.json shape (subset used by policy)."""
     return {
         "content_analysis": {
             "relevance_threshold": 0.70,
@@ -144,7 +144,7 @@ class TestSlice1Invariants:
 
 
 # Path to the real production profiles dir. tests/lib/engagement/test_policy.py
-# is 3 parents deep relative to social-automation/, so .parents[3] / "profiles"
+# is 3 parents deep relative to app/, so .parents[3] / "profiles"
 # lands on the canonical profile JSONs.
 _PROFILES_DIR = Path(__file__).resolve().parents[3] / "profiles"
 

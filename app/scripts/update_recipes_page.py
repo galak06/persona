@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
-# Make social-automation/ importable so lib.sessions can be resolved.
+# Make app/ importable so lib.sessions can be resolved.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from lib.sessions.wp_client import wp_client  # noqa: E402

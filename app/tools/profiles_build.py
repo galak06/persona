@@ -1,6 +1,6 @@
 """Profile-centric config builder.
 
-Reads engine profiles at social-automation/profiles/*.json and emits derived
+Reads engine profiles at app/profiles/*.json and emits derived
 artifacts the runtime reads.
 
 Slice A: data/rate_limits.json (consumed by lib/rate_limiter.py).

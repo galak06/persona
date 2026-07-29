@@ -4,14 +4,14 @@ Generates a dog-friendly recipe in the Nalla's Dad voice and publishes it to Wor
 
 - **Single image** — `publish_to_instagram()`
 - **Carousel** — `publish_carousel_to_instagram()` (2-10 slides from `seeds/carousels/{id}.json`)
-- **Reel** — `publish_reel_to_instagram()` (9:16 mp4 composed from 4 slides + Jamendo music bed, driven end-to-end by `social-automation/scripts/content_pipeline.py --stage reel --seed <id>`)
+- **Reel** — `publish_reel_to_instagram()` (9:16 mp4 composed from 4 slides + Jamendo music bed, driven end-to-end by `app/scripts/content_pipeline.py --stage reel --seed <id>`)
 
 See `SKILL.md` for the invocation contract.
 
 ## Install
 
 ```bash
-cd social-automation/recipe-publisher
+cd app/recipe-publisher
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

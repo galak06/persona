@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 # Make ``api/`` importable under the lib-prepended sys.path used by the
-# rest of social-automation (scripts insert ``lib/`` first, not the repo
+# rest of the engine (scripts insert ``lib/`` first, not the repo
 # root). ``api/`` is one level up from this file.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -59,7 +59,7 @@ ENGAGEMENT_LOG_PATH: Path = (
     _paths.brand_dir / settings.file_paths.engagement_log
 )
 
-# Rate caps come from social-automation/CLAUDE.md
+# Rate caps come from app/CLAUDE.md
 # (facebook.group_join_requests_per_day). Hard-coded here because
 # the cap is the contract; config.json is for tunable knobs.
 DAILY_JOIN_CAP: int = 10

@@ -115,7 +115,7 @@ class WordPressError(RuntimeError):
 
 
 def _client() -> httpx.Client:
-    # Standardized on the social-automation project convention.
+    # Standardized on the engine project convention.
     # Legacy WP_BASE_URL / WP_APP_PASSWORD_USER aliases were removed in
     # Stage 4 — set WP_URL / WP_USER / WP_APP_PASSWORD instead.
     base = os.environ["WP_URL"].rstrip("/")

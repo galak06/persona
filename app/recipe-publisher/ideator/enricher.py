@@ -1,6 +1,10 @@
 """Turn an approved candidate into a full structured seed JSON via Gemini.
 
-No web search at this stage — this is the LLM filling in a known schema.
+No web search at this stage — this is the LLM filling in a known schema. The
+system prompt is the content-ideator skill's ``## LLM Prompt: enrich`` section
+(loaded via ``lib.skill_loader``) plus a Python-side ``ALLOWED CATEGORIES:``
+line built from ``schema.ALLOWED_CATEGORIES``.
+
 We use Gemini's structured-output JSON mode (responseMimeType=application/json
 + responseSchema) for reliability. The resulting dict is then re-validated
 by ideator/schema.validate_seed() — Gemini schemas can be incomplete, our
@@ -13,12 +17,20 @@ import json
 import logging
 import os
 import re
+import sys
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Final
 
 import httpx
 
 from .research import Candidate
 from .schema import ALLOWED_CATEGORIES
+
+PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+
+from skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -28,39 +40,21 @@ _GEMINI_ENDPOINT: Final[str] = (
 )
 
 
-_SYSTEM_PROMPT: Final[str] = f"""\
-You generate structured recipe seeds for your-brand.com. The seed is the
-factual backbone of a recipe (ingredients, steps, safety) — voice / Nalla
-stories are added later by a separate drafter, so DO NOT add prose narratives
-or marketing language here.
+@lru_cache(maxsize=1)
+def _system_prompt() -> str:
+    """Rendered content-ideator ``## LLM Prompt: enrich`` section, cached.
 
-DOG-SAFETY RULES (non-negotiable):
-- NEVER include xylitol (always note "xylitol-free" for peanut butter).
-- NEVER include chocolate, cocoa, raisins, grapes, macadamias, alcohol,
-  caffeine, coffee, or nutmeg.
-- Garlic and onion: avoid entirely OR very small cooked amounts ONLY if
-  recipe is for a multi-day batch with low daily exposure — note safety.
-- Sodium: avoid added salt where possible.
+    The allowed-category set is NOT duplicated in the skill file: it is the
+    same ``schema.ALLOWED_CATEGORIES`` constant the validator enforces, and is
+    appended here as a trailing ``ALLOWED CATEGORIES:`` line so the two can
+    never drift.
 
-OUTPUT FORMAT (strict):
-- id: lowercase-kebab-case, ≤40 chars (e.g. "summer-watermelon-cubes").
-- title: human-readable, ≤70 chars.
-- topic_keywords: 4-8 short phrases.
-- category: must be one of {sorted(ALLOWED_CATEGORIES)}.
-- prep_minutes / cook_minutes: integers 0..240.
-- yield_servings: human-readable ("makes ~24 cubes" / "feeds 1 medium dog 4 days").
-- tags: 3-6 hyphenated lowercase tags.
-- ingredients: 4-10 items. Each item with measurement AND grams in parens —
-  e.g. "1 cup (240 ml) bone broth, no salt added, no onion".
-- steps: 5-10 numbered actions, each a complete sentence.
-- dog_safety_notes: 1-3 sentences naming SPECIFIC allergen warnings for the
-  ingredients used.
-- storage: 1 sentence on fridge/freezer durations.
-- portion_guide: object with small / medium / large keys, each a short
-  feeding guideline.
-- source_attribution: 1-2 sentences citing GENERIC sources (AKC, AAFCO,
-  veterinary nutrition guides). Don't fabricate specific URLs.
-"""
+    Raises ``SkillPromptError`` (from ``lib.skill_loader``) on a missing or
+    broken skill file — a deployment defect must abort loudly, never degrade
+    into a promptless call.
+    """
+    base = load_skill_prompt("content-ideator", section="enrich")
+    return f"{base}\n\nALLOWED CATEGORIES: {sorted(ALLOWED_CATEGORIES)}"
 
 
 def _user_prompt(c: Candidate) -> str:
@@ -93,7 +87,7 @@ def enrich_to_seed(candidate: Candidate) -> dict[str, Any]:
         raise RuntimeError("GEMINI_API_KEY not set in env")
 
     payload = {
-        "systemInstruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+        "systemInstruction": {"parts": [{"text": _system_prompt()}]},
         "contents": [{"role": "user", "parts": [{"text": _user_prompt(candidate)}]}],
         "generationConfig": {
             "temperature": 0.5,

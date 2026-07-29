@@ -19,11 +19,23 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Script is in social-automation/scripts/
-ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT / "social-automation" / "lib"))
+# Script is in app/scripts/, so the engine root is two levels up.
+ENGINE_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ENGINE_ROOT / "lib"))
 from lib.bootstrap import init_script
 settings, log = init_script(__name__)
+
+def _relative_to_engine(path: Path) -> str:
+    """Path relative to the engine root, or absolute if it lives outside it.
+
+    `$BRAND_DIR` normally sits under `app/brands/`, but it is allowed to point
+    anywhere, so a plain `relative_to()` would raise for an external brand dir.
+    """
+    try:
+        return str(path.relative_to(ENGINE_ROOT))
+    except ValueError:
+        return str(path)
+
 
 def find_latest(pattern: str, search_dir: Path) -> Path | None:
     """Find the most recent file matching a glob pattern."""
@@ -45,9 +57,10 @@ if PRIOR_IDEAS and ("-v3" in PRIOR_IDEAS.name or "-approved" in PRIOR_IDEAS.name
         others.sort(key=lambda x: (x.name, x.stat().st_mtime), reverse=True)
         PRIOR_IDEAS = others[0]
 
-TIER1_DELTAS = find_latest("tier1_research_*.json", ROOT / "social-automation" / ".claude" / "state")
-IG_SIGNALS = find_latest("tier1_real_data_*.json", ROOT / "social-automation" / ".claude" / "state")
-TRENDS_CACHE = ROOT / "social-automation" / ".claude" / "state" / "keyword_research_cache.json"
+_STATE_DIR = ENGINE_ROOT / ".claude" / "state"
+TIER1_DELTAS = find_latest("tier1_research_*.json", _STATE_DIR)
+IG_SIGNALS = find_latest("tier1_real_data_*.json", _STATE_DIR)
+TRENDS_CACHE = _STATE_DIR / "keyword_research_cache.json"
 HISTORY = settings.paths.brand_dir / "state" / "ideation_history.json"
 
 # Output path uses the same date as PRIOR_IDEAS if found
@@ -172,7 +185,7 @@ def main() -> int:
         "timestamp": output["_generated_at"],
         "trigger": "automated re-scoring with live signals",
         "ideas_generated": len(rescored),
-        "output_file": str(OUT_PATH.relative_to(ROOT)),
+        "output_file": _relative_to_engine(OUT_PATH),
         "top_idea": rescored[0]["Topic"] if rescored else None
     })
     HISTORY.write_text(json.dumps(hist, indent=2))

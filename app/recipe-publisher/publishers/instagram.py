@@ -186,7 +186,7 @@ def post_first_comment_to_instagram(media_id: str, message: str) -> str:
 
 
 def publish_to_instagram(recipe: Recipe, *, image_url: str) -> IGPublishResult:
-    # Accept both the recipe-publisher original names and the social-automation
+    # Accept both the recipe-publisher original names and the engine
     # project convention (IG_ACCOUNT_ID + FB_PAGE_TOKEN per CLAUDE.md — IG uses
     # the same Page token as Facebook). Project convention takes precedence.
     ig_user_id = _get_ig_account_id()

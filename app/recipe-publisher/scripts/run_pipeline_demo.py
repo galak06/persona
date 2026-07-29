@@ -25,7 +25,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-# Bridge to the recipe-publisher root (recipe_db/pipeline) and social-automation
+# Bridge to the recipe-publisher root (recipe_db/pipeline) and the engine root
 # root (lib.*), regardless of CWD.
 _RP = Path(__file__).resolve().parent.parent
 _SA = _RP.parent

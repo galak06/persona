@@ -50,12 +50,26 @@ def _resolve_log_path(suffix: str) -> str:
 
 
 def _resolve_brand_dir() -> str:
-    """Best-effort absolute path to the brand dir for the EnvironmentVariables block."""
+    """Absolute path to the brand dir for the EnvironmentVariables block.
+
+    Every generated plist bakes this path into `BRAND_DIR`, `StandardOutPath`
+    and `StandardErrorPath`, so a wrong value here silently produces jobs that
+    launchd can never run. Prefer the explicit env var; otherwise fall back to
+    `app/brands/<PERSONA_BRAND>` and fail loudly rather than emit a path that
+    does not exist.
+    """
     env = os.environ.get("BRAND_DIR")
     if env:
         return str(Path(env).resolve())
-    # Fallback: sibling directory ../persona.
-    fallback = (REPO_ROOT.parent / "persona").resolve()
+
+    from lib.config import default_brand_dir
+
+    fallback = default_brand_dir().resolve()
+    if not (fallback / "config.json").is_file():
+        raise SystemExit(
+            f"cannot infer the brand dir (tried {fallback}); "
+            "set BRAND_DIR or PERSONA_BRAND before regenerating plists"
+        )
     return str(fallback)
 
 

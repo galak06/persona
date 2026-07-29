@@ -107,7 +107,7 @@
     {
       "approval_channel": "telegram",
       "depends_on": [],
-      "description": "Pull held dogfoodandfun.com comments via WP REST, auto-trash spam, queue rest for Telegram approval. Source: social-automation/CLAUDE.md L31 (Engagement Pipeline \u2014 wp-comment-handler Daily 9:00 PM Israel).",
+      "description": "Pull held dogfoodandfun.com comments via WP REST, auto-trash spam, queue rest for Telegram approval. Source: app/CLAUDE.md L31 (Engagement Pipeline \u2014 wp-comment-handler Daily 9:00 PM Israel).",
       "id": "wp-comment-handler",
       "inputs": [],
       "order": 45,
