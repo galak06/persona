@@ -65,8 +65,12 @@ $CLAUDE_SCRATCHPAD_DIR/
 htmlcov/
 coverage.xml
 
-# Dated backup snapshots (e.g. dogfoodandfun.bak-20260710/)
+# Dated backup snapshots (e.g. dogfoodandfun.bak-20260710/). Both forms: the
+# trailing-slash rule matches directories, the bare glob matches FILES — a
+# timestamped copy of settings.local.json or a brand .env is a plaintext
+# credential dump and must never reach the remote.
 *.bak-*/
+*.bak-*
 
 # Repo-root local cache (currently just data/cache/)
 /data/
