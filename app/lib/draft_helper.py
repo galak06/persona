@@ -1,37 +1,32 @@
 """Inline LLM drafting helper for engagement-comment scanners and commenters.
 
-Two entry points, both in the configured brand voice:
-  - ``draft_comment_for_post``       — a 1-3 sentence reply. Used by the IG and
-    WordPress scanners, which draft inline at scan time.
-  - ``draft_short_comment_for_post`` — one tight sentence (~15-25 words) grounded
-    in the specific post. Used by ``scripts/fb_comment.py``, which drafts at
-    POST time so the comment reflects the live post text.
+``SkillDrafter`` (built via ``for_skill``) is the only drafting path: it
+binds a skill's ``## LLM Prompt`` section (``lib.skill_loader``) plus brand
+facts as the SYSTEM prompt and sends only per-post context as the USER
+prompt. Every wired flow — ``scripts/ig_comment.py``, ``scripts/ig_scan.py``,
+``scripts/fb_comment.py``, ``scripts/wp_scan.py`` — binds its own skill, so
+the flow's voice, engage-decision and length rules live in that SKILL.md and
+never in Python. The system prompt is loaded eagerly so a broken SKILL.md
+aborts at startup (fail-fast), while per-call failures below still degrade
+to a per-item skip.
 
-Both are agentic: the model first decides whether this specific post is
-genuinely worth engaging with (``engage: true|false``) before drafting.
-``engage`` is read fail-closed (``is not True`` → decline), so a schema hiccup
-that returns a non-boolean can never post a comment the model meant to skip.
-``engage: false`` means the model itself declined — that decision IS the
-approval gate for outbound comments (there is no separate human-in-the-loop
-step), and it flows through unchanged: both entry points still return ``""``
-on decline, exactly like every other failure path below, so callers
-(``lib/engagement/commenter.py``'s drain loop) need no changes at all.
+``draft_comment_for_post`` (1-3 sentence replies) and
+``draft_short_comment_for_post`` (one tight reply, used by the FB commenter)
+differ only in the token budget and whether site context is sent; the
+requested LENGTH comes from the bound skill's own rule.
 
-A missing ``GEMINI_API_KEY`` is treated like any other upstream failure —
-``_call_gemini_json`` returns ``None`` and the item is skipped with a logged
-warning — rather than raising mid-batch and aborting the whole run.
-
-Both route the draft through ``lib.comment_generator.validate_voice`` with
-``allow_own_url=False`` — engagement comments must never carry our URL — and
-retry the LLM call **once** with a stricter prompt that names the first
-attempt's voice violations. Both return ``""`` (empty string) on any failure
-path (missing candidate, agent decline, two voice-validation failures) so the
-caller can simply check truthiness and skip the item. Empty drafts are
-converted to ``USER_SKIPPED`` (scanner path) or just skipped (commenter).
-
-All failure/decline paths emit a structured ``log.info`` (or ``log.warning``
-on the final voice-validation failure) so the engagement log + observability
-stack can attribute drops.
+Drafting is agentic: the model first decides whether this specific post is
+worth engaging with. ``engage`` is read fail-closed (``is not True`` →
+decline) and IS the approval gate for outbound comments (no separate
+human-in-the-loop step). Every entry point returns ``""`` on ANY failure or
+decline path — missing key (``_llm_json`` → ``None``), agent
+decline, blank comment, or two voice-validation failures — so callers
+(``lib/engagement/commenter.py``'s drain loop) just check truthiness and
+skip. Every draft routes through ``lib.comment_generator.validate_voice``
+with ``allow_own_url=False`` and retries the LLM call **once** with a
+stricter USER prompt naming the first attempt's violations (the system
+prompt never changes between attempts). All failure/decline paths emit a
+structured ``log.info``/``log.warning`` so drops stay attributable.
 """
 
 from __future__ import annotations
@@ -42,36 +37,28 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
+from lib import skill_loader
 from lib.comment_generator import validate_voice
-from lib.gemini_client import _call_gemini_json
-from lib.reply_drafter import _VOICE_RULES, _strip_meta_chrome
+from lib.draft_prompts import ENGAGE_RESPONSE_SCHEMA, build_system_prompt, build_user_prompt
+from lib.llm_client import LLMRequest, get_llm
+from lib.reply_drafter import _strip_meta_chrome
 
 log = logging.getLogger(__name__)
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 
-# maxOutputTokens is a CEILING the model stops before, not a target — the
-# comment length is already bounded by the prompt ("15-25 words" / "1-3
-# sentences"), so a generous ceiling doesn't make outputs longer, it just
-# stops the JSON envelope from truncating. The budget must cover the comment
-# PLUS the `reason` field PLUS the {"engage":...,"comment":...,"reason":...}
-# scaffolding in one response; too small and a slightly-long reply/reason
-# truncates to unparseable JSON and the post is silently dropped.
-_MAX_TOKENS = 800
-_SHORT_MAX_TOKENS = 400
-
-_ENGAGE_INSTRUCTIONS = """
-Before drafting, decide whether THIS SPECIFIC post is genuinely worth
-engaging with as our brand. Decline (engage=false) if:
-- the post is generic/low-effort and a reply would feel like spam
-- our brand has no authentic, specific angle on this exact post
-- the post is from a competitor account
-- replying here would feel repetitive or forced rather than genuine
-
-Respond with ONLY a JSON object — no markdown fences, no preamble, no text
-before or after it:
-{"engage": true or false, "comment": "<the reply text, or \\"\\" if engage is false>", "reason": "<one short sentence, 12 words max, explaining the decision>"}
-"""
+# maxOutputTokens is a CEILING, not a target — length is bounded by the
+# prompt. The budget must cover the comment PLUS `reason` PLUS the JSON
+# scaffolding; too small and a long reply truncates to unparseable JSON.
+#
+# Raised 2026-07-29 for the Gemini 3.x family, which cannot disable thinking
+# (see lib/gemini_client.py::_base_payload). Thinking tokens are drawn from
+# this same ceiling BEFORE any visible text, so the previous 800/400 left the
+# JSON envelope truncated mid-string — which surfaces as an empty draft and is
+# then logged as `agent_declined_or_empty_draft`, i.e. a silent total failure
+# that looks like the agent choosing not to engage.
+_MAX_TOKENS = 2400
+_SHORT_MAX_TOKENS = 1600
 
 
 @lru_cache(maxsize=1)
@@ -92,68 +79,134 @@ def _nalla_facts() -> str:
     return ""
 
 
-def draft_comment_for_post(
-    *,
-    platform: Platform,
-    post_text: str,
-    group_or_hashtag: str | None,
-    post_url: str | None = None,
-    site_context: str | None = None,
-) -> str:
-    """Generate a 1-3 sentence Nalla's-Dad engagement comment for a post.
+def _system_prompt(skill: str) -> str:
+    """SYSTEM prompt for ``skill``: its rendered ``## LLM Prompt`` section
+    plus the brand-facts grounding block. Raises ``SkillPromptError`` (from
+    ``lib.skill_loader``) on any defect — surfaced eagerly at binder init."""
+    return build_system_prompt(skill_loader.load_skill_prompt(skill), _nalla_facts())
 
-    Returns the validated draft text (stripped), or an empty string if the
-    agent declined to engage, the Gemini call failed (including a missing
-    key), or after two voice-validation failures (one retry).
+
+class SkillDrafter:
+    """Drafter bound to a skill's SKILL.md system prompt.
+
+    Instances satisfy ``lib.engagement.collaborators.Drafter``. The system
+    prompt is loaded eagerly, in ``__init__`` — so a broken SKILL.md raises
+    ``SkillPromptError`` the moment a drafter is constructed, never mid-drain.
+    The four wired scripts construct theirs at module level, so for them that
+    means the failure surfaces at import, before any work starts; a drafter
+    built lazily would instead raise wherever it is constructed.
+
+    Note the deliberate asymmetry with ``lib/reply_drafter.py`` and the
+    ideator modules (``recipe-publisher/ideator/research.py``,
+    ``enricher.py``): those load their prompt lazily (``lru_cache`` on first
+    draft call), so a broken SKILL.md there surfaces mid-run instead.
     """
-    prompt = _build_prompt(
-        platform=platform,
-        post_text=post_text,
-        group_or_hashtag=group_or_hashtag,
-        post_url=post_url,
-        site_context=site_context,
-        short=False,
-    )
-    return _draft_validated(
-        prompt,
-        platform=platform,
-        group_or_hashtag=group_or_hashtag,
-        max_tokens=_MAX_TOKENS,
-    )
+
+    def __init__(self, skill: str) -> None:
+        self.skill = skill
+        self._system = _system_prompt(skill)
+
+    def draft_comment_for_post(
+        self,
+        *,
+        platform: Platform,
+        post_text: str,
+        group_or_hashtag: str | None,
+        post_url: str | None = None,
+        site_context: str | None = None,
+    ) -> str:
+        """Draft a brand-voice engagement comment for a post.
+
+        Returns the validated draft, or ``""`` on decline / upstream failure
+        / two voice-validation failures (one retry). Length is whatever the
+        bound skill's own rule asks for (typically 1-3 sentences).
+        """
+        prompt = build_user_prompt(
+            platform=platform,
+            post_text=post_text,
+            group_or_hashtag=group_or_hashtag,
+            post_url=post_url,
+            site_context=site_context,
+        )
+        return _draft_validated(
+            prompt,
+            platform=platform,
+            group_or_hashtag=group_or_hashtag,
+            max_tokens=_MAX_TOKENS,
+            system=self._system,
+        )
+
+    def draft_short_comment_for_post(
+        self,
+        *,
+        platform: Platform,
+        post_text: str,
+        group_or_hashtag: str | None,
+        post_url: str | None = None,
+    ) -> str:
+        """Draft one tight reply grounded in the specific post.
+
+        Used by the FB commenter at post time: no site context and a smaller
+        token budget. Same decision + validation + single-retry contract as
+        ``draft_comment_for_post``; the ~15-25 word target comes from the
+        bound skill's length rule.
+        """
+        prompt = build_user_prompt(
+            platform=platform,
+            post_text=post_text,
+            group_or_hashtag=group_or_hashtag,
+            post_url=post_url,
+            site_context=None,
+        )
+        return _draft_validated(
+            prompt,
+            platform=platform,
+            group_or_hashtag=group_or_hashtag,
+            max_tokens=_SHORT_MAX_TOKENS,
+            system=self._system,
+        )
 
 
-def draft_short_comment_for_post(
-    *,
-    platform: Platform,
-    post_text: str,
-    group_or_hashtag: str | None,
-    post_url: str | None = None,
-) -> str:
-    """Generate one tight (~15-25 word) reply grounded in the specific post.
+def for_skill(skill: str) -> SkillDrafter:
+    """Bind a drafter to ``skill``'s SKILL.md prompt.
 
-    Used by the FB commenter at post time. Same agent decision + voice
-    validation + single retry as the long path; returns ``""`` on decline or
-    any failure (including a missing key) so the caller can skip the item.
-    Voice rules still require a trailing question, a specific detail, and a
-    first-person claim, so the one sentence must carry all three.
+    Fail-fast at construction: ``SkillDrafter.__init__`` loads the prompt
+    eagerly, so a defective SKILL.md raises ``SkillPromptError`` here rather
+    than on the first draft call. The four wired scripts call this at module
+    level, so for them a broken skill aborts at import. Contrast
+    ``lib/reply_drafter.py`` and the ideator modules, which deliberately load
+    their prompt lazily (first draft call) and therefore fail mid-run.
     """
-    prompt = _build_prompt(
-        platform=platform,
-        post_text=post_text,
-        group_or_hashtag=group_or_hashtag,
-        post_url=post_url,
-        site_context=None,
-        short=True,
-    )
-    return _draft_validated(
-        prompt,
-        platform=platform,
-        group_or_hashtag=group_or_hashtag,
-        max_tokens=_SHORT_MAX_TOKENS,
-    )
+    return SkillDrafter(skill)
 
 
 _MAX_ATTEMPTS = 2
+
+
+def _llm_json(prompt: str, *, max_tokens: int, system: str | None = None) -> dict[str, Any] | None:
+    """This module's LLM seam: one ``{engage, comment, reason}`` decision from
+    whichever provider ``lib.llm_client`` selects (Gemini by default).
+
+    Returns ``None`` on any upstream failure OR on a response missing
+    ``engage`` — a malformed envelope is not a decision, and the caller treats
+    both as "no draft". ``trace_name`` keeps the pre-provider-split Langfuse
+    generation name so existing dashboards stay continuous.
+    """
+    response = get_llm().complete_json(
+        LLMRequest(
+            user=prompt,
+            system=system,
+            max_tokens=max_tokens,
+            trace_name="gemini-engage-decision",
+        ),
+        response_schema=ENGAGE_RESPONSE_SCHEMA,
+    )
+    if response is None:
+        return None
+    if "engage" not in response:
+        log.warning("llm json response missing 'engage' field: %s", str(response)[:200])
+        return None
+    return response
 
 
 def _draft_validated(
@@ -162,18 +215,19 @@ def _draft_validated(
     platform: str,
     group_or_hashtag: str | None,
     max_tokens: int,
+    system: str | None = None,
 ) -> str:
-    """Call Gemini for an engage/comment/reason decision, voice-validate the
+    """Call the LLM for an engage/comment/reason decision, voice-validate the
     drafted comment, and retry once (naming the violations) if it fails.
 
-    Returns the cleaned draft, or ``""`` on no response / agent decline / blank
-    comment / two voice-validation failures. A decline or upstream failure is
-    final — only a *voice* failure earns the retry.
+    ``system`` (the skill path's system prompt) is constant across attempts;
+    the voice-retry suffix is appended to the USER prompt only. A decline or
+    upstream failure is final — only a *voice* failure earns the retry.
     """
     current_prompt = prompt
     violations: list[str] = []
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        response = _call_gemini_json(current_prompt, max_tokens=max_tokens)
+        response = _llm_json(current_prompt, max_tokens=max_tokens, system=system)
         draft = _engaged_comment(
             response, platform=platform, group_or_hashtag=group_or_hashtag, attempt=attempt
         )
@@ -211,10 +265,9 @@ def _engaged_comment(
 ) -> str:
     """Extract the drafted comment from an agent response, or ``""`` if the
     call failed, the agent declined, or the comment was blank. Every outcome
-    is logged (with the model's ``reason`` where present) so the cause of a
-    skip is always attributable. ``engage`` is read fail-closed: only a literal
-    ``True`` counts as engage, so a non-boolean (e.g. the string ``"false"``)
-    can never post a comment the model meant to decline."""
+    is logged (with the model's ``reason`` where present) so skips stay
+    attributable. ``engage`` is read fail-closed: only a literal ``True``
+    engages, so a non-boolean can never post a declined comment."""
     base = {"platform": platform, "group_or_hashtag": group_or_hashtag, "attempt": attempt}
     if response is None:
         log.info({"event": "draft_gemini_returned_none", **base})
@@ -237,47 +290,3 @@ def _engaged_comment(
         )
         return ""
     return comment
-
-
-def _build_prompt(
-    *,
-    platform: Platform,
-    post_text: str,
-    group_or_hashtag: str | None,
-    post_url: str | None,
-    site_context: str | None,
-    short: bool,
-) -> str:
-    """Assemble the Gemini prompt: voice rules + context + engage/draft instruction."""
-    parts: list[str] = [_VOICE_RULES.strip()]
-    facts = _nalla_facts()
-    if facts:
-        parts.append(
-            "\nBRAND FACTS — the ONLY true details about our brand/mascot you may "
-            "state as ours. If the post's topic is NOT covered here, do not invent "
-            "specifics; stay general and ask about THEIR experience.\n" + facts
-        )
-    parts.append(f"\nPLATFORM: {platform}")
-    if group_or_hashtag:
-        parts.append(f"GROUP/HASHTAG: {group_or_hashtag}")
-    if post_url:
-        parts.append(f"POST URL: {post_url}")
-    parts.append(f"\nORIGINAL POST:\n{post_text.strip()}")
-    if site_context:
-        parts.append(f"\nRELEVANT SITE CONTENT (do NOT link unless natural):\n{site_context}")
-    if short:
-        parts.append(
-            "\nIf you decide to engage, the reply should be ONE short sentence "
-            "(15-25 words) replying to the post above. React to a SPECIFIC "
-            "detail from THIS post, mention Nalla or our own experience, and "
-            "end with a brief genuine question. No greeting, no generic "
-            "opener, no salesy language, no medical claims, no links."
-        )
-    else:
-        parts.append(
-            "\nIf you decide to engage, the reply should be a single short "
-            "reply (1-3 sentences). Personal, helpful, no salesy language, "
-            "no medical claims, no links."
-        )
-    parts.append(_ENGAGE_INSTRUCTIONS.strip())
-    return "\n".join(parts)

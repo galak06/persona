@@ -73,6 +73,14 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
       - PLAYWRIGHT_HEADLESS=1
+      # Engine-wide LLM key. Brand-owned credentials arrive via each brand's
+      # own $BRAND_DIR/.env through the ./brands mount below, but engine-wide
+      # secrets live in .claude/settings.local.json, which is NOT mounted into
+      # the container -- so they must be passed through here. Without this the
+      # worker drafts nothing: gemini_client logs "GEMINI_API_KEY not set" and
+      # every comment is recorded as agent_declined_or_empty_draft.
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_REPLY_MODEL=${GEMINI_REPLY_MODEL:-gemini-3.6-flash}
     volumes:
       # Read-write: the worker writes session/browser state, logs, and
       # queue files into whichever brand a given task's brand_dir points
