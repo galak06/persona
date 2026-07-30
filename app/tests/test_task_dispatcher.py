@@ -222,6 +222,56 @@ def test_dispatch_task_skips_row_missing_cron(pg: None, tmp_path: Path) -> None:
     assert queue.pushed == []
 
 
+def test_dispatch_task_skips_skill_only_row_without_warning(
+    pg: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Skill-only flows are launchd's job, not the worker's.
+
+    site-analyzer and wp-comment-handler carry `skill` and no `script`; the
+    container has no claude CLI so they can never be dispatched here. Logging
+    that as a WARNING made two correctly-configured rows look broken on every
+    tick of the dispatch loop.
+    """
+    queue = _FakeQueue()
+    task = _task_row("t1", _BRAND)
+    task["script"] = ""
+    task["skill"] = "site-analyzer"
+
+    task_dispatcher.dispatch_task(
+        task,
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
+    )
+
+    out = capsys.readouterr().out + capsys.readouterr().err
+    assert queue.pushed == []
+    assert "task_missing_script" not in out
+
+
+def test_dispatch_task_still_warns_when_row_has_neither_script_nor_skill(
+    pg: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A row with no way to run at all is still a real misconfiguration."""
+    queue = _FakeQueue()
+    task = _task_row("t1", _BRAND)
+    task["script"] = ""
+    task["skill"] = ""
+
+    task_dispatcher.dispatch_task(
+        task,
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
+    )
+
+    assert queue.pushed == []
+
+
 @requires_postgres
 def test_dispatch_task_lock_prevents_double_enqueue(
     pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

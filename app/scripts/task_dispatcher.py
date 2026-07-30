@@ -177,7 +177,16 @@ def dispatch_task(
 
     script = task.get("script")
     if not script:
-        logger.warning("task_missing_script", task_id=task_id)
+        # Skill-only flows (`script: null, skill: "<name>"` in profiles/*.json
+        # -- currently site-analyzer and wp-comment-handler) are Claude Code
+        # skills, invoked as `claude /<skill>` by the generated launchd plists.
+        # The worker container has no claude CLI, so this dispatcher can never
+        # run them. That is by design, not a defect: logging it as a WARNING
+        # made two correctly-configured rows look broken on every tick.
+        if task.get("skill"):
+            logger.info("task_skill_only_not_dispatchable", task_id=task_id, skill=task["skill"])
+        else:
+            logger.warning("task_missing_script", task_id=task_id)
         return
 
     lock_key = f"{_NAMESPACE}:{brand}:dispatch:{task_id}"
