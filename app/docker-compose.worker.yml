@@ -35,7 +35,7 @@
 # container, so every container must agree on the same mount point for
 # that value to resolve correctly.
 
-version: "3.9"
+name: persona
 
 services:
   # ── Dispatcher (croniter due-check, pure producer) ──────────────────────────

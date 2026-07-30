@@ -32,7 +32,13 @@
 #
 # (Or just run scripts/setup.sh, which does the above plus health polling.)
 
-version: "3.9"
+# Pins the Compose project name. Without it the project is derived from the
+# directory, which silently renamed the stack when the engine dir went
+# social-automation/ -> persona/ -> app/: `docker compose ps` found nothing,
+# and an unpinned `up` would have created a SECOND set of volumes
+# (app_postgres_data), making the database look wiped. Also replaces the
+# obsolete `version:` key, which Compose warns about on every invocation.
+name: persona
 
 services:
   # ── Postgres ─────────────────────────────────────────────────────────────────
