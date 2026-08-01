@@ -17,7 +17,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Brand-owned credentials, in the order they appear in the scaffolded `.env`.
 BRAND_ENV_TEMPLATE: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("WordPress", ("WP_URL", "WP_USER", "WP_APP_PASSWORD")),
     (

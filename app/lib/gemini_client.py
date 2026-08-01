@@ -36,16 +36,15 @@ from llm_tracing import atrace_llm_call, trace_llm_call
 
 logger = logging.getLogger(__name__)
 
-# Google retires models for new API keys without warning: as of 2026-07-29 both
-# gemini-2.5-flash and gemini-2.0-flash return 404 "no longer available to new
-# users", which this client surfaces as an empty draft -- indistinguishable from
-# the agent declining to engage. Keep this default on a model that currently
-# answers generateContent, and override per-environment with GEMINI_REPLY_MODEL.
 _GEMINI_MODEL = os.getenv("GEMINI_REPLY_MODEL", "gemini-3.6-flash")
 
 
 def _thinking_budget() -> int | None:
     """Explicit thinkingBudget, or None to omit the field (see _base_payload).
+
+    Omitted by default because `thinkingBudget: 0` is rejected by the Gemini
+    3.x family with 400 INVALID_ARGUMENT — that family cannot disable thinking
+    — and this client turns any such failure into an empty draft.
 
     Read per call rather than cached at import so the value stays overridable
     at runtime (and testable via monkeypatch).
@@ -58,6 +57,8 @@ def _thinking_budget() -> int | None:
     except ValueError:
         logger.warning("gemini: ignoring non-integer GEMINI_THINKING_BUDGET=%r", raw)
         return None
+
+
 _GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 # 429 = per-minute quota; 500/503 = transient upstream. Everything else

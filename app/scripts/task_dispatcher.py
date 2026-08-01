@@ -159,7 +159,11 @@ def dispatch_task(
 
     No-ops (returns without error) when: the row has no `schedule.cron` or
     `script`, it isn't due yet, or a concurrent dispatch already holds its
-    lock. Raises if the enqueue itself fails -- `run_once` catches, logs,
+    lock. A row carrying a `skill` instead of a `script` is a Claude Code
+    skill, invoked as `claude /<skill>` by the generated launchd plists; the
+    worker container has no claude CLI so it can never be dispatched here,
+    which is by design and logged at info rather than as a warning. A row
+    with neither is a genuine misconfiguration and still warns. Raises if the enqueue itself fails -- `run_once` catches, logs,
     Telegram-notifies, and continues to the next row. Never runs the row's
     script directly -- `scripts/task_worker.py` (the consumer) does, once it
     pops this item off the `flow-run` queue.
@@ -177,12 +181,6 @@ def dispatch_task(
 
     script = task.get("script")
     if not script:
-        # Skill-only flows (`script: null, skill: "<name>"` in profiles/*.json
-        # -- currently site-analyzer and wp-comment-handler) are Claude Code
-        # skills, invoked as `claude /<skill>` by the generated launchd plists.
-        # The worker container has no claude CLI, so this dispatcher can never
-        # run them. That is by design, not a defect: logging it as a WARNING
-        # made two correctly-configured rows look broken on every tick.
         if task.get("skill"):
             logger.info("task_skill_only_not_dispatchable", task_id=task_id, skill=task["skill"])
         else:

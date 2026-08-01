@@ -16,8 +16,6 @@ from lib.brand_env_template import (
 )
 from lib.local_env import load_brand_env
 
-# Engine-wide secrets that must never be scaffolded into a brand's file:
-# one developer app and one LLM quota serve every brand.
 _ENGINE_ONLY = (
     "GEMINI_API_KEY",
     "ANTHROPIC_API_KEY",

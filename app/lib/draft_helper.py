@@ -60,14 +60,10 @@ Platform = Literal["facebook", "instagram", "wordpress"]
 _MAX_TOKENS = 2400
 _SHORT_MAX_TOKENS = 1600
 
-# Why a draft came back empty. The pipeline used to flatten all of these into
-# one `agent_declined_or_empty_draft` log line, which made a total outage
-# (retired model, bad key) look identical to the agent thoughtfully declining
-# — the failure mode that hid a dead model for an entire run on 2026-07-29.
-AGENT_DECLINED = "agent_declined"  # engage:false — a real editorial decision
-DRAFT_FAILED = "draft_failed"  # upstream call failed / unparseable
-DRAFT_BLANK = "draft_blank"  # engage:true but no usable text
-VOICE_FAILED = "voice_validation_failed"  # drafted, but failed voice rules twice
+AGENT_DECLINED = "agent_declined"
+DRAFT_FAILED = "draft_failed"
+DRAFT_BLANK = "draft_blank"
+VOICE_FAILED = "voice_validation_failed"
 
 
 @lru_cache(maxsize=1)
@@ -98,6 +94,14 @@ def _system_prompt(skill: str) -> str:
 class SkillDrafter:
     """Drafter bound to a skill's SKILL.md system prompt.
 
+    `last_outcome` names why the most recent draft came back empty — one of
+    AGENT_DECLINED, DRAFT_FAILED, DRAFT_BLANK or VOICE_FAILED, or None after a
+    success. `lib/engagement/inline_comment.py` reads it so a skipped post is
+    logged with its real cause: without it a retired model or a dead key is
+    indistinguishable from the agent thoughtfully declining, which hid a 404ing
+    model for a full scan run. Safe as instance state because a drafter is
+    called once per post, synchronously, by a single-threaded scan loop.
+
     Instances satisfy ``lib.engagement.collaborators.Drafter``. The system
     prompt is loaded eagerly, in ``__init__`` — so a broken SKILL.md raises
     ``SkillPromptError`` the moment a drafter is constructed, never mid-drain.
@@ -114,11 +118,6 @@ class SkillDrafter:
     def __init__(self, skill: str) -> None:
         self.skill = skill
         self._system = _system_prompt(skill)
-        # Why the last draft came back empty (one of the *_DECLINED/FAILED
-        # tags above), or None after a successful draft. Read by
-        # lib/engagement/inline_comment.py so a skip is logged with its real
-        # cause instead of a catch-all. Safe as instance state: a drafter is
-        # called once per post, synchronously, by a single-threaded scan loop.
         self.last_outcome: str | None = None
 
     def _run(

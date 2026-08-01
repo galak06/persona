@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Register an already-provisioned brand in Postgres (idempotent, additive).
 
 Why this exists: brands onboarded before `lib/schedule_db.py` moved from
@@ -81,12 +80,6 @@ def build_brand_row(brand_dir: Path, enabled_flows: list[str] | None = None) -> 
             f"no `site` block in {brand_dir / 'config.json'} — cannot build a brand row"
         )
 
-    # MUST be passed explicitly. Omitting it makes BrandsRepository.create()
-    # fall through to default_enabled_flows() -- ["ig-scanner", "fb-scanner"] --
-    # which is the correct scope for a brand being onboarded for the FIRST time
-    # and badly wrong for an existing one. Applying it here silently gated 17 of
-    # dogfoodandfun's 19 configured flows off at the dispatcher, which looked
-    # exactly like those flows being broken.
     enabled = enabled_flows_for(brand_dir, enabled_flows)
 
     return {
@@ -100,7 +93,6 @@ def build_brand_row(brand_dir: Path, enabled_flows: list[str] | None = None) -> 
         "target_audience": site.get("target_audience", ""),
         "headless": get_runtime_headless(),
         "group_join_limit": get_group_join_limit(),
-        # Already running in production -- not a draft.
         "status": BrandStatus.ACTIVE,
         "brand_dir": str(brand_dir),
     }
