@@ -55,7 +55,21 @@ def _load_json(path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def build_brand_row(brand_dir: Path) -> dict[str, Any]:
+def enabled_flows_for(brand_dir: Path, only: list[str] | None = None) -> list[str]:
+    """Which flows this brand may dispatch.
+
+    Derived from the brand's own `schedule.json` — the flows it is actually
+    configured to run — rather than from the new-brand default. `only`
+    overrides it (`--enable a,b`) for the common case of deliberately keeping
+    a narrow scope while the rest of the pipeline is being brought up.
+    """
+    if only is not None:
+        return list(only)
+    tasks = _load_json(brand_dir / "schedule.json").get("tasks", [])
+    return [str(t["id"]).removeprefix("dogfood-") for t in tasks if t.get("id")]
+
+
+def build_brand_row(brand_dir: Path, enabled_flows: list[str] | None = None) -> dict[str, Any]:
     """Derive the `brands` row from files already on disk.
 
     `config.json`'s `site` block is authoritative (it is what every runtime
@@ -67,7 +81,16 @@ def build_brand_row(brand_dir: Path) -> dict[str, Any]:
             f"no `site` block in {brand_dir / 'config.json'} — cannot build a brand row"
         )
 
+    # MUST be passed explicitly. Omitting it makes BrandsRepository.create()
+    # fall through to default_enabled_flows() -- ["ig-scanner", "fb-scanner"] --
+    # which is the correct scope for a brand being onboarded for the FIRST time
+    # and badly wrong for an existing one. Applying it here silently gated 17 of
+    # dogfoodandfun's 19 configured flows off at the dispatcher, which looked
+    # exactly like those flows being broken.
+    enabled = enabled_flows_for(brand_dir, enabled_flows)
+
     return {
+        "enabled_flows": enabled,
         "brand_id": brand_dir.name,
         "name": site.get("name") or brand_dir.name,
         "site_url": site.get("url", ""),
@@ -118,6 +141,16 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--dry-run", action="store_true", help="print what would be written")
     group.add_argument("--apply", action="store_true", help="write the rows")
+    parser.add_argument(
+        "--enable",
+        default=None,
+        help="comma-separated flow ids to enable (default: every flow in schedule.json)",
+    )
+    parser.add_argument(
+        "--update-enabled-flows",
+        action="store_true",
+        help="also correct enabled_flows on an ALREADY-registered brand",
+    )
     args = parser.parse_args()
 
     brand_dir = (args.brand_dir or default_brand_dir()).resolve()
@@ -125,7 +158,8 @@ def main() -> int:
         print(f"ERROR: no config.json under {brand_dir}", file=sys.stderr)
         return 1
 
-    brand_row = build_brand_row(brand_dir)
+    only = [f.strip() for f in args.enable.split(",") if f.strip()] if args.enable else None
+    brand_row = build_brand_row(brand_dir, only)
     schedule_rows = build_schedule_rows(brand_dir, brand_row["brand_id"])
 
     repo = BrandsRepository()
@@ -141,6 +175,7 @@ def main() -> int:
         f"schedule_tasks : {len(schedule_rows)} in schedule.json, "
         f"{len(existing_task_ids)} already in DB — upsert by id"
     )
+    print(f"enabled_flows  : {len(brand_row['enabled_flows'])} — {brand_row['enabled_flows']}")
 
     if not args.apply:
         print("\n(dry run — nothing written; pass --apply to write)")
@@ -149,6 +184,9 @@ def main() -> int:
     if not already:
         repo.create(**brand_row)
         print(f"inserted brands row: {brand_row['brand_id']}")
+    elif args.update_enabled_flows:
+        repo.update(brand_row["brand_id"], enabled_flows=brand_row["enabled_flows"])
+        print(f"updated enabled_flows -> {brand_row['enabled_flows']}")
     for row in schedule_rows:
         schedule_db.save_task(None, row)
     print(f"upserted {len(schedule_rows)} schedule_tasks rows")
