@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -122,7 +123,7 @@ def build_schedule_rows(brand_dir: Path, brand_id: str) -> list[dict[str, Any]]:
     return rows
 
 
-def main() -> int:
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--brand-dir",
@@ -143,46 +144,86 @@ def main() -> int:
         action="store_true",
         help="also correct enabled_flows on an ALREADY-registered brand",
     )
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def _requested_flows(enable: str | None) -> list[str] | None:
+    """Flow ids from a comma-separated --enable value, or None for all."""
+    if not enable:
+        return None
+    return [flow.strip() for flow in enable.split(",") if flow.strip()]
+
+
+@dataclass(frozen=True)
+class BackfillPlan:
+    """What a run would write, resolved before anything is written."""
+
+    brand_dir: Path
+    brand_row: dict[str, Any]
+    schedule_rows: list[dict[str, Any]]
+    already_registered: bool
+    existing_task_count: int
+
+    @property
+    def brand_id(self) -> str:
+        return str(self.brand_row["brand_id"])
+
+    @property
+    def enabled_flows(self) -> list[str]:
+        return list(self.brand_row["enabled_flows"])
+
+
+def _print_plan(plan: BackfillPlan) -> None:
+    """Show what will be written before anything is."""
+    verb = "already present, will skip" if plan.already_registered else "will INSERT"
+    print(f"brand dir      : {plan.brand_dir}")
+    print(f"brands row     : {plan.brand_id} ({plan.brand_row['name']}) — {verb}")
+    print(
+        f"schedule_tasks : {len(plan.schedule_rows)} in schedule.json, "
+        f"{plan.existing_task_count} already in DB — upsert by id"
+    )
+    print(f"enabled_flows  : {len(plan.enabled_flows)} — {plan.enabled_flows}")
+
+
+def _write_rows(repo: BrandsRepository, plan: BackfillPlan, update_enabled_flows: bool) -> None:
+    """Insert the brand row if new, correct its flows if asked, upsert the schedule."""
+    if not plan.already_registered:
+        repo.create(**plan.brand_row)
+        print(f"inserted brands row: {plan.brand_id}")
+    elif update_enabled_flows:
+        repo.update(plan.brand_id, enabled_flows=plan.enabled_flows)
+        print(f"updated enabled_flows -> {plan.enabled_flows}")
+
+    for row in plan.schedule_rows:
+        schedule_db.save_task(None, row)
+    print(f"upserted {len(plan.schedule_rows)} schedule_tasks rows")
+
+
+def main() -> int:
+    args = _parse_args()
 
     brand_dir = (args.brand_dir or default_brand_dir()).resolve()
     if not (brand_dir / "config.json").is_file():
         print(f"ERROR: no config.json under {brand_dir}", file=sys.stderr)
         return 1
 
-    only = [f.strip() for f in args.enable.split(",") if f.strip()] if args.enable else None
-    brand_row = build_brand_row(brand_dir, only)
-    schedule_rows = build_schedule_rows(brand_dir, brand_row["brand_id"])
-
+    brand_row = build_brand_row(brand_dir, _requested_flows(args.enable))
     repo = BrandsRepository()
-    already = repo.get(brand_row["brand_id"]) is not None
-    existing_task_ids = {t["id"] for t in schedule_db.load_all()}
+    plan = BackfillPlan(
+        brand_dir=brand_dir,
+        brand_row=brand_row,
+        schedule_rows=build_schedule_rows(brand_dir, brand_row["brand_id"]),
+        already_registered=repo.get(brand_row["brand_id"]) is not None,
+        existing_task_count=len(schedule_db.load_all()),
+    )
 
-    print(f"brand dir      : {brand_dir}")
-    print(
-        f"brands row     : {brand_row['brand_id']} ({brand_row['name']}) "
-        f"— {'already present, will skip' if already else 'will INSERT'}"
-    )
-    print(
-        f"schedule_tasks : {len(schedule_rows)} in schedule.json, "
-        f"{len(existing_task_ids)} already in DB — upsert by id"
-    )
-    print(f"enabled_flows  : {len(brand_row['enabled_flows'])} — {brand_row['enabled_flows']}")
+    _print_plan(plan)
 
     if not args.apply:
         print("\n(dry run — nothing written; pass --apply to write)")
         return 0
 
-    if not already:
-        repo.create(**brand_row)
-        print(f"inserted brands row: {brand_row['brand_id']}")
-    elif args.update_enabled_flows:
-        repo.update(brand_row["brand_id"], enabled_flows=brand_row["enabled_flows"])
-        print(f"updated enabled_flows -> {brand_row['enabled_flows']}")
-    for row in schedule_rows:
-        schedule_db.save_task(None, row)
-    print(f"upserted {len(schedule_rows)} schedule_tasks rows")
-
+    _write_rows(repo, plan, args.update_enabled_flows)
     print(
         f"\nverify: brands={len(repo.list_brands())}, schedule_tasks={len(schedule_db.load_all())}"
     )

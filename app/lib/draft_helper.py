@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -59,6 +60,37 @@ Platform = Literal["facebook", "instagram", "wordpress"]
 # that looks like the agent choosing not to engage.
 _MAX_TOKENS = 2400
 _SHORT_MAX_TOKENS = 1600
+
+
+@dataclass(frozen=True)
+class DraftResult:
+    """A drafting attempt: the comment, or why there isn't one.
+
+    `comment` is "" exactly when `outcome` names a reason, so callers can
+    branch on either without the two disagreeing.
+    """
+
+    comment: str
+    outcome: str | None = None
+
+    @classmethod
+    def drafted(cls, comment: str) -> DraftResult:
+        return cls(comment=comment)
+
+    @classmethod
+    def empty(cls, outcome: str) -> DraftResult:
+        return cls(comment="", outcome=outcome)
+
+
+@dataclass(frozen=True)
+class DraftContext:
+    """Everything a drafting attempt needs beyond the prompt itself."""
+
+    platform: str
+    group_or_hashtag: str | None
+    max_tokens: int
+    system: str | None = None
+
 
 AGENT_DECLINED = "agent_declined"
 DRAFT_FAILED = "draft_failed"
@@ -120,21 +152,11 @@ class SkillDrafter:
         self._system = _system_prompt(skill)
         self.last_outcome: str | None = None
 
-    def _run(
-        self, prompt: str, *, platform: str, group_or_hashtag: str | None, max_tokens: int
-    ) -> str:
+    def _run(self, prompt: str, context: DraftContext) -> str:
         """Draft, recording why an empty result happened."""
-        outcome: list[str] = []
-        draft = _draft_validated(
-            prompt,
-            platform=platform,
-            group_or_hashtag=group_or_hashtag,
-            max_tokens=max_tokens,
-            system=self._system,
-            outcome=outcome,
-        )
-        self.last_outcome = outcome[0] if outcome else None
-        return draft
+        result = _draft_validated(prompt, context)
+        self.last_outcome = result.outcome
+        return result.comment
 
     def draft_comment_for_post(
         self,
@@ -159,7 +181,13 @@ class SkillDrafter:
             site_context=site_context,
         )
         return self._run(
-            prompt, platform=platform, group_or_hashtag=group_or_hashtag, max_tokens=_MAX_TOKENS
+            prompt,
+            DraftContext(
+                platform=platform,
+                group_or_hashtag=group_or_hashtag,
+                max_tokens=_MAX_TOKENS,
+                system=self._system,
+            ),
         )
 
     def draft_short_comment_for_post(
@@ -186,9 +214,12 @@ class SkillDrafter:
         )
         return self._run(
             prompt,
-            platform=platform,
-            group_or_hashtag=group_or_hashtag,
-            max_tokens=_SHORT_MAX_TOKENS,
+            DraftContext(
+                platform=platform,
+                group_or_hashtag=group_or_hashtag,
+                max_tokens=_SHORT_MAX_TOKENS,
+                system=self._system,
+            ),
         )
 
 
@@ -234,88 +265,72 @@ def _llm_json(prompt: str, *, max_tokens: int, system: str | None = None) -> dic
     return response
 
 
-def _draft_validated(
-    prompt: str,
-    *,
-    platform: str,
-    group_or_hashtag: str | None,
-    max_tokens: int,
-    system: str | None = None,
-    outcome: list[str] | None = None,
-) -> str:
-    """Call the LLM for an engage/comment/reason decision, voice-validate the
-    drafted comment, and retry once (naming the violations) if it fails.
+def _retry_prompt(prompt: str, violations: list[str]) -> str:
+    """The original prompt plus an instruction naming what to avoid."""
+    return (
+        f"{prompt}\n\nIMPORTANT: your previous draft failed brand-voice "
+        f"validation. Avoid the following violations on this rewrite: "
+        f"{'; '.join(violations)}"
+    )
 
-    ``system`` (the skill path's system prompt) is constant across attempts;
-    the voice-retry suffix is appended to the USER prompt only. A decline or
-    upstream failure is final — only a *voice* failure earns the retry.
+
+def _log_draft(event: str, context: DraftContext, *, level: Any = None, **fields: Any) -> None:
+    """Emit one structured drafting event, always carrying the platform."""
+    (level or log.info)({"event": event, "platform": context.platform, **fields})
+
+
+def _draft_validated(prompt: str, context: DraftContext) -> DraftResult:
+    """Draft an engage/comment decision and voice-validate it, retrying once.
+
+    ``context.system`` is constant across attempts; the retry suffix is
+    appended to the USER prompt only. A decline or upstream failure is final —
+    only a *voice* failure earns the retry.
     """
     current_prompt = prompt
     violations: list[str] = []
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        response = _llm_json(current_prompt, max_tokens=max_tokens, system=system)
-        draft = _engaged_comment(
-            response,
-            platform=platform,
-            group_or_hashtag=group_or_hashtag,
-            attempt=attempt,
-            outcome=outcome,
-        )
-        if not draft:
-            return ""  # None / decline / blank — all logged in _engaged_comment
-        valid, violations = validate_voice(draft, allow_own_url=False)
-        if valid:
-            log.info(
-                {
-                    "event": "draft_inline_ok",
-                    "platform": platform,
-                    "len": len(draft),
-                    "attempt": attempt,
-                }
-            )
-            return draft
-        if attempt < _MAX_ATTEMPTS:
-            log.info({"event": "draft_voice_retry", "platform": platform, "violations": violations})
-            current_prompt = (
-                f"{prompt}\n\nIMPORTANT: your previous draft failed brand-voice "
-                f"validation. Avoid the following violations on this rewrite: "
-                f"{'; '.join(violations)}"
-            )
 
-    log.warning({"event": "draft_voice_fail_final", "platform": platform, "violations": violations})
-    if outcome is not None:
-        outcome.append(VOICE_FAILED)
-    return ""
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        response = _llm_json(current_prompt, max_tokens=context.max_tokens, system=context.system)
+        result = _engaged_comment(response, context=context, attempt=attempt)
+        if not result.comment:
+            return result
+
+        valid, violations = validate_voice(result.comment, allow_own_url=False)
+        if valid:
+            _log_draft("draft_inline_ok", context, attempt=attempt, length=len(result.comment))
+            return result
+
+        if attempt < _MAX_ATTEMPTS:
+            _log_draft("draft_voice_retry", context, violations=violations)
+            current_prompt = _retry_prompt(prompt, violations)
+
+    _log_draft("draft_voice_fail_final", context, violations=violations, level=log.warning)
+    return DraftResult.empty(VOICE_FAILED)
 
 
 def _engaged_comment(
-    response: dict[str, Any] | None,
-    *,
-    platform: str,
-    group_or_hashtag: str | None,
-    attempt: int,
-    outcome: list[str] | None = None,
-) -> str:
-    """Extract the drafted comment from an agent response, or ``""`` if the
-    call failed, the agent declined, or the comment was blank. Every outcome
-    is logged (with the model's ``reason`` where present) so skips stay
-    attributable. ``engage`` is read fail-closed: only a literal ``True``
-    engages, so a non-boolean can never post a declined comment."""
-    base = {"platform": platform, "group_or_hashtag": group_or_hashtag, "attempt": attempt}
+    response: dict[str, Any] | None, *, context: DraftContext, attempt: int
+) -> DraftResult:
+    """The drafted comment, or a DraftResult naming why there isn't one.
 
-    def _record(tag: str) -> str:
-        if outcome is not None:
-            outcome.append(tag)
-        return ""
+    Every outcome is logged (with the model's ``reason`` where present) so
+    skips stay attributable. ``engage`` is read fail-closed: only a literal
+    ``True`` engages, so a non-boolean can never post a declined comment.
+    """
+    base = {
+        "platform": context.platform,
+        "group_or_hashtag": context.group_or_hashtag,
+        "attempt": attempt,
+    }
 
     if response is None:
         log.info({"event": "draft_gemini_returned_none", **base})
-        return _record(DRAFT_FAILED)
+        return DraftResult.empty(DRAFT_FAILED)
     if response.get("engage") is not True:
         log.info(
             {"event": "draft_agent_declined", **base, "reason": str(response.get("reason") or "")}
         )
-        return _record(AGENT_DECLINED)
+        return DraftResult.empty(AGENT_DECLINED)
     comment = _strip_meta_chrome(str(response.get("comment") or ""))
     if not comment:
         # engage:true but no usable comment text — a malformed response, not a
@@ -327,5 +342,5 @@ def _engaged_comment(
                 "reason": str(response.get("reason") or ""),
             }
         )
-        return _record(DRAFT_BLANK)
-    return comment
+        return DraftResult.empty(DRAFT_BLANK)
+    return DraftResult.drafted(comment)
