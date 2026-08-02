@@ -82,11 +82,11 @@ def test_user_prompt_carries_context_not_the_standing_rules(
         platform="facebook", post_text="post body here", group_or_hashtag="Dogs"
     )
     prompt = str(seen["prompt"])
-    assert "post body here" in prompt  # grounded in THIS post
-    assert '"engage"' in prompt  # asks for the structured decision
-    assert "12 words max" in prompt  # reason is length-capped (token budget)
-    assert "ONE short sentence" not in prompt  # length rule: skill-side only
-    assert "BRAND VOICE" not in prompt  # voice rules: skill-side only
+    assert "post body here" in prompt
+    assert '"engage"' in prompt
+    assert "12 words max" in prompt
+    assert "ONE short sentence" not in prompt
+    assert "BRAND VOICE" not in prompt
     assert seen["system"] == _SYSTEM
 
 
@@ -133,9 +133,10 @@ def test_short_draft_missing_key_returns_empty(
 ) -> None:
     """A missing key degrades to a per-item skip ("") like any other upstream
     failure — it must NOT raise and abort the whole batch. Uses the real
-    _llm_json (unmocked), which returns None when the key is absent."""
+    _llm_json (unmocked), which returns None when the key is absent. Clears
+    every provider key so none can silently take over: keyless means keyless.
+    """
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    # ...and no other provider may take over: keyless means keyless.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("VOICE_PROVIDER", raising=False)
     out = drafter.draft_short_comment_for_post(
@@ -280,9 +281,6 @@ def test_long_draft_returns_empty_when_agent_declines(
         platform="instagram", post_text="generic low-effort post", group_or_hashtag="#dogfood"
     )
     assert out == ""
-
-
-# --------------------------------------------------------- last_outcome tagging
 
 
 def _drafter_returning(

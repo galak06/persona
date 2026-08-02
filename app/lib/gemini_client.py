@@ -61,9 +61,6 @@ def _thinking_budget() -> int | None:
 
 _GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
-# 429 = per-minute quota; 500/503 = transient upstream. Everything else
-# (400 bad schema, 403 bad key) is a bug or a config error — retrying it
-# just burns quota, so those fail fast.
 _RETRYABLE_STATUS = frozenset({429, 500, 503})
 _BACKOFF_BASE_SEC = 2.0
 _BACKOFF_MAX_SEC = 60.0
@@ -265,7 +262,12 @@ async def call_json_async(
 
     Built for fan-out over many items, where per-minute quota hits are
     expected: honours ``Retry-After``, otherwise doubles from 2s with jitter.
-    Exhausting ``retries`` returns ``None`` like every other failure."""
+    Exhausting ``retries`` returns ``None`` like every other failure.
+
+    Only retries ``_RETRYABLE_STATUS`` (429 per-minute quota; 500/503
+    transient upstream) — a 400 bad schema or 403 bad key is a bug or a
+    config error, and retrying either just burns quota, so those fail fast.
+    """
     key = _api_key()
     if key is None:
         return None

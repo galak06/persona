@@ -48,16 +48,6 @@ log = logging.getLogger(__name__)
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 
-# maxOutputTokens is a CEILING, not a target — length is bounded by the
-# prompt. The budget must cover the comment PLUS `reason` PLUS the JSON
-# scaffolding; too small and a long reply truncates to unparseable JSON.
-#
-# Raised 2026-07-29 for the Gemini 3.x family, which cannot disable thinking
-# (see lib/gemini_client.py::_base_payload). Thinking tokens are drawn from
-# this same ceiling BEFORE any visible text, so the previous 800/400 left the
-# JSON envelope truncated mid-string — which surfaces as an empty draft and is
-# then logged as `agent_declined_or_empty_draft`, i.e. a silent total failure
-# that looks like the agent choosing not to engage.
 _MAX_TOKENS = 2400
 _SHORT_MAX_TOKENS = 1600
 
@@ -84,7 +74,16 @@ class DraftResult:
 
 @dataclass(frozen=True)
 class DraftContext:
-    """Everything a drafting attempt needs beyond the prompt itself."""
+    """Everything a drafting attempt needs beyond the prompt itself.
+
+    ``max_tokens`` is a ceiling, not a target — length is bounded by the
+    prompt, but the budget must also cover the JSON scaffolding (the comment
+    plus ``reason``) and any thinking tokens. The Gemini 3.x family cannot
+    disable thinking (see ``lib.gemini_client._base_payload``), and thinking
+    is drawn from this same ceiling before any visible text — too small a
+    budget truncates the JSON envelope mid-string, which surfaces as an empty
+    draft indistinguishable from the agent declining to engage.
+    """
 
     platform: str
     group_or_hashtag: str | None

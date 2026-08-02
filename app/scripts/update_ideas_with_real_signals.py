@@ -19,7 +19,6 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-# Script is in app/scripts/, so the engine root is two levels up.
 ENGINE_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ENGINE_ROOT / "lib"))
 from lib.bootstrap import init_script

@@ -110,9 +110,6 @@ def test_load_brand_env_does_not_mutate_os_environ(tmp_path: Path) -> None:
     assert "SOME_TEST_ONLY_VAR" not in os.environ
 
 
-# ------------------------------------------------- load_brand_env_into_environ
-
-
 def test_load_brand_env_into_environ_sets_vars(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

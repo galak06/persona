@@ -271,11 +271,6 @@ def load_config() -> AppSettings:
     return settings
 
 
-# Populate os.environ from the two credential files, brand-first.
-# Brand-owned platform secrets live in `$BRAND_DIR/.env`; engine-wide ones
-# (LLM key, OAuth *app* credentials, tracing) live in .claude/settings.local.json.
-# Both loaders skip keys already set, so brand values win over engine ones and an
-# explicit `FOO=... python ...` invocation still wins over both.
 try:
     from lib.local_env import load_brand_env_into_environ, load_local_env
 
