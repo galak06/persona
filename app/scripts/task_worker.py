@@ -42,6 +42,7 @@ from lib.brands_db.models import BrandStatus
 from lib.local_env import load_brand_env
 from lib.observability import get_logger
 from lib.task_queue import TaskQueue
+from lib.worker_labels import TASK_ID_PREFIX
 
 logger = get_logger(__name__)
 
@@ -76,8 +77,20 @@ def _write_flow_log(
     each flow script wrote directly to this same path) -- restoring it here
     is what makes the Explorer page's "View Log" button show real, current
     output again instead of the 500-char tail `worker_runs.message` carries.
+
+    `task_id` isn't reliably `f"{brand}-{flow_id}"`: brands provisioned via
+    the current convention get that shape, but the one legacy brand's rows
+    predate it and use a hardcoded `dogfood-` prefix unrelated to its real
+    `brand` ("dogfoodandfun"). Strip whichever prefix actually matches --
+    same logic `api/schedule_config.py::label_for_task_id` already applies
+    on the read side, so writer and reader agree on the filename.
     """
-    flow_id = task_id[len(brand) + 1 :] if task_id.startswith(f"{brand}-") else task_id
+    if task_id.startswith(TASK_ID_PREFIX):
+        flow_id = task_id[len(TASK_ID_PREFIX) :]
+    elif task_id.startswith(f"{brand}-"):
+        flow_id = task_id[len(brand) + 1 :]
+    else:
+        flow_id = task_id
     log_path = brand_dir / "logs" / f"cron_{flow_id.replace('-', '_')}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as f:

@@ -181,6 +181,27 @@ def test_run_task_writes_flow_log_file(
 
 
 @requires_postgres
+def test_run_task_writes_flow_log_file_under_legacy_dogfood_prefix(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one legacy brand's schedule_tasks rows predate the brand_id-based
+    convention and use a hardcoded `dogfood-` prefix unrelated to the real
+    brand ("dogfoodandfun") -- task_id.startswith(f"{brand}-") is False for
+    them, so the filename must come from stripping TASK_ID_PREFIX instead.
+    Regression guard: this exact mismatch produced cron_dogfood_ig_engager.log
+    (task_id used verbatim) instead of cron_ig_engager.log on 2026-08-03.
+    """
+    fake_run = _fake_run(returncode=0, stdout="scan complete")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    task_worker.run_task(_queue_item("dogfood-ig-engager", tmp_path))
+
+    log_path = tmp_path / "logs" / "cron_ig_engager.log"
+    assert log_path.exists()
+    assert "scan complete" in log_path.read_text(encoding="utf-8")
+
+
+@requires_postgres
 def test_run_task_writes_flow_log_file_on_timeout(
     pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
