@@ -25,13 +25,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 from lib.worker_db import record_complete, record_start
+from lib.worker_labels import worker_label_for_flow
 
 settings, log = init_script(__name__)
 
-# Brand-derived so each onboarded brand's worker_runs rows are distinct.
-# NOTE: dogfoodandfun's history under the old literal "persona-ig-scanner"
-# label is orphaned by this rename — new runs record under the new label.
-WORKER_LABEL = f"{settings.paths.brand_dir.name}-ig-scanner"
+WORKER_LABEL = worker_label_for_flow("ig-scanner")
 
 import draft_helper
 import rate_limiter

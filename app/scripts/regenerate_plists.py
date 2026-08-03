@@ -8,6 +8,7 @@ plists in ``~/Library/LaunchAgents``, prints a drift table. ``--apply``
 writes changed plists atomically; ``--bootstrap`` reloads via launchctl.
 Reuses the parser + label-log map from the ``api`` package.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,15 +30,17 @@ from api.schedule_config import load_schedule_config
 from api.schedule_state import _LABEL_TO_LOG
 from scripts._cron_to_launchd import UnsupportedCronError, cron_to_launchd
 
+from lib.worker_labels import TASK_ID_PREFIX as _TASK_ID_PREFIX
+
 REPO_ROOT = _REPO_ROOT
 _BRAND_LABEL_PREFIX = "com.persona."
-_TASK_ID_PREFIX = "dogfood-"
 _DEFAULT_TIMEOUT = 300
 
 
 # ---------------------------------------------------------------------------
 # Plist construction
 # ---------------------------------------------------------------------------
+
 
 def _task_extra(task: Any) -> dict[str, Any]:
     return task.model_extra or {}
@@ -120,15 +123,18 @@ def build_plist(
     if script:
         script_tokens = _split_script(script)
         if requires_browser:
-            program_args = [python3, "scripts/run_with_watchdog.py", *script_tokens,
-                            "--timeout", str(timeout_seconds)]
+            program_args = [
+                python3,
+                "scripts/run_with_watchdog.py",
+                *script_tokens,
+                "--timeout",
+                str(timeout_seconds),
+            ]
         else:
             program_args = [python3, *script_tokens, *[str(a) for a in script_args]]
     elif task.skill:
         if not claude_bin:
-            raise SystemExit(
-                "claude CLI not found; pass --claude-bin <path> or install claude"
-            )
+            raise SystemExit("claude CLI not found; pass --claude-bin <path> or install claude")
         program_args = [claude_bin, "--dangerously-skip-permissions", f"/{task.skill}"]
     else:
         return {}  # signal: skip
@@ -159,6 +165,7 @@ def build_plist(
 # ---------------------------------------------------------------------------
 # Diff / write / bootstrap
 # ---------------------------------------------------------------------------
+
 
 def diff_plist(
     label: str,
@@ -208,7 +215,11 @@ def bootstrap(label: str, plist_path: Path) -> tuple[bool, str]:
         return (False, f"bootout failed: {exc}")
     try:
         result = runner(
-            bootstrap_cmd, capture_output=True, text=True, check=False, timeout=15,
+            bootstrap_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
         return (False, f"bootstrap failed: {exc}")
@@ -221,6 +232,7 @@ def bootstrap(label: str, plist_path: Path) -> tuple[bool, str]:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def _load_existing(path: Path) -> dict[str, Any] | None:
     if not path.exists():
@@ -238,13 +250,17 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--diff", action="store_true", help="print drift table (default)")
     p.add_argument("--dry-run", action="store_true", help="print proposed plists, no write")
     p.add_argument("--apply", action="store_true", help="write changed plists atomically")
-    p.add_argument("--bootstrap", action="store_true",
-                   help="after --apply, launchctl bootout/bootstrap changed plists")
+    p.add_argument(
+        "--bootstrap",
+        action="store_true",
+        help="after --apply, launchctl bootout/bootstrap changed plists",
+    )
     p.add_argument("--only", help="restrict to a single label suffix (e.g. fb-scanner)")
     p.add_argument("--claude-bin", help="path to the claude CLI binary")
     p.add_argument("--python", help="python3 binary to embed in plists")
-    p.add_argument("--strict", action="store_true",
-                   help="--diff exits 1 if any drift detected (CI gate)")
+    p.add_argument(
+        "--strict", action="store_true", help="--diff exits 1 if any drift detected (CI gate)"
+    )
     return p.parse_args(argv)
 
 

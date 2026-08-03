@@ -22,13 +22,15 @@ from api.schedule_schemas import InputStatus
 def read_json(path: Path | str) -> Any:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
 from lib.config import BrandPaths
 from lib.config import settings as _settings
+from lib.worker_labels import TASK_ID_PREFIX as _TASK_ID_PREFIX
 
 _log = logging.getLogger("approval_api.schedule_config")
 
 _BRAND_LABEL_PREFIX = "com.persona."
-_TASK_ID_PREFIX = "dogfood-"
 
 
 class ScheduleInput(BaseModel):
@@ -80,7 +82,7 @@ def label_for_task_id(task_id: str) -> str | None:
     """
     if not task_id.startswith(_TASK_ID_PREFIX):
         return None
-    suffix = task_id[len(_TASK_ID_PREFIX):]
+    suffix = task_id[len(_TASK_ID_PREFIX) :]
     if not suffix:
         return None
     return f"{_BRAND_LABEL_PREFIX}{suffix}"
@@ -90,8 +92,10 @@ def _load_from_db(db_path: Path) -> ScheduleConfig | None:
     """Load tasks from schedule.db; returns None on any error."""
     try:
         import sys
+
         sys.path.insert(0, str(Path(__file__).parent.parent))
         from lib import schedule_db
+
         rows = schedule_db.load_all()
         raw_tasks: list[dict[str, Any]] = []
         for row in rows:
@@ -139,7 +143,7 @@ def task_for_label(
     """Reverse-lookup a ``ScheduleTask`` by its launchd label."""
     if not label.startswith(_BRAND_LABEL_PREFIX):
         return None
-    suffix = label[len(_BRAND_LABEL_PREFIX):]
+    suffix = label[len(_BRAND_LABEL_PREFIX) :]
     if not suffix:
         return None
     task_id = f"{_TASK_ID_PREFIX}{suffix}"
@@ -182,12 +186,23 @@ def check_inputs_satisfied(
         else:
             data = read_json(p)
             count = _count_artifact(data) if data is not None else 1
-            age_hours = (now - datetime.fromtimestamp(p.stat().st_mtime, tz=UTC)).total_seconds() / 3600.0
+            age_hours = (
+                now - datetime.fromtimestamp(p.stat().st_mtime, tz=UTC)
+            ).total_seconds() / 3600.0
             if count < spec.min_count:
                 ok, reason = False, f"empty (got {count}, need {spec.min_count})"
             elif spec.max_age_hours is not None and age_hours > spec.max_age_hours:
                 ok, reason = False, _format_age(age_hours, spec.max_age_hours)
-        statuses.append(InputStatus(path=spec.path, exists=exists, count=count, age_hours=age_hours, ok=ok, reason=reason))
+        statuses.append(
+            InputStatus(
+                path=spec.path,
+                exists=exists,
+                count=count,
+                age_hours=age_hours,
+                ok=ok,
+                reason=reason,
+            )
+        )
         if not ok:
             all_ok = False
     return all_ok, statuses
@@ -228,8 +243,7 @@ def topological_order(tasks: list[ScheduleTask]) -> list[ScheduleTask]:
 
     if len(out) != len(tasks):
         raise DependencyCycleError(
-            f"cycle detected in schedule depends_on graph "
-            f"({len(out)}/{len(tasks)} tasks ordered)"
+            f"cycle detected in schedule depends_on graph ({len(out)}/{len(tasks)} tasks ordered)"
         )
     return out
 

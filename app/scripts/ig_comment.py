@@ -35,8 +35,9 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 from lib.worker_db import record_complete, record_start
+from lib.worker_labels import worker_label_for_flow
 
-WORKER_LABEL = "persona-ig-comment"
+WORKER_LABEL = worker_label_for_flow("ig-comment")
 
 settings, log = init_script(__name__)
 
