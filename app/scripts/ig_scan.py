@@ -29,7 +29,7 @@ from lib.worker_labels import worker_label_for_flow
 
 settings, log = init_script(__name__)
 
-WORKER_LABEL = worker_label_for_flow("ig-scanner")
+WORKER_LABEL = worker_label_for_flow("ig-engager")
 
 import draft_helper
 import rate_limiter
@@ -49,12 +49,12 @@ SESSION_FILE = settings.paths.instagram_session
 CONFIG_FILE = settings.paths.brand_dir / "config.json"
 HASHTAG_FILE = settings.paths.instagram_accounts
 
-# Bound at import: the system prompt comes from .claude/skills/ig-scanner/
+# Bound at import: the system prompt comes from .claude/skills/ig-engager/
 # SKILL.md, so a broken or missing skill file (SkillPromptError) aborts the
 # run at startup — before any hashtag is scanned — matching
 # scripts/ig_comment.py's abort-loudly pattern. The per-post USER prompt is
 # built by the drafter per call.
-_DRAFTER = draft_helper.for_skill("ig-scanner")
+_DRAFTER = draft_helper.for_skill("ig-engager")
 
 
 def _score_post(post: Post) -> float:
@@ -73,7 +73,7 @@ def _score_post(post: Post) -> float:
 
 
 def _already_ran_today(last_run: dict[str, Any]) -> bool:
-    ig = last_run.get("ig_scanner", {})
+    ig = last_run.get("ig_engager", {})
     return (ig.get("last_run_at") or "")[:10] == date.today().isoformat() and ig.get(
         "status"
     ) == "success"
@@ -98,17 +98,17 @@ def run_ig_scan(
     # last_run.json nor sends a like, so blocking it would force --force --
     # which ALSO lifts the like rate cap. Preview stays freely re-runnable.
     if not dry_run and _already_ran_today(last_run) and "--force" not in sys.argv:
-        skill_skipped("ig-scanner", "already ran successfully today")
+        skill_skipped("ig-engager", "already ran successfully today")
         log_trace("instagram", "Skipped: already ran today")
         return None
     if not dry_run and not can_act("instagram", "like") and "--force" not in sys.argv:
-        skill_skipped("ig-scanner", "Daily IG like limit reached")
+        skill_skipped("ig-engager", "Daily IG like limit reached")
         print_status()
         return None
 
     label = "DRY RUN — " if dry_run else ""
     skill_started(
-        "ig-scanner",
+        "ig-engager",
         f"{label}Scanning Instagram hashtags for posts to like/comment",
     )
     print_status()
@@ -138,7 +138,7 @@ def run_ig_scan(
         msg = str(exc)
         if "SESSION_EXPIRED" in msg or "No saved Instagram session" in msg:
             log_trace("instagram", f"Aborted: {msg}")
-            skill_skipped("ig-scanner", msg)
+            skill_skipped("ig-engager", msg)
             return None
         raise
 
@@ -146,7 +146,7 @@ def run_ig_scan(
     # them, so posts stay eligible) and no last-run stamp (the
     # already-ran-today guard is not burned).
     if not dry_run:
-        last_run["ig_scanner"] = {
+        last_run["ig_engager"] = {
             "last_run_at": datetime.now(UTC).isoformat(),
             "hashtags_scanned": report.sources_visited,
             "posts_liked": report.likes_succeeded,
@@ -176,7 +176,7 @@ def run_ig_scan(
             f"Commented: {report.comments_posted}/{quota} | "
             f"Agent declined: {report.comments_declined}"
         )
-    skill_finished("ig-scanner", summary)
+    skill_finished("ig-engager", summary)
     print_status()
     return report
 

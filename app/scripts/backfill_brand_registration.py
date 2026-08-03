@@ -69,6 +69,21 @@ def enabled_flows_for(brand_dir: Path, only: list[str] | None = None) -> list[st
     return [str(t["id"]).removeprefix("dogfood-") for t in tasks if t.get("id")]
 
 
+def _container_brand_dir(brand_dir: Path) -> str:
+    """The `brands.brand_dir` value every consumer of that column actually
+    needs: it's read exclusively by code running inside the api/dispatcher/
+    worker containers (api/brand_flows_api.py, lib/brand_resolver.py,
+    scripts/task_dispatcher.py, scripts/task_worker.py), which mount brands
+    at `/app/brands/<slug>` regardless of where this script itself runs.
+    Storing this script's own (host) resolved path here once produced a
+    row a container-run flow could never actually read from -- task_worker.py
+    tried `mkdir`-ing up from the nonexistent host path and hit
+    `PermissionError` at the container's `/` before it got anywhere near a
+    log file.
+    """
+    return f"/app/brands/{brand_dir.name}"
+
+
 def build_brand_row(brand_dir: Path, enabled_flows: list[str] | None = None) -> dict[str, Any]:
     """Derive the `brands` row from files already on disk.
 
@@ -95,7 +110,7 @@ def build_brand_row(brand_dir: Path, enabled_flows: list[str] | None = None) -> 
         "headless": get_runtime_headless(),
         "group_join_limit": get_group_join_limit(),
         "status": BrandStatus.ACTIVE,
-        "brand_dir": str(brand_dir),
+        "brand_dir": _container_brand_dir(brand_dir),
     }
 
 

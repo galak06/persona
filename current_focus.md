@@ -2,6 +2,11 @@
 
 _Last updated: 2026-07-21 (session)_
 
+**Naming note (2026-08-03):** the flow referred to below as `ig-scanner` was
+renamed to `ig-engager` (it likes AND comments in one pass, so "scanner"
+undersold it). Entries below are left as originally written — historical
+record, not current naming.
+
 ## Latest (2026-07-21): engagement pipeline decomposition — MERGED to main (PR #36)
 
 - **`lib/engagement/pipeline.py` is now orchestration-only (~275 lines).** Extracted

@@ -1,7 +1,7 @@
 """The one place a flow id becomes its `worker_runs.worker_label`.
 
 Every flow has exactly one correct label: the `schedule_tasks.id` this brand's
-row for that flow carries (e.g. `dogfood-ig-scanner`) -- that's the string
+row for that flow carries (e.g. `dogfood-ig-engager`) -- that's the string
 `api/approval_api.py`'s `/workers` endpoint and its trigger guard key their
 lookups on. A worker script that writes its own run status under a
 DIFFERENT string (as `ig_scan.py`/`fb_scan.py` built dynamically from
@@ -22,5 +22,5 @@ TASK_ID_PREFIX = "dogfood-"
 
 def worker_label_for_flow(flow_id: str) -> str:
     """The `schedule_tasks.id` -- and therefore `worker_runs.worker_label` --
-    for `flow_id` (e.g. `"ig-scanner"` -> `"dogfood-ig-scanner"`)."""
+    for `flow_id` (e.g. `"ig-engager"` -> `"dogfood-ig-engager"`)."""
     return f"{TASK_ID_PREFIX}{flow_id}"

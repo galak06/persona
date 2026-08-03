@@ -85,7 +85,7 @@ def test_create_accepts_full_field_set(repo: BrandsRepository) -> None:
         target_audience="DIY makers",
         keywords={"primary_keywords": ["widget"]},
         competitor_accounts=["@rival"],
-        enabled_flows=["ig-scanner"],
+        enabled_flows=["ig-engager"],
         status=BrandStatus.PROVISIONING,
         brand_dir="/brands/full-brand",
         extra={"note": "seeded by test"},
@@ -97,7 +97,7 @@ def test_create_accepts_full_field_set(repo: BrandsRepository) -> None:
     assert row["target_audience"] == "DIY makers"
     assert row["keywords"] == {"primary_keywords": ["widget"]}
     assert row["competitor_accounts"] == ["@rival"]
-    assert row["enabled_flows"] == ["ig-scanner"]
+    assert row["enabled_flows"] == ["ig-engager"]
     assert row["status"] == BrandStatus.PROVISIONING
     assert row["brand_dir"] == "/brands/full-brand"
     assert row["extra"] == {"note": "seeded by test"}

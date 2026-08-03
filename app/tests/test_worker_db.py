@@ -44,8 +44,8 @@ def pg() -> Iterator[None]:
 
 @requires_postgres
 def test_record_start_inserts_running_row(pg: None, tmp_path: Path) -> None:
-    worker_db.record_start(tmp_path, "com.persona.ig-scanner", "dogfoodandfun")
-    row = worker_db.get_one(tmp_path, "com.persona.ig-scanner", "dogfoodandfun")
+    worker_db.record_start(tmp_path, "com.persona.ig-engager", "dogfoodandfun")
+    row = worker_db.get_one(tmp_path, "com.persona.ig-engager", "dogfoodandfun")
     assert row is not None
     assert row["status"] == "running"
     assert row["message"] == ""
@@ -109,7 +109,7 @@ def test_get_one_returns_none_when_missing(pg: None, tmp_path: Path) -> None:
 def test_record_complete_removes_stale_pid_files(pg: None, tmp_path: Path) -> None:
     logs_dir = tmp_path / "logs"
     logs_dir.mkdir(parents=True)
-    label = "com.persona.ig-scanner"
+    label = "com.persona.ig-engager"
     suffix = label.removeprefix("com.persona.").replace("-", "_")
     pid_files = [
         logs_dir / f"{suffix}.pid",

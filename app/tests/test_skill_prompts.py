@@ -40,7 +40,7 @@ _SKILLS_DIR = skill_loader.default_skills_dir()
 _BRAND = skill_loader.load_brand_vars(str(_CI_BRAND))
 
 # The four flows whose drafts run through draft_helper.SkillDrafter.
-_ENGAGEMENT_SKILLS = ("ig-comment", "fb-comment", "ig-scanner", "wp-comment-handler")
+_ENGAGEMENT_SKILLS = ("ig-comment", "fb-comment", "ig-engager", "wp-comment-handler")
 # ...plus the reply/first-touch drafter (lib/reply_drafter.py).
 _WIRED_SKILLS = (*_ENGAGEMENT_SKILLS, "comment-composer")
 
@@ -48,7 +48,7 @@ _WIRED_SKILLS = (*_ENGAGEMENT_SKILLS, "comment-composer")
 # ig-comment line has been byte-copied into new skills before.
 _FRAMING = {
     "ig-comment": "commenting on Instagram",
-    "ig-scanner": "commenting on Instagram",
+    "ig-engager": "commenting on Instagram",
     "fb-comment": "commenting in Facebook groups",
     "wp-comment-handler": "replying to reader comments on our own blog",
 }
@@ -57,7 +57,7 @@ _FRAMING = {
 # restates one): fb_comment.py calls draft_short_comment_for_post.
 _LENGTH_RULES = {
     "ig-comment": "a single short reply (1-3 sentences)",
-    "ig-scanner": "a single short reply (1-3 sentences)",
+    "ig-engager": "a single short reply (1-3 sentences)",
     "wp-comment-handler": "a single short reply (1-3 sentences)",
     "fb-comment": "ONE short sentence (15-25 words)",
 }
@@ -174,5 +174,5 @@ def test_engagement_prompt_names_the_right_surface(skill: str) -> None:
     once told the model it was commenting on Instagram."""
     prompt = _rendered(skill)
     assert _FRAMING[skill] in prompt
-    if skill not in ("ig-comment", "ig-scanner"):
+    if skill not in ("ig-comment", "ig-engager"):
         assert "Instagram" not in prompt

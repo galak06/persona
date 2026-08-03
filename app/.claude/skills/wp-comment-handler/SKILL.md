@@ -12,7 +12,7 @@ description: >
 
 # WordPress Comment Handler — {{brand.name}}
 
-Three-stage pipeline, mirroring `fb-scanner` / `ig-scanner` / `comment-composer`:
+Three-stage pipeline, mirroring `fb-scanner` / `ig-engager` / `comment-composer`:
 
 1. **Scan** (`scripts/wp_scan.py`) — fetch held comments, trash spam, queue the rest.
 2. **Compose** (Claude drafts a {{brand.mascot}}'s-Dad reply per pending item — see `## Drafting`).

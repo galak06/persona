@@ -139,7 +139,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
       </h2>
       <p className="text-sm text-slate-500 mb-3">
         Creates the brand row, scaffolds <code className="font-mono text-xs">brands/&lt;slug&gt;/</code>, and
-        seeds its <code className="font-mono text-xs">ig-scanner</code> /{" "}
+        seeds its <code className="font-mono text-xs">ig-engager</code> /{" "}
         <code className="font-mono text-xs">fb-scanner</code> schedule.
       </p>
 
@@ -214,7 +214,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
         <div>
           <h3 className="text-sm font-semibold text-slate-700">Keywords & competitors</h3>
           <p className="text-xs text-slate-400 mb-2">
-            Drive ig-scanner's hashtag list and relevance scoring — leaving these blank means
+            Drive ig-engager's hashtag list and relevance scoring — leaving these blank means
             scanners start with nothing to look for.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

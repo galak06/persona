@@ -2,7 +2,7 @@
 
 Pairs with `lib/brand_templates.py` (pure rendering) -- this module is the
 I/O side: computes `brands/<slug>/`, writes the three rendered files, and
-inserts the brand's `ig-scanner`/`fb-scanner` `schedule_tasks` rows via
+inserts the brand's `ig-engager`/`fb-scanner` `schedule_tasks` rows via
 `lib/schedule_db.py` so PR2's `scripts/task_dispatcher.py` picks them up.
 
 Deliberately does NOT import `lib.config`/`lib.bootstrap` (or anything that
@@ -57,7 +57,7 @@ _PROFILES_DIR = _PERSONA_ROOT / "profiles"
 # `default_enabled_flows()`), so a brand that never opts into
 # `fb-group-scout` never gets that `schedule_tasks` row at all.
 _STAGE1_FLOWS: tuple[tuple[str, str], ...] = (
-    ("instagram.json", "ig-scanner"),
+    ("instagram.json", "ig-engager"),
     ("facebook.json", "fb-scanner"),
     ("facebook.json", "fb-group-scout"),
 )
@@ -89,13 +89,13 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
 
     `id` is brand-prefixed (`<brand_id>-<flow_id>`) so multiple brands'
     dispatcher rows never collide. `depends_on`/`inputs` are cleared even
-    when the source flow has them (e.g. `ig-scanner` depends on
+    when the source flow has them (e.g. `ig-engager` depends on
     `site-analyzer`) -- onboarding only ever provisions flows from
     `_STAGE1_FLOWS`, so a dangling dependency on a flow this brand doesn't
     have would be misleading. `task_dispatcher.py` doesn't currently
     evaluate `depends_on` at all, so this is a data-hygiene choice, not a
     behavior change. `requires_browser` is forced `true` per the plan's B3
-    spec regardless of the source flow's value (`ig-scanner`/`fb-scanner`/
+    spec regardless of the source flow's value (`ig-engager`/`fb-scanner`/
     `fb-group-scout` are all Playwright-driven, so this is always accurate
     for every id `_STAGE1_FLOWS` can name).
     """
@@ -209,7 +209,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     # derive (dogfoodandfun's real 26-hashtag list has none of its rows
     # traceable to any keyword). Overwriting it here wiped that file down
     # to a header-only stub on every settings edit, silently breaking
-    # ig-scanner (0 sources to scan, but still exits 0 -- no error, no
+    # ig-engager (0 sources to scan, but still exits 0 -- no error, no
     # crash, just quietly doing nothing) until the file was manually
     # restored from a backup.
     hashtags_csv_path = brand_dir / "data" / "config" / "instagram_accounts.csv"

@@ -1,5 +1,5 @@
 ---
-name: ig-scanner
+name: ig-engager
 description: >
   Scan Instagram hashtags for posts relevant to {{brand.domain}} content.
   Like qualifying posts. Queue high-relevance posts for comments.

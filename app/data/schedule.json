@@ -78,7 +78,7 @@
         "site-analyzer"
       ],
       "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
-      "id": "ig-scanner",
+      "id": "ig-engager",
       "inputs": [
         {
           "max_age_hours": 26,
@@ -101,7 +101,7 @@
         "cron": "3 19 * * *"
       },
       "script": "scripts/ig_scan.py",
-      "skill": "ig-scanner",
+      "skill": "ig-engager",
       "telegram_notify": true
     },
     {
@@ -147,7 +147,7 @@
     },
     {
       "depends_on": [
-        "ig-scanner"
+        "ig-engager"
       ],
       "description": "IG loop: draft a reply per queued post at post time and post it (max 10/day) from the Instagram queue",
       "id": "ig-comment",

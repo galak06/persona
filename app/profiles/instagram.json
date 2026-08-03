@@ -11,8 +11,8 @@
   },
   "flows": [
     {
-      "id": "ig-scanner",
-      "skill": "ig-scanner",
+      "id": "ig-engager",
+      "skill": "ig-engager",
       "script": "scripts/ig_scan.py",
       "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
       "schedule": {
@@ -60,7 +60,7 @@
       },
       "order": 51,
       "depends_on": [
-        "ig-scanner"
+        "ig-engager"
       ],
       "inputs": []
     },
@@ -84,5 +84,5 @@
       "inputs": []
     }
   ],
-  "_notes": "comments_per_day bumped from 2 to 10 in slice 3 (ADR-0002); reflected here as canonical. likes_per_day bumped from 8 to 20 (IG-loop split); ig-scanner flow override raised to 20 likes / 10 comments. Slice B added flows[]."
+  "_notes": "comments_per_day bumped from 2 to 10 in slice 3 (ADR-0002); reflected here as canonical. likes_per_day bumped from 8 to 20 (IG-loop split); ig-engager flow override raised to 20 likes / 10 comments. Slice B added flows[]."
 }

@@ -34,7 +34,7 @@ _FLOW_GATE_BRAND = "flow-gate-test-brand"
 @pytest.fixture
 def flow_gate_brand() -> Iterator[None]:
     """A `brands` row scoped to exactly `_FLOW_GATE_BRAND`, with only
-    `ig-scanner` enabled. Cleaned up via a targeted `DELETE ... WHERE id =`
+    `ig-engager` enabled. Cleaned up via a targeted `DELETE ... WHERE id =`
     (never a blanket `TRUNCATE`) so this fixture only ever touches the one
     row it created -- safe to run alongside any other data in `brands`.
     """
@@ -43,7 +43,7 @@ def flow_gate_brand() -> Iterator[None]:
         name="Flow Gate Test",
         site_url="https://flow-gate-test.example",
         niche="n",
-        enabled_flows=["ig-scanner"],
+        enabled_flows=["ig-engager"],
     )
     try:
         yield
@@ -67,13 +67,13 @@ def test_flow_enabled_true_when_enabled_flows_unknown() -> None:
 
 def test_flow_enabled_false_for_disabled_managed_flow() -> None:
     assert (
-        task_dispatcher._flow_enabled({"title": "fb-group-scout"}, frozenset({"ig-scanner"}))
+        task_dispatcher._flow_enabled({"title": "fb-group-scout"}, frozenset({"ig-engager"}))
         is False
     )
 
 
 def test_flow_enabled_true_for_enabled_managed_flow() -> None:
-    assert task_dispatcher._flow_enabled({"title": "ig-scanner"}, frozenset({"ig-scanner"})) is True
+    assert task_dispatcher._flow_enabled({"title": "ig-engager"}, frozenset({"ig-engager"})) is True
 
 
 # --------------------------------------------------------------- run_once + enabled_flows
@@ -85,11 +85,11 @@ def test_run_once_skips_disabled_managed_flow(
 ) -> None:
     """`fb-group-scout` is absent from `_FLOW_GATE_BRAND`'s `enabled_flows`
     -- its row is skipped even though it's due, while the sibling
-    `ig-scanner` row (which IS enabled) still gets enqueued normally."""
+    `ig-engager` row (which IS enabled) still gets enqueued normally."""
     queue = _FakeQueue()
 
     ig_task = _task_row("ig", _FLOW_GATE_BRAND)
-    ig_task["title"] = "ig-scanner"
+    ig_task["title"] = "ig-engager"
     scout_task = _task_row("scout", _FLOW_GATE_BRAND, script="scripts/fb_group_scout.py")
     scout_task["title"] = "fb-group-scout"
     schedule_db.save_task(None, ig_task)

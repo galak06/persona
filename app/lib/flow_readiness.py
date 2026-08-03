@@ -6,7 +6,7 @@ today that's silent (0 groups joined -> fb-scanner just finds nothing, with
 no UI signal explaining why). `flow_status()` surfaces, per managed flow:
 whether it's enabled, its last `worker_runs` status, and a flow-specific
 readiness count (joined-group count for the two Facebook flows, hashtag
-count for ig-scanner).
+count for ig-engager).
 
 Queries `fb_groups` directly (not via `lib.groups_db`'s repository, which
 resolves its brand implicitly from the CURRENT process's `BRAND_DIR` env
@@ -21,13 +21,13 @@ import csv
 from pathlib import Path
 from typing import Any
 
-from lib import db, worker_db
+from lib import db, schedule_db, worker_db
 
 # Presentation order (onboarding order), not `MANAGED_FLOW_IDS`'s frozenset
 # iteration order.
-_FLOW_ORDER: tuple[str, ...] = ("ig-scanner", "fb-scanner", "fb-group-scout")
+_FLOW_ORDER: tuple[str, ...] = ("ig-engager", "fb-scanner", "fb-group-scout")
 _FLOW_SCRIPTS: dict[str, str] = {
-    "ig-scanner": "scripts/ig_scan.py",
+    "ig-engager": "scripts/ig_scan.py",
     "fb-scanner": "scripts/fb_scan.py",
     "fb-group-scout": "scripts/fb_group_scout.py",
 }
@@ -76,7 +76,7 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
                 "until fb-group-scout finds and joins some."
             ),
         )
-    if flow_id == "ig-scanner":
+    if flow_id == "ig-engager":
         count = _hashtag_count(brand_dir)
         return {
             "signal": "hashtags",
@@ -84,7 +84,7 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
             "ready": count > 0,
             "hint": (
                 "No hashtags configured — add primary/secondary keywords in "
-                "settings to give ig-scanner something to scan."
+                "settings to give ig-engager something to scan."
                 if count == 0
                 else f"{count} hashtag(s) configured."
             ),
@@ -100,12 +100,27 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
 def flow_status(
     *, brand_id: str, brand_dir: Path, enabled_flows: list[str]
 ) -> list[dict[str, Any]]:
-    """One entry per managed flow: enabled?, last-run status, readiness signal."""
+    """One entry per managed flow: enabled?, last-run status, readiness signal.
+
+    The `schedule_tasks.id` a flow was actually provisioned under is not a
+    fixed, guessable format -- the one legacy brand's rows predate the
+    current per-brand convention and use a hardcoded `dogfood-` prefix
+    unrelated to its real `brand_id`, while brands provisioned since then get
+    `<brand_id>-<flow_id>`. Rather than pick one format and be wrong for the
+    other, look up each flow's row by `(brand_id, title=flow_id)` -- both
+    conventions set `title` to the plain flow id -- and read `worker_runs`
+    under that row's real `id`.
+    """
     enabled_set = set(enabled_flows)
+    tasks_by_flow = {
+        t["title"]: t["id"] for t in schedule_db.load_all() if t.get("brand_id") == brand_id
+    }
     out: list[dict[str, Any]] = []
     for flow_id in _FLOW_ORDER:
-        schedule_task_id = f"{brand_id}-{flow_id}"
-        last_run = worker_db.get_one(brand_dir, schedule_task_id, brand_id)
+        schedule_task_id = tasks_by_flow.get(flow_id)
+        last_run = (
+            worker_db.get_one(brand_dir, schedule_task_id, brand_id) if schedule_task_id else None
+        )
         out.append(
             {
                 "flow_id": flow_id,

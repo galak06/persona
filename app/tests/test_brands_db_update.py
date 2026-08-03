@@ -71,14 +71,14 @@ def test_update_keywords_only_leaves_headless_untouched(repo: BrandsRepository) 
 def test_update_competitor_accounts_and_enabled_flows(repo: BrandsRepository) -> None:
     repo.create(brand_id="ca-only", name="Ca Only", site_url="https://c.example", niche="n")
     assert (
-        repo.update("ca-only", competitor_accounts=["@new-rival"], enabled_flows=["ig-scanner"])
+        repo.update("ca-only", competitor_accounts=["@new-rival"], enabled_flows=["ig-engager"])
         is True
     )
 
     row = repo.get("ca-only")
     assert row is not None
     assert row["competitor_accounts"] == ["@new-rival"]
-    assert row["enabled_flows"] == ["ig-scanner"]
+    assert row["enabled_flows"] == ["ig-engager"]
 
 
 @requires_postgres
@@ -91,7 +91,7 @@ def test_update_group_join_limit_only_leaves_enabled_flows_untouched(
     row = repo.get("gjl-only")
     assert row is not None
     assert row["group_join_limit"] == 3
-    assert row["enabled_flows"] == ["ig-scanner", "fb-scanner"]  # untouched, create()-time default
+    assert row["enabled_flows"] == ["ig-engager", "fb-scanner"]  # untouched, create()-time default
 
 
 @requires_postgres

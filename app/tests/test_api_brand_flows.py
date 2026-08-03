@@ -24,12 +24,13 @@ from lib.task_queue import TaskQueue
 _ROW: dict[str, Any] = {
     "id": "acme-dogs",
     "brand_dir": "/brands/acme-dogs",
-    "enabled_flows": ["ig-scanner", "fb-scanner"],
+    "enabled_flows": ["ig-engager", "fb-scanner"],
 }
 
 _TASK_ROW: dict[str, Any] = {
-    "id": "acme-dogs-ig-scanner",
+    "id": "acme-dogs-ig-engager",
     "brand_id": "acme-dogs",
+    "title": "ig-engager",
     "script": "scripts/ig_scan.py",
     "args": [],
     "schedule": {"cron": "0 19 * * *"},
@@ -65,7 +66,7 @@ def test_flow_status_returns_flows_from_lib(monkeypatch: pytest.MonkeyPatch) -> 
         "flow_status",
         lambda **_kwargs: [
             {
-                "flow_id": "ig-scanner",
+                "flow_id": "ig-engager",
                 "script": "scripts/ig_scan.py",
                 "enabled": True,
                 "last_run": None,
@@ -77,7 +78,7 @@ def test_flow_status_returns_flows_from_lib(monkeypatch: pytest.MonkeyPatch) -> 
     resp = brand_flows_api.get_flow_status("acme-dogs")
     assert resp.brand_id == "acme-dogs"
     assert len(resp.flows) == 1
-    assert resp.flows[0].flow_id == "ig-scanner"
+    assert resp.flows[0].flow_id == "ig-engager"
     assert resp.flows[0].readiness.ready is False
 
 
@@ -87,7 +88,7 @@ def test_flow_status_returns_flows_from_lib(monkeypatch: pytest.MonkeyPatch) -> 
 def test_run_now_404_when_brand_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(brand_flows_api.brands_db, "get", lambda _bid: None)
     with pytest.raises(HTTPException) as exc_info:
-        brand_flows_api.run_flow_now("no-such-brand", "ig-scanner")
+        brand_flows_api.run_flow_now("no-such-brand", "ig-engager")
     assert exc_info.value.status_code == 404
 
 
@@ -101,12 +102,12 @@ def test_run_now_404_when_flow_not_provisioned(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_run_now_409_when_flow_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    row = {**_ROW, "enabled_flows": ["fb-scanner"]}  # ig-scanner NOT enabled
+    row = {**_ROW, "enabled_flows": ["fb-scanner"]}  # ig-engager NOT enabled
     monkeypatch.setattr(brand_flows_api.brands_db, "get", lambda _bid: dict(row))
     monkeypatch.setattr(brand_flows_api.schedule_db, "load_all", lambda: [dict(_TASK_ROW)])
 
     with pytest.raises(HTTPException) as exc_info:
-        brand_flows_api.run_flow_now("acme-dogs", "ig-scanner")
+        brand_flows_api.run_flow_now("acme-dogs", "ig-engager")
     assert exc_info.value.status_code == 409
 
 
@@ -115,11 +116,11 @@ def test_run_now_enqueues_and_returns_response(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(brand_flows_api.schedule_db, "load_all", lambda: [dict(_TASK_ROW)])
     monkeypatch.setattr(brand_flows_api, "TaskQueue", _FakeQueue)
 
-    resp = brand_flows_api.run_flow_now("acme-dogs", "ig-scanner")
+    resp = brand_flows_api.run_flow_now("acme-dogs", "ig-engager")
 
     assert resp.brand_id == "acme-dogs"
-    assert resp.flow_id == "ig-scanner"
-    assert resp.schedule_task_id == "acme-dogs-ig-scanner"
+    assert resp.flow_id == "ig-engager"
+    assert resp.schedule_task_id == "acme-dogs-ig-engager"
     assert resp.enqueued is True
     pushed = _FakeQueue.last_instance.pushed  # type: ignore[attr-defined]
     assert pushed[0]["script"] == "scripts/ig_scan.py"
@@ -184,13 +185,13 @@ def test_flows_and_run_now_end_to_end_over_real_http(pg: None, brands_root: Path
         flows_resp = client.get("/api/v1/brands/acme-dogs/flows")
         assert flows_resp.status_code == 200
         flows = {f["flow_id"]: f for f in flows_resp.json()["flows"]}
-        assert flows["ig-scanner"]["enabled"] is True
+        assert flows["ig-engager"]["enabled"] is True
         assert flows["fb-group-scout"]["enabled"] is False
         assert flows["fb-scanner"]["readiness"]["ready"] is False  # 0 groups joined
 
-        run_resp = client.post("/api/v1/brands/acme-dogs/flows/ig-scanner/run")
+        run_resp = client.post("/api/v1/brands/acme-dogs/flows/ig-engager/run")
         assert run_resp.status_code == 200
-        assert run_resp.json()["schedule_task_id"] == "acme-dogs-ig-scanner"
+        assert run_resp.json()["schedule_task_id"] == "acme-dogs-ig-engager"
         assert queue.depth() == 1
 
         # fb-group-scout was never in _FULL_BODY's (default) enabled_flows,
@@ -200,7 +201,7 @@ def test_flows_and_run_now_end_to_end_over_real_http(pg: None, brands_root: Path
         never_provisioned_resp = client.post("/api/v1/brands/acme-dogs/flows/fb-group-scout/run")
         assert never_provisioned_resp.status_code == 404
 
-        missing_resp = client.post("/api/v1/brands/does-not-exist/flows/ig-scanner/run")
+        missing_resp = client.post("/api/v1/brands/does-not-exist/flows/ig-engager/run")
         assert missing_resp.status_code == 404
     finally:
         queue.clear()

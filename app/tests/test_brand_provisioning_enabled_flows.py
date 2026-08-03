@@ -18,7 +18,7 @@ from tests.test_brand_provisioning import brands_root, pg, requires_postgres
 
 __all__ = ["brands_root", "pg"]  # re-exported fixtures, used implicitly as test parameters
 
-_ALL_THREE_FLOWS = ["ig-scanner", "fb-scanner", "fb-group-scout"]
+_ALL_THREE_FLOWS = ["ig-engager", "fb-scanner", "fb-group-scout"]
 
 
 def test_dry_run_fb_group_scout_enabled_adds_third_task(
@@ -36,7 +36,7 @@ def test_dry_run_fb_group_scout_enabled_adds_third_task(
     result = provision_brand(spec, dry_run=True)
 
     assert set(result.schedule_tasks_created) == {
-        "acme-dogs-ig-scanner",
+        "acme-dogs-ig-engager",
         "acme-dogs-fb-scanner",
         "acme-dogs-fb-group-scout",
     }
@@ -92,7 +92,7 @@ def test_real_run_disabling_fb_group_scout_does_not_delete_its_row(
     result = provision_brand(enabled_spec, dry_run=False)
 
     repo = BrandsRepository()
-    repo.update(result.brand_id, enabled_flows=["ig-scanner", "fb-scanner"])
+    repo.update(result.brand_id, enabled_flows=["ig-engager", "fb-scanner"])
     updated_row = repo.get(result.brand_id)
     assert updated_row is not None
     disabled_spec = BrandSpec(
@@ -108,4 +108,4 @@ def test_real_run_disabling_fb_group_scout_does_not_delete_its_row(
 
     row = repo.get(result.brand_id)
     assert row is not None
-    assert row["enabled_flows"] == ["ig-scanner", "fb-scanner"]
+    assert row["enabled_flows"] == ["ig-engager", "fb-scanner"]

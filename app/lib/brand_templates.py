@@ -278,7 +278,7 @@ def render_instagram_hashtags_csv(spec: BrandSpec) -> str:
     every_2_days. Matches `dogfoodandfun/data/config/instagram_accounts.csv`'s
     column shape and `should_scan_today()`'s accepted `scan_frequency` values
     (`lib/engagement/adapters/instagram_parsing.py`). Header-only (no data
-    rows) when no keywords are supplied -- a fresh brand's ig-scanner then
+    rows) when no keywords are supplied -- a fresh brand's ig-engager then
     runs cleanly and just finds nothing, per the plan's known limitations.
     """
     buf = io.StringIO()

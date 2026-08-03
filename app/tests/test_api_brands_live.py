@@ -83,7 +83,7 @@ def test_create_get_list_round_trip_via_handlers(pg: None, brands_root: Path) ->
     assert "acme-dogs" not in {b.id for b in listing_wrong_status.brands}
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == "acme-dogs"]
-    assert {r["id"] for r in rows} == {"acme-dogs-ig-scanner", "acme-dogs-fb-scanner"}
+    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
 
 
 @requires_postgres
@@ -127,7 +127,7 @@ def test_create_brand_end_to_end_over_real_http(pg: None, brands_root: Path) -> 
     payload = resp.json()
     assert payload["id"] == "acme-dogs"
     assert payload["status"] == "provisioned"
-    assert payload["schedule_tasks_created"] == ["acme-dogs-ig-scanner", "acme-dogs-fb-scanner"]
+    assert payload["schedule_tasks_created"] == ["acme-dogs-ig-engager", "acme-dogs-fb-scanner"]
     assert payload["ig_login_command"].endswith("scripts/login.py ig")
     assert payload["fb_login_command"].endswith("scripts/login.py fb")
     # Full brand row (matches the frontend's `Brand & ProvisionResult`
@@ -138,7 +138,7 @@ def test_create_brand_end_to_end_over_real_http(pg: None, brands_root: Path) -> 
         "secondary_keywords": ["gps"],
         "competitor_mentions": ["brand x"],
     }
-    assert payload["enabled_flows"] == ["ig-scanner", "fb-scanner"]
+    assert payload["enabled_flows"] == ["ig-engager", "fb-scanner"]
 
     get_resp = client.get("/api/v1/brands/acme-dogs")
     assert get_resp.status_code == 200

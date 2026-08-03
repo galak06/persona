@@ -10,7 +10,7 @@ Multi-brand, Docker-ready.
 
 | Feature | Status |
 |---|---|
-| **IG Scanner + Comments** | ✅ Production — single-pass, Gemini agent |
+| **IG Engager (scan + like + comment)** | ✅ Production — single-pass, Gemini agent |
 | **FB Scanner + Comments** | ❌ Parked — needs single-pass rewrite (#46) |
 | **Recipe → WP → Social pipeline** | ⚠️ Workers built, never run `--apply` live (#45) |
 | **Pinterest** | ⚠️ Trial-blocked — awaiting API approval (#47) |

@@ -9,7 +9,7 @@ from lib.worker_labels import TASK_ID_PREFIX, worker_label_for_flow
 
 
 def test_worker_label_matches_the_schedule_tasks_id_convention() -> None:
-    assert worker_label_for_flow("ig-scanner") == "dogfood-ig-scanner"
+    assert worker_label_for_flow("ig-engager") == "dogfood-ig-engager"
     assert worker_label_for_flow("fb-scanner") == "dogfood-fb-scanner"
     assert worker_label_for_flow("fb-comment") == "dogfood-fb-comment"
     assert worker_label_for_flow("ig-comment") == "dogfood-ig-comment"

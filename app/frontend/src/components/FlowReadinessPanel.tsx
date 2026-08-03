@@ -30,10 +30,10 @@ function toWorkerStatus(status: string | undefined): WorkerStatus["status"] {
 }
 
 /**
- * Flow-readiness panel — one card per managed flow (`ig-scanner`/
+ * Flow-readiness panel — one card per managed flow (`ig-engager`/
  * `fb-scanner`/`fb-group-scout`), each showing enabled state, last-run
  * status, and a flow-specific readiness signal (joined-group count for the
- * Facebook flows, hashtag count for ig-scanner) with a "Run Now" button.
+ * Facebook flows, hashtag count for ig-engager) with a "Run Now" button.
  *
  * Directly answers the "how does the operator know fb-group-scout needs to
  * run first" question — a brand with 0 joined groups now shows a visible

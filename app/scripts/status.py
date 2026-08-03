@@ -69,8 +69,8 @@ def status_icon(last_run_entry: dict) -> str:
     return "⬜"
 
 
-def _ig_scanner_stat(entry: dict) -> str:
-    """One-line IG scanner stat, for both the single-pass and legacy shapes.
+def _ig_engager_stat(entry: dict) -> str:
+    """One-line IG engager stat, for both the single-pass and legacy shapes.
 
     Instagram is single-pass now: ``ig_scan.py`` likes and comments in one
     visit and writes ``posts_commented`` / ``comments_declined``. Entries
@@ -112,7 +112,7 @@ def main() -> None:
     skill_keys = {
         "site-analyzer": "site_analyzer",
         "fb-scanner": "fb_scanner",
-        "ig-scanner": "ig_scanner",
+        "ig-engager": "ig_engager",
         "comment-composer": "comment_composer",
         "fb-group-scout": "fb_group_scout",
     }
@@ -136,8 +136,8 @@ def main() -> None:
             stat = (
                 f"groups={entry.get('groups_scanned', '?')} queued={entry.get('posts_queued', '?')}"
             )
-        elif key == "ig_scanner":
-            stat = _ig_scanner_stat(entry)
+        elif key == "ig_engager":
+            stat = _ig_engager_stat(entry)
         elif key == "comment_composer":
             stat = f"posted={entry.get('comments_posted', '?')} skipped={entry.get('comments_skipped', '?')}"
         elif key == "fb_group_scout":

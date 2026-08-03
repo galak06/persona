@@ -39,7 +39,7 @@ def _paths() -> BrandPaths:
 _LABEL_TO_FLOW: dict[str, str] = {
     "fb-scanner": "engagement-comment",
     "fb-comment": "engagement-comment",
-    "ig-scanner": "engagement-comment",
+    "ig-engager": "engagement-comment",
     "ig-comment": "engagement-comment",
     "comment-approver": "engagement-comment",
     "comment-poster": "engagement-comment",
@@ -66,7 +66,7 @@ _LABEL_TO_FLOW: dict[str, str] = {
 _LABEL_TO_LOG: dict[str, str] = {
     "fb-scanner": "cron_fb_scan.log",
     "fb-comment": "cron_fb_comment.log",
-    "ig-scanner": "cron_ig_scan.log",
+    "ig-engager": "cron_ig_scan.log",
     "ig-comment": "cron_ig_comment.log",
     "comment-approver": "cron_comment_approver.log",
     "comment-poster": "cron_comment_poster.log",

@@ -26,7 +26,7 @@ def default_enabled_flows() -> list[str]:
     Stage 1 scope is intentionally narrow -- only the two engagement scanners,
     no WP posting, no recipe pipeline (see the plan's Stage 1 goal).
     """
-    return ["ig-scanner", "fb-scanner"]
+    return ["ig-engager", "fb-scanner"]
 
 
 # Every flow id `enabled_flows` can ever govern -- the full set
@@ -35,7 +35,7 @@ def default_enabled_flows() -> list[str]:
 # `schedule_tasks` row whose flow id isn't in this set belongs to some other,
 # non-onboarding-managed flow (e.g. a legacy WP/recipe schedule) and must
 # never be silently skipped just because it's absent from `enabled_flows`.
-MANAGED_FLOW_IDS: frozenset[str] = frozenset({"ig-scanner", "fb-scanner", "fb-group-scout"})
+MANAGED_FLOW_IDS: frozenset[str] = frozenset({"ig-engager", "fb-scanner", "fb-group-scout"})
 
 
 # Dict keys that map to typed `brands` columns beyond the primary key. Kept

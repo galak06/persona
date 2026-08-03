@@ -43,7 +43,7 @@ export interface Brand extends BrandSummary {
 
 /** Every flow id `enabled_flows` can govern — mirrors
  * `lib.brands_db.models.MANAGED_FLOW_IDS` (Python side). */
-export const MANAGED_FLOW_IDS = ["ig-scanner", "fb-scanner", "fb-group-scout"] as const;
+export const MANAGED_FLOW_IDS = ["ig-engager", "fb-scanner", "fb-group-scout"] as const;
 
 export interface BrandsResponse {
   brands: BrandSummary[];

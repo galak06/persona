@@ -171,9 +171,9 @@ def test_run_task_writes_flow_log_file(
     fake_run = _fake_run(returncode=0, stdout="scan complete")
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    task_worker.run_task(_queue_item(f"{_BRAND}-ig-scanner", tmp_path))
+    task_worker.run_task(_queue_item(f"{_BRAND}-ig-engager", tmp_path))
 
-    log_path = tmp_path / "logs" / "cron_ig_scanner.log"
+    log_path = tmp_path / "logs" / "cron_ig_engager.log"
     assert log_path.exists()
     content = log_path.read_text(encoding="utf-8")
     assert "[success]" in content
@@ -190,9 +190,9 @@ def test_run_task_writes_flow_log_file_on_timeout(
     monkeypatch.setattr(subprocess, "run", _timeout)
 
     with pytest.raises(subprocess.TimeoutExpired):
-        task_worker.run_task(_queue_item(f"{_BRAND}-ig-scanner", tmp_path))
+        task_worker.run_task(_queue_item(f"{_BRAND}-ig-engager", tmp_path))
 
-    log_path = tmp_path / "logs" / "cron_ig_scanner.log"
+    log_path = tmp_path / "logs" / "cron_ig_engager.log"
     assert log_path.exists()
     content = log_path.read_text(encoding="utf-8")
     assert "[timeout]" in content

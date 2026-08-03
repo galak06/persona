@@ -110,7 +110,7 @@ def build_queue_payload(
 ) -> dict[str, Any]:
     """Shape one `flow-run` queue item from a `schedule_tasks` row.
 
-    `schedule_task_id` (the row's own `id`, e.g. `dogfoodandfun-ig-scanner`)
+    `schedule_task_id` (the row's own `id`, e.g. `dogfoodandfun-ig-engager`)
     is carried explicitly -- distinct from `TaskQueue.push()`'s own
     auto-generated `task_id` (a UUID, just a queue-item identity) -- because
     `scripts/task_worker.py` needs it as `worker_runs.worker_label` to record
@@ -217,7 +217,7 @@ def run_once(
 
     A single row raising never stops the rest -- logged + Telegram-notified,
     then the pass continues to the next row. A row for a managed flow
-    (`ig-scanner`/`fb-scanner`/`fb-group-scout`) not currently in the
+    (`ig-engager`/`fb-scanner`/`fb-group-scout`) not currently in the
     brand's `enabled_flows` is skipped (not treated as an error) -- this is
     what makes disabling a flow in settings take effect on the very next
     dispatch pass, with no re-provisioning or row deletion needed.

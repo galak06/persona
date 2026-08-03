@@ -53,8 +53,8 @@ def test_save_task_then_load_all_round_trips_known_columns(pg: None) -> None:
     schedule_db.save_task(
         None,
         {
-            "id": "dogfood-ig-scanner",
-            "title": "IG Scanner",
+            "id": "dogfood-ig-engager",
+            "title": "IG Engager",
             "description": "Scan hashtags",
             "order_num": 2,
             "script": "scripts/ig_scan.py",
@@ -72,8 +72,8 @@ def test_save_task_then_load_all_round_trips_known_columns(pg: None) -> None:
     rows = schedule_db.load_all()
     assert len(rows) == 1
     row = rows[0]
-    assert row["id"] == "dogfood-ig-scanner"
-    assert row["title"] == "IG Scanner"
+    assert row["id"] == "dogfood-ig-engager"
+    assert row["title"] == "IG Engager"
     assert row["args"] == ["--headless"]
     assert row["depends_on"] == ["dogfood-site-analyzer"]
     assert row["requires_approval"] == 1

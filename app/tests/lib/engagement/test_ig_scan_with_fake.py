@@ -44,7 +44,7 @@ from lib.engagement.post import Post
 def _stub_skill_drafter(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the skill-bound drafter instance the scan actually calls.
 
-    ``run_ig_scan`` passes ``ig_scan._DRAFTER`` (bound to the ig-scanner
+    ``run_ig_scan`` passes ``ig_scan._DRAFTER`` (bound to the ig-engager
     SKILL.md at import) into the pipeline, so patching a module-level name
     would not intercept — patch the instance method instead (same pattern
     as ``test_ig_comment``).
@@ -295,8 +295,8 @@ def test_ig_scan_updates_last_run_on_success(
     run_ig_scan(adapter=_single_post_adapter("dogs", post))
 
     last_run = json.loads(last_run_path.read_text())
-    assert "ig_scanner" in last_run
-    ig = last_run["ig_scanner"]
+    assert "ig_engager" in last_run
+    ig = last_run["ig_engager"]
     assert ig["status"] == "success"
     assert ig["hashtags_scanned"] == 1
     assert ig["posts_liked"] == 1

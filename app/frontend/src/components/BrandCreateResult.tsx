@@ -86,7 +86,7 @@ export default function BrandCreateResult({
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
-          Instagram login (run once, before ig-scanner can do anything live)
+          Instagram login (run once, before ig-engager can do anything live)
         </p>
         <CodeBlock code={result.ig_login_command} />
       </div>

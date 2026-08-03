@@ -244,7 +244,7 @@ def test_render_brand_json_reflects_group_join_limit() -> None:
 
 
 def test_brand_spec_default_enabled_flows() -> None:
-    assert MINIMAL_SPEC.enabled_flows == ["ig-scanner", "fb-scanner"]
+    assert MINIMAL_SPEC.enabled_flows == ["ig-engager", "fb-scanner"]
 
 
 def test_brand_spec_enabled_flows_can_include_fb_group_scout() -> None:
@@ -252,6 +252,6 @@ def test_brand_spec_enabled_flows_can_include_fb_group_scout() -> None:
         name="X Co",
         site_url="https://x.example",
         niche="widgets",
-        enabled_flows=["ig-scanner", "fb-scanner", "fb-group-scout"],
+        enabled_flows=["ig-engager", "fb-scanner", "fb-group-scout"],
     )
     assert "fb-group-scout" in spec.enabled_flows

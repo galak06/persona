@@ -805,7 +805,7 @@ def get_schedule_log(
     # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment--0")
     label = _re.sub(r"--\d+$", "", label)
 
-    # Modern multi-brand task ids (e.g. "dogfoodandfun-ig-scanner", as written
+    # Modern multi-brand task ids (e.g. "dogfoodandfun-ig-engager", as written
     # by scripts/task_worker.py's _write_flow_log) never match the legacy
     # launchd-style com.persona.* convention _normalize_label/_LABEL_RE
     # validate below -- handle them directly rather than mangling them

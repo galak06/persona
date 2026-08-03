@@ -1,5 +1,5 @@
 ---
-name: ig-scanner
+name: ig-engager
 description: >
   Scan Instagram hashtags for posts relevant to {{brand.domain}} content.
   Like qualifying posts. Queue high-relevance posts for comments.
@@ -93,7 +93,7 @@ ALL Instagram comments require manual user approval — they are never posted au
 ## LLM Prompt
 
 <!-- MACHINE-READ SECTION. Loaded by app/lib/skill_loader.py and sent verbatim
-     (after {{brand.*}} rendering) as the LLM SYSTEM prompt for the ig-scanner
+     (after {{brand.*}} rendering) as the LLM SYSTEM prompt for the ig-engager
      flow (scripts/ig_scan.py). Nothing outside this section is sent to the
      model. Per-post context and the JSON response format are supplied by the
      Python flow at call time. -->

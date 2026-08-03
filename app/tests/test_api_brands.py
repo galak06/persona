@@ -41,7 +41,7 @@ def _fake_result(brand_id: str = "acme-dogs") -> ProvisionResult:
             "data/config/brand_facts.md",
             "data/config/instagram_accounts.csv",
         ],
-        schedule_tasks_created=[f"{brand_id}-ig-scanner", f"{brand_id}-fb-scanner"],
+        schedule_tasks_created=[f"{brand_id}-ig-engager", f"{brand_id}-fb-scanner"],
         warnings=[],
     )
 
@@ -70,7 +70,7 @@ def test_create_brand_success_returns_201_shape(monkeypatch: pytest.MonkeyPatch)
         "status": "provisioned",
         "mascot_name": "Rex",
         "keywords": {"primary_keywords": ["dog food"]},
-        "enabled_flows": ["ig-scanner", "fb-scanner"],
+        "enabled_flows": ["ig-engager", "fb-scanner"],
     }
 
     body = brands_api.BrandCreateRequest(**_FULL_BODY)
@@ -82,7 +82,7 @@ def test_create_brand_success_returns_201_shape(monkeypatch: pytest.MonkeyPatch)
     assert resp.status == "provisioned"
     assert resp.brand_dir == "/brands/acme-dogs"
     assert resp.files_written == _fake_result().files_written
-    assert resp.schedule_tasks_created == ["acme-dogs-ig-scanner", "acme-dogs-fb-scanner"]
+    assert resp.schedule_tasks_created == ["acme-dogs-ig-engager", "acme-dogs-fb-scanner"]
     assert resp.warnings == []
     assert resp.ig_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/login.py ig"
     assert resp.fb_login_command == "BRAND_DIR=/brands/acme-dogs python scripts/login.py fb"
@@ -90,7 +90,7 @@ def test_create_brand_success_returns_201_shape(monkeypatch: pytest.MonkeyPatch)
     # ProvisionResult` intersection type) -- not just the ProvisionResult subset.
     assert resp.mascot_name == "Rex"
     assert resp.keywords == {"primary_keywords": ["dog food"]}
-    assert resp.enabled_flows == ["ig-scanner", "fb-scanner"]
+    assert resp.enabled_flows == ["ig-engager", "fb-scanner"]
 
     # brand_id passed to brands_db.create() is slugify(name), computed by the handler
     assert created_kwargs["brand_id"] == "acme-dogs"
@@ -166,7 +166,7 @@ def test_get_brand_returns_full_row(monkeypatch: pytest.MonkeyPatch) -> None:
         "target_audience": "new dog owners",
         "keywords": {"primary_keywords": ["dog food"]},
         "competitor_accounts": ["@rival1"],
-        "enabled_flows": ["ig-scanner", "fb-scanner"],
+        "enabled_flows": ["ig-engager", "fb-scanner"],
         "status": "provisioned",
         "brand_dir": "/brands/acme-dogs",
         "extra": {"instagram_profile_url": "https://instagram.com/acmedogs"},
@@ -198,7 +198,7 @@ def test_list_brands_without_status_filter(monkeypatch: pytest.MonkeyPatch) -> N
         captured["status"] = status
         return [
             _row("a", "draft"),
-            _row("b", "active", enabled_flows=["ig-scanner"], brand_dir="/brands/b"),
+            _row("b", "active", enabled_flows=["ig-engager"], brand_dir="/brands/b"),
         ]
 
     monkeypatch.setattr(brands_api.brands_db, "list_brands", _fake_list)
@@ -274,7 +274,7 @@ def test_reprovision_success_rebuilds_spec_from_row_and_reprovisions(
     assert spec.primary_keywords == ["dog food"]
     assert spec.competitor_accounts == ["@rival1"]
     assert resp.id == "acme-dogs"
-    assert resp.schedule_tasks_created == ["acme-dogs-ig-scanner", "acme-dogs-fb-scanner"]
+    assert resp.schedule_tasks_created == ["acme-dogs-ig-engager", "acme-dogs-fb-scanner"]
 
 
 def test_reprovision_failure_returns_502(monkeypatch: pytest.MonkeyPatch) -> None:

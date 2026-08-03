@@ -76,7 +76,7 @@ def test_dry_run_returns_full_preview(tmp_path: Path, monkeypatch: pytest.Monkey
         "data/config/instagram_accounts.csv",
         "brand.json",
     }
-    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-scanner", "acme-dogs-fb-scanner"}
+    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
     assert result.warnings == []
 
 
@@ -198,7 +198,7 @@ def test_real_run_inserts_exactly_two_schedule_tasks_rows(pg: None, brands_root:
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == result.brand_id]
-    assert {r["id"] for r in rows} == {"acme-dogs-ig-scanner", "acme-dogs-fb-scanner"}
+    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
     for row in rows:
         assert row["requires_browser"] == 1
         assert row["schedule"]["cron"]
@@ -209,7 +209,7 @@ def test_real_run_schedule_task_scripts_match_the_flow(pg: None, brands_root: Pa
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     rows = {t["id"]: t for t in schedule_db.load_all() if t["brand_id"] == result.brand_id}
-    assert rows["acme-dogs-ig-scanner"]["script"] == "scripts/ig_scan.py"
+    assert rows["acme-dogs-ig-engager"]["script"] == "scripts/ig_scan.py"
     assert rows["acme-dogs-fb-scanner"]["script"] == "scripts/fb_scan.py"
 
 

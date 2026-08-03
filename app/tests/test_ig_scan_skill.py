@@ -1,9 +1,9 @@
 """Tests for the IG scanner's skill-bound drafter wiring (SKILL.md path).
 
 Mirrors ``test_ig_comment.py``: the single-pass scan (``scripts/ig_scan.py``)
-now drafts through ``draft_helper.for_skill("ig-scanner")`` instead of the
+now drafts through ``draft_helper.for_skill("ig-engager")`` instead of the
 legacy module-level path. Importing ``scripts.ig_scan`` exercises the
-module-level binding against the REAL ``.claude/skills/ig-scanner/SKILL.md``
+module-level binding against the REAL ``.claude/skills/ig-engager/SKILL.md``
 and the ``$BRAND_DIR`` (ci_brand) config, so these tests double as an
 integration check that the ``## LLM Prompt`` section loads and renders. The
 payload test captures the ``httpx.post`` body and asserts the voice rules +
@@ -30,11 +30,11 @@ _VALID = (
 )
 
 
-def test_drafter_is_bound_to_ig_scanner_skill() -> None:
-    """The module-level binder loads the ig-scanner SKILL.md eagerly, so a
+def test_drafter_is_bound_to_ig_engager_skill() -> None:
+    """The module-level binder loads the ig-engager SKILL.md eagerly, so a
     broken skill file aborts at import — before any hashtag is scanned."""
     assert isinstance(ig_scan._DRAFTER, draft_helper.SkillDrafter)
-    assert ig_scan._DRAFTER.skill == "ig-scanner"
+    assert ig_scan._DRAFTER.skill == "ig-engager"
 
 
 class _FakeResponse:
@@ -50,7 +50,7 @@ class _FakeResponse:
 
 def test_drafter_sends_skill_system_instruction(monkeypatch: pytest.MonkeyPatch) -> None:
     """Full-stack payload capture through the bound drafter: the rendered
-    ig-scanner SKILL.md section (voice rules + ci_brand values) is sent as
+    ig-engager SKILL.md section (voice rules + ci_brand values) is sent as
     ``systemInstruction``; the user prompt carries only per-post context."""
     seen: dict[str, Any] = {}
 

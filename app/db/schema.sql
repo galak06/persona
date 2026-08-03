@@ -100,7 +100,7 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS mascot_name         TEXT  DEFAULT ''
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS target_audience     TEXT  DEFAULT '';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS keywords            JSONB DEFAULT '{}';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS competitor_accounts JSONB DEFAULT '[]';
-ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '["ig-scanner","fb-scanner"]';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '["ig-engager","fb-scanner"]';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS status              TEXT  NOT NULL DEFAULT 'draft';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS brand_dir           TEXT  DEFAULT '';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS extra               JSONB DEFAULT '{}';

@@ -122,7 +122,7 @@ TOOLS: list[Tool] = [
     Tool(
         name="list_workers",
         description=(
-            "List all scheduled workers (fb-scanner, ig-scanner, comment-composer, etc.) "
+            "List all scheduled workers (fb-scanner, ig-engager, comment-composer, etc.) "
             "with their last-run time and status."
         ),
         inputSchema={"type": "object", "properties": {}},

@@ -3,7 +3,7 @@ name: site-analyzer
 description: >
   Crawl {{brand.domain}} (or any site in config.json) and build a fresh content
   cache of recent posts, categories, and keywords. Run FIRST before fb-scanner,
-  ig-scanner, or comment-composer to ensure comments reference current site content.
+  ig-engager, or comment-composer to ensure comments reference current site content.
   Updates $BRAND_DIR/$BRAND_DIR/data/site_content_cache.json with post titles, summaries, URLs, tags.
   Use when the user says "analyze site", "sync site content", "update site cache",
   "run site analyzer", "refresh content cache", or automatically before any scan run.

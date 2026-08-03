@@ -43,7 +43,7 @@ def _fake_result(brand_id: str = "acme-dogs") -> ProvisionResult:
         brand_id=brand_id,
         brand_dir=Path(f"/brands/{brand_id}"),
         files_written=["config.json", "brand.json"],
-        schedule_tasks_created=[f"{brand_id}-ig-scanner", f"{brand_id}-fb-scanner"],
+        schedule_tasks_created=[f"{brand_id}-ig-engager", f"{brand_id}-fb-scanner"],
         warnings=[],
     )
 
@@ -130,12 +130,12 @@ def test_settings_enabled_flows_and_group_join_limit_pass_through(
     brand_settings_api.update_brand_settings(
         "acme-dogs",
         brand_settings_api.BrandSettingsRequest(
-            enabled_flows=["ig-scanner", "fb-scanner", "fb-group-scout"],
+            enabled_flows=["ig-engager", "fb-scanner", "fb-group-scout"],
             group_join_limit=3,
         ),
     )
     assert captured["update_kwargs"]["enabled_flows"] == [
-        "ig-scanner",
+        "ig-engager",
         "fb-scanner",
         "fb-group-scout",
     ]
@@ -206,7 +206,7 @@ def test_settings_patch_end_to_end_over_real_http(pg: None, brands_root: Path) -
         json={
             "headless": False,
             "primary_keywords": ["new-primary"],
-            "enabled_flows": ["ig-scanner", "fb-scanner", "fb-group-scout"],
+            "enabled_flows": ["ig-engager", "fb-scanner", "fb-group-scout"],
             "group_join_limit": 3,
         },
     )
@@ -218,7 +218,7 @@ def test_settings_patch_end_to_end_over_real_http(pg: None, brands_root: Path) -
     # primary_keywords-only PATCH (the merge-not-clobber contract).
     assert payload["keywords"]["secondary_keywords"] == ["gps"]
     assert payload["keywords"]["competitor_mentions"] == ["brand x"]
-    assert payload["enabled_flows"] == ["ig-scanner", "fb-scanner", "fb-group-scout"]
+    assert payload["enabled_flows"] == ["ig-engager", "fb-scanner", "fb-group-scout"]
     assert payload["group_join_limit"] == 3
     assert "acme-dogs-fb-group-scout" in payload["schedule_tasks_created"]
 

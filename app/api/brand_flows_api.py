@@ -73,9 +73,18 @@ def run_flow_now(brand_id: str, flow_id: str, body: RunNowRequest | None = None)
     if row is None:
         raise HTTPException(status_code=404, detail=f"brand '{brand_id}' not found")
 
-    schedule_task_id = f"{brand_id}-{flow_id}"
+    # The row's real id is not a guessable format: the one legacy brand's
+    # rows predate the current per-brand convention and use a hardcoded
+    # `dogfood-` prefix unrelated to its actual brand_id, while brands
+    # provisioned since then get `<brand_id>-<flow_id>`. Both conventions set
+    # `title` to the plain flow id, so match on (brand_id, title) instead of
+    # constructing an id and hoping it's right.
     task = next(
-        (t for t in schedule_db.load_all() if t.get("id") == schedule_task_id),
+        (
+            t
+            for t in schedule_db.load_all()
+            if t.get("brand_id") == brand_id and t.get("title") == flow_id
+        ),
         None,
     )
     if task is None:
@@ -83,6 +92,7 @@ def run_flow_now(brand_id: str, flow_id: str, body: RunNowRequest | None = None)
             status_code=404,
             detail=f"flow '{flow_id}' is not provisioned for brand '{brand_id}'",
         )
+    schedule_task_id = str(task["id"])
 
     enabled_flows = set(row.get("enabled_flows") or [])
     if flow_id in MANAGED_FLOW_IDS and flow_id not in enabled_flows:

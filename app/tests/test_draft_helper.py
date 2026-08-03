@@ -289,7 +289,7 @@ def _drafter_returning(
     """A SkillDrafter whose LLM call returns `payload`, with a stub system prompt."""
     monkeypatch.setattr(draft_helper, "_system_prompt", lambda _skill: "SYSTEM")
     monkeypatch.setattr(draft_helper, "_llm_json", lambda *_a, **_k: payload)
-    return draft_helper.for_skill("ig-scanner")
+    return draft_helper.for_skill("ig-engager")
 
 
 def test_last_outcome_distinguishes_upstream_failure_from_decline(
