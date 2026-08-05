@@ -100,6 +100,9 @@ export const endpoints = {
   /** POST — manually trigger a worker by launchd label. */
   workerTrigger: (label: string): string => `/workers/${enc(label)}/trigger`,
 
+  /** PATCH — update a worker's cron schedule. Timing only; does not run it. */
+  workerSchedule: (label: string): string => `/workers/${enc(label)}/schedule`,
+
   /** GET — tail a worker's log file. */
   workerLog: (label: string, lines = 200): string =>
     `/workers/${enc(label)}/log?lines=${lines}`,
@@ -108,11 +111,12 @@ export const endpoints = {
   workerArtifact: (label: string): string =>
     `/workers/${enc(label)}/artifact`,
 
-  /** GET — scheduled flows defined in schedule.json but not loaded into
-   *  launchctl. The route survives on the backend (`MissingFlowsResponse`)
-   *  even though the flows/state pipeline model was retired — restored
-   *  here after being dropped by the Worker Explorer migration. */
-  scheduleMissing: "/schedule/missing",
+  /** GET — the pre-brand flow catalog (what onboarding a NEW brand reads). */
+  flowTemplates: "/flow-templates",
+
+  /** PATCH — edit one flow template. Only affects brands provisioned after
+   *  the edit; does not touch any already-provisioned brand. */
+  flowTemplate: (id: string): string => `/flow-templates/${enc(id)}`,
 
   /** OAuth — list all stored tokens (redacted) for one brand. */
   oauthTokens: (brandId: string): string => `/oauth/tokens?brand_id=${enc(brandId)}`,

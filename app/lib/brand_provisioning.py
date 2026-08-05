@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from lib import schedule_db
+from lib import flow_templates_db, schedule_db
 from lib.brand_env_template import write_brand_env_stub
 from lib.brand_templates import (
     BrandSpec,
@@ -46,21 +46,15 @@ _PERSONA_ROOT = Path(__file__).resolve().parent.parent
 # `app/brands/`.
 BRANDS_ROOT = _PERSONA_ROOT / "brands"
 
-_PROFILES_DIR = _PERSONA_ROOT / "profiles"
-
-# (profile file, flow id) for every flow this stage of onboarding knows how
-# to provision. Cron strings are read from these files at provision time
-# rather than hardcoded, so a profile change is automatically picked up by
-# the next onboarding run instead of silently drifting out of sync. Not
-# every brand gets every row -- `_build_stage1_tasks` filters this list down
-# to `spec.enabled_flows` (default: just the first two -- see
-# `default_enabled_flows()`), so a brand that never opts into
+# Flow ids for every flow this stage of onboarding knows how to provision.
+# Read from the `flow_templates` table (Postgres) -- seeded/reseeded from
+# `profiles/*.json` by `scripts/backfill_flow_templates.py`, so a profile
+# edit reaches onboarding after a backfill run rather than being read live
+# from disk here. Not every brand gets every row -- `_build_stage1_tasks`
+# filters this list down to `spec.enabled_flows` (default: just the first
+# two -- see `default_enabled_flows()`), so a brand that never opts into
 # `fb-group-scout` never gets that `schedule_tasks` row at all.
-_STAGE1_FLOWS: tuple[tuple[str, str], ...] = (
-    ("instagram.json", "ig-engager"),
-    ("facebook.json", "fb-scanner"),
-    ("facebook.json", "fb-group-scout"),
-)
+_STAGE1_FLOWS: tuple[str, ...] = ("ig-engager", "fb-scanner", "fb-group-scout")
 
 
 @dataclass
@@ -74,14 +68,15 @@ class ProvisionResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _load_flow(profile_filename: str, flow_id: str) -> dict[str, Any]:
-    """Read one `flows[]` entry (by id) out of a `profiles/*.json` file."""
-    profile_path = _PROFILES_DIR / profile_filename
-    data = json.loads(profile_path.read_text(encoding="utf-8"))
-    for flow in data.get("flows", []):
-        if flow.get("id") == flow_id:
-            return dict(flow)
-    raise RuntimeError(f"flow '{flow_id}' not found in {profile_path}")
+def _load_flow(flow_id: str) -> dict[str, Any]:
+    """Read one flow template row from Postgres (seeded from `profiles/*.json`)."""
+    flow = flow_templates_db.get(flow_id)
+    if flow is None:
+        raise RuntimeError(
+            f"flow '{flow_id}' not found in flow_templates -- "
+            "run scripts/backfill_flow_templates.py --apply"
+        )
+    return flow
 
 
 def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
@@ -130,8 +125,8 @@ def _build_stage1_tasks(brand_id: str, enabled_flows: list[str]) -> list[dict[st
     task the brand can't run.
     """
     return [
-        _flow_to_task(_load_flow(profile_filename, flow_id), brand_id=brand_id)
-        for profile_filename, flow_id in _STAGE1_FLOWS
+        _flow_to_task(_load_flow(flow_id), brand_id=brand_id)
+        for flow_id in _STAGE1_FLOWS
         if flow_id in enabled_flows
     ]
 
@@ -151,7 +146,8 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
 
     `dry_run=True` renders everything and returns the same `ProvisionResult`
     shape the real run would, but performs no writes to disk or the DB
-    (reading the static `profiles/*.json` cron definitions is the only I/O).
+    (reading `flow_templates` for each stage-1 flow's cron definition is the
+    only I/O).
     """
     slug = slugify(spec.name)
     if not slug:
@@ -192,7 +188,7 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
         )
 
     # Only these three directories -- session files, dedup caches, and
-    # queues are lazily created by ig_scan.py/fb_scan.py themselves on first
+    # queues are lazily created by ig_engager.py/fb_scan.py themselves on first
     # write (confirmed by reading both scripts). No data/db/: everything is
     # Postgres now.
     (brand_dir / "data" / "config").mkdir(parents=True, exist_ok=True)

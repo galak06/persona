@@ -18,8 +18,9 @@ from api import brand_flows_api
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from lib import brand_provisioning, db
+from lib import brand_provisioning, db, flow_templates_db
 from lib.task_queue import TaskQueue
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _ROW: dict[str, Any] = {
     "id": "acme-dogs",
@@ -31,7 +32,7 @@ _TASK_ROW: dict[str, Any] = {
     "id": "acme-dogs-ig-engager",
     "brand_id": "acme-dogs",
     "title": "ig-engager",
-    "script": "scripts/ig_scan.py",
+    "script": "scripts/ig_engager.py",
     "args": [],
     "schedule": {"cron": "0 19 * * *"},
 }
@@ -67,7 +68,7 @@ def test_flow_status_returns_flows_from_lib(monkeypatch: pytest.MonkeyPatch) -> 
         lambda **_kwargs: [
             {
                 "flow_id": "ig-engager",
-                "script": "scripts/ig_scan.py",
+                "script": "scripts/ig_engager.py",
                 "enabled": True,
                 "last_run": None,
                 "readiness": {"signal": "hashtags", "count": 0, "ready": False, "hint": "x"},
@@ -123,7 +124,7 @@ def test_run_now_enqueues_and_returns_response(monkeypatch: pytest.MonkeyPatch) 
     assert resp.schedule_task_id == "acme-dogs-ig-engager"
     assert resp.enqueued is True
     pushed = _FakeQueue.last_instance.pushed  # type: ignore[attr-defined]
-    assert pushed[0]["script"] == "scripts/ig_scan.py"
+    assert pushed[0]["script"] == "scripts/ig_engager.py"
     assert pushed[0]["brand"] == "acme-dogs"
 
 
@@ -156,6 +157,11 @@ requires_redis = pytest.mark.skipif(
 def pg() -> Iterator[None]:
     schema_path = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
     db.execute(schema_path.read_text(encoding="utf-8"))
+    # provision_brand() reads its stage-1 flows from flow_templates now, not
+    # profiles/*.json directly -- seed it the same way
+    # scripts/backfill_flow_templates.py --apply does.
+    for row in load_flow_template_rows():
+        flow_templates_db.save(row)
     try:
         yield
     finally:

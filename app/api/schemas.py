@@ -19,8 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.schedule_schemas import InputStatus as InputStatus
 from api.schedule_schemas import LogTailResponse as LogTailResponse
-from api.schedule_schemas import MissingFlowEntry as MissingFlowEntry
-from api.schedule_schemas import MissingFlowsResponse as MissingFlowsResponse
 from api.schedule_schemas import ScheduleEntry as ScheduleEntry
 from api.schedule_schemas import TriggerResponse as TriggerResponse
 
@@ -310,6 +308,13 @@ class WorkerStatus(BaseModel):
     message: str | None = None
     is_instance: bool = False  # True for individual slots of a multi-instance trigger
     re_run_guard: int = 1  # 0 = no daily limit; 1 = block after first daily success
+    cron: str | None = None  # this task's schedule_tasks.schedule.cron, if set
+
+
+class ScheduleUpdateRequest(BaseModel):
+    """Body for `PATCH /workers/{label}/schedule` — a new cron expression."""
+
+    cron: str
 
 
 FlowStatusLiteral = Literal["ok", "error", "never", "stale", "manual"]

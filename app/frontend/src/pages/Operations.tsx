@@ -1,9 +1,10 @@
 /**
  * Operations — unified ops cockpit:
- *   • Health   — live worker run status
- *   • Running  — workers currently executing, logs auto-open
- *   • Schedule — cron table, run-now triggers, log tails
- *   • Workers  — inspect and trigger automation workers
+ *   • Health    — live worker run status
+ *   • Running   — workers currently executing, logs auto-open
+ *   • Schedule  — cron table (editable), log tails
+ *   • Templates — pre-brand flow catalog (what onboarding a NEW brand reads)
+ *   • Workers   — inspect and trigger automation workers
  *
  * Selected tab + worker are persisted in ?tab= and ?worker= so
  * a page refresh restores exactly the same view.
@@ -14,20 +15,22 @@ import { useSearchParams } from "react-router-dom";
 import Flows from "./Flows";
 import Running from "./Running";
 import Schedule from "./Schedule";
+import FlowTemplates from "./FlowTemplates";
 import FlowGuide from "./FlowGuide";
 import { endpoints } from "../api/endpoints";
 import { useApiQuery } from "../hooks/useApiQuery";
 import type { WorkerStatus } from "../api/workers";
 
-export type OpsView = "health" | "running" | "schedule" | "audit";
+export type OpsView = "health" | "running" | "schedule" | "templates" | "audit";
 
-const VALID_VIEWS = new Set<OpsView>(["health", "running", "schedule", "audit"]);
+const VALID_VIEWS = new Set<OpsView>(["health", "running", "schedule", "templates", "audit"]);
 
 const HINTS: Record<OpsView, string> = {
-  health:   "Live run status of every worker.",
-  running:  "Workers currently executing — logs stream live.",
-  schedule: "Cron jobs, triggers & log tails.",
-  audit:    "Inspect and trigger automation workers.",
+  health:    "Live run status of every worker.",
+  running:   "Workers currently executing — logs stream live.",
+  schedule:  "Cron schedules & log tails.",
+  templates: "Pre-brand flow catalog — what onboarding a new brand reads.",
+  audit:     "Inspect and trigger automation workers.",
 };
 
 const SEG_BASE =
@@ -65,10 +68,11 @@ export default function Operations({
   }
 
   const tabs: { key: OpsView; label: string }[] = [
-    { key: "health",   label: "Health" },
-    { key: "running",  label: "Running" },
-    { key: "schedule", label: "Schedule" },
-    { key: "audit",    label: "Workers" },
+    { key: "health",    label: "Health" },
+    { key: "running",   label: "Running" },
+    { key: "schedule",  label: "Schedule" },
+    { key: "templates", label: "Templates" },
+    { key: "audit",     label: "Workers" },
   ];
 
   return (
@@ -107,10 +111,11 @@ export default function Operations({
       </header>
 
       <div>
-        {view === "health"   && <Flows />}
-        {view === "running"  && <Running />}
-        {view === "schedule" && <Schedule />}
-        {view === "audit"    && <FlowGuide />}
+        {view === "health"    && <Flows />}
+        {view === "running"   && <Running />}
+        {view === "schedule"  && <Schedule />}
+        {view === "templates" && <FlowTemplates />}
+        {view === "audit"     && <FlowGuide />}
       </div>
     </section>
   );

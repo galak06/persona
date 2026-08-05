@@ -21,9 +21,17 @@ Run locally: ``cd app && python -m api.approval_api``.
 
 from __future__ import annotations
 
+import datetime
 import logging
 import os
+import platform
+import re
+import shlex
+import shutil
+import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any, Literal
 
@@ -54,11 +62,10 @@ from api.schemas import (
     GroupItem,
     IdeaItem,
     LogTailResponse,
-    MissingFlowEntry,
-    MissingFlowsResponse,
     PendingItem,
     PendingResponse,
     RejectBody,
+    ScheduleUpdateRequest,
     SeedItem,
     TriggerResponse,
     WorkerStatus,
@@ -98,14 +105,19 @@ from api.brand_settings_api import router as _brand_settings_router
 from api.brands_api import router as _brands_router
 from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
+from api.flow_templates_api import router as _flow_templates_router
 from api.ideas_api import router as _ideas_router
 from api.oauth_api import router as _oauth_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
+from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
 from api.tiktok_candidates_api import router as _tiktok_router
-from lib import activity_log
+from croniter import croniter
+from lib import activity_log, groups_db, groups_queue, schedule_db
 from lib.config import default_brand_dir, settings
+from lib.io.jsonio import read_json
+from lib.rate_limiter import get_daily_status
 from lib.worker_db import (
     get_all as worker_db_get_all,
     get_one as worker_db_get_one,
@@ -137,6 +149,7 @@ app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_settings_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_flows_router, prefix="/api/v1", tags=["brands"])
+app.include_router(_flow_templates_router, prefix="/api/v1", tags=["flow-templates"])
 app.include_router(_session_status_router, prefix="/api/v1", tags=["sessions"])
 
 
@@ -154,8 +167,6 @@ def get_config():
 @app.get("/api/v1/pending", response_model=PendingResponse)
 def list_pending() -> PendingResponse:
     """All blog-post pairs, group-join candidates, ideas, seeds, campaign-verify items, and comments awaiting a decision."""
-    from lib import groups_queue
-
     blog_posts_raw = rh.pending_only(state.read_queue(rh.BLOG_POST_QUEUE_PATH))
     comments_raw = rh.pending_only(state.read_queue(rh.COMMENT_QUEUE_PATH))
     ideas_raw = rh.pending_only(state.read_queue(rh.IDEATOR_QUEUE_PATH))
@@ -345,9 +356,6 @@ def list_facebook_groups() -> FacebookGroupsResponse:
       - groups_tracker.json -> status in {joined, join_requested, rejected}
       - pending_groups.json -> projected with synthetic status="not_joined_yet"
     """
-    from lib import groups_db
-    from lib.io.jsonio import read_json
-
     assert settings.paths is not None  # noqa: S101
     groups: list[FacebookGroup] = []
 
@@ -387,8 +395,6 @@ def list_facebook_groups() -> FacebookGroupsResponse:
 @app.put("/api/v1/facebook/groups/{group_name}", response_model=FacebookGroup)
 def update_facebook_group(group_name: str, body: FacebookGroupUpdateBody) -> FacebookGroup:
     """Update a Facebook group's status / posting_mode in the groups DB."""
-    from lib import groups_db
-
     group = groups_db.get_by_name(group_name)
     if group is None:
         raise HTTPException(status_code=404, detail=f"group {group_name} not found")
@@ -422,7 +428,6 @@ def _normalize_label(label: str) -> str:
     """
     if label.startswith(_LABEL_PREFIX):
         return label
-    from api.schedule_config import label_for_task_id
     mapped = label_for_task_id(label)
     return mapped if mapped else f"{_LABEL_PREFIX}{label}"
 
@@ -430,16 +435,18 @@ _BRAND_DIR = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
 _BRAND = _BRAND_DIR.name
 
 
+def _cron_of(extra: dict) -> str | None:
+    """This task's `schedule.cron`, if the schedule_tasks row has one set."""
+    return (extra.get("schedule") or {}).get("cron")
+
+
 @app.get("/api/v1/workers", response_model=list[WorkerStatus])
 def list_workers() -> list[WorkerStatus]:
     """List all scheduled workers with their last run status from DB."""
-    import re as _re
-    from api.schedule_config import load_schedule_config
-
     config = load_schedule_config()
     all_rows = {r["worker_label"]: r for r in worker_db_get_all(_BRAND_DIR, _BRAND)}
     # Separate base rows from per-instance rows (label format: "{base}--{slot}")
-    _instance_pat = _re.compile(r"^(.+)--(\d+)$")
+    _instance_pat = re.compile(r"^(.+)--(\d+)$")
     base_rows = {k: v for k, v in all_rows.items() if not _instance_pat.match(k)}
     instance_rows = [v | {"_base": m.group(1), "_slot": int(m.group(2))}
                      for k, v in all_rows.items() if (m := _instance_pat.match(k))]
@@ -459,11 +466,11 @@ def list_workers() -> list[WorkerStatus]:
             last_run=row["last_run"] if row else None,
             message=row.get("message") if row else None,
             re_run_guard=int(task.model_extra.get("re_run_guard", 1) if task.model_extra else 1),
+            cron=_cron_of(extra),
         ))
 
     # Append running/recent per-instance rows so the Running tab shows each slot
     _recent_cutoff = 60  # seconds
-    import time as _time
     for row in sorted(instance_rows, key=lambda r: (r["_base"], r["_slot"])):
         status = row["status"]
         last_run_str = row.get("last_run") or ""
@@ -471,8 +478,7 @@ def list_workers() -> list[WorkerStatus]:
             if not last_run_str:
                 continue
             try:
-                import datetime as _dt
-                age = _time.time() - _dt.datetime.fromisoformat(last_run_str).timestamp()
+                age = time.time() - datetime.datetime.fromisoformat(last_run_str).timestamp()
                 if age > _recent_cutoff:
                     continue
             except Exception as exc:  # noqa: BLE001
@@ -490,6 +496,7 @@ def list_workers() -> list[WorkerStatus]:
             last_run=last_run_str or None,
             message=row.get("message"),
             is_instance=True,
+            cron=_cron_of(meta),
         ))
 
     return results
@@ -498,8 +505,6 @@ def list_workers() -> list[WorkerStatus]:
 @app.get("/api/v1/workers/{label}/status", response_model=WorkerStatus)
 def worker_status(label: str) -> WorkerStatus:
     """Return the last run status for a single worker."""
-    from api.schedule_config import load_schedule_config
-
     config = load_schedule_config()
     task = next((t for t in config.tasks if t.id == label), None)
     if task is None:
@@ -513,7 +518,33 @@ def worker_status(label: str) -> WorkerStatus:
         status=row["status"] if row else "never",
         last_run=row["last_run"] if row else None,
         message=row.get("message") if row else None,
+        cron=_cron_of(extra),
     )
+
+
+@app.patch("/api/v1/workers/{label}/schedule", response_model=WorkerStatus)
+def update_worker_schedule(label: str, body: ScheduleUpdateRequest) -> WorkerStatus:
+    """Change a worker's cron timing.
+
+    Only affects when `scripts/task_dispatcher.py`'s croniter due-check next
+    fires this flow -- it does not trigger a run. Manual runs stay on the
+    brand-scoped Human Mimic path (`POST /brands/{id}/flows/{flow}/run`).
+    """
+    cron = body.cron.strip()
+    if not croniter.is_valid(cron):
+        raise HTTPException(status_code=400, detail=f"Invalid cron expression: {cron!r}")
+
+    config = load_schedule_config()
+    task = next((t for t in config.tasks if t.id == label), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Worker '{label}' not found")
+
+    extra: dict = task.model_extra or {}
+    schedule = dict(extra.get("schedule") or {})
+    schedule["cron"] = cron
+    schedule_db.save_task(None, {"id": task.id, "schedule": schedule})
+
+    return worker_status(label)
 
 
 class _TriggerBody(BaseModel):
@@ -521,6 +552,147 @@ class _TriggerBody(BaseModel):
     force: bool = False  # skip the "already ran today" guard
     recipe_ids: list[str] = []
     headless: bool | None = None  # override PLAYWRIGHT_HEADLESS; None = defer to brand.json
+
+
+def _build_trigger_command(task: Any, extra: dict, body: _TriggerBody) -> list[str] | None:
+    """Assemble the subprocess argv for a script- or skill-based task.
+
+    None means neither `script` nor `skill` is defined -- the caller returns
+    a `TriggerResponse(ok=False, ...)` rather than treating it as an error.
+    """
+    script_str: str | None = extra.get("script")
+    if script_str:
+        parts = shlex.split(script_str)
+        if parts and parts[0] in ("python", "python3"):
+            parts[0] = sys.executable
+        elif parts and not parts[0].startswith("/"):
+            parts = [sys.executable] + parts
+        cmd = parts + (extra.get("args") or [])
+        if body.force:
+            cmd = cmd + ["--force"]
+        for recipe_id in body.recipe_ids:
+            cmd += ["--seed", recipe_id]
+        return cmd
+    if task.skill:
+        claude_bin = shutil.which("claude") or str(Path.home() / ".local/bin/claude")
+        return [claude_bin, "--dangerously-skip-permissions", f"/{task.skill}"]
+    return None
+
+
+def _enforce_daily_rerun_guard(extra: dict, brand_dir: Path, task_id: str, force: bool) -> None:
+    """Raise 409 if this task already ran successfully today and the guard isn't bypassed."""
+    if force or int(extra.get("re_run_guard", 1)) == 0:
+        return
+    today = datetime.date.today().isoformat()
+    row = worker_db_get_one(brand_dir, task_id, brand_dir.name)
+    if row and row.get("status") == "success" and (row.get("last_run") or "")[:10] == today:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Already ran successfully today ({row['last_run'][:16]}). Use force to run again.",
+        )
+
+
+def _wrap_for_macos_session(cmd: list[str], headless: bool | None) -> list[str]:
+    """On macOS the API may run as a daemon (PPID=1, session 0) with no
+    Window Server access -- wrap in `launchctl asuser` so it runs inside the
+    user's login session and Playwright can open a real Chrome window.
+    """
+    if platform.system() != "Darwin":
+        return cmd
+    env_inject: list[str] = []
+    if headless is not None:
+        env_inject = ["env", f"PLAYWRIGHT_HEADLESS={'1' if headless else '0'}"]
+    return ["launchctl", "asuser", str(os.getuid())] + env_inject + cmd
+
+
+def _pid_path(brand_dir: Path, base: str, count: int, i: int) -> Path:
+    return brand_dir / "logs" / (f"{base}_{i}.pid" if count > 1 else f"{base}.pid")
+
+
+def _find_occupied_pids(brand_dir: Path, base: str, count: int) -> list[int]:
+    """Alive PIDs from any slot's existing .pid file; deletes stale
+    (dead-process) files it encounters along the way."""
+    alive: list[int] = []
+    for i in range(count):
+        pp = _pid_path(brand_dir, base, count, i)
+        if not pp.exists():
+            continue
+        try:
+            pid = int(pp.read_text().strip())
+            os.kill(pid, 0)
+            alive.append(pid)
+        except (ValueError, ProcessLookupError, PermissionError):
+            pp.unlink(missing_ok=True)
+    return alive
+
+
+def _spawn_worker_instance(
+    cmd: list[str], env: dict[str, str], cwd: str, log_path: Path, pid_path: Path
+) -> subprocess.Popen:
+    log_fh = None
+    try:
+        log_fh = open(log_path, "a")  # noqa: WPS515
+    except OSError:
+        pass
+    proc = subprocess.Popen(  # noqa: S603
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
+    )
+    if log_fh is not None:
+        log_fh.close()
+    pid_path.write_text(str(proc.pid))
+    return proc
+
+
+def _reap_worker(
+    proc: subprocess.Popen, pid_path: Path, timeout_s: int, brand_dir: Path, label: str, log_path: Path
+) -> None:
+    """Wait for a spawned worker to exit (or kill it on timeout), recording the outcome."""
+    timed_out = False
+    try:
+        proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        proc.kill()
+        proc.wait()
+        msg = f"timeout after {timeout_s // 60}m"
+        try:
+            with log_path.open("a") as lf:
+                lf.write(f"\n[timeout] Worker killed — {msg}\n")
+        except OSError:
+            pass
+        worker_db_record_complete(brand_dir, label, brand_dir.name, "error", msg)
+    finally:
+        if not timed_out:
+            status = "error" if (proc.returncode or 0) != 0 else "success"
+            worker_db_record_complete(brand_dir, label, brand_dir.name, status)
+        pid_path.unlink(missing_ok=True)
+
+
+def _at_limit_rate_summary(extra: dict, task: Any) -> dict[str, dict[str, int]]:
+    """Rate-limit keys currently at zero remaining, scoped to this task's
+    platform when it's inferable from its script/skill name."""
+    at_limit: dict[str, dict[str, int]] = {}
+    try:
+        script_hint = (extra.get("script") or task.skill or "").lower()
+        if script_hint.startswith("ig") or "ig_" in script_hint or "ig-" in script_hint:
+            relevant_prefix = "instagram:"
+        elif script_hint.startswith("fb") or "fb_" in script_hint or "fb-" in script_hint:
+            relevant_prefix = "facebook:"
+        elif "wp_" in script_hint or "wp-" in script_hint:
+            relevant_prefix = "wordpress:"
+        else:
+            relevant_prefix = ""
+        for key, status in get_daily_status().items():
+            if status["remaining"] == 0 and (not relevant_prefix or key.startswith(relevant_prefix)):
+                at_limit[key] = status
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("rate_limiter check failed, skipping: %s", exc)
+    return at_limit
 
 
 @app.post("/api/v1/workers/{label}/trigger", response_model=TriggerResponse)
@@ -533,14 +705,6 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     ``<suffix>_<i>.pid``.  If any slot is already occupied the whole
     request is rejected with 409.
     """
-    import platform
-    import shlex
-    import shutil as _shutil
-    import subprocess
-    import sys
-
-    from api.schedule_config import load_schedule_config, task_for_label
-
     label = _normalize_label(label)
     if not _LABEL_RE.fullmatch(label):
         raise HTTPException(status_code=400, detail="Invalid label format")
@@ -553,246 +717,56 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         raise HTTPException(status_code=404, detail=f"No task for label: {label}")
 
     extra: dict = task.model_extra or {}
-    script_str: str | None = extra.get("script")
-    extra_args: list[str] = extra.get("args") or []
-
     suffix = label[len("com.persona."):]
     base = suffix.replace("-", "_")
-    log_name = f"cron_{base}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
 
-    # Pre-flight: block if worker already ran successfully today (unless force or re_run_guard=0)
-    _re_run_guard = int(extra.get("re_run_guard", 1))
-    if not body.force and _re_run_guard != 0:
-        import datetime as _dt
-        _today = _dt.date.today().isoformat()
-        _row = worker_db_get_one(brand_dir, task.id, brand_dir.name)
-        if _row and _row.get("status") == "success" and (_row.get("last_run") or "")[:10] == _today:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Already ran successfully today ({_row['last_run'][:16]}). Use force to run again.",
-            )
+    _enforce_daily_rerun_guard(extra, brand_dir, task.id, body.force)
 
-    if script_str:
-        parts = shlex.split(script_str)
-        if parts and parts[0] in ("python", "python3"):
-            parts[0] = sys.executable
-        elif parts and not parts[0].startswith("/"):
-            parts = [sys.executable] + parts
-        cmd = parts + extra_args
-        if body.force:
-            cmd = cmd + ["--force"]
-        if body.recipe_ids:
-            for rid in body.recipe_ids:
-                cmd += ["--seed", rid]
-    elif task.skill:
-        claude_bin = _shutil.which("claude") or str(Path.home() / ".local/bin/claude")
-        cmd = [claude_bin, "--dangerously-skip-permissions", f"/{task.skill}"]
-    else:
+    cmd = _build_trigger_command(task, extra, body)
+    if cmd is None:
         return TriggerResponse(ok=False, message="No script or skill defined for task", label=label)
 
-    log_path = brand_dir / "logs" / log_name
+    log_path = brand_dir / "logs" / f"cron_{base}.log"
     cwd = str(Path(__file__).parent.parent)
     # PYTHONPATH ensures `lib/` is importable even when launchctl asuser
     # spawns the child in a different working directory than `cwd`.
     env = {**os.environ, "BRAND_DIR": str(brand_dir), "PYTHONUNBUFFERED": "1", "PYTHONPATH": cwd}
     if body.headless is not None:
         env["PLAYWRIGHT_HEADLESS"] = "1" if body.headless else "0"
+    cmd = _wrap_for_macos_session(cmd, body.headless)
 
-    # On macOS the API may run as a daemon (PPID=1, session 0) which has no
-    # Window Server access.  Wrap the worker command in `launchctl asuser <uid>`
-    # so it runs inside the user's login session and Playwright can open Chrome.
-    if platform.system() == "Darwin":
-        env_inject: list[str] = []
-        if body.headless is not None:
-            env_inject = ["env", f"PLAYWRIGHT_HEADLESS={'1' if body.headless else '0'}"]
-        cmd = ["launchctl", "asuser", str(os.getuid())] + env_inject + cmd
-
-    # Guard: reject if any slot is already occupied
-    def _pid_path(i: int) -> Path:
-        return brand_dir / "logs" / (f"{base}_{i}.pid" if count > 1 else f"{base}.pid")
-
-    alive: list[int] = []
-    for i in range(count):
-        pp = _pid_path(i)
-        if pp.exists():
-            try:
-                pid = int(pp.read_text().strip())
-                os.kill(pid, 0)
-                alive.append(pid)
-            except (ValueError, ProcessLookupError, PermissionError):
-                pp.unlink(missing_ok=True)
-
+    alive = _find_occupied_pids(brand_dir, base, count)
     if alive:
         raise HTTPException(
             status_code=409,
             detail=f"Already running (pid={alive[0]})" + (f" +{len(alive)-1} more" if len(alive) > 1 else ""),
         )
 
-    # For multi-instance triggers record each slot individually; single stays as task.id
-    _timeout_s = int(extra.get("timeout_minutes") or 30) * 60
-    import threading as _threading
-
+    timeout_s = int(extra.get("timeout_minutes") or 30) * 60
     if count == 1:
         worker_db_record_start(brand_dir, task.id, brand_dir.name)
     else:
-        for _si in range(count):
-            worker_db_record_start(brand_dir, f"{task.id}--{_si}", brand_dir.name)
+        for si in range(count):
+            worker_db_record_start(brand_dir, f"{task.id}--{si}", brand_dir.name)
 
     pids: list[int] = []
     for i in range(count):
         instance_env = {**env, "WORKER_INDEX": str(i), "WORKER_COUNT": str(count)}
         instance_label = task.id if count == 1 else f"{task.id}--{i}"
-        log_fh = None
-        try:
-            log_fh = open(log_path, "a")  # noqa: WPS515
-        except OSError:
-            pass
-        proc = subprocess.Popen(  # noqa: S603
-            cmd,
-            cwd=cwd,
-            env=instance_env,
-            stdout=log_fh if log_fh is not None else subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-            close_fds=True,
-        )
-        if log_fh is not None:
-            log_fh.close()
-        pp = _pid_path(i)
-        pp.write_text(str(proc.pid))
+        pid_path = _pid_path(brand_dir, base, count, i)
+        proc = _spawn_worker_instance(cmd, instance_env, cwd, log_path, pid_path)
         pids.append(proc.pid)
-
-        def _reap(
-            p: subprocess.Popen,
-            path: Path,
-            timeout_s: int,
-            _brand_dir: Path = brand_dir,
-            _label: str = instance_label,
-            _log_path: Path = log_path,
-            _is_instance: bool = count > 1,
-        ) -> None:
-            timed_out = False
-            try:
-                p.wait(timeout=timeout_s)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                p.kill()
-                p.wait()
-                msg = f"timeout after {timeout_s // 60}m"
-                try:
-                    with _log_path.open("a") as _lf:
-                        _lf.write(f"\n[timeout] Worker killed — {msg}\n")
-                except OSError:
-                    pass
-                worker_db_record_complete(_brand_dir, _label, _brand_dir.name, "error", msg)
-            finally:
-                if not timed_out:
-                    status = "error" if (p.returncode or 0) != 0 else "success"
-                    worker_db_record_complete(_brand_dir, _label, _brand_dir.name, status)
-                path.unlink(missing_ok=True)
-        _threading.Thread(target=_reap, args=(proc, pp, _timeout_s), daemon=True).start()
+        threading.Thread(
+            target=_reap_worker,
+            args=(proc, pid_path, timeout_s, brand_dir, instance_label, log_path),
+            daemon=True,
+        ).start()
 
     msg = f"Spawned {count} instance(s): pids={pids}" if count > 1 else f"Spawned (pid={pids[0]})"
-
-    # Attach at-limit rate counters relevant to this worker
-    # Infer platform from script/id so we don't show FB limits on an IG worker
-    at_limit: dict[str, dict[str, int]] = {}
-    try:
-        from lib.rate_limiter import get_daily_status
-        script_hint = (extra.get("script") or task.skill or "").lower()
-        if "ig_" in script_hint or "ig-" in script_hint or script_hint.startswith("ig"):
-            relevant_prefix = "instagram:"
-        elif "fb_" in script_hint or "fb-" in script_hint or script_hint.startswith("fb"):
-            relevant_prefix = "facebook:"
-        elif "wp_" in script_hint or "wp-" in script_hint:
-            relevant_prefix = "wordpress:"
-        else:
-            relevant_prefix = ""  # show all if unknown
-        for key, s in get_daily_status().items():
-            if s["remaining"] == 0 and (not relevant_prefix or key.startswith(relevant_prefix)):
-                at_limit[key] = s
-    except Exception as exc:  # noqa: BLE001
-        _log.debug("rate_limiter check failed, skipping: %s", exc)
-
-    return TriggerResponse(ok=True, message=msg, label=label, rate_limits=at_limit or None)
-
-
-@app.get("/api/v1/schedule/missing", response_model=MissingFlowsResponse)
-def list_missing_flows() -> MissingFlowsResponse:
-    """Return scheduled flows defined in schedule.json that aren't loaded in launchctl."""
-    import json
-    import subprocess
-
-    assert settings.paths is not None  # noqa: S101
-
-    schedule_file = settings.paths.schedule_file
-    if not schedule_file.exists():
-        return MissingFlowsResponse(missing=[], as_of=rh.now_iso())
-
-    try:
-        defined = json.loads(schedule_file.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        _log.error("Failed to parse schedule.json: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to parse schedule.json") from exc
-
-    # schedule.json shape: dict with "tasks": list[ {id, ...} ].
-    # Tasks have no explicit launchd label; we derive it by stripping the
-    # ``dogfood-`` prefix from ``id`` and prepending ``com.persona.``.
-    # We also accept an explicit ``label`` / ``launchd_label`` if present.
-    def _extract_label(entry: dict) -> str | None:
-        lbl = entry.get("label") or entry.get("launchd_label")
-        if isinstance(lbl, str) and _LABEL_RE.fullmatch(lbl):
-            return lbl
-        tid = entry.get("id")
-        if isinstance(tid, str):
-            suffix = tid.removeprefix("dogfood-")
-            candidate = f"com.persona.{suffix}"
-            if _LABEL_RE.fullmatch(candidate):
-                return candidate
-        return None
-
-    defined_labels: list[str] = []
-    if isinstance(defined, list):
-        entries: list = defined
-    elif isinstance(defined, dict):
-        raw = defined.get("tasks") or defined.get("flows") or []
-        entries = list(raw) if isinstance(raw, (list, tuple)) else list(raw.values())  # type: ignore[union-attr]
-    else:
-        entries = []
-
-    for entry in entries:
-        if isinstance(entry, dict):
-            lbl = _extract_label(entry)
-            if lbl is not None:
-                defined_labels.append(lbl)
-
-    # Query launchctl
-    loaded_labels: set[str] = set()
-    try:
-        result = subprocess.run(
-            ["/bin/launchctl", "list"],
-            capture_output=True, text=True, check=False, timeout=10,
-        )
-        for line in result.stdout.splitlines()[1:]:
-            if not line:
-                continue
-            last = line.split("\t")[-1]
-            if last.startswith("com.persona."):
-                loaded_labels.add(last)
-    except subprocess.TimeoutExpired:
-        loaded_labels = set()
-
-    home = Path.home()
-    missing: list[MissingFlowEntry] = []
-    for lbl in defined_labels:
-        if lbl in loaded_labels:
-            continue
-        plist = home / "Library" / "LaunchAgents" / f"{lbl}.plist"
-        plist_str = str(plist) if plist.exists() else None
-        cmd = f"launchctl bootstrap gui/$(id -u) {plist}"
-        missing.append(MissingFlowEntry(label=lbl, plist_path=plist_str, command=cmd))
-
-    return MissingFlowsResponse(missing=missing, as_of=rh.now_iso())
+    return TriggerResponse(
+        ok=True, message=msg, label=label, rate_limits=_at_limit_rate_summary(extra, task) or None
+    )
 
 
 @app.get("/api/v1/workers/{label}/log", response_model=LogTailResponse)
@@ -801,9 +775,7 @@ def get_schedule_log(
     lines: int = Query(default=200, ge=1, le=1000),
 ) -> LogTailResponse:
     """Return the last N lines of the log file for a scheduled job."""
-    import re as _re
-    # Strip per-instance slot suffix before normalizing (e.g. "dogfood-ig-comment--0")
-    label = _re.sub(r"--\d+$", "", label)
+    label = re.sub(r"--\d+$", "", label)
 
     # Modern multi-brand task ids (e.g. "dogfoodandfun-ig-engager", as written
     # by scripts/task_worker.py's _write_flow_log) never match the legacy
@@ -848,9 +820,6 @@ def get_schedule_log(
 @app.get("/api/v1/workers/{label}/artifact")
 def get_schedule_artifact(label: str) -> dict[str, Any]:
     """Return the JSON content of the output_file for a scheduled job."""
-    from api.schedule_config import load_schedule_config, task_for_label
-    from lib.io.jsonio import read_json
-
     label = _normalize_label(label)
     config = load_schedule_config()
     task = task_for_label(label, config)

@@ -13,12 +13,13 @@
     {
       "id": "ig-engager",
       "skill": "ig-engager",
-      "script": "scripts/ig_scan.py",
+      "script": "scripts/ig_engager.py",
       "description": "Scan Instagram hashtags, like qualifying posts, queue top candidates for comments",
       "schedule": {
         "cron": "3 19 * * *",
         "cadence": "daily"
       },
+      "timeout_minutes": 30,
       "output_file": "state/instagram_comment_queue.json",
       "re_run_guard": true,
       "requires_browser": true,

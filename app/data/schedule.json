@@ -100,9 +100,10 @@
         "cadence": "daily",
         "cron": "3 19 * * *"
       },
-      "script": "scripts/ig_scan.py",
+      "script": "scripts/ig_engager.py",
       "skill": "ig-engager",
-      "telegram_notify": true
+      "telegram_notify": true,
+      "timeout_minutes": 30
     },
     {
       "approval_channel": "telegram",

@@ -1,10 +1,14 @@
 """Tests for `lib/brand_provisioning.py` (folder + config + schedule_tasks rows).
 
-`dry_run=True` tests need no infra (no disk writes, no DB). `dry_run=False`
-tests are real integration tests against a live local Postgres, following
-`test_brands_db.py`/`test_schedule_db.py`'s skipif pattern -- they run when
-one is reachable at `DATABASE_URL` and skip cleanly otherwise; CI's
-`postgres:16` service container makes them run for real there.
+`dry_run=True` tests still write no files and never touch `brands`/
+`schedule_tasks` -- but since the stage-1 flow catalog moved from
+`profiles/*.json` to the `flow_templates` table, even a dry run now reads
+Postgres to resolve each flow's script/schedule. All tests here (`dry_run`
+True or False) are therefore real integration tests against a live local
+Postgres, following `test_brands_db.py`/`test_schedule_db.py`'s skipif
+pattern -- they run when one is reachable at `DATABASE_URL` and skip cleanly
+otherwise; CI's `postgres:16` service container makes them run for real
+there.
 """
 
 from __future__ import annotations
@@ -15,12 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from lib import brand_provisioning, db, schedule_db
+from lib import brand_provisioning, db, flow_templates_db, schedule_db
 from lib.brand_provisioning import ProvisionResult, provision_brand
 from lib.brand_templates import BrandSpec
 from lib.brands_db.models import BrandStatus
 from lib.brands_db.repository import BrandsRepository
 from lib.config import AppSettings
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
@@ -55,73 +60,15 @@ requires_postgres = pytest.mark.skipif(not _PG_AVAILABLE, reason=_SKIP_REASON)
 # ---------------------------------------------------------------------- dry_run=True
 
 
-def test_dry_run_writes_no_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
-    provision_brand(FULL_SPEC, dry_run=True)
-
-    assert not (tmp_path / "acme-dogs").exists()
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_dry_run_returns_full_preview(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
-    result = provision_brand(FULL_SPEC, dry_run=True)
-
-    assert isinstance(result, ProvisionResult)
-    assert result.brand_id == "acme-dogs"
-    assert result.brand_dir == tmp_path / "acme-dogs"
-    assert set(result.files_written) == {
-        "config.json",
-        "data/config/brand_facts.md",
-        "data/config/instagram_accounts.csv",
-        "brand.json",
-    }
-    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
-    assert result.warnings == []
-
-
-def test_dry_run_does_not_touch_the_database(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No `lib.brands_db`/`lib.schedule_db` writes happen under dry_run --
-    verified by monkeypatching both to raise if called."""
-
-    def _boom(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("dry_run must not touch the DB")
-
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
-    monkeypatch.setattr(schedule_db, "save_task", _boom)
-    monkeypatch.setattr(BrandsRepository, "create", _boom)
-    monkeypatch.setattr(BrandsRepository, "get", _boom)
-
-    provision_brand(FULL_SPEC, dry_run=True)  # must not raise
-
-
-def test_dry_run_warns_when_no_keywords_supplied(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
-    bare_spec = BrandSpec(name="Bare Co", site_url="https://bare.example", niche="widgets")
-
-    result = provision_brand(bare_spec, dry_run=True)
-    assert len(result.warnings) == 1
-    assert "keywords" in result.warnings[0]
-
-
-def test_dry_run_does_not_warn_when_keywords_supplied(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
-    result = provision_brand(FULL_SPEC, dry_run=True)
-    assert result.warnings == []
-
-
-# --------------------------------------------------------------------- dry_run=False
-
-
 @pytest.fixture
 def pg() -> Iterator[None]:
     db.execute(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    # provision_brand() reads its stage-1 flows (ig-engager/fb-scanner/
+    # fb-group-scout) from flow_templates, not profiles/*.json directly --
+    # a fresh CI Postgres only gets schema.sql's empty table, so seed it the
+    # same way scripts/backfill_flow_templates.py --apply does.
+    for row in load_flow_template_rows():
+        flow_templates_db.save(row)
     try:
         yield
     finally:
@@ -132,6 +79,67 @@ def pg() -> Iterator[None]:
 def brands_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
     return tmp_path
+
+
+@requires_postgres
+def test_dry_run_writes_no_files(pg: None, brands_root: Path) -> None:
+    provision_brand(FULL_SPEC, dry_run=True)
+
+    assert not (brands_root / "acme-dogs").exists()
+    assert list(brands_root.iterdir()) == []
+
+
+@requires_postgres
+def test_dry_run_returns_full_preview(pg: None, brands_root: Path) -> None:
+    result = provision_brand(FULL_SPEC, dry_run=True)
+
+    assert isinstance(result, ProvisionResult)
+    assert result.brand_id == "acme-dogs"
+    assert result.brand_dir == brands_root / "acme-dogs"
+    assert set(result.files_written) == {
+        "config.json",
+        "data/config/brand_facts.md",
+        "data/config/instagram_accounts.csv",
+        "brand.json",
+    }
+    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
+    assert result.warnings == []
+
+
+@requires_postgres
+def test_dry_run_does_not_write_brands_or_schedule_tasks(
+    pg: None, brands_root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`flow_templates` reads are expected under dry_run now (the catalog
+    lives in Postgres), but `brands`/`schedule_tasks` writes are not --
+    verified by monkeypatching both to raise if called."""
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("dry_run must not write brands/schedule_tasks")
+
+    monkeypatch.setattr(schedule_db, "save_task", _boom)
+    monkeypatch.setattr(BrandsRepository, "create", _boom)
+    monkeypatch.setattr(BrandsRepository, "get", _boom)
+
+    provision_brand(FULL_SPEC, dry_run=True)  # must not raise
+
+
+@requires_postgres
+def test_dry_run_warns_when_no_keywords_supplied(pg: None, brands_root: Path) -> None:
+    bare_spec = BrandSpec(name="Bare Co", site_url="https://bare.example", niche="widgets")
+
+    result = provision_brand(bare_spec, dry_run=True)
+    assert len(result.warnings) == 1
+    assert "keywords" in result.warnings[0]
+
+
+@requires_postgres
+def test_dry_run_does_not_warn_when_keywords_supplied(pg: None, brands_root: Path) -> None:
+    result = provision_brand(FULL_SPEC, dry_run=True)
+    assert result.warnings == []
+
+
+# --------------------------------------------------------------------- dry_run=False
 
 
 @requires_postgres
@@ -188,7 +196,7 @@ def test_real_run_creates_only_the_three_scoped_directories(pg: None, brands_roo
     assert (result.brand_dir / "logs").is_dir()
     # No data/db/ -- everything is Postgres now.
     assert not (result.brand_dir / "data" / "db").exists()
-    # No lazily-created session/queue/dedup files yet -- those are ig_scan.py/
+    # No lazily-created session/queue/dedup files yet -- those are ig_engager.py/
     # fb_scan.py's job on first run, not provisioning's.
     assert not (result.brand_dir / "state" / "instagram_session.json").exists()
 
@@ -209,7 +217,7 @@ def test_real_run_schedule_task_scripts_match_the_flow(pg: None, brands_root: Pa
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     rows = {t["id"]: t for t in schedule_db.load_all() if t["brand_id"] == result.brand_id}
-    assert rows["acme-dogs-ig-engager"]["script"] == "scripts/ig_scan.py"
+    assert rows["acme-dogs-ig-engager"]["script"] == "scripts/ig_engager.py"
     assert rows["acme-dogs-fb-scanner"]["script"] == "scripts/fb_scan.py"
 
 

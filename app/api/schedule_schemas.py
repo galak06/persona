@@ -63,21 +63,6 @@ class LogTailResponse(BaseModel):
     truncated: bool
 
 
-class MissingFlowEntry(BaseModel):
-    """One scheduled flow that's defined in schedule.json but not loaded in launchctl."""
-
-    label: str
-    plist_path: str | None = None
-    command: str  # the launchctl bootstrap line to fix it
-
-
-class MissingFlowsResponse(BaseModel):
-    """Envelope for ``GET /api/v1/schedule/missing``."""
-
-    missing: list[MissingFlowEntry]
-    as_of: str
-
-
 class TriggerResponse(BaseModel):
     """Envelope for ``POST /api/v1/schedule/{label}/trigger``."""
 
@@ -90,8 +75,6 @@ class TriggerResponse(BaseModel):
 __all__ = [
     "InputStatus",
     "LogTailResponse",
-    "MissingFlowEntry",
-    "MissingFlowsResponse",
     "ScheduleEntry",
     "TriggerResponse",
 ]

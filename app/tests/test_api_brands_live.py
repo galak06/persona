@@ -22,9 +22,10 @@ from api import brands_api
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from lib import brand_provisioning, db, schedule_db
+from lib import brand_provisioning, db, flow_templates_db, schedule_db
 from lib.brands_db.repository import BrandsRepository
 from tests.test_api_brands import _FULL_BODY
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
@@ -44,6 +45,11 @@ requires_postgres = pytest.mark.skipif(not _PG_AVAILABLE, reason=_SKIP_REASON)
 @pytest.fixture
 def pg() -> Iterator[None]:
     db.execute(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    # provision_brand() reads its stage-1 flows from flow_templates now, not
+    # profiles/*.json directly -- seed it the same way
+    # scripts/backfill_flow_templates.py --apply does.
+    for row in load_flow_template_rows():
+        flow_templates_db.save(row)
     try:
         yield
     finally:

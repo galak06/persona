@@ -164,3 +164,30 @@ CREATE TABLE IF NOT EXISTS completed_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_completed_tasks_brand ON completed_tasks(brand, task_type, platform);
 CREATE INDEX IF NOT EXISTS idx_completed_tasks_at    ON completed_tasks(completed_at DESC);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- flow_templates (from profiles/*.json -- brand-agnostic flow catalog read by
+-- lib/brand_provisioning.py when onboarding a new brand; seeded/reseeded via
+-- scripts/backfill_flow_templates.py)
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS flow_templates (
+    id                  TEXT        PRIMARY KEY,
+    platform            TEXT        NOT NULL,
+    title               TEXT        NOT NULL,
+    description         TEXT        DEFAULT '',
+    order_num           INTEGER     DEFAULT 0,
+    script              TEXT,
+    skill               TEXT,
+    args                JSONB       DEFAULT '[]',
+    depends_on          JSONB       DEFAULT '[]',
+    requires_approval   INTEGER     DEFAULT 0,
+    approval_channel    TEXT,
+    requires_browser    INTEGER     DEFAULT 0,
+    re_run_guard        INTEGER     DEFAULT 1,
+    output_file         TEXT,
+    schedule            JSONB       DEFAULT '{}',
+    inputs              JSONB       DEFAULT '[]',
+    telegram_notify     INTEGER     DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_flow_templates_platform ON flow_templates(platform);

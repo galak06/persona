@@ -1,9 +1,18 @@
 /**
- * Schedule page — worker registry table with a manual run-now button
- * per row. Polls `GET /api/v1/workers` every 10s for fresh rows; posts
- * to `POST /api/v1/workers/{label}/trigger` on click. Each row also
- * exposes an inline log-tail viewer. The page header surfaces a rose
- * banner whenever scheduled flows are missing from launchctl.
+ * Schedule page — read-only worker registry (status, last run, log tail)
+ * plus per-row cron editing. Polls `GET /api/v1/workers` every 10s for
+ * fresh rows; posts to `PATCH /api/v1/workers/{label}/schedule` when a
+ * cron edit is saved.
+ *
+ * Triggering a flow on demand lives exclusively on the Human Mimic page
+ * (`POST /brands/{brand_id}/flows/{flow_id}/run`) — the brand-scoped
+ * path that goes through the Redis flow-run queue and the `worker`
+ * container, and respects each task's `timeout_minutes`. This page used
+ * to carry its own duplicate "Run now" button against the older,
+ * pre-Docker `POST /api/v1/workers/{label}/trigger` endpoint (forks a
+ * subprocess directly from the API container, single-brand only) —
+ * removed so there's exactly one place to trigger a flow. Editing the
+ * cron here only changes when the dispatcher's due-check next fires it.
  *
  * Rewritten against the flat `/api/v1/workers` registry after the older
  * flows/state pipeline model (per-flow dependency graph, input/output
@@ -13,28 +22,21 @@
  * the pages that already made this transition.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import Alert from "../components/ui/Alert";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
-import { getErrorMessage } from "../api/client";
+import apiClient, { getErrorMessage } from "../api/client";
 import { endpoints } from "../api/endpoints";
 import { fetchLogTail } from "../api/schedule";
-import type { MissingFlowsResponse } from "../api/schedule";
-import { useApiMutation } from "../hooks/useApiMutation";
 import { useApiQuery } from "../hooks/useApiQuery";
 import type { WorkerStatus } from "../api/workers";
-import type { components } from "../types/openapi";
 import LogPanel, { type LogState } from "./ScheduleLogPanel";
 import SchedulePipelineView from "./SchedulePipelineView";
 
-type TriggerResponse = components["schemas"]["TriggerResponse"];
-
 const POLL_MS = 10000;
-const TOAST_MS = 3000;
-const MISSING_POLL_MS = 60_000;
-const TABLE_COL_COUNT = 6;
+const TABLE_COL_COUNT = 5;
 
 const STATUS_STYLES: Record<WorkerStatus["status"], string> = {
   never: "text-slate-400",
@@ -69,17 +71,21 @@ function sortEntries(entries: WorkerStatus[]): WorkerStatus[] {
   return [...entries].sort((a, b) => a.label.localeCompare(b.label));
 }
 
-interface RowToast {
-  status: "success" | "error";
-  message: string;
+interface ScheduleEditState {
+  label: string;
+  draftCron: string;
+  saving: boolean;
+  error: string | null;
 }
 
 interface ScheduleRowProps {
   entry: WorkerStatus;
-  busy: boolean;
-  toast: RowToast | null;
   logState: LogState | undefined;
-  onTrigger: (label: string) => void;
+  edit: ScheduleEditState | null;
+  onStartEdit: (label: string, currentCron: string | null | undefined) => void;
+  onDraftChange: (value: string) => void;
+  onSaveEdit: (label: string) => void;
+  onCancelEdit: () => void;
   onToggleLog: (label: string) => void;
   onRefreshLog: (label: string) => void;
   onCloseLog: (label: string) => void;
@@ -87,22 +93,22 @@ interface ScheduleRowProps {
 
 function ScheduleRow({
   entry,
-  busy,
-  toast,
   logState,
-  onTrigger,
+  edit,
+  onStartEdit,
+  onDraftChange,
+  onSaveEdit,
+  onCancelEdit,
   onToggleLog,
   onRefreshLog,
   onCloseLog,
 }: ScheduleRowProps): React.JSX.Element {
   const open = !!logState?.open;
+  const editing = edit !== null;
 
   return (
     <>
       <tr className="border-b border-slate-100">
-        <td className="px-3 py-2 text-xs text-slate-700 font-mono break-all">
-          {entry.label}
-        </td>
         <td className="px-3 py-2 text-sm text-slate-700">{entry.title}</td>
         <td className={`px-3 py-2 text-sm ${STATUS_STYLES[entry.status]}`}>
           {entry.status}
@@ -117,6 +123,52 @@ function ScheduleRow({
           )}
         </td>
         <td className="px-3 py-2 text-sm">
+          {editing ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <input
+                type="text"
+                value={edit.draftCron}
+                onChange={(e) => onDraftChange(e.target.value)}
+                placeholder="e.g. 3 19 * * *"
+                className="w-32 px-2 py-1 text-xs font-mono border border-slate-300 rounded"
+                disabled={edit.saving}
+              />
+              <button
+                type="button"
+                onClick={() => onSaveEdit(entry.label)}
+                disabled={edit.saving || !edit.draftCron.trim()}
+                className="text-xs px-2 py-1 rounded bg-cyan-600 text-white hover:bg-cyan-700 disabled:bg-slate-300"
+              >
+                {edit.saving ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={onCancelEdit}
+                disabled={edit.saving}
+                className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              {edit.error && (
+                <span className="text-xs text-rose-700 basis-full">{edit.error}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-slate-700">
+                {entry.cron ?? <span className="text-slate-400">—</span>}
+              </span>
+              <button
+                type="button"
+                onClick={() => onStartEdit(entry.label, entry.cron)}
+                className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Edit
+              </button>
+            </div>
+          )}
+        </td>
+        <td className="px-3 py-2 text-sm">
           <button
             type="button"
             onClick={() => onToggleLog(entry.label)}
@@ -124,32 +176,6 @@ function ScheduleRow({
           >
             {open ? "Hide log" : "View log"}
           </button>
-        </td>
-        <td className="px-3 py-2 text-sm">
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={() => onTrigger(entry.label)}
-              disabled={busy}
-              className={`inline-flex items-center px-3 py-1 rounded-md text-white text-xs font-medium transition-colors ${
-                busy ? "bg-slate-300 cursor-not-allowed" : "bg-cyan-600 hover:bg-cyan-700"
-              }`}
-            >
-              {busy ? "Running…" : "Run now"}
-            </button>
-            {toast && (
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${
-                  toast.status === "success"
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                    : "bg-rose-50 border-rose-200 text-rose-800"
-                }`}
-                role="status"
-              >
-                {toast.message}
-              </span>
-            )}
-          </div>
         </td>
       </tr>
       {open && logState && (
@@ -168,112 +194,38 @@ function ScheduleRow({
   );
 }
 
-interface MissingBannerProps {
-  data: MissingFlowsResponse;
-}
-
-function MissingBanner({ data }: MissingBannerProps): React.JSX.Element | null {
-  const [expanded, setExpanded] = useState(false);
-  if (!data.missing.length) return null;
-
-  const labels = data.missing.map((m) => m.label).join(", ");
-  const plural = data.missing.length === 1 ? "" : "s";
-
-  const copyAll = (): void => {
-    const joined = data.missing.map((m) => m.command).join("\n");
-    void navigator.clipboard.writeText(joined);
-  };
-
-  return (
-    <Alert status="error" className="mb-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <span>
-          {data.missing.length} scheduled flow{plural} not loaded in
-          launchctl: <span className="font-mono text-xs">{labels}</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="text-xs px-2 py-1 rounded border border-rose-300 text-rose-800 hover:bg-rose-100"
-        >
-          {expanded ? "Hide fix commands" : "Show fix commands"}
-        </button>
-      </div>
-      {expanded && (
-        <div className="mt-3 space-y-2">
-          {data.missing.map((m) => (
-            <pre
-              key={m.label}
-              className="bg-white text-slate-700 text-xs p-2 rounded border border-rose-200 font-mono whitespace-pre-wrap"
-            >
-              {m.command}
-            </pre>
-          ))}
-          <button
-            type="button"
-            onClick={copyAll}
-            className="text-xs px-2 py-1 rounded border border-rose-300 text-rose-800 hover:bg-rose-100"
-          >
-            Copy all
-          </button>
-        </div>
-      )}
-    </Alert>
-  );
-}
-
 export default function Schedule(): React.JSX.Element {
   const { data, loading, error, refetch } = useApiQuery<WorkerStatus[]>(
     endpoints.workers,
     { refetchInterval: POLL_MS },
   );
-  const { data: missingData } = useApiQuery<MissingFlowsResponse>(
-    endpoints.scheduleMissing,
-    { refetchInterval: MISSING_POLL_MS },
-  );
-  const { mutate } = useApiMutation<TriggerResponse, { count: number; force: boolean }>();
-
-  const [busyLabel, setBusyLabel] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<Record<string, RowToast>>({});
+  const [edit, setEdit] = useState<ScheduleEditState | null>(null);
   const [logs, setLogs] = useState<Map<string, LogState>>(new Map());
 
-  // Clear each toast after TOAST_MS.
-  useEffect(() => {
-    const timers: number[] = [];
-    for (const label of Object.keys(toasts)) {
-      const id = window.setTimeout(() => {
-        setToasts((prev) => {
-          const next = { ...prev };
-          delete next[label];
-          return next;
-        });
-      }, TOAST_MS);
-      timers.push(id);
-    }
-    return () => {
-      for (const id of timers) window.clearTimeout(id);
-    };
-  }, [toasts]);
+  const handleStartEdit = (label: string, currentCron: string | null | undefined): void => {
+    setEdit({ label, draftCron: currentCron ?? "", saving: false, error: null });
+  };
 
-  const handleTrigger = async (label: string): Promise<void> => {
-    setBusyLabel(label);
-    const result = await mutate(endpoints.workerTrigger(label), {
-      count: 1,
-      force: true,
-    });
-    if (result && result.ok) {
-      setToasts((prev) => ({
-        ...prev,
-        [label]: { status: "success", message: result.message },
-      }));
-    } else {
-      const msg = result?.message ?? "Trigger failed";
-      setToasts((prev) => ({
-        ...prev,
-        [label]: { status: "error", message: msg },
-      }));
+  const handleDraftChange = (value: string): void => {
+    setEdit((prev) => (prev ? { ...prev, draftCron: value } : prev));
+  };
+
+  const handleCancelEdit = (): void => {
+    setEdit(null);
+  };
+
+  const handleSaveEdit = async (label: string): Promise<void> => {
+    const cron = (edit?.draftCron ?? "").trim();
+    setEdit((prev) => (prev ? { ...prev, saving: true, error: null } : prev));
+    try {
+      await apiClient.patch(endpoints.workerSchedule(label), { cron });
+      setEdit(null);
+      void refetch();
+    } catch (err) {
+      setEdit((prev) =>
+        prev ? { ...prev, saving: false, error: getErrorMessage(err, "Save failed") } : prev,
+      );
     }
-    setBusyLabel(null);
   };
 
   const loadLog = useCallback(async (label: string): Promise<void> => {
@@ -373,11 +325,10 @@ export default function Schedule(): React.JSX.Element {
     <section className="space-y-6">
       <p className="text-sm text-slate-500">Registered worker roster.</p>
 
-      {missingData && <MissingBanner data={missingData} />}
-
       <Alert status="warning" className="mb-4">
-        Manually triggering a job runs the actual script immediately. Watch
-        the logs to confirm behavior.
+        Editing a schedule only changes when this flow is next due to run —
+        it does not run anything immediately. To run a flow right now, use
+        Human Mimic.
       </Alert>
 
       {error && data && (
@@ -396,9 +347,6 @@ export default function Schedule(): React.JSX.Element {
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
                 <th className="px-3 py-2 text-xs uppercase tracking-wide text-slate-500 font-semibold">
-                  Label
-                </th>
-                <th className="px-3 py-2 text-xs uppercase tracking-wide text-slate-500 font-semibold">
                   Title
                 </th>
                 <th className="px-3 py-2 text-xs uppercase tracking-wide text-slate-500 font-semibold">
@@ -408,10 +356,10 @@ export default function Schedule(): React.JSX.Element {
                   Last run
                 </th>
                 <th className="px-3 py-2 text-xs uppercase tracking-wide text-slate-500 font-semibold">
-                  Log
+                  Schedule
                 </th>
                 <th className="px-3 py-2 text-xs uppercase tracking-wide text-slate-500 font-semibold">
-                  Action
+                  Log
                 </th>
               </tr>
             </thead>
@@ -420,10 +368,12 @@ export default function Schedule(): React.JSX.Element {
                 <ScheduleRow
                   key={entry.label}
                   entry={entry}
-                  busy={busyLabel === entry.label}
-                  toast={toasts[entry.label] ?? null}
                   logState={logs.get(entry.label)}
-                  onTrigger={handleTrigger}
+                  edit={edit?.label === entry.label ? edit : null}
+                  onStartEdit={handleStartEdit}
+                  onDraftChange={handleDraftChange}
+                  onSaveEdit={(label) => void handleSaveEdit(label)}
+                  onCancelEdit={handleCancelEdit}
                   onToggleLog={handleToggleLog}
                   onRefreshLog={handleRefreshLog}
                   onCloseLog={handleCloseLog}

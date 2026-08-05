@@ -28,6 +28,7 @@ _EXPECTED_TABLES = {
     "brands",
     "fb_groups",
     "completed_tasks",
+    "flow_templates",
 }
 _EXCLUDED_TABLES = {"recipes", "content_ideas", "oauth_tokens", "raw_scrapes"}
 
