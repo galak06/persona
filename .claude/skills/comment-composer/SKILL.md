@@ -109,7 +109,7 @@ queue_name = {
 }.get(platform_arg, 'comment_queue.json')
 queue_file = Path(f'../.claude/state/{queue_name}')
 if not queue_file.exists():
-    print("Queue is empty. Run fb-scanner or ig-scanner first.")
+    print("Queue is empty. Run fb-scanner or ig-engager first.")
     exit(0)
 
 with queue_file.open() as f:

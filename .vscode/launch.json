@@ -8,10 +8,10 @@
   //
   // cwd is the repo root because the scripts do
   // sys.path.insert(parent) / sys.path.insert(parent/"lib") relative to
-  // persona/, and were always invoked as `python persona/scripts/...`.
+  // app/, and were always invoked as `python app/scripts/...`.
   //
   // envFile supplies DATABASE_URL / REDIS_URL etc. Nothing in the code loads
-  // persona/.env itself -- a bare run without it dies with psycopg_pool.PoolTimeout.
+  // app/.env itself -- a bare run without it dies with psycopg_pool.PoolTimeout.
   "version": "0.2.0",
   "configurations": [
     {
@@ -19,11 +19,11 @@
       "name": "IG scan — dry run (safe)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "program": "${workspaceFolder}/app/scripts/ig_scan.py",
       "args": ["--dry-run"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         // 0 = watch the browser drive Instagram. Set to 1 to run headless.
@@ -36,11 +36,11 @@
       "name": "IG scan — LIVE (likes + queues)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "program": "${workspaceFolder}/app/scripts/ig_scan.py",
       "args": [],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PLAYWRIGHT_HEADLESS": "0"
@@ -52,11 +52,11 @@
       "name": "IG scan — health check",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_scan.py",
+      "program": "${workspaceFolder}/app/scripts/ig_scan.py",
       "args": ["--health-check"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "justMyCode": false
     },
     {
@@ -66,11 +66,11 @@
       "name": "IG comment — dry run (drafts only)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_comment.py",
+      "program": "${workspaceFolder}/app/scripts/ig_comment.py",
       "args": ["--dry-run"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PLAYWRIGHT_HEADLESS": "0"
@@ -82,11 +82,11 @@
       "name": "IG comment — LIVE (limit 1)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_comment.py",
+      "program": "${workspaceFolder}/app/scripts/ig_comment.py",
       "args": ["--limit", "1"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PLAYWRIGHT_HEADLESS": "0"
@@ -103,11 +103,11 @@
       "name": "IG pipeline — FULL LIVE (scan + POSTS COMMENTS)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_pipeline.py",
+      "program": "${workspaceFolder}/app/scripts/ig_pipeline.py",
       "args": [],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PLAYWRIGHT_HEADLESS": "0"
@@ -119,11 +119,11 @@
       "name": "IG pipeline — FULL dry run (safe)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/c",
+      "program": "${workspaceFolder}/app/scripts/c",
       "args": ["--dry-run"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",
+      "envFile": "${workspaceFolder}/app/.env",
       "env": {
         "PYTHONUNBUFFERED": "1",
         "PLAYWRIGHT_HEADLESS": "0"
@@ -137,11 +137,11 @@
       "name": "IG pipeline — orchestrator only (subprocess stages NOT debuggable)",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/persona/scripts/ig_pipeline.py",
+      "program": "${workspaceFolder}/app/scripts/ig_pipeline.py",
       "args": ["--scan-only", "--dry-run"],
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/persona/.env",     
+      "envFile": "${workspaceFolder}/app/.env",     
       "env": {
         "PYTHONUNBUFFERED": "1"
       },

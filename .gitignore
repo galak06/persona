@@ -14,30 +14,26 @@ node_modules/
 **/state/facebook_session.json
 **/state/instagram_session.json
 **/state/telegram_config.json
-social-automation/.claude/state/
+app/.claude/state/
 
-# Content drafts and site assets (local only). Two entries: the directory
-# itself (when it lived at repo root) and, now that the real data moved to
-# persona/brands/dogfoodandfun/, the backward-compat symlink left in its
-# place for the 19 native launchd jobs that still hardcode this path --
-# gitignore's trailing-slash form only matches directories, not symlinks.
-dogfoodandfun/
-dogfoodandfun
+# Brand runtime data (local only)
+/app/brands/dogfoodandfun/
+/app/brands/dogfoodandfun
 /tools/
 post_instructions.md
 CLAUDE.md
 
 # Generated runtime files
-social-automation/data/site_content_cache.json
-social-automation/logs/
-social-automation/backups/
-social-automation/config.json
+app/data/site_content_cache.json
+app/logs/
+app/backups/
+app/config.json
 
 # Recipe-publisher runtime + local artifacts
-social-automation/recipe-publisher/state/
-social-automation/recipe-publisher/seeds/
-social-automation/recipe-publisher/_audit/
-social-automation/recipe-publisher/pytest-cache-files-*/
+app/recipe-publisher/state/
+app/recipe-publisher/seeds/
+app/recipe-publisher/_audit/
+app/recipe-publisher/pytest-cache-files-*/
 
 # Generated media (Reel pipeline: slides, music beds, narration, composed mp4s)
 *.mp4
@@ -48,13 +44,13 @@ social-automation/recipe-publisher/pytest-cache-files-*/
 # Campaign work-directories (per-campaign scratch space — keep local)
 campaigns/
 # …but the campaigns library module is source code, not scratch
-!social-automation/lib/campaigns/
-!social-automation/lib/campaigns/**
+!app/lib/campaigns/
+!app/lib/campaigns/**
 # …same for the tests covering it
-!social-automation/tests/lib/campaigns/
-!social-automation/tests/lib/campaigns/**
+!app/tests/lib/campaigns/
+!app/tests/lib/campaigns/**
 # …but never the bytecode caches the `**` un-ignore re-included
-social-automation/lib/campaigns/**/__pycache__/
+app/lib/campaigns/**/__pycache__/
 *.pyc
 
 # AI agent scratch + session state (keep local, never commit)
@@ -69,8 +65,12 @@ $CLAUDE_SCRATCHPAD_DIR/
 htmlcov/
 coverage.xml
 
-# Dated backup snapshots (e.g. dogfoodandfun.bak-20260710/)
+# Dated backup snapshots (e.g. dogfoodandfun.bak-20260710/). Both forms: the
+# trailing-slash rule matches directories, the bare glob matches FILES — a
+# timestamped copy of settings.local.json or a brand .env is a plaintext
+# credential dump and must never reach the remote.
 *.bak-*/
+*.bak-*
 
 # Repo-root local cache (currently just data/cache/)
 /data/
@@ -81,12 +81,12 @@ Gemini_Generated_Image_*.jpg
 Gemini_Generated_Image_*.jpeg
 
 # Throwaway dedup probes (leading underscore = scratch)
-social-automation/scripts/_dedup_*
+app/scripts/_dedup_*
 
-# Recipe-seed ideator (local-only iteration; weekly recipe-ideator cron
-# invokes `python -m ideator` from this directory)
-social-automation/recipe-publisher/ideator/
-social-automation/recipe-publisher/seeds/seeds.json
+# Recipe-seed ideator: NOT ignored any more. It used to be local-only
+# iteration, but ideator/{research,enricher}.py are now tracked source and
+# are lint-gated in CI, so the old ignore rule is deliberately dropped.
+app/recipe-publisher/seeds/seeds.json
 
 # orchestrator per-turn telemetry (file tracked dir, ignore the churning state files)
 .claude/state/delegation_violations.json
