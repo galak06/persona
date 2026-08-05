@@ -21,11 +21,11 @@ import pytest
 from api import brands_api
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 from lib import brand_provisioning, db, flow_templates_db, schedule_db
 from lib.brands_db.repository import BrandsRepository
 from tests.test_api_brands import _FULL_BODY
-from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 

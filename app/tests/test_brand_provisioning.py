@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 from lib import brand_provisioning, db, flow_templates_db, schedule_db
 from lib.brand_provisioning import ProvisionResult, provision_brand
@@ -25,7 +26,6 @@ from lib.brand_templates import BrandSpec
 from lib.brands_db.models import BrandStatus
 from lib.brands_db.repository import BrandsRepository
 from lib.config import AppSettings
-from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 

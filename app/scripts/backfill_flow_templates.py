@@ -55,10 +55,19 @@ def _flow_to_row(flow: dict[str, Any], *, platform: str) -> dict[str, Any]:
 
 
 def load_rows() -> list[dict[str, Any]]:
-    """Every `flows[]` entry across `profiles/*.json`, as flow_templates rows."""
+    """Every `flows[]` entry across `profiles/*.json`, as flow_templates rows.
+
+    `wordpress.json`/`_engine.json` are gitignored (see `.gitignore`'s own
+    comment: brand-specific content still baked into them, cleanup out of
+    scope) -- absent on a fresh checkout (CI, a new clone) or any machine
+    that hasn't set up local overrides. Skipped rather than required, same
+    as `tools/profiles_build.py`'s own `path.exists()` guard.
+    """
     rows: list[dict[str, Any]] = []
     for filename in _PROFILE_FILES:
         path = _PROFILES_DIR / filename
+        if not path.exists():
+            continue
         data = json.loads(path.read_text(encoding="utf-8"))
         platform = str(data.get("platform") or filename.removesuffix(".json"))
         for flow in data.get("flows", []):

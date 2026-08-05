@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from lib.brand_provisioning import provision_brand
 from lib.brand_templates import BrandSpec
 from lib.brands_db.repository import BrandsRepository
@@ -21,12 +19,8 @@ __all__ = ["brands_root", "pg"]  # re-exported fixtures, used implicitly as test
 _ALL_THREE_FLOWS = ["ig-engager", "fb-scanner", "fb-group-scout"]
 
 
-def test_dry_run_fb_group_scout_enabled_adds_third_task(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import lib.brand_provisioning as brand_provisioning
-
-    monkeypatch.setattr(brand_provisioning, "BRANDS_ROOT", tmp_path)
+@requires_postgres
+def test_dry_run_fb_group_scout_enabled_adds_third_task(pg: None, brands_root: Path) -> None:
     spec = BrandSpec(
         name="Acme Dogs",
         site_url="https://acmedogs.example",

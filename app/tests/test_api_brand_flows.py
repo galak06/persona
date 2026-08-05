@@ -17,10 +17,10 @@ import pytest
 from api import brand_flows_api
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 from lib import brand_provisioning, db, flow_templates_db
 from lib.task_queue import TaskQueue
-from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 _ROW: dict[str, Any] = {
     "id": "acme-dogs",

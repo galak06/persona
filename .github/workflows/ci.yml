@@ -64,7 +64,7 @@ jobs:
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
-          scripts/fb_scan.py scripts/ig_scan.py scripts/fb_group_scout.py
+          scripts/fb_scan.py scripts/ig_engager.py scripts/fb_group_scout.py
           scripts/fb_comment.py scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
@@ -78,7 +78,7 @@ jobs:
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
           tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
-          tests/test_skill_loader.py tests/test_ig_scan_skill.py tests/test_wp_scan_skill.py
+          tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           recipe-publisher/tests/test_ideator_skill_prompts.py
 
@@ -95,7 +95,7 @@ jobs:
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
-          scripts/fb_scan.py scripts/ig_scan.py
+          scripts/fb_scan.py scripts/ig_engager.py
           scripts/fb_comment.py scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
@@ -109,7 +109,7 @@ jobs:
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
           tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
-          tests/test_skill_loader.py tests/test_ig_scan_skill.py tests/test_wp_scan_skill.py
+          tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           recipe-publisher/tests/test_ideator_skill_prompts.py
 
