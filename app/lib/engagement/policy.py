@@ -7,7 +7,7 @@ quotas (comment, like) in one frozen dataclass. Built once from
 Replaces three patterns that drifted across the FB and IG scanners:
     - `config["content_analysis"]["relevance_threshold"]` inline reads
     - `config["content_analysis"]["approval_threshold"]` inline reads
-    - `ig_comment_threshold = 0.75` hardcoded in ig_scan
+    - `ig_comment_threshold = 0.75` hardcoded in ig_engager
 
 This is the one place to tune scanner behavior in production. Slice 1
 of the OutboundEngagement refactor — adapter + pipeline come later.
@@ -40,7 +40,7 @@ _DEFAULT_THRESHOLDS: dict[str, float] = {
     "ig_comment_threshold": 0.75,
 }
 
-# Defaults — match current production behavior (CLAUDE.md rate-limits + ig_scan
+# Defaults — match current production behavior (CLAUDE.md rate-limits + ig_engager
 # hardcode). Anything missing from config.json falls back to these, so the
 # policy is constructible from a minimal config.
 _DEFAULT_IG_COMMENT_THRESHOLD: float = 0.75

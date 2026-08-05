@@ -72,7 +72,7 @@ def status_icon(last_run_entry: dict) -> str:
 def _ig_engager_stat(entry: dict) -> str:
     """One-line IG engager stat, for both the single-pass and legacy shapes.
 
-    Instagram is single-pass now: ``ig_scan.py`` likes and comments in one
+    Instagram is single-pass now: ``ig_engager.py`` likes and comments in one
     visit and writes ``posts_commented`` / ``comments_declined``. Entries
     written before that migration (and Facebook's, which is still two-stage)
     carry ``posts_queued_for_comment`` instead, so fall back to it rather

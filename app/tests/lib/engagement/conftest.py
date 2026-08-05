@@ -65,7 +65,7 @@ def fb_environment_real_dedup(
 def ig_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[dict[str, Path]]:
-    """Wire ig_scan (single-pass) state into ``tmp_path`` + stub collaborators.
+    """Wire ig_engager (single-pass) state into ``tmp_path`` + stub collaborators.
 
     Yields ``{"state_dir", "tmp_path", "config_path", "rate_path",
     "last_run_path"}`` so individual tests can pre-spend the rate-limiter

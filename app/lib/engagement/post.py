@@ -38,7 +38,7 @@ class Post:
           platform, post_url, post_id, post_text, group_name, group_url,
           category, relevance_score, queued_at, status, requires_approval, draft_comment
 
-        IG record shape mirrors scripts/ig_scan.py lines 580-595:
+        IG record shape mirrors scripts/ig_engager.py lines 580-595:
           platform, post_url, post_id, post_text, hashtag, author,
           category, relevance_score, like_count, queued_at, status, requires_approval, draft_comment
         """

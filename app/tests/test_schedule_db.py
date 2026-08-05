@@ -57,7 +57,7 @@ def test_save_task_then_load_all_round_trips_known_columns(pg: None) -> None:
             "title": "IG Engager",
             "description": "Scan hashtags",
             "order_num": 2,
-            "script": "scripts/ig_scan.py",
+            "script": "scripts/ig_engager.py",
             "args": ["--headless"],
             "depends_on": ["dogfood-site-analyzer"],
             "requires_approval": True,

@@ -60,7 +60,7 @@ def parse_author_from_caption(caption: str) -> str:
 def should_scan_today(freq: str, today: date) -> bool:
     """Whether a CSV row with `scan_frequency=<freq>` is in scope today.
 
-    Verbatim cadence rules from scripts/ig_scan.py:79-86.
+    Verbatim cadence rules from scripts/ig_engager.py:79-86.
     """
     if freq == "daily":
         return True

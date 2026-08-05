@@ -3,7 +3,7 @@
 Regression coverage for a live-discovered bug: `ENGAGEMENT_LOG_PATH` used
 to be hardcoded relative to this repo's own root instead of `BRAND_DIR`,
 so in the Docker worker container the directory never existed and every
-`log_trace()` call (hit at the start of ig_scan.py/fb_scan.py) crashed
+`log_trace()` call (hit at the start of ig_engager.py/fb_scan.py) crashed
 with `FileNotFoundError`, failing the whole flow run.
 """
 

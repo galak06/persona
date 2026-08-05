@@ -27,7 +27,7 @@ from lib import db, schedule_db, worker_db
 # iteration order.
 _FLOW_ORDER: tuple[str, ...] = ("ig-engager", "fb-scanner", "fb-group-scout")
 _FLOW_SCRIPTS: dict[str, str] = {
-    "ig-engager": "scripts/ig_scan.py",
+    "ig-engager": "scripts/ig_engager.py",
     "fb-scanner": "scripts/fb_scan.py",
     "fb-group-scout": "scripts/fb_group_scout.py",
 }

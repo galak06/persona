@@ -1,14 +1,14 @@
 """Tests for the IG scanner's skill-bound drafter wiring (SKILL.md path).
 
-Mirrors ``test_ig_comment.py``: the single-pass scan (``scripts/ig_scan.py``)
+Mirrors ``test_ig_comment.py``: the single-pass scan (``scripts/ig_engager.py``)
 now drafts through ``draft_helper.for_skill("ig-engager")`` instead of the
-legacy module-level path. Importing ``scripts.ig_scan`` exercises the
+legacy module-level path. Importing ``scripts.ig_engager`` exercises the
 module-level binding against the REAL ``.claude/skills/ig-engager/SKILL.md``
 and the ``$BRAND_DIR`` (ci_brand) config, so these tests double as an
 integration check that the ``## LLM Prompt`` section loads and renders. The
 payload test captures the ``httpx.post`` body and asserts the voice rules +
 rendered brand values arrive as ``systemInstruction`` (behavioural drain-loop
-coverage lives in ``tests/lib/engagement/test_ig_scan_with_fake.py``).
+coverage lives in ``tests/lib/engagement/test_ig_engager_with_fake.py``).
 """
 # ruff: noqa: S101
 
@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
-from scripts import ig_scan
+from scripts import ig_engager
 
 import draft_helper
 
@@ -33,8 +33,8 @@ _VALID = (
 def test_drafter_is_bound_to_ig_engager_skill() -> None:
     """The module-level binder loads the ig-engager SKILL.md eagerly, so a
     broken skill file aborts at import — before any hashtag is scanned."""
-    assert isinstance(ig_scan._DRAFTER, draft_helper.SkillDrafter)
-    assert ig_scan._DRAFTER.skill == "ig-engager"
+    assert isinstance(ig_engager._DRAFTER, draft_helper.SkillDrafter)
+    assert ig_engager._DRAFTER.skill == "ig-engager"
 
 
 class _FakeResponse:
@@ -64,7 +64,7 @@ def test_drafter_sends_skill_system_instruction(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
 
-    out = ig_scan._DRAFTER.draft_comment_for_post(
+    out = ig_engager._DRAFTER.draft_comment_for_post(
         platform="instagram",
         post_text="Anyone tried a topper?",
         group_or_hashtag="#dogfood",

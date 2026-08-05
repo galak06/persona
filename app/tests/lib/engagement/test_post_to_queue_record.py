@@ -1,7 +1,7 @@
 """Behavior-preservation contract: Post.to_queue_record produces the legacy
 queue-record shape for each platform.
 
-This is THE gate for the OutboundEngagement refactor. fb_scan.py + ig_scan.py
+This is THE gate for the OutboundEngagement refactor. fb_scan.py + ig_engager.py
 write queue records consumed by comment_poster downstream; the exact key set
 per platform is load-bearing. If anyone changes to_queue_record in a way that
 breaks the legacy shape, these tests fail.

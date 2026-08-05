@@ -27,7 +27,7 @@ from lib.config import settings
 # a pre-multi-brand-pivot leftover that silently diverged from every other
 # brand-scoped path in the codebase (all resolved via settings.paths). In
 # the Docker deployment the repo-relative directory never existed at all,
-# so every `log_trace()` call (hit at the start of ig_scan.py/fb_scan.py)
+# so every `log_trace()` call (hit at the start of ig_engager.py/fb_scan.py)
 # crashed with FileNotFoundError -- while the real, actively-written
 # engagement log sat untouched at BRAND_DIR/logs/engagement_log.jsonl the
 # whole time. `GET /activity` was reading the same wrong path, so the

@@ -4,7 +4,7 @@ Every flow has exactly one correct label: the `schedule_tasks.id` this brand's
 row for that flow carries (e.g. `dogfood-ig-engager`) -- that's the string
 `api/approval_api.py`'s `/workers` endpoint and its trigger guard key their
 lookups on. A worker script that writes its own run status under a
-DIFFERENT string (as `ig_scan.py`/`fb_scan.py` built dynamically from
+DIFFERENT string (as `ig_engager.py`/`fb_scan.py` built dynamically from
 `brand_dir.name`, or `ig_comment.py`'s unrelated hardcoded literal, both did
 before this module existed) writes to a row nothing ever reads: the frontend
 Schedule page shows a stale/stuck status forever, and the trigger endpoint's

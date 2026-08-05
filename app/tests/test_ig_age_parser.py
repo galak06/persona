@@ -10,7 +10,7 @@ import pytest
 def parse_post_age_weeks(caption: str) -> float:
     """
     Extract post age from IG caption text and convert to weeks.
-    Mirrors the logic in ig_scan.py.
+    Mirrors the logic in ig_engager.py.
     """
     age_match = re.search(r"\b(\d+)(h|d|w|m)\b", caption)
     if not age_match:

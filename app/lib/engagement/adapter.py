@@ -5,7 +5,7 @@ and FakeAdapter (tests). Each adapter owns its session/auth, DOM selectors,
 platform-specific pre-filters, score adjustments, and the inline like action.
 
 Scanner orchestration (loop over sources, score, dedup, draft, queue write)
-stays in scripts/fb_scan.py and scripts/ig_scan.py at slice 2; the pipeline
+stays in scripts/fb_scan.py and scripts/ig_engager.py at slice 2; the pipeline
 function arrives in slice 3.
 """
 from __future__ import annotations

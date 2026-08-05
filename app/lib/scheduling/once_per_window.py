@@ -1,7 +1,7 @@
 """Re-run guard: skip a runner if it ran successfully within the window.
 
 Replaces 6 inline copies of the `last_run.json` check pattern across
-`scripts/*.py` (comment_poster, wp_scan, ig_scan, fb_group_scout,
+`scripts/*.py` (comment_poster, wp_scan, ig_engager, fb_group_scout,
 daily_wp_draft, fb_scan). Single source of truth for the read+write
 of `.claude/state/last_run.json`.
 

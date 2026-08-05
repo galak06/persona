@@ -24,7 +24,7 @@ Run the Playwright-based scanner script:
 
 ```bash
 cd /Users/gilcohen/Projects/persona/app
-python scripts/ig_scan.py
+python scripts/ig_engager.py
 ```
 
 ### First-time setup

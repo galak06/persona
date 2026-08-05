@@ -24,7 +24,7 @@ Run the Playwright-based scanner script:
 
 ```bash
 cd /Users/gilcohen/Projects/persona/app
-python scripts/ig_scan.py
+python scripts/ig_engager.py
 ```
 
 ### First-time setup
@@ -94,7 +94,7 @@ ALL Instagram comments require manual user approval — they are never posted au
 
 <!-- MACHINE-READ SECTION. Loaded by app/lib/skill_loader.py and sent verbatim
      (after {{brand.*}} rendering) as the LLM SYSTEM prompt for the ig-engager
-     flow (scripts/ig_scan.py). Nothing outside this section is sent to the
+     flow (scripts/ig_engager.py). Nothing outside this section is sent to the
      model. Per-post context and the JSON response format are supplied by the
      Python flow at call time. -->
 

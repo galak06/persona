@@ -1,6 +1,6 @@
 """Dry-run behavior tests for ``run_outbound_scan``.
 
-``--dry-run`` used to be silently swallowed by ``scripts/ig_scan.py``, so a
+``--dry-run`` used to be silently swallowed by ``scripts/ig_engager.py``, so a
 "dry" scan performed REAL likes on a live Instagram account. These tests lock
 the contract: with ``dry_run=True`` nothing leaves the process — no
 ``adapter.like()``, no queue push, no dedup mark, no rate-limit spend — while

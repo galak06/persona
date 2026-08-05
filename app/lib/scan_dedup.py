@@ -1,6 +1,6 @@
 """Reconciliation layer between this app's two dedup stores.
 
-Extracted from `scripts/ig_scan.py` so any scanner can adopt iterate-once.
+Extracted from `scripts/ig_engager.py` so any scanner can adopt iterate-once.
 Instagram uses it today; `scripts/fb_scan.py` has no iterate-once yet and is
 deliberately left unwired — this class is importable so it can be.
 """

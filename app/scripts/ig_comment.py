@@ -1,14 +1,14 @@
 """Instagram Comment — draft a reply at post time and post it.
 
 RETAINED ONLY TO DRAIN THE PRE-MIGRATION BACKLOG. Instagram moved to a
-single-pass flow: ``scripts/ig_scan.py`` now opens each post once and likes
+single-pass flow: ``scripts/ig_engager.py`` now opens each post once and likes
 AND comments in that same visit, so nothing writes to the IG comment queue
 any more. This script is a consumer without a producer — once the backlog is
 drained it has no work, forever, and its daily launchd job would otherwise
 stay green while verifying nothing. It therefore skips loudly (naming
-``ig_scan.py``) rather than silently reporting success on an empty queue.
+``ig_engager.py``) rather than silently reporting success on an empty queue.
 
-Historically the counterpart to ``scripts/ig_scan.py``: the scanner found +
+Historically the counterpart to ``scripts/ig_engager.py``: the scanner found +
 liked + queued target posts (no draft); this action drained the IG comment
 queue, drafting a reply from the live post text for each pending post (IG
 queued only questions — '?' posts) and submitting it via Playwright. No
@@ -90,7 +90,7 @@ SPEC = CommenterSpec(
 
 _NO_PRODUCER_MSG = (
     "IG comment queue is empty and nothing produces into it any more — "
-    "Instagram moved to a single-pass flow where scripts/ig_scan.py likes "
+    "Instagram moved to a single-pass flow where scripts/ig_engager.py likes "
     "AND comments in one visit. This script exists only to drain the "
     "pre-migration backlog; the backlog is gone. Retire its scheduled job."
 )

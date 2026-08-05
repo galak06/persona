@@ -12,7 +12,7 @@ notifier, random delays, log writers).
 
 Why the bare-module patching dance:
     ``pyproject.toml`` sets ``pythonpath = ["lib"]``, so
-    ``scripts/fb_scan.py`` (and ``ig_scan.py``) imports collaborators as
+    ``scripts/fb_scan.py`` (and ``ig_engager.py``) imports collaborators as
     bare top-level modules (``import rate_limiter``) — NOT via the
     ``lib.`` namespace. Python creates two distinct module objects for
     the same source file: ``rate_limiter`` and ``lib.rate_limiter``.
@@ -97,7 +97,7 @@ def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
     Drafting is NOT stubbed here: ``fb_scan`` is scan-only (``drafter=None``)
     and every drafting flow now injects a ``draft_helper.SkillDrafter``
     instance, so tests that need a fake draft patch that instance (see
-    ``test_ig_scan_with_fake``).
+    ``test_ig_engager_with_fake``).
     """
     import rate_limiter as bare_rate_limiter
 
@@ -218,10 +218,10 @@ def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 def build_ig_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
-    """Tmp-path environment for ``scripts.ig_scan`` tests (SINGLE-PASS).
+    """Tmp-path environment for ``scripts.ig_engager`` tests (SINGLE-PASS).
 
     Post-PR#36 Instagram likes AND comments in one visit and persists no queue,
-    so ``ig_scan`` no longer exposes a ``QUEUE_FILE`` to patch. We redirect the
+    so ``ig_engager`` no longer exposes a ``QUEUE_FILE`` to patch. We redirect the
     two path constants it still owns (``LAST_RUN_FILE``, ``CONFIG_FILE``) plus
     the bare dedup/rate/log path modules, and neutralize the single-pass
     collaborators the run now reaches for (``ScanDedup``'s Postgres backend, the
@@ -247,14 +247,14 @@ def build_ig_environment(
 
     seed_empty_state(last_run_path, dedup_path, rate_path)
 
-    from scripts import ig_scan
+    from scripts import ig_engager
 
     # No QUEUE_FILE: IG is single-pass, no Redis/queue handoff (PR#36). The
     # scan likes+comments inline, so only these two path constants remain.
-    monkeypatch.setattr(ig_scan, "LAST_RUN_FILE", last_run_path)
-    monkeypatch.setattr(ig_scan, "CONFIG_FILE", config_path)
+    monkeypatch.setattr(ig_engager, "LAST_RUN_FILE", last_run_path)
+    monkeypatch.setattr(ig_engager, "CONFIG_FILE", config_path)
     # `log_trace` writes to the real brand engagement log; no-op it in tests.
-    monkeypatch.setattr(ig_scan, "log_trace", lambda *_a, **_k: None)
+    monkeypatch.setattr(ig_engager, "log_trace", lambda *_a, **_k: None)
     patch_bare_path_modules(
         monkeypatch,
         dedup_file=dedup_path,
@@ -266,13 +266,13 @@ def build_ig_environment(
     # Stub delays on the BARE-name module — the thin scanner delegates them
     # to the pipeline, which calls them via the rate_tracker protocol.
     # Drafting is left alone: the scan injects its own ``SkillDrafter``
-    # instance, so tests patch that instance (see ``test_ig_scan_with_fake``).
+    # instance, so tests patch that instance (see ``test_ig_engager_with_fake``).
     import rate_limiter as bare_rate_limiter
 
     monkeypatch.setattr(
         bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None
     )
-    stub_skill_notifications(monkeypatch, ig_scan)
+    stub_skill_notifications(monkeypatch, ig_engager)
 
     return {
         "state_dir": state_dir,

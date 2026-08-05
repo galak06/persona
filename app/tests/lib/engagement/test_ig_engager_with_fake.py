@@ -33,8 +33,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from scripts import ig_scan
-from scripts.ig_scan import run_ig_scan
+from scripts import ig_engager
+from scripts.ig_engager import run_ig_scan
 
 from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.post import Post
@@ -44,7 +44,7 @@ from lib.engagement.post import Post
 def _stub_skill_drafter(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the skill-bound drafter instance the scan actually calls.
 
-    ``run_ig_scan`` passes ``ig_scan._DRAFTER`` (bound to the ig-engager
+    ``run_ig_scan`` passes ``ig_engager._DRAFTER`` (bound to the ig-engager
     SKILL.md at import) into the pipeline, so patching a module-level name
     would not intercept — patch the instance method instead (same pattern
     as ``test_ig_comment``).
@@ -60,7 +60,7 @@ def _stub_skill_drafter(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> str:
         return f"DRAFT-{post_url or '?'}"
 
-    monkeypatch.setattr(ig_scan._DRAFTER, "draft_comment_for_post", _fake_draft)
+    monkeypatch.setattr(ig_engager._DRAFTER, "draft_comment_for_post", _fake_draft)
 
 
 # --- helpers ----------------------------------------------------------------

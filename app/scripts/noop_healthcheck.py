@@ -2,7 +2,7 @@
 """Trivial stand-in flow for `task_dispatcher.py` verification.
 
 Logs one line and exits 0 -- a placeholder for a real scheduled flow (e.g.
-`ig_scan.py`/`fb_scan.py`) so the Phase A dispatcher can be exercised
+`ig_engager.py`/`fb_scan.py`) so the Phase A dispatcher can be exercised
 end-to-end (seed a `schedule_tasks` row, dispatch, confirm `worker_runs`)
 without depending on browser automation or live platform credentials.
 """

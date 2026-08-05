@@ -1,8 +1,8 @@
 """Instagram engagement pipeline — scan → like → comment in one shot.
 
 Runs the two-stage IG interaction flow:
-  1. ig_scan  — walk hashtags, score posts, like qualifying ones, queue
-                high-scoring candidates for commenting
+  1. ig_engager — walk hashtags, score posts, like qualifying ones, queue
+                  high-scoring candidates for commenting
   2. ig_comment — drain the ig-comment queue: draft brand-voice comments,
                   post them via Playwright
 
@@ -64,7 +64,7 @@ def main() -> int:
 
     if not args.comment_only:
         print("\n🔍  Stage 1 — Scan hashtags + like + queue", flush=True)
-        rc = _run("ig_scan.py", extra)
+        rc = _run("ig_engager.py", extra)
         if rc != 0:
             print(f"\n❌  Scan stage exited {rc} — skipping comments.", flush=True)
             return rc

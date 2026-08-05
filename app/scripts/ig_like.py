@@ -1,6 +1,6 @@
 """Instagram Hashtag Liker — standalone likes-only runner.
 
-Extracted from scripts/ig_scan.py after the comment-drafting flow was retired
+Extracted from scripts/ig_engager.py after the comment-drafting flow was retired
 on 2026-05-15. Walks today's hashtags from data/instagram_accounts.csv, scores
 each post via score_relevance + ig_score_adjustments, then likes qualifying
 posts (up to the daily cap from lib/rate_limiter.py). No queue writes, no
@@ -48,14 +48,14 @@ CONFIG_FILE = (settings.paths.brand_dir / "config.json")
 HASHTAG_FILE = settings.paths.instagram_accounts
 SKILL_NAME = "ig-like"
 
-# Competitor + own-account guards (carried over from ig_scan.py)
+# Competitor + own-account guards (carried over from ig_engager.py)
 COMPETITOR_ACCOUNTS = {
     "tractive", "tractivepets", "ficollar", "fidogs",
     "whistlepet", "whistle", "linkakc",
 }
 OWN_ACCOUNT = (settings.site.ig_username if hasattr(settings.site, "ig_username") else "").lower()
 
-# JS payloads — copied verbatim from ig_scan.py so behaviour stays identical.
+# JS payloads — copied verbatim from ig_engager.py so behaviour stays identical.
 EXTRACT_HASHTAG_POSTS_JS = """
 () => {
     const links = Array.from(document.querySelectorAll('a[href*="/p/"]'));

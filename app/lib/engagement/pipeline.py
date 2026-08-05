@@ -2,7 +2,7 @@
 
 `run_outbound_scan` glues an `OutboundAdapter` to platform-agnostic
 collaborators (dedup, rate tracker, drafter, queue, log) and returns a
-`ScanReport`. Both `scripts/fb_scan.py` and `scripts/ig_scan.py` are thin
+`ScanReport`. Both `scripts/fb_scan.py` and `scripts/ig_engager.py` are thin
 wrappers around it, in two different modes:
 
   - Two-stage (`inline_comment=False`, Facebook): the scan likes and

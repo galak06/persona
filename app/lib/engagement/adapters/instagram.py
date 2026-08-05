@@ -8,7 +8,7 @@ instagram_session.py; DOM constants in instagram_dom.py; text parsing in
 instagram_parsing.py.
 
 Scanner orchestration (loop over sources, score, draft, comment) lives in
-lib/engagement/pipeline.py; scripts/ig_scan.py is the thin wrapper.
+lib/engagement/pipeline.py; scripts/ig_engager.py is the thin wrapper.
 """
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ class InstagramHashtagAdapter:
     def iterate_posts(self, source: _IGSource) -> Iterator[Post]:
         """Yield Post objects for one hashtag.
 
-        Lifted from ig_scan.py:430-529. Navigates to the hashtag page, scrolls
+        Lifted from ig_engager.py:430-529. Navigates to the hashtag page, scrolls
         twice, extracts up to 15 post links, then opens each post and extracts
         caption/author/like/comment text.
         """
@@ -174,7 +174,7 @@ class InstagramHashtagAdapter:
             )
 
     def pre_filter(self, post: Post) -> str | None:
-        """Return a rejection reason, or None to accept. Mirrors ig_scan.py:531-546."""
+        """Return a rejection reason, or None to accept. Mirrors ig_engager.py:531-546."""
         author = (post.author or "").lower()
         caption_lower = post.text.lower()
         if author == OWN_ACCOUNT or caption_lower.startswith(OWN_ACCOUNT):

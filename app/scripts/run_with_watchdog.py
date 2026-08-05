@@ -6,7 +6,7 @@ and exits with code 1.
 
 Usage:
     python scripts/run_with_watchdog.py scripts/fb_scan.py [--timeout 180] [--force]
-    python scripts/run_with_watchdog.py scripts/ig_scan.py --timeout 120
+    python scripts/run_with_watchdog.py scripts/ig_engager.py --timeout 120
 
 Extra args after the script path are forwarded to the child.
 """

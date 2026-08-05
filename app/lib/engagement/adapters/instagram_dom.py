@@ -2,7 +2,7 @@
 
 Holds the inline JavaScript blobs run by Playwright on Instagram pages, plus
 the platform-specific constants the adapter consults during pre-filtering.
-Verbatim relocation of the JS payloads previously embedded in ig_scan.py and
+Verbatim relocation of the JS payloads previously embedded in ig_engager.py and
 the deleted IG-like-helpers module — these strings live here so
 lib/engagement/adapters/instagram.py stays under the 300-line cap.
 

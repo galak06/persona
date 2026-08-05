@@ -66,7 +66,7 @@ _LABEL_TO_FLOW: dict[str, str] = {
 _LABEL_TO_LOG: dict[str, str] = {
     "fb-scanner": "cron_fb_scan.log",
     "fb-comment": "cron_fb_comment.log",
-    "ig-engager": "cron_ig_scan.log",
+    "ig-engager": "cron_ig_engager.log",
     "ig-comment": "cron_ig_comment.log",
     "comment-approver": "cron_comment_approver.log",
     "comment-poster": "cron_comment_poster.log",

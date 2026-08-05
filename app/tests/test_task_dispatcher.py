@@ -149,13 +149,13 @@ def test_is_task_due_true_for_malformed_last_run_timestamp() -> None:
 
 
 def test_build_queue_payload_shape() -> None:
-    task = _task_row("t1", _BRAND, script="scripts/ig_scan.py")
+    task = _task_row("t1", _BRAND, script="scripts/ig_engager.py")
     payload = task_dispatcher.build_queue_payload(
         task, brand=_BRAND, brand_dir=Path("/brands/dogfoodandfun"), timeout_seconds=120
     )
     assert payload == {
         "schedule_task_id": "t1",
-        "script": "scripts/ig_scan.py",
+        "script": "scripts/ig_engager.py",
         "args": [],
         "brand": _BRAND,
         "brand_dir": "/brands/dogfoodandfun",

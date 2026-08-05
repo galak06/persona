@@ -39,7 +39,7 @@ class FakeDedup:
 class FakeIterateOnceDedup(FakeDedup):
     """Dedup double that ALSO implements the optional `mark_seen` capability.
 
-    Mirrors `scripts.ig_scan._ScanDedup`: a post marked seen is a duplicate
+    Mirrors `scripts.ig_engager._ScanDedup`: a post marked seen is a duplicate
     on the next run, whatever the outcome of this one. Plain `FakeDedup` has
     no `mark_seen` — that models the bare `deduplication` module Facebook
     passes, so tests can prove the capability probe leaves FB untouched.
