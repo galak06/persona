@@ -205,7 +205,8 @@ def default_brand_dir() -> Path:
     if brand:
         return brands_root / brand
     candidates = sorted(
-        d for d in brands_root.glob("*")
+        d
+        for d in brands_root.glob("*")
         if d.is_dir() and not d.name.startswith((".", "_")) and ".bak" not in d.name
     )
     return candidates[0] if len(candidates) == 1 else brands_root
