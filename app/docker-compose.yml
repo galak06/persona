@@ -116,14 +116,13 @@ services:
       - FB_APP_SECRET=${FB_APP_SECRET}
       - IG_ACCOUNT_ID=${IG_ACCOUNT_ID}
       - PEXELS_API_KEY=${PEXELS_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - GOOGLE_SERVICE_ACCOUNT_PATH=/app/brands/${PERSONA_BRAND:-default}/data/config/google_service_account.json
       - VOICE_PROVIDER=${VOICE_PROVIDER:-anthropic}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY}
       # Pinned alongside the key: Google retires models for new API keys without
       # warning (gemini-2.5-flash and 2.0-flash both 404 as of 2026-07-29), and
       # this client turns that into an empty draft that is indistinguishable

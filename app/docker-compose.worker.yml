@@ -81,6 +81,7 @@ services:
       # every comment is recorded as agent_declined_or_empty_draft.
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_REPLY_MODEL=${GEMINI_REPLY_MODEL:-gemini-3.6-flash}
+      - SERPER_API_KEY=${SERPER_API_KEY}
     volumes:
       # Read-write: the worker writes session/browser state, logs, and
       # queue files into whichever brand a given task's brand_dir points

@@ -61,7 +61,9 @@ Using the brief + content_rules.json, generate the full post.
 **Post Structure:**
 
 1. **Title** — Follow `title_patterns` from content_rules.json  
-   Example: "Engineer's Data-Driven Guide: {Topic}"
+   Example: "Engineer's Data-Driven Guide: {Topic}"  
+   Keep it to 60 characters or fewer, including the year — Google truncates longer titles in \
+search results, so anything past that limit never displays at all.
 
 2. **Byline** — "By {{brand.persona}} / [current date]"
 
@@ -254,6 +256,29 @@ if products:
 - Idempotent: the block wraps in `<!-- recipe-tools-block:v1 -->` markers, so re-running this step on a regenerated draft replaces in place.
 - Skip silently for non-recipe posts (gear roundups, training guides, etc.) — those use the existing `[AFFILIATE:key]` placeholder system.
 
+### Step 3.6: Hard-Fail Safety Validation (banned medical/credential claims)
+
+**This is a mandatory gate — do not skip it, and do not proceed to Step 4 if it fails.**
+
+Before creating ANY WordPress draft, scan the full post (title + body) for banned medical/credential claims: implied vet/nutritionist/doctor credentials the brand doesn't have, disease-cure/treatment claims, dosage/prescription language, and absolute health-efficacy claims. This is the only automated check standing between generated content and a live draft, so it runs unconditionally — not just for recipe or health-category posts.
+
+```python
+import sys
+sys.path.insert(0, ".")
+from lib.medical_claims_validator import validate_blog_post
+
+try:
+    validate_blog_post(post_html, title=post_title)
+except ValueError as exc:
+    print(f"BLOCKED — banned medical/credential claim(s) detected: {exc}")
+    # Do NOT proceed to Step 4. Do NOT create the WP draft. Revise the
+    # offending section(s) and re-run this check before trying again.
+```
+
+- On failure: stop the skill run here, report the violation(s) to the user (do not silently retry with the same content), and revise before re-attempting.
+- On success: continue to Step 4.
+- `lib/medical_claims_validator.py` is pure Python (no network, no credentials) — safe to run standalone at any point while drafting, not only right before the POST.
+
 ### Step 4: Create WordPress Draft via API
 
 Use WordPress REST API to create a draft:
@@ -406,13 +431,14 @@ Credentials are sensitive—never commit these values.
 | **No approved briefs found** | Log "NO_APPROVED_BRIEFS", exit gracefully with message |
 | **Site cache missing** | Warn but proceed with enrichment data only (skip internal linking) |
 | **Brief missing required fields** | Log which fields, exit with error message |
+| **Banned medical/credential claim found (Step 3.6)** | Log the violation(s), do NOT create the draft, report to user for revision — fail closed |
 
 All errors should be reported via Telegram and logged to `.claude/logs/wp_post_creator.log`.
 
 ## Dependencies
 
 - **Python:** `requests` library (HTTP to WordPress API)
-- **Local:** `lib/notifier.py` (Telegram notifications)
+- **Local:** `lib/notifier.py` (Telegram notifications); `lib/medical_claims_validator.py` (Step 3.6 hard-fail safety gate — pure, no network)
 - **Data files:**
   - `data/content_rules.json` — post structure, guidelines, word count targets
   - `data/site_content_cache.json` — list of published posts for linking

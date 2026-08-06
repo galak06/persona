@@ -6,8 +6,12 @@ Supabase this stage -- `groups_db`, `engagements_db`, `worker_db`,
 those modules are a separate, parallel task; this module only provides the
 connection/query primitive they will consume.
 
-`recipes_db`, `content_ideas`, and `oauth_tokens` stay on
-`lib.supabase_client` -- this module does not touch them.
+`recipes_db` stays on `lib.supabase_client` -- this module does not touch it.
+`content_ideas` migrated here in 2026-08 after the Supabase project's DNS
+went permanently unreachable; see `lib.ideas_db`. `oauth_tokens` was never
+actually on Supabase in practice (its Supabase branch was dead code, gated
+on an env var nothing ever set) -- it's local JSON files under
+`$BRAND_DIR/state/oauth_tokens/`, see `lib.oauth.store`.
 
 Usage::
 

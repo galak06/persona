@@ -22,6 +22,11 @@ Usage:
         --competitor-mentions "brand x,brand y" \\
         --competitor-accounts "@rival1,@rival2" \\
         --dry-run
+
+    # After filling in the new brand's real WP_URL/WP_USER/WP_APP_PASSWORD
+    # in brands/<slug>/.env (provisioning only writes a credential-less
+    # stub), confirm WordPress access actually works:
+    python scripts/onboard_brand.py --verify-wp brands/acme-dogs
 """
 
 from __future__ import annotations
@@ -38,6 +43,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.brand_provisioning import provision_brand
 from lib.brand_templates import BrandSpec
+from lib.local_env import load_brand_env_into_environ, load_local_env
+from lib.sessions.wp_client import wp_health_probe
 
 
 def _csv_list(raw: str | None) -> list[str]:
@@ -49,9 +56,18 @@ def _csv_list(raw: str | None) -> list[str]:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Onboard a new brand (folder + config + schedule)")
-    parser.add_argument("--name", required=True)
-    parser.add_argument("--site-url", required=True)
-    parser.add_argument("--niche", required=True)
+    parser.add_argument(
+        "--verify-wp",
+        type=Path,
+        default=None,
+        metavar="BRAND_DIR",
+        help="Run the WordPress health probe against an already-onboarded brand's "
+        "real .env (filled in after provisioning, since provision_brand() only "
+        "writes a credential-less stub) and exit -- skips onboarding entirely.",
+    )
+    parser.add_argument("--name", required=False)
+    parser.add_argument("--site-url", required=False)
+    parser.add_argument("--niche", required=False)
     parser.add_argument("--target-audience", default="")
     parser.add_argument("--mascot-name", default="")
     parser.add_argument("--brand-persona", default="")
@@ -65,6 +81,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dry-run", action="store_true", help="Render + preview only, no disk/DB writes"
     )
     return parser.parse_args(argv)
+
+
+def _run_verify_wp(brand_dir: Path) -> int:
+    """Load `brand_dir`'s real .env and run `wp_health_probe()` -- the check
+    an operator runs once they've filled in real WP_URL/WP_USER/WP_APP_PASSWORD
+    after onboarding, to catch a broken WordPress connection (e.g. a
+    hosting-level Application-Passwords lockout) before any content pipeline
+    silently 401s against it."""
+    load_brand_env_into_environ(brand_dir)
+    load_local_env()
+    result = wp_health_probe()
+    print(json.dumps(dataclasses.asdict(result), indent=2))
+    return 0 if result.ok else 1
 
 
 def _build_spec(args: argparse.Namespace) -> BrandSpec:
@@ -86,6 +115,14 @@ def _build_spec(args: argparse.Namespace) -> BrandSpec:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.verify_wp is not None:
+        return _run_verify_wp(args.verify_wp)
+    if not (args.name and args.site_url and args.niche):
+        print(
+            "ERROR: --name/--site-url/--niche are required unless --verify-wp is given",
+            file=sys.stderr,
+        )
+        return 2
     spec = _build_spec(args)
     result = provision_brand(spec, dry_run=args.dry_run)
 
