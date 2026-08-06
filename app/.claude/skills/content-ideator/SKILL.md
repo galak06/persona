@@ -10,6 +10,16 @@ description: >
 
 # Content Ideator Skill
 
+> **Superseded for brands with the CrewAI scout configured.** For dogfoodandfun
+> (and any brand that has run `scripts/backfill_gsc_content.py` +
+> `scripts/crewai_content_scout.py`), idea generation now runs autonomously
+> through `lib.gsc_scout`/`lib.crew.run_crew_scout` instead of this
+> Claude-Code-orchestrated skill -- real GSC ranking data plus live web-search
+> discovery, written straight to `content_ideas` (rows tagged
+> `source: "gsc_scout"` / `source: "crewai_scout"` in `input`). This skill's
+> content below is left as-is (additive-only convention) for brands that
+> don't have the new scout provisioned yet, or as a manual fallback.
+
 ## Purpose
 Generate high-quality blog post ideas for {{brand.domain}} that match the engineer-led brand voice, leverage {{brand.mascot}}'s personal context, and fill identified content gaps. Automatically save approved ideas to the Supabase `content_ideas` table to keep the content calendar current.
 

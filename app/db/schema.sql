@@ -7,9 +7,11 @@
 -- `IF NOT EXISTS`, safe to re-run.
 --
 -- Scope: only the tables consumed by the modules migrating off Supabase this
--- stage — groups_db, engagements_db, worker_db, schedule_db, dedup_pg.
--- `recipes_db` (recipes, raw_scrapes), `content_ideas`, and `oauth_tokens`
--- stay on whatever they use today and are intentionally NOT included here.
+-- stage — groups_db, engagements_db, worker_db, schedule_db, dedup_pg,
+-- published_content, content_ideas (lib/ideas_db.py, migrated 2026-08 after
+-- the Supabase project's DNS went permanently unreachable). `recipes_db`
+-- (recipes, raw_scrapes) and `oauth_tokens` stay on whatever they use today
+-- and are intentionally NOT included here.
 --
 -- Column names/types/defaults are a lift-and-shift from
 -- scripts/create_supabase_schema.sql, not a redesign.
@@ -191,3 +193,74 @@ CREATE TABLE IF NOT EXISTS flow_templates (
 );
 
 CREATE INDEX IF NOT EXISTS idx_flow_templates_platform ON flow_templates(platform);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- published_content (Slice 2 — GSC signal: published-URL <-> GSC-query rows)
+-- One row per (brand, wp_url, gsc_query) tuple, refreshed by
+-- scripts/backfill_gsc_content.py. brand_id-scoped like engagements; NOT the
+-- stale local SQLite recipes.db read by api/recipes_api.py (see plan
+-- blocker 4) -- this is the only "published content" source of truth for
+-- the GSC signal.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS published_content (
+    id              TEXT                PRIMARY KEY,  -- dedup key: slug of {brand_id}:{wp_url}:{gsc_query}
+    brand_id        TEXT                NOT NULL,
+    wp_url          TEXT                NOT NULL,
+    wp_post_id      TEXT                DEFAULT '',
+    gsc_query       TEXT                NOT NULL,
+    position        DOUBLE PRECISION    DEFAULT 0,
+    impressions     INTEGER             DEFAULT 0,
+    clicks          INTEGER             DEFAULT 0,
+    ctr             DOUBLE PRECISION    DEFAULT 0,
+    fetched_at      TEXT                DEFAULT '',
+    created_at      TEXT,
+    updated_at      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_published_content_brand      ON published_content(brand_id);
+CREATE INDEX IF NOT EXISTS idx_published_content_brand_url  ON published_content(brand_id, wp_url);
+CREATE INDEX IF NOT EXISTS idx_published_content_brand_query ON published_content(brand_id, gsc_query);
+CREATE INDEX IF NOT EXISTS idx_published_content_position   ON published_content(position);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- content_ideas (Slice 3 — content-ideator / GSC-scout idea backlog; replaces
+-- the Google Sheet "posts" tab and Supabase's content_ideas table now that
+-- the Supabase project's DNS is permanently unreachable. `id` is a random
+-- UUID generated in Python (lib/ideas_db.py, uuid.uuid4()) at insert time --
+-- NOT a deterministic dedup hash like published_content's, because two
+-- different ideas can legitimately share the same (topic, brand) text at
+-- different points in time; the UNIQUE index below on (lower(topic),
+-- brand_id) is what actually prevents duplicate topics, not the primary key.
+--
+-- Column is named `nalla_context`, NOT `persona_context` as in the old
+-- scripts/create_supabase_schema.sql:198-218 -- that file's column name was
+-- never what the real insert_idea() code (or any caller, e.g.
+-- lib/gsc_scout.py) has ever read/written; this follows the live code, not
+-- the stale schema file.
+--
+-- brand_id is NOT a FK to brands(id) here, matching published_content /
+-- engagements / schedule_tasks above (unlike fb_groups, whose brand_id is
+-- NOT NULL and always brand-scoped) -- content_ideas rows may legitimately
+-- predate brand scoping or come from a brand-agnostic run.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS content_ideas (
+    id              TEXT        PRIMARY KEY,
+    category        TEXT        NOT NULL,
+    topic           TEXT        NOT NULL,
+    target_keyword  TEXT,
+    nalla_context   TEXT,
+    post_goal       TEXT,
+    status          TEXT        NOT NULL DEFAULT 'publish',
+    input           TEXT,
+    brand_id        TEXT,
+    brand_name      TEXT,
+    wp_post_id      TEXT,
+    wp_url          TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_ideas_topic_brand
+    ON content_ideas (lower(topic), COALESCE(brand_id, ''));
+CREATE INDEX IF NOT EXISTS idx_content_ideas_status   ON content_ideas(status);
+CREATE INDEX IF NOT EXISTS idx_content_ideas_brand_id ON content_ideas(brand_id);

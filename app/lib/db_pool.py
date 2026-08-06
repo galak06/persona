@@ -4,8 +4,11 @@ Wraps a single process-wide `psycopg_pool.ConnectionPool` (psycopg v3),
 opened lazily on first use and reused across calls. This is the local-Postgres
 successor to `lib/supabase_client.py::get_client()` for the tables in
 `db/schema.sql` (`brands`, `fb_groups`, `engagements`, `worker_runs`,
-`schedule_tasks`) -- other tables (`recipes`, `content_ideas`, `oauth_tokens`)
-stay on Supabase this stage and are untouched by this module.
+`schedule_tasks`, `published_content`, `content_ideas`) -- `recipes` stays on
+Supabase this stage and is untouched by this module. `oauth_tokens` is not a
+Postgres table at all -- it's local JSON files under
+`$BRAND_DIR/state/oauth_tokens/` (see `lib.oauth.store`); its Supabase branch
+was dead code, never actually used.
 
 Environment variables:
     DATABASE_URL -- libpq connection string, e.g.

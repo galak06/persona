@@ -5,7 +5,7 @@ Handles Facebook and Instagram OAuth 2.0 flows:
 - Code → access token exchange
 - Long-lived token exchange (60-day tokens)
 - Automatic token refresh before expiry
-- Supabase-backed token storage with fallback to JSON file
+- Local JSON-file token storage (one file per brand/platform/token_type)
 """
 
 from lib.oauth.facebook import (

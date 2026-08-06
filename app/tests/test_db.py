@@ -29,8 +29,10 @@ _EXPECTED_TABLES = {
     "fb_groups",
     "completed_tasks",
     "flow_templates",
+    "published_content",
+    "content_ideas",
 }
-_EXCLUDED_TABLES = {"recipes", "content_ideas", "oauth_tokens", "raw_scrapes"}
+_EXCLUDED_TABLES = {"recipes", "oauth_tokens", "raw_scrapes"}
 
 
 def _postgres_reachable() -> bool:
