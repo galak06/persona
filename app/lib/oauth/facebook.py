@@ -31,7 +31,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -250,7 +250,7 @@ class FacebookOAuth:
             timeout=15.0,
         )
         r.raise_for_status()
-        return r.json().get("data", {})
+        return cast(dict[str, Any], r.json().get("data", {}))
 
 
 # ── Module-level convenience functions ────────────────────────────────────────

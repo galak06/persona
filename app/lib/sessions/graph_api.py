@@ -98,7 +98,7 @@ def _refresh_token(platform: str) -> str | None:
         return None
 
 
-def graph_request(
+def graph_request(  # type: ignore[explicit-any]
     method: str,
     path: str,
     *,
@@ -221,7 +221,8 @@ def graph_request(
 
         # ── Success ───────────────────────────────────────────────────────────
         try:
-            return r.json()  # type: ignore[return-value]
+            data = r.json()
+            return data  # type: ignore[no-any-return]
         except Exception:
             return {"raw": r.text}
 
