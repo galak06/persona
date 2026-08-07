@@ -27,6 +27,7 @@ def test_statuses_tuple_is_unchanged() -> None:
         "social_done",
         "write_failed",
         "validation_failed",
+        "drafting",
     )
 
 
@@ -203,3 +204,57 @@ def test_pending_count_none_row_returns_zero(mock_fetch_one: MagicMock) -> None:
 def test_pending_count_catches_exception_and_returns_zero(mock_fetch_one: MagicMock) -> None:
     mock_fetch_one.side_effect = Exception("boom")
     assert ideas_db.pending_count() == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# get_idea
+
+
+@patch("lib.ideas_db.db.fetch_one")
+def test_get_idea_returns_row_when_found(mock_fetch_one: MagicMock) -> None:
+    mock_fetch_one.return_value = {"id": "idea-1", "status": "approved", "topic": "Frozen treats"}
+    idea = ideas_db.get_idea("idea-1")
+    assert idea == {"id": "idea-1", "status": "approved", "topic": "Frozen treats"}
+    query, params = mock_fetch_one.call_args[0]
+    assert "SELECT * FROM content_ideas WHERE id = %s" in query
+    assert params == ("idea-1",)
+
+
+@patch("lib.ideas_db.db.fetch_one")
+def test_get_idea_returns_none_when_not_found(mock_fetch_one: MagicMock) -> None:
+    mock_fetch_one.return_value = None
+    assert ideas_db.get_idea("no-such-id") is None
+
+
+@patch("lib.ideas_db.db.fetch_one")
+def test_get_idea_catches_exception_and_returns_none(mock_fetch_one: MagicMock) -> None:
+    mock_fetch_one.side_effect = Exception("boom")
+    assert ideas_db.get_idea("idea-1") is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# claim_idea_for_drafting
+
+
+@patch("lib.ideas_db.db.execute")
+def test_claim_idea_for_drafting_wins_claim(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = 1
+    assert ideas_db.claim_idea_for_drafting("idea-1") is True
+    query, params = mock_execute.call_args[0]
+    assert "SET status = 'drafting'" in query
+    assert "WHERE id = %s AND status = 'approved'" in query
+    assert params == ("idea-1",)
+
+
+@patch("lib.ideas_db.db.execute")
+def test_claim_idea_for_drafting_false_when_not_approved(mock_execute: MagicMock) -> None:
+    mock_execute.return_value = 0
+    assert ideas_db.claim_idea_for_drafting("idea-1") is False
+
+
+@patch("lib.ideas_db.db.execute")
+def test_claim_idea_for_drafting_catches_exception_and_returns_false(
+    mock_execute: MagicMock,
+) -> None:
+    mock_execute.side_effect = Exception("boom")
+    assert ideas_db.claim_idea_for_drafting("idea-1") is False

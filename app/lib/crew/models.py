@@ -1,10 +1,10 @@
-"""Pydantic output contract for the CrewAI content-opportunity scout.
+"""Pydantic output contract for the CrewAI content-idea synthesis stage.
 
-Passed to `Task(output_pydantic=...)` so the LLM's final answer comes back
-as structured data (`lib.crew.agent`) instead of free text that would need
-brittle parsing. `ScoutOutput` is the wrapper CrewAI actually validates
-against -- a bare `list[IdeaCandidate]` isn't a `BaseModel` and CrewAI's
-`output_pydantic` requires one.
+`lib.crew.idea.execute.execute_idea_crew` parses the idea-synthesis agent's
+raw JSON response and validates it against `ScoutOutput` directly (manual
+parsing, not `Task(output_pydantic=...)` -- see `lib.crew.idea.agent`'s
+module docstring for why). `ScoutOutput` is the wrapper that parser
+validates against -- a bare `list[IdeaCandidate]` isn't a `BaseModel`.
 """
 
 from __future__ import annotations
@@ -12,9 +12,16 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 # Mirrors `lib.gsc_scout_scoring.GscOpportunity.opportunity_type` ("optimize" /
-# "emerging" / "discovery") plus one new value for ideas that came purely from
-# live web search with no GSC signal behind them at all.
-OPPORTUNITY_TYPES: tuple[str, ...] = ("optimize", "emerging", "discovery", "web_discovery")
+# "emerging" / "discovery") plus "web_discovery" for ideas that came purely
+# from live web search with no GSC signal behind them, and "instagram_trend"
+# for ideas synthesized from the Instagram trends feed (`lib.crew.trends`).
+OPPORTUNITY_TYPES: tuple[str, ...] = (
+    "optimize",
+    "emerging",
+    "discovery",
+    "web_discovery",
+    "instagram_trend",
+)
 
 
 class IdeaCandidate(BaseModel):

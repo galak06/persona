@@ -1,4 +1,6 @@
-"""Builds the compact brand-grounding context fed into the scout agent's prompt.
+"""Builds the compact brand-grounding context fed into the Trends and Idea
+agents' prompts (`lib.crew.trends.prompts.build_trends_task_description` /
+`lib.crew.idea.prompts.build_idea_task_description`).
 
 Deliberately summarizes rather than dumps whole files into the prompt -- the
 brand voice guide can run to a few hundred lines; the LLM needs a "who is
@@ -85,61 +87,3 @@ def serialize_opportunities(opportunities: list[GscOpportunity]) -> str:
         for o in opportunities
     ]
     return json.dumps(rows, ensure_ascii=False)
-
-
-def build_task_description(
-    *,
-    identity: str,
-    voice: str,
-    seed_keywords: str,
-    opportunities_json: str,
-    data_sufficient: bool,
-    top_n: int,
-) -> str:
-    """The full prompt handed to the scout agent's `Task`.
-
-    Combines: compact brand grounding, the already-scored GSC opportunities
-    (so the agent doesn't need to re-derive ranking signal), the existing
-    keyword seed list (so web search targets genuinely new topics), and the
-    output contract (`lib.crew.models.ScoutOutput`, enforced separately via
-    `Task(output_pydantic=...)`).
-    """
-    sufficiency_note = (
-        "GSC history is sufficient for this brand -- 'optimize'/'emerging' "
-        "opportunities below reflect real ranking data."
-        if data_sufficient
-        else "GSC history is NOT yet sufficient for this brand -- treat every "
-        "GSC-derived opportunity below as topic discovery, not ranking optimization."
-    )
-    return f"""You are scoring and discovering blog content opportunities for this brand.
-
-## Brand context
-{identity}
-
-## Brand voice (write reasoning that fits this voice; do not draft the post itself)
-{voice or "(no voice guide available)"}
-
-## Already-targeted seed keywords (do not just restate these as "new" ideas)
-{seed_keywords or "(none on file)"}
-
-## Pre-computed GSC opportunities (real Search Console data, already scored -- \
-use directly, do not re-derive)
-{sufficiency_note}
-{opportunities_json}
-
-## Your job
-1. Review the GSC opportunities above and carry forward the strongest ones as
-   candidates (opportunity_type: "optimize" or "emerging" or "discovery", matching
-   the source data).
-2. Use your web search tool to find genuinely NEW topic ideas this brand hasn't
-   covered yet -- trending discussions, "people also ask"-style questions, and
-   competitor content gaps relevant to this brand's niche and audience. Do not
-   just re-search the seed keywords verbatim; look for adjacent, timely, or
-   underserved angles. Tag these opportunity_type: "web_discovery".
-3. Merge both sources into one final list, drop near-duplicates (same topic
-   phrased differently), and rank by real value to this brand's audience.
-4. Return at most {top_n} ideas, highest priority_score first. Every idea must
-   include a concrete target_keyword and a reasoning grounded in either the GSC
-   data above or a specific thing you found via search -- never a generic,
-   made-up justification.
-"""

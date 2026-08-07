@@ -59,6 +59,32 @@ def test_negated_or_benign_claims_not_flagged(text: str) -> None:
     assert mcv.find_banned_claims(text) == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Live-reproduced false positive: a generic, third-party reference
+        # to "vet-approved"/"veterinary-grade" is not a brand credential
+        # claim and must not be flagged (see CREDENTIAL_CLAIM_TERMS comment).
+        "A better approach is to work with a formula -- either a vet-approved "
+        "recipe or a nutrient calculator -- that tells you exactly how much "
+        "of each source to use.",
+        "Look for a vet approved supplement at your local pet store.",
+        "This is a veterinary-grade formula sold at clinics nationwide.",
+        "Ask about veterinary grade options next time you visit.",
+    ],
+)
+def test_generic_vet_approved_mentions_not_flagged(text: str) -> None:
+    assert mcv.find_banned_claims(text) == []
+
+
+def test_self_referential_vet_credential_claims_still_flagged() -> None:
+    # The removal of bare "vet-approved" must not weaken genuine
+    # self-credentialing claims -- those are still caught via the
+    # already-covered self-referential phrasings.
+    hits = mcv.find_banned_claims("Our veterinary team designed this recipe.")
+    assert "veterinarian_credential" in hits
+
+
 def test_clean_blog_paragraph_has_no_flags() -> None:
     text = (
         "Nalla turned her nose up at kibble for weeks, so we tried a slow "

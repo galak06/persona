@@ -21,8 +21,17 @@ from lib import db
 _log = logging.getLogger(__name__)
 
 # Status lifecycle (mirrors the old sheet Status column)
-# publish → enriching → approved / skipped → wp_draft → wp_published
+# publish → enriching → approved / skipped → drafting → wp_draft → wp_published
 # → social_queued → social_done
+#
+# `drafting` -- transient claim state set by `claim_idea_for_drafting()` the
+# instant either the FastAPI background task or the cron safety-net worker
+# starts drafting an approved idea. Its sole purpose is the atomic
+# `WHERE status = 'approved'` guard that lets exactly one of those two
+# concurrent callers win the race for a given idea; it is appended at the
+# end of this tuple (not inserted mid-sequence) because `STATUSES` is only
+# ever consumed as a set (`api/ideas_api.py`'s `VALID_STATUSES`), so member
+# order carries no behavioral meaning -- appending minimizes diff noise.
 #
 # `write_failed`/`validation_failed` are CrewAI-pipeline-specific
 # (lib.crew.writer.orchestrator / scripts/crewai_content_pipeline.py), not
@@ -49,6 +58,7 @@ STATUSES = (
     "social_done",
     "write_failed",
     "validation_failed",
+    "drafting",
 )
 
 
@@ -122,8 +132,39 @@ def set_wp_result(idea_id: str, wp_post_id: str, wp_url: str) -> bool:
         return False
 
 
+def claim_idea_for_drafting(idea_id: str) -> bool:
+    """Atomically transition idea_id from status='approved' to status='drafting',
+    ONLY if it is still 'approved' at the moment of the update. Returns True if
+    THIS call won the claim (i.e. is now responsible for drafting it), False if
+    the idea was not found, was already claimed/moved to a different status by
+    someone else (e.g. a "Disable" click, or a concurrent claim), or on any DB
+    error. This is the sole mechanism preventing two concurrent callers (an API
+    background task and a cron safety-net worker) from both spawning a drafting
+    subprocess for the same idea.
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'drafting', updated_at = NOW() "
+            "WHERE id = %s AND status = 'approved'",
+            (idea_id,),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("ideas_db.claim_idea_for_drafting failed: %s", exc)
+        return False
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Read
+
+
+def get_idea(idea_id: str) -> dict[str, Any] | None:
+    """Fetch a single idea by id, or None if it doesn't exist (or on error)."""
+    try:
+        return db.fetch_one("SELECT * FROM content_ideas WHERE id = %s", (idea_id,))
+    except Exception as exc:
+        _log.warning("ideas_db.get_idea failed: %s", exc)
+        return None
 
 
 def list_ideas(

@@ -81,49 +81,62 @@ function SlidePreview({ ideaId }: { ideaId: string }): React.JSX.Element {
 
 interface RowProps {
   idea: ContentIdea;
+  rowNumber: number;
   onDecision: (id: string, status: string) => void;
   busy: boolean;
   expanded: boolean;
   onToggle: () => void;
 }
 
-function IdeaRow({ idea, onDecision, busy, expanded, onToggle }: RowProps): React.JSX.Element {
+function IdeaRow({ idea, rowNumber, onDecision, busy, expanded, onToggle }: RowProps): React.JSX.Element {
   const isPending = idea.status === "publish";
   const isApproved = idea.status === "approved" || idea.status === "social_done";
+  // Narrower than isApproved: only a still-"approved" idea can be disabled.
+  // "social_done" means it already went out on social — disabling it post-hoc
+  // makes no sense, so the Disable button must not use isApproved here.
+  const canDisable = idea.status === "approved";
 
   return (
     <>
       <tr className="border-b border-stone-100 hover:bg-stone-50/60 align-top group">
-        <td className="py-2.5 pr-3 whitespace-nowrap text-xs text-slate-400 font-medium uppercase tracking-wide">
+        <td className="px-4 py-2.5 pr-3 whitespace-nowrap text-xs text-slate-400 tabular-nums">
+          {rowNumber}
+        </td>
+        <td className="py-2.5 pr-3 text-xs text-slate-400 font-medium uppercase tracking-wide max-w-[140px] break-words">
           {idea.category}
         </td>
-        <td className="py-2.5 pr-3 text-sm text-slate-800 max-w-xs">
+        <td className="py-2.5 pr-3 text-sm text-slate-800 max-w-[220px]">
           <span className="font-medium leading-snug">{idea.topic}</span>
           {idea.target_keyword && (
             <div className="text-xs text-slate-400 mt-0.5">{idea.target_keyword}</div>
           )}
         </td>
-        <td className="py-2.5 pr-3 text-xs text-slate-500 max-w-[200px] hidden md:table-cell">
-          {idea.nalla_context ?? "—"}
+        <td className="py-2.5 pr-3 text-xs text-slate-500 max-w-[160px] hidden md:table-cell">
+          <span className="line-clamp-3" title={idea.nalla_context ?? undefined}>
+            {idea.nalla_context ?? "—"}
+          </span>
         </td>
         <td className="py-2.5 pr-3 whitespace-nowrap text-xs hidden lg:table-cell">
           {idea.post_goal ? (GOAL_LABEL[idea.post_goal] ?? idea.post_goal) : "—"}
         </td>
-        <td className="py-2.5 pr-3 text-xs text-slate-400 max-w-[180px] hidden xl:table-cell">
+        <td className="py-2.5 pr-3 text-xs text-slate-400 max-w-[130px] hidden 2xl:table-cell">
           <span className="line-clamp-2" title={idea.input ?? undefined}>
             {idea.input ?? "—"}
           </span>
         </td>
+        <td className="py-2.5 pr-3 whitespace-nowrap text-right text-xs font-semibold tabular-nums text-slate-600">
+          {idea.match_score !== null ? idea.match_score.toFixed(0) : "—"}
+        </td>
         <td className="py-2.5 pr-3 whitespace-nowrap">{statusBadge(idea.status)}</td>
         <td className="py-2.5 whitespace-nowrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {isPending && (
-              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={() => onDecision(idea.id, "skipped")}
-                  className="px-2.5 py-1 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  className="px-2 py-1 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                 >
                   Skip
                 </button>
@@ -131,27 +144,39 @@ function IdeaRow({ idea, onDecision, busy, expanded, onToggle }: RowProps): Reac
                   type="button"
                   disabled={busy}
                   onClick={() => onDecision(idea.id, "approved")}
-                  className="px-2.5 py-1 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
+                  className="px-2 py-1 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
                 >
                   Approve
                 </button>
               </div>
             )}
             {isApproved && (
-              <button
-                type="button"
-                onClick={onToggle}
-                className="px-2.5 py-1 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50"
-              >
-                {expanded ? "▲ Slides" : "▼ Slides"}
-              </button>
+              <div className="flex items-center gap-1.5">
+                {canDisable && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onDecision(idea.id, "skipped")}
+                    className="px-2 py-1 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Disable
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  className="px-2.5 py-1 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50"
+                >
+                  {expanded ? "▲ Slides" : "▼ Slides"}
+                </button>
+              </div>
             )}
           </div>
         </td>
       </tr>
       {expanded && isApproved && (
         <tr className="bg-stone-50/80 border-b border-stone-100">
-          <td colSpan={7} className="px-4 pb-3 pt-1">
+          <td colSpan={9} className="px-4 pb-3 pt-1">
             <SlidePreview ideaId={idea.id} />
           </td>
         </tr>
@@ -162,7 +187,7 @@ function IdeaRow({ idea, onDecision, busy, expanded, onToggle }: RowProps): Reac
 
 export default function Ideas(): React.JSX.Element {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("publish");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -254,20 +279,23 @@ export default function Ideas(): React.JSX.Element {
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-brand-border bg-stone-50/60">
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Category</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400">#</th>
+                  <th className="px-0 py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Category</th>
                   <th className="px-0 py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Topic / Keyword</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden md:table-cell">Nalla context</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden lg:table-cell">Goal</th>
-                  <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden xl:table-cell">Search signal</th>
+                  <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden 2xl:table-cell">Search signal</th>
+                  <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 text-right">Score</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Status</th>
                   <th className="py-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((idea) => (
+                {filtered.map((idea, index) => (
                   <IdeaRow
                     key={idea.id}
                     idea={idea}
+                    rowNumber={index + 1}
                     onDecision={(id, status) => void handleDecision(id, status)}
                     busy={busyIds.has(idea.id)}
                     expanded={expandedId === idea.id}

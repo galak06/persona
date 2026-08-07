@@ -10,7 +10,6 @@ from pathlib import Path
 from lib.crew.context import (
     brand_identity_summary,
     brand_voice_summary,
-    build_task_description,
     seed_keywords_summary,
     serialize_opportunities,
 )
@@ -116,33 +115,3 @@ def test_serialize_opportunities_round_trips_expected_fields() -> None:
 
 def test_serialize_opportunities_empty_list_is_empty_json_array() -> None:
     assert serialize_opportunities([]) == "[]"
-
-
-def test_build_task_description_includes_all_sections_and_sufficiency_note() -> None:
-    description = build_task_description(
-        identity="Brand: DogFoodAndFun",
-        voice="Authentic, peer-to-peer.",
-        seed_keywords="dog food, gps tracker",
-        opportunities_json="[]",
-        data_sufficient=False,
-        top_n=7,
-    )
-    assert "Brand: DogFoodAndFun" in description
-    assert "Authentic, peer-to-peer." in description
-    assert "dog food, gps tracker" in description
-    assert "NOT yet sufficient" in description
-    assert "at most 7 ideas" in description
-
-
-def test_build_task_description_sufficient_data_note() -> None:
-    description = build_task_description(
-        identity="Brand: X",
-        voice="",
-        seed_keywords="",
-        opportunities_json="[]",
-        data_sufficient=True,
-        top_n=10,
-    )
-    assert "GSC history is sufficient" in description
-    assert "(no voice guide available)" in description
-    assert "(none on file)" in description
