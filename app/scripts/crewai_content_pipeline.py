@@ -240,6 +240,11 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     reference_image_path = resolve_reference_image_path(brand_dir)
     if reference_image_path:
         print(f"reference: {reference_image_path} (conditioning hero image on this photo)")
+    tag_names = list(
+        dict.fromkeys(
+            name for name in [brief.primary_keyword, *brief.secondary_keywords[:2]] if name
+        )
+    )
     try:
         draft_result = create_wp_draft(
             idea_id=idea_id,
@@ -248,6 +253,7 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
             image_brief=image_brief,
             mascot_name=mascot_name,
             category_name=str(idea.get("category") or ""),
+            tag_names=tag_names,
             reference_image_path=reference_image_path,
         )
     except DraftCreationError as exc:

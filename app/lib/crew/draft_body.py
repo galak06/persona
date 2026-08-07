@@ -74,3 +74,30 @@ def build_wrapped_body(body_html: str, *, media_source_url: str, alt_text: str) 
     if jsonld_tail:
         return f"{wrapped}\n\n{jsonld_tail}"
     return wrapped
+
+
+_BOILERPLATE_PREFIXES = ("by ", "affiliate disclosure")
+
+
+def derive_excerpt(body_html: str, *, length: int = 155) -> str:
+    """First real prose paragraph, with the byline/disclosure boilerplate skipped.
+
+    Every generated post opens with `<p>By {persona} / {date}</p>` then the
+    affiliate disclosure paragraph (see
+    `lib.crew.writer.prompts.build_writer_task_description`). WordPress's own
+    auto-excerpt (`get_the_excerpt()`) has no way to know those aren't real
+    content, so every post ends up with the identical, meaningless excerpt --
+    reproduced live via `[dff_recent_posts]`. Returns `""` (caller omits the
+    field) if no substantive paragraph is found.
+    """
+    content, _ = split_body_and_jsonld(body_html)
+    for match in re.finditer(r"<p[^>]*>(.*?)</p>", content, re.DOTALL):
+        text = re.sub(r"<[^>]+>", "", match.group(1)).strip()
+        text = re.sub(r"\s+", " ", text)
+        if not text or text.lower().startswith(_BOILERPLATE_PREFIXES):
+            continue
+        if len(text) <= length:
+            return text
+        truncated = re.sub(r"\s+\S*$", "", text[:length])
+        return f"{truncated}…"
+    return ""

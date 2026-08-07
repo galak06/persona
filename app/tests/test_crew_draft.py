@@ -145,3 +145,56 @@ def test_create_wp_draft_succeeds_even_if_ideas_db_update_fails() -> None:
 # test_crew_draft_category.py, split out for file-size discipline and
 # because the categorizer fallback needs its own fake-injection convention
 # (categorize_fn) that doesn't belong mixed into this file's core tests.
+
+
+# ── tag_names resolution ─────────────────────────────────────────────────────
+# Full coverage of resolve_tag_ids itself (create/reuse/dedupe/best-effort)
+# lives in test_crew_draft_tags.py. These tests only cover the wiring: that
+# create_wp_draft calls resolve_tags_fn and includes the result in the POST
+# payload.
+
+
+@respx.mock
+def test_create_wp_draft_includes_resolved_tag_ids_in_payload() -> None:
+    route = respx.post(_POSTS_URL).mock(
+        return_value=httpx.Response(201, json={"id": 1, "link": "https://example.com/?p=1"})
+    )
+    fake_db = _FakeIdeasDb()
+
+    def fake_resolve_tags(client: httpx.Client, tag_names: list[str], idea_id: str) -> list[int]:
+        assert tag_names == ["gps tracker", "no subscription"]
+        assert idea_id == "idea-1"
+        return [11, 22]
+
+    create_wp_draft(
+        idea_id="idea-1",
+        title="t",
+        body_html="<p>b</p>",
+        tag_names=["gps tracker", "no subscription"],
+        set_wp_result_fn=fake_db.set_wp_result,
+        update_status_fn=fake_db.update_status,
+        resolve_tags_fn=fake_resolve_tags,
+    )
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["tags"] == [11, 22]
+
+
+@respx.mock
+def test_create_wp_draft_omits_tags_key_when_no_tags_resolved() -> None:
+    route = respx.post(_POSTS_URL).mock(
+        return_value=httpx.Response(201, json={"id": 1, "link": "https://example.com/?p=1"})
+    )
+    fake_db = _FakeIdeasDb()
+
+    create_wp_draft(
+        idea_id="idea-1",
+        title="t",
+        body_html="<p>b</p>",
+        set_wp_result_fn=fake_db.set_wp_result,
+        update_status_fn=fake_db.update_status,
+        resolve_tags_fn=lambda client, tag_names, idea_id: [],
+    )
+
+    body = json.loads(route.calls.last.request.content)
+    assert "tags" not in body
