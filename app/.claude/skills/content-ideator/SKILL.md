@@ -2,7 +2,7 @@
 name: content-ideator
 description: >
   Generate new blog post ideas for {{brand.domain}} and save them to the
-  Supabase content_ideas table. Analyzes content gaps, trending topics, social media discussions,
+  Postgres content_ideas table. Analyzes content gaps, trending topics, social media discussions,
   seasonal opportunities, and competitor content to produce 5-10 high-quality
   ideas per run. Use when: "generate ideas", "what should I write", "new topics",
   "fill the content calendar", "brainstorm posts", "need more ideas".
@@ -21,7 +21,7 @@ description: >
 > don't have the new scout provisioned yet, or as a manual fallback.
 
 ## Purpose
-Generate high-quality blog post ideas for {{brand.domain}} that match the engineer-led brand voice, leverage {{brand.mascot}}'s personal context, and fill identified content gaps. Automatically save approved ideas to the Supabase `content_ideas` table to keep the content calendar current.
+Generate high-quality blog post ideas for {{brand.domain}} that match the engineer-led brand voice, leverage {{brand.mascot}}'s personal context, and fill identified content gaps. Automatically save approved ideas to the Postgres `content_ideas` table to keep the content calendar current.
 
 ## Key Context
 
@@ -40,7 +40,7 @@ Generate high-quality blog post ideas for {{brand.domain}} that match the engine
 4. **Training** — Recall, commands, tricks, behavior modification, reactivity
 
 ### Content Ideas Storage
-- **Table**: `content_ideas` in Supabase
+- **Table**: `content_ideas` in Postgres (local)
 - **Columns**: `category | topic | target_keyword | nalla_context | post_goal | status | input`
 - **Status lifecycle**: `publish → enriching → approved/skipped → wp_draft → wp_published → social_queued → social_done`
 
@@ -59,7 +59,7 @@ Cluster awareness ensures every new idea lands in a defined topical network, wit
 ### Step 1: Load Existing Data
 Load these assets to understand current coverage:
 
-1. **Supabase `content_ideas` table** (replaces Google Sheet)
+1. **Postgres `content_ideas` table** (replaces Google Sheet)
    - Run `python -c "from lib.ideas_db import existing_topics, pending_count; print(existing_topics()); print('pending:', pending_count())"`
    - `existing_topics()` returns all known topic strings (lowercased) — use for dedup
    - `pending_count()` returns how many ideas still have status="publish" — if ≥ 5, skip this run unless forced
@@ -413,7 +413,7 @@ This builds a preference profile over time. After 3+ decisions, future batches w
 - **Set minimum score thresholds** based on approval patterns
 - **Surface preferred angles** (comparison, cost analysis, protocol, etc.)
 
-### Step 6: Save to Supabase
+### Step 6: Save to Postgres
 
 For each approved idea, call `lib/ideas_db.insert_idea()`:
 
@@ -485,7 +485,7 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 
 | Error | Recovery |
 |-------|----------|
-| Supabase unreachable | Save ideas to `backups/ideas_[date].json` for manual retry later |
+| Postgres unreachable | Save ideas to `backups/ideas_[date].json` for manual retry later |
 | Web search fails | Generate ideas from content_gaps + config keywords only (note reduced quality in Telegram) |
 | No gaps found | Focus on seasonal + trending + competitor angles as alternative sources |
 | DB write fails | `insert_idea()` logs the error and returns None — retry via `python -c "from lib.ideas_db import insert_idea; ..."` |
@@ -503,13 +503,13 @@ Save generation metadata to `.claude/state/ideation_history.json`:
 ### External Tools
 - **Web Search** — trend research and competitor analysis
 - **Telegram API** — notification and approval workflow
-- **lib/ideas_db.py** — Supabase `content_ideas` table (insert, dedup, count)
+- **lib/ideas_db.py** — Postgres `content_ideas` table (insert, dedup, count)
 - **JSON utilities** — data parsing and state persistence
 
 ### Generated Files
 - `.claude/state/ideation_history.json` — updated after each run
 - `backups/ideas_[YYYY-MM-DD].json` — fallback backup if Supabase unreachable
-- `content_ideas` Supabase table — primary destination
+- `content_ideas` Postgres table — primary destination
 
 ## Tips for High-Quality Ideas
 

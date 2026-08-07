@@ -18,6 +18,48 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
+ENV_PATH = PROJECT_ROOT / ".env"
+
+
+def _parse_env_file(path: Path) -> dict:
+    """Minimal fallback .env parser, used only if python-dotenv isn't importable.
+
+    Skips blank lines and `#` comments, splits on the first `=`, strips
+    surrounding quotes from values.
+    """
+    values: dict = {}
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
+
+
+def load_child_env() -> dict:
+    """Build the environment to pass to spawned subprocesses.
+
+    Loads `app/.env` (DATABASE_URL, BRAND_DIR, PERSONA_BRAND, etc.) and merges
+    it with the current process environment. Real environment variables already
+    set in the parent shell win over `.env` values — `.env` only fills in what's
+    missing, it never clobbers an explicit override.
+    """
+    if not ENV_PATH.exists():
+        print(f"⚠️ {ENV_PATH} not found — subprocesses will only see the current shell's environment (no DATABASE_URL/BRAND_DIR from .env).")
+        return os.environ.copy()
+
+    try:
+        from dotenv import dotenv_values
+        file_values = {k: v for k, v in dotenv_values(ENV_PATH).items() if v is not None}
+    except ImportError:
+        file_values = _parse_env_file(ENV_PATH)
+
+    return {**file_values, **os.environ}
+
 
 def free_port(port: int) -> None:
     """Kill any process listening on `port`."""
@@ -36,7 +78,8 @@ def free_port(port: int) -> None:
 
 def run():
     processes = []
-    
+    child_env = load_child_env()
+
     # 1. Start Docker Phoenix
     print("🚀 Starting Phoenix (Docker)...")
     try:
@@ -59,6 +102,7 @@ def run():
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        env=child_env,
     )
     processes.append(("API", api_proc))
 
@@ -73,7 +117,8 @@ def run():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            bufsize=1
+            bufsize=1,
+            env=child_env,
         )
         processes.append(("Frontend", frontend_proc))
     else:

@@ -1,4 +1,4 @@
-"""Content Ideas API — CRUD for the content_ideas Supabase table.
+"""Content Ideas API — CRUD for the content_ideas Postgres table.
 
 Exposes:
   GET  /api/v1/ideas             — list ideas (filter by category / status)
@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,15 +20,7 @@ from pydantic import BaseModel
 
 from lib import ideas_db
 
-_PUBLISHER_DIR = Path(__file__).resolve().parents[1] / "recipe-publisher"
-if str(_PUBLISHER_DIR) not in sys.path:
-    sys.path.insert(0, str(_PUBLISHER_DIR))
-
-try:
-    from publishers.wordpress_ideas import publish_idea_to_wordpress
-    _WP_PUBLISH_AVAILABLE = True
-except ImportError:
-    _WP_PUBLISH_AVAILABLE = False
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 log = logging.getLogger(__name__)
 
@@ -38,41 +31,68 @@ def _slides_dir(idea_id: str) -> Path:
     return base / "data" / "media" / "content_carousels" / idea_id
 
 
-def _load_enrichment_cache(brand_dir: str) -> dict[str, dict]:
-    path = Path(brand_dir) / "state" / "enrichment_cache.json"
-    if not path.exists():
-        return {}
-    try:
-        entries = json.loads(path.read_text())
-        return {e["topic"].lower(): e for e in entries if "topic" in e}
-    except Exception:
-        return {}
+def _revert_stale_claim(idea_id: str) -> None:
+    """If the idea is still sitting at "drafting" (the subprocess never
+    reached a point where it set its own terminal status -- write_failed,
+    validation_failed, or wp_draft via create_wp_draft), revert it back to
+    "approved" so it's a valid retry candidate for the next
+    worker_wp_ideas.py sweep. Any other status means the subprocess already
+    classified its own outcome, so it's left untouched."""
+    idea = ideas_db.get_idea(idea_id)
+    if idea is not None and idea.get("status") == "drafting":
+        ideas_db.update_status(idea_id, "approved")
 
 
-def _publish_idea_background(idea_id: str) -> None:
-    if not _WP_PUBLISH_AVAILABLE:
-        log.warning('"wordpress_ideas publisher not available, skipping background publish"')
+def _draft_idea_with_crewai_background(idea_id: str) -> None:
+    """Runs the CrewAI strategist->writer->quality-editor pipeline for one
+    approved idea via subprocess, producing a WordPress DRAFT (never
+    publishes live). create_wp_draft (inside the subprocess) already
+    updates content_ideas' status/wp_result on success; on failure the
+    subprocess itself sets write_failed/validation_failed where it can
+    identify the cause. This wrapper atomically claims the idea via
+    claim_idea_for_drafting (the sole concurrency guard against a parallel
+    worker_wp_ideas.py sweep claiming the same idea), logs the outcome, and
+    -- only when the subprocess never reached one of its own terminal
+    statuses -- reverts the claim back to "approved" for retry."""
+    if not ideas_db.claim_idea_for_drafting(idea_id):
+        log.warning(json.dumps({"event": "idea_draft_skipped_not_approved", "idea_id": idea_id}))
         return
     try:
-        rows = ideas_db.list_ideas(status="approved", brand_id=None, limit=50)
-        idea = next((r for r in rows if r["id"] == idea_id), None)
-        if not idea:
-            log.warning(f'"idea {idea_id} not found in approved status (may have been claimed)"')
-            return
-        brand_dir = os.getenv("BRAND_DIR", "")
-        enrichment_cache = _load_enrichment_cache(brand_dir)
-        enrichment = enrichment_cache.get(idea["topic"].lower())
-        ideas_db.update_status(idea_id, "wp_draft")
-        result = publish_idea_to_wordpress(idea, enrichment)
-        ideas_db.set_wp_result(idea_id, result.post_id, result.permalink)
-        ideas_db.update_status(idea_id, "wp_published")
-        log.info(json.dumps({"event": "idea_published", "idea_id": idea_id, "wp_url": result.permalink}))
+        result = subprocess.run(
+            [sys.executable, "-m", "scripts.crewai_content_pipeline", "--idea-id", idea_id],
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except subprocess.TimeoutExpired:
+        log.error(json.dumps({"event": "idea_draft_timeout", "idea_id": idea_id}))
+        _revert_stale_claim(idea_id)
+        return
     except Exception as exc:
-        log.error(json.dumps({"event": "idea_publish_failed", "idea_id": idea_id, "error": str(exc)}))
-        try:
-            ideas_db.update_status(idea_id, "approved")
-        except Exception:
-            pass
+        log.error(
+            json.dumps({"event": "idea_draft_subprocess_error", "idea_id": idea_id, "error": str(exc)})
+        )
+        _revert_stale_claim(idea_id)
+        return
+
+    if result.returncode == 0:
+        log.info(json.dumps({"event": "idea_drafted", "idea_id": idea_id}))
+    else:
+        stdout_tail = (result.stdout or "")[-2000:]
+        stderr_tail = (result.stderr or "")[-2000:]
+        log.error(
+            json.dumps(
+                {
+                    "event": "idea_draft_failed",
+                    "idea_id": idea_id,
+                    "returncode": result.returncode,
+                    "stdout_tail": stdout_tail,
+                    "stderr_tail": stderr_tail,
+                }
+            )
+        )
+        _revert_stale_claim(idea_id)
 
 
 router = APIRouter(tags=["ideas"])
@@ -96,6 +116,7 @@ class ContentIdea(BaseModel):
     brand_id: str | None = None
     brand_name: str | None = None
     created_at: str | None = None
+    match_score: float | None = None
 
 
 class IdeasResponse(BaseModel):
@@ -106,6 +127,31 @@ class IdeasResponse(BaseModel):
 
 class StatusBody(BaseModel):
     status: str
+
+
+def _extract_match_score(input_json: str | None) -> float | None:
+    """Best-effort extraction of a 0-100 match/priority score from the
+    idea's raw `input` JSON blob. Different idea sources use different key
+    names (`lib.crew.scout`'s CrewAI path writes "priority_score",
+    `lib.gsc_scout`'s older path writes "score"), and some rows predate
+    either convention entirely (e.g. the content-ideator skill's manual
+    `Input: "1"` placeholder) -- never raises, returns None on anything
+    that isn't a parseable JSON object with one of those keys."""
+    if not input_json:
+        return None
+    try:
+        data = json.loads(input_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    score = data.get("priority_score", data.get("score"))
+    if score is None:
+        return None
+    try:
+        return float(score)
+    except (TypeError, ValueError):
+        return None
 
 
 @router.get("/ideas", response_model=IdeasResponse)
@@ -132,7 +178,8 @@ def list_ideas(
             input=r.get("input"),
             brand_id=r.get("brand_id"),
             brand_name=r.get("brand_name"),
-            created_at=r.get("created_at"),
+            created_at=str(r["created_at"]) if r.get("created_at") else None,
+            match_score=_extract_match_score(r.get("input")),
         )
         for r in rows
     ]
@@ -196,5 +243,5 @@ def update_idea_status(
     if not ok:
         raise HTTPException(status_code=500, detail="Failed to update idea status")
     if body.status == "approved":
-        background_tasks.add_task(_publish_idea_background, idea_id)
+        background_tasks.add_task(_draft_idea_with_crewai_background, idea_id)
     return {"id": idea_id, "status": body.status}

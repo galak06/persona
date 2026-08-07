@@ -78,6 +78,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--top-n", type=int, default=10, help="max ideas to return/insert (default 10)"
     )
+    parser.add_argument(
+        "--auto-approve-threshold",
+        type=float,
+        default=85.0,
+        help="priority_score at/above which a newly-inserted idea is auto-approved (default 85.0)",
+    )
+    parser.add_argument(
+        "--disable-auto-approve",
+        action="store_true",
+        help="never auto-approve, regardless of --auto-approve-threshold",
+    )
     return parser.parse_args()
 
 
@@ -103,12 +114,16 @@ def main() -> int:
         return 1
 
     dry_run = not args.apply
+    auto_approve_threshold = None if args.disable_auto_approve else args.auto_approve_threshold
     print(f"brand    : {brand_dir.name}")
     print(f"mode     : {'DRY RUN' if dry_run else 'APPLY'}")
     print(f"top-n    : {args.top_n}")
+    print(f"auto-approve threshold : {auto_approve_threshold if auto_approve_threshold is not None else 'disabled'}")
     print("running CrewAI scout (real DeepSeek + Serper calls)...")
 
-    results = run_crew_scout(brand_dir, top_n=args.top_n, dry_run=dry_run)
+    results = run_crew_scout(
+        brand_dir, top_n=args.top_n, dry_run=dry_run, auto_approve_threshold=auto_approve_threshold
+    )
 
     if not results:
         print(

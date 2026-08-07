@@ -26,10 +26,12 @@ supplied, missing `GEMINI_API_KEY`, every Imagen provider failing, or the
 media upload itself failing) is logged and the draft is still created
 without a featured image, matching this repo's established "best-effort,
 never blocks publish" convention (see `_maybe_attach_affiliate_block`'s
-docstring in `recipe-publisher/publishers/wordpress.py`). Category/tag
-resolution and SureRank SEO-meta setting (also present in the reference
-implementation) are deliberately out of scope here -- cosmetic, not
-required for a correctly-rendering draft.
+docstring in `recipe-publisher/publishers/wordpress.py`). Category
+resolution (`lib.crew.draft_category`) and tag resolution
+(`lib.crew.draft_tags`) both happen here too, same best-effort spirit.
+SureRank SEO-meta setting (also present in the reference implementation)
+remains deliberately out of scope -- cosmetic, not required for a
+correctly-rendering draft.
 
 On success, records the result on the originating `content_ideas` row via
 `lib.ideas_db.set_wp_result` + `lib.ideas_db.update_status(..., "wp_draft")`
@@ -49,8 +51,9 @@ import httpx
 
 from lib import ideas_db
 from lib.crew.categorizer import execute_categorizer_crew
-from lib.crew.draft_body import build_wrapped_body, slugify
+from lib.crew.draft_body import build_wrapped_body, derive_excerpt, slugify
 from lib.crew.draft_category import CategorizeFn, resolve_category_id
+from lib.crew.draft_tags import resolve_tag_ids
 from lib.crew.wp_image import GeneratedImage, generate_wp_image
 from lib.crew.wp_media import upload_wp_media
 from lib.observability import get_logger
@@ -62,6 +65,7 @@ SetWpResultFn = Callable[[str, str, str], bool]
 UpdateStatusFn = Callable[[str, str], bool]
 GenerateImageFn = Callable[..., GeneratedImage]
 UploadMediaFn = Callable[[httpx.Client, GeneratedImage, str], tuple[int, str]]
+ResolveTagsFn = Callable[[httpx.Client, list[str], str], list[int]]
 
 
 class DraftCreationError(RuntimeError):
@@ -159,12 +163,14 @@ def create_wp_draft(
     image_brief: str = "",
     mascot_name: str = "",
     category_name: str = "",
+    tag_names: list[str] | None = None,
     reference_image_path: Path | None = None,
     set_wp_result_fn: SetWpResultFn = ideas_db.set_wp_result,
     update_status_fn: UpdateStatusFn = ideas_db.update_status,
     generate_image_fn: GenerateImageFn = generate_wp_image,
     upload_media_fn: UploadMediaFn = upload_wp_media,
     categorize_fn: CategorizeFn = execute_categorizer_crew,
+    resolve_tags_fn: ResolveTagsFn = resolve_tag_ids,
 ) -> DraftResult:
     """POST a `status: draft` WordPress post, then record it on the idea row.
 
@@ -179,6 +185,12 @@ def create_wp_draft(
     `lib.crew.draft_category.resolve_category_id`: exact name match first,
     then a content-based categorizer fallback). No match (or `""`) leaves
     the post uncategorized rather than guessing.
+
+    `tag_names` (optional): free-text tag names (e.g. the brief's primary/
+    secondary keywords) resolved to real WP tag IDs via
+    `lib.crew.draft_tags.resolve_tag_ids` -- unlike categories, unmatched
+    names are simply created (WP tags are an open taxonomy). A single
+    failed lookup/create is logged and skipped, never fatal to the draft.
 
     `reference_image_path` (optional): a real photo of the brand's persona/
     mascot (e.g. `$BRAND_DIR/data/assets/persona_mascot_reference.png`) to
@@ -216,10 +228,17 @@ def create_wp_draft(
         category_id = resolve_category_id(
             client, category_name, idea_id, title=title, categorize_fn=categorize_fn
         )
+        tag_ids = resolve_tags_fn(client, tag_names or [], idea_id)
+
+        excerpt = derive_excerpt(body_html)
 
         payload: dict[str, Any] = {"title": title, "content": full_body, "status": "draft"}
+        if excerpt:
+            payload["excerpt"] = excerpt
         if category_id:
             payload["categories"] = [category_id]
+        if tag_ids:
+            payload["tags"] = tag_ids
         if media_id:
             payload["featured_media"] = media_id
             payload["meta"] = {

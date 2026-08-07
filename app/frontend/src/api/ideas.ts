@@ -12,6 +12,7 @@ export interface ContentIdea {
   brand_id: string | null;
   brand_name: string | null;
   created_at: string | null;
+  match_score: number | null;
 }
 
 export interface IdeasResponse {

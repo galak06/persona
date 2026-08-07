@@ -41,6 +41,14 @@ import re
 
 # Implied professional credentials this brand does not hold. Self-referential
 # phrasing only (see module docstring) — recommending a REAL vet is fine.
+# "veterinary-grade"/"veterinary grade"/"vet-approved"/"vet approved" were
+# removed from here: they're bare, non-self-referential phrases that fire on
+# any mention regardless of who's being described, violating this section's
+# own stated intent. Live-reproduced false positive: a draft describing a
+# generic third-party "vet-approved recipe" (not a brand credential claim at
+# all) was rejected on this term, silently killing a `crewai_content_pipeline`
+# idea with no human ever reviewing why (see git history on this comment for
+# the exact idea/date if needed).
 CREDENTIAL_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
     "veterinarian_credential": (
         "as a veterinarian",
@@ -59,10 +67,6 @@ CREDENTIAL_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
         "board-certified veterinarian",
         "practicing veterinarian",
         "veterinarian on staff",
-        "veterinary-grade",
-        "veterinary grade",
-        "vet-approved",
-        "vet approved",
     ),
     "nutritionist_credential": (
         "as a nutritionist",

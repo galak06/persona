@@ -8,7 +8,13 @@ test_crew_draft_image.py -- this file gives them direct unit coverage too.
 
 from __future__ import annotations
 
-from lib.crew.draft_body import build_wrapped_body, escape_attr, slugify, split_body_and_jsonld
+from lib.crew.draft_body import (
+    build_wrapped_body,
+    derive_excerpt,
+    escape_attr,
+    slugify,
+    split_body_and_jsonld,
+)
 
 
 def test_slugify_lowercases_and_hyphenates() -> None:
@@ -57,3 +63,35 @@ def test_build_wrapped_body_keeps_jsonld_outside_wrapper_div() -> None:
         f'<div class="dff-idea-body" style="max-width:720px;margin:0 auto;"><p>b</p></div>\n\n{jsonld}'
     )
     assert out.index("</div>") < out.index("<script")
+
+
+def test_derive_excerpt_skips_byline_and_disclosure_paragraphs() -> None:
+    html = (
+        "<p>By Nalla's Dad / August 6, 2026</p>"
+        "<p>Affiliate disclosure: This post contains Amazon affiliate links.</p>"
+        "<p>Nalla wouldn't touch her bowl for two days straight.</p>"
+    )
+    assert derive_excerpt(html) == "Nalla wouldn't touch her bowl for two days straight."
+
+
+def test_derive_excerpt_truncates_long_paragraph_at_word_boundary() -> None:
+    long_text = "word " * 40
+    html = f"<p>By Nalla's Dad / August 6, 2026</p><p>{long_text.strip()}</p>"
+    excerpt = derive_excerpt(html, length=20)
+    assert excerpt == "word word word word…"
+    assert not excerpt[:-1].endswith("wor")  # never cuts mid-word
+
+
+def test_derive_excerpt_strips_inner_tags_and_collapses_whitespace() -> None:
+    html = "<p>By X / Y</p><p>Nalla  <strong>loved</strong>\n  this recipe.</p>"
+    assert derive_excerpt(html) == "Nalla loved this recipe."
+
+
+def test_derive_excerpt_ignores_jsonld_tail() -> None:
+    html = '<p>By X / Y</p><script type="application/ld+json">{"a": "By nobody / nothing"}</script>'
+    assert derive_excerpt(html) == ""
+
+
+def test_derive_excerpt_returns_empty_when_only_boilerplate_present() -> None:
+    html = "<p>By X / Y</p><p>Affiliate disclosure: links ahead.</p>"
+    assert derive_excerpt(html) == ""

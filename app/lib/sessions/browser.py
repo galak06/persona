@@ -68,6 +68,8 @@ def _default_tiktok_session() -> Path:
     """Resolve TikTok session path via settings (authoritative) or fallback."""
     try:
         from lib.config import settings
+        if settings.paths is None:
+            return _BRAND_DIR / "state/tiktok_session.json"
         return Path(settings.paths.tiktok_session)
     except Exception:
         return _BRAND_DIR / "state/tiktok_session.json"
