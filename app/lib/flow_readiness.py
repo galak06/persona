@@ -25,11 +25,11 @@ from lib import db, schedule_db, worker_db
 
 # Presentation order (onboarding order), not `MANAGED_FLOW_IDS`'s frozenset
 # iteration order.
-_FLOW_ORDER: tuple[str, ...] = ("ig-engager", "fb-scanner", "fb-group-scout")
+_FLOW_ORDER: tuple[str, ...] = ("ig-engager", "fb-group-scout", "fb-engager")
 _FLOW_SCRIPTS: dict[str, str] = {
     "ig-engager": "scripts/ig_engager.py",
-    "fb-scanner": "scripts/fb_scan.py",
     "fb-group-scout": "scripts/fb_group_scout.py",
+    "fb-engager": "scripts/fb_engager.py",
 }
 
 
@@ -68,11 +68,11 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
                 "candidates; approve them in the Inbox to actually join."
             ),
         )
-    if flow_id == "fb-scanner":
+    if flow_id == "fb-engager":
         return _facebook_readiness(
             brand_id,
             no_groups_hint=(
-                "No groups joined yet — fb-scanner has nothing to scan "
+                "No groups joined yet — fb-engager has nothing to scan "
                 "until fb-group-scout finds and joins some."
             ),
         )

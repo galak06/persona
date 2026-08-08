@@ -37,7 +37,8 @@ from lib.engagement.adapters.facebook_dom import (
     USER_AGENT,
 )
 from lib.engagement.post import Post
-from lib.engagement.result import LikeResult
+from lib.engagement.result import CommentResult, LikeResult
+from lib.fb.comment_post import post_comment_fb
 from lib.local_env import get_runtime_headless
 
 _PW_ERRORS: tuple[type[BaseException], ...] = (PlaywrightError, PlaywrightTimeoutError)
@@ -317,3 +318,25 @@ class FacebookGroupAdapter:
             return LikeResult.skipped("already_liked")
         reason = str(result.get("reason", "unknown"))
         return LikeResult.failed(reason)
+
+    def comment(self, post: Post, text: str) -> CommentResult:
+        """Submit `text` as a comment on `post` (satisfies `SupportsComment`).
+
+        Delegates the DOM walk to `lib.fb.comment_post.post_comment_fb`, the
+        same posting path `scripts/fb_comment.py` uses as its `post_fn` —
+        this adapter only supplies the authenticated page (already switched
+        to the Page profile by session()) and maps the bool to a
+        CommentResult. Mirrors InstagramHashtagAdapter.comment(); unlike the
+        IG posting function, `post_comment_fb` always navigates to
+        `post.post_url` itself, so there is no skip-navigation guard here.
+        """
+        if self._page is None:
+            return CommentResult.failed("no_active_session")
+        page = self._page
+        try:
+            posted = post_comment_fb(page, post.post_url, text)
+        except Exception as exc:
+            return CommentResult.failed(f"playwright_error:{type(exc).__name__}")
+        if posted:
+            return CommentResult.ok()
+        return CommentResult.failed("comment_box_not_found")

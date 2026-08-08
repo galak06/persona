@@ -91,7 +91,7 @@ def test_update_group_join_limit_only_leaves_enabled_flows_untouched(
     row = repo.get("gjl-only")
     assert row is not None
     assert row["group_join_limit"] == 3
-    assert row["enabled_flows"] == ["ig-engager", "fb-scanner"]  # untouched, create()-time default
+    assert row["enabled_flows"] == ["ig-engager"]  # untouched, create()-time default
 
 
 @requires_postgres
