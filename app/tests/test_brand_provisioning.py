@@ -102,7 +102,7 @@ def test_dry_run_returns_full_preview(pg: None, brands_root: Path) -> None:
         "data/config/instagram_accounts.csv",
         "brand.json",
     }
-    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
+    assert set(result.schedule_tasks_created) == {"acme-dogs-ig-engager"}
     assert result.warnings == []
 
 
@@ -202,11 +202,11 @@ def test_real_run_creates_only_the_three_scoped_directories(pg: None, brands_roo
 
 
 @requires_postgres
-def test_real_run_inserts_exactly_two_schedule_tasks_rows(pg: None, brands_root: Path) -> None:
+def test_real_run_inserts_exactly_one_schedule_tasks_row(pg: None, brands_root: Path) -> None:
     result = provision_brand(FULL_SPEC, dry_run=False)
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == result.brand_id]
-    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
+    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager"}
     for row in rows:
         assert row["requires_browser"] == 1
         assert row["schedule"]["cron"]
@@ -218,7 +218,6 @@ def test_real_run_schedule_task_scripts_match_the_flow(pg: None, brands_root: Pa
 
     rows = {t["id"]: t for t in schedule_db.load_all() if t["brand_id"] == result.brand_id}
     assert rows["acme-dogs-ig-engager"]["script"] == "scripts/ig_engager.py"
-    assert rows["acme-dogs-fb-scanner"]["script"] == "scripts/fb_scan.py"
 
 
 @requires_postgres
@@ -246,7 +245,7 @@ def test_real_run_is_idempotent_no_duplicate_rows_no_crash(pg: None, brands_root
     provision_brand(FULL_SPEC, dry_run=False)  # must not raise
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == "acme-dogs"]
-    assert len(rows) == 2
+    assert len(rows) == 1
 
     brand_rows = [b for b in BrandsRepository().list_brands() if b["id"] == "acme-dogs"]
     assert len(brand_rows) == 1

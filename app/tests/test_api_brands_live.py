@@ -89,7 +89,7 @@ def test_create_get_list_round_trip_via_handlers(pg: None, brands_root: Path) ->
     assert "acme-dogs" not in {b.id for b in listing_wrong_status.brands}
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == "acme-dogs"]
-    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager", "acme-dogs-fb-scanner"}
+    assert {r["id"] for r in rows} == {"acme-dogs-ig-engager"}
 
 
 @requires_postgres
@@ -114,7 +114,7 @@ def test_reprovision_endpoint_is_idempotent_real(pg: None, brands_root: Path) ->
     assert resp.status == "provisioned"
 
     rows = [t for t in schedule_db.load_all() if t["brand_id"] == "acme-dogs"]
-    assert len(rows) == 2  # no duplicate rows from re-provisioning
+    assert len(rows) == 1  # no duplicate rows from re-provisioning
 
     brand_rows = [b for b in BrandsRepository().list_brands() if b["id"] == "acme-dogs"]
     assert len(brand_rows) == 1  # no duplicate brand row either
@@ -133,7 +133,7 @@ def test_create_brand_end_to_end_over_real_http(pg: None, brands_root: Path) -> 
     payload = resp.json()
     assert payload["id"] == "acme-dogs"
     assert payload["status"] == "provisioned"
-    assert payload["schedule_tasks_created"] == ["acme-dogs-ig-engager", "acme-dogs-fb-scanner"]
+    assert payload["schedule_tasks_created"] == ["acme-dogs-ig-engager"]
     assert payload["ig_login_command"].endswith("scripts/login.py ig")
     assert payload["fb_login_command"].endswith("scripts/login.py fb")
     # Full brand row (matches the frontend's `Brand & ProvisionResult`
@@ -144,7 +144,7 @@ def test_create_brand_end_to_end_over_real_http(pg: None, brands_root: Path) -> 
         "secondary_keywords": ["gps"],
         "competitor_mentions": ["brand x"],
     }
-    assert payload["enabled_flows"] == ["ig-engager", "fb-scanner"]
+    assert payload["enabled_flows"] == ["ig-engager"]
 
     get_resp = client.get("/api/v1/brands/acme-dogs")
     assert get_resp.status_code == 200

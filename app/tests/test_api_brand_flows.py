@@ -193,7 +193,7 @@ def test_flows_and_run_now_end_to_end_over_real_http(pg: None, brands_root: Path
         flows = {f["flow_id"]: f for f in flows_resp.json()["flows"]}
         assert flows["ig-engager"]["enabled"] is True
         assert flows["fb-group-scout"]["enabled"] is False
-        assert flows["fb-scanner"]["readiness"]["ready"] is False  # 0 groups joined
+        assert flows["fb-engager"]["readiness"]["ready"] is False  # 0 groups joined
 
         run_resp = client.post("/api/v1/brands/acme-dogs/flows/ig-engager/run")
         assert run_resp.status_code == 200

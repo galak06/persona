@@ -123,9 +123,9 @@ def test_readiness_for_fb_group_scout_not_ready_with_zero_joined(
 
 
 @requires_postgres
-def test_readiness_for_fb_scanner_ready_once_a_group_is_joined(brand: str, tmp_path: Path) -> None:
+def test_readiness_for_fb_engager_ready_once_a_group_is_joined(brand: str, tmp_path: Path) -> None:
     _insert_group(brand, "https://facebook.com/groups/1", "joined")
-    readiness = _readiness_for("fb-scanner", brand_id=brand, brand_dir=tmp_path)
+    readiness = _readiness_for("fb-engager", brand_id=brand, brand_dir=tmp_path)
     assert readiness["ready"] is True
     assert readiness["count"] == 1
 
@@ -136,17 +136,17 @@ def test_readiness_for_fb_scanner_ready_once_a_group_is_joined(brand: str, tmp_p
 @requires_postgres
 def test_flow_status_returns_entries_in_onboarding_order(brand: str, tmp_path: Path) -> None:
     entries = flow_status(brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager"])
-    assert [e["flow_id"] for e in entries] == ["ig-engager", "fb-scanner", "fb-group-scout"]
+    assert [e["flow_id"] for e in entries] == ["ig-engager", "fb-group-scout", "fb-engager"]
 
 
 @requires_postgres
 def test_flow_status_reflects_enabled_flows(brand: str, tmp_path: Path) -> None:
     entries = flow_status(
-        brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager", "fb-scanner"]
+        brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager", "fb-engager"]
     )
     by_id = {e["flow_id"]: e for e in entries}
     assert by_id["ig-engager"]["enabled"] is True
-    assert by_id["fb-scanner"]["enabled"] is True
+    assert by_id["fb-engager"]["enabled"] is True
     assert by_id["fb-group-scout"]["enabled"] is False
 
 
@@ -169,4 +169,4 @@ def test_flow_status_reflects_worker_runs(brand: str, tmp_path: Path) -> None:
     by_id = {e["flow_id"]: e for e in entries}
     assert by_id["ig-engager"]["last_run"]["status"] == "success"
     assert by_id["ig-engager"]["last_run"]["message"] == "found 3 posts"
-    assert by_id["fb-scanner"]["last_run"] is None
+    assert by_id["fb-engager"]["last_run"] is None
