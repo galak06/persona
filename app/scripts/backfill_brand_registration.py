@@ -134,6 +134,14 @@ def build_schedule_rows(brand_dir: Path, brand_id: str) -> list[dict[str, Any]]:
         row["order_num"] = row.pop("order", 0)
         row["brand_id"] = brand_id
         row.setdefault("title", str(row.get("id", "")).removeprefix("dogfood-"))
+        # `save_task`'s UPSERT only SETs columns present in the dict it's given, so a
+        # column dropped entirely from schedule.json (e.g. a task's `schedule` cron
+        # removed to disable auto-dispatch) would otherwise never get cleared in an
+        # already-registered row -- the stale Postgres value would silently outlive
+        # the JSON it came from. Explicitly null every known column this task's JSON
+        # doesn't set, so the upsert is a true sync, not an additive merge.
+        for col in schedule_db._KNOWN_COLUMNS:  # noqa: SLF001 - intentional cross-module sync
+            row.setdefault(col, None)
         rows.append(row)
     return rows
 

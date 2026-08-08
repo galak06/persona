@@ -42,10 +42,6 @@
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": true,
-      "schedule": {
-        "cadence": "daily",
-        "cron": "33 15 * * *"
-      },
       "script": "scripts/fb_scan.py",
       "skill": "fb-scanner",
       "telegram_notify": true
@@ -65,13 +61,36 @@
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": true,
-      "schedule": {
-        "cadence": "daily",
-        "cron": "0 10 * * *"
-      },
       "script": "scripts/fb_comment.py",
       "skill": "fb-comment",
       "telegram_notify": true
+    },
+    {
+      "depends_on": [
+        "site-analyzer"
+      ],
+      "description": "Scan joined Facebook groups, like qualifying posts, draft and post a comment inline (single-pass)",
+      "id": "fb-engager",
+      "inputs": [
+        {
+          "max_age_hours": 26,
+          "min_count": 1,
+          "path": "data/site_content_cache.json",
+          "produced_by": "site-analyzer"
+        }
+      ],
+      "order": 25,
+      "rate_limits": {
+        "comments_per_day": 5,
+        "likes_per_day": 5
+      },
+      "re_run_guard": true,
+      "requires_approval": false,
+      "requires_browser": true,
+      "script": "scripts/fb_engager.py",
+      "skill": "fb-engager",
+      "telegram_notify": true,
+      "timeout_minutes": 30
     },
     {
       "depends_on": [
