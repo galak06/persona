@@ -4,13 +4,14 @@ import { getErrorMessage } from "../api/client";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 
-type Bucket = "member" | "waiting" | "rejected" | "not_joined";
+type Bucket = "member" | "waiting" | "rejected" | "not_joined" | "stale_pending";
 
 const BUCKETS: { id: Bucket; label: string; status: string }[] = [
   { id: "member", label: "Member", status: "joined" },
   { id: "waiting", label: "Waiting for admin", status: "join_requested" },
   { id: "rejected", label: "Rejected", status: "rejected" },
   { id: "not_joined", label: "Not joined yet", status: "not_joined_yet" },
+  { id: "stale_pending", label: "Stale / no response", status: "stale_pending" },
 ];
 
 export default function Groups() {
@@ -59,7 +60,7 @@ export default function Groups() {
   }
 
   const counts = useMemo(() => {
-    const c: Record<Bucket, number> = { member: 0, waiting: 0, rejected: 0, not_joined: 0 };
+    const c: Record<Bucket, number> = { member: 0, waiting: 0, rejected: 0, not_joined: 0, stale_pending: 0 };
     for (const g of groups) {
       const bucket = BUCKETS.find((b) => b.status === g.status);
       if (bucket) c[bucket.id]++;
@@ -157,6 +158,7 @@ export default function Groups() {
                         <option value="joined">Joined</option>
                         <option value="join_requested">Waiting for admin</option>
                         <option value="rejected">Rejected</option>
+                        <option value="stale_pending">Stale / no response</option>
                       </select>
                     ) : (
                       <span className="text-slate-500">{g.status}</span>

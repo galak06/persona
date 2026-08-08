@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from lib import groups_db
 from lib.config import settings
@@ -61,6 +61,18 @@ def _count_join_requests_since(cutoff_iso_date: str) -> int:
 
 def join_requests_today() -> int:
     return _count_join_requests_since(date.today().isoformat())
+
+
+def join_requests_this_week() -> int:
+    """Rolling 7-day window ending today (inclusive), not a calendar week.
+
+    Reuses ``_count_join_requests_since``'s date-string cutoff comparison —
+    the same mechanism ``join_requests_today()`` uses — just with a
+    6-days-back cutoff instead of today's date, so today + the 6 days before
+    it are counted (7 days total).
+    """
+    cutoff = (date.today() - timedelta(days=6)).isoformat()
+    return _count_join_requests_since(cutoff)
 
 
 def load_known_groups() -> set[str]:

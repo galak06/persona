@@ -126,9 +126,9 @@ def try_join(page, url: str) -> str:
 
 
 def pace_between_joins(is_last: bool = False) -> float:
-    """Random 5–20s delay between join requests. Returns the chosen delay."""
+    """Random 45–180s delay between join requests. Returns the chosen delay."""
     if is_last:
         return 0.0
-    delay = random.uniform(5, 20)  # noqa: S311
+    delay = random.uniform(45, 180)  # noqa: S311
     time.sleep(delay)
     return delay

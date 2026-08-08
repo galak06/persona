@@ -36,6 +36,7 @@ from group_discovery.fb_search import pace_between_queries, search_groups
 from group_discovery.scoring import parse_member_count, score_group
 from group_discovery.state import (
     add_to_pending,
+    join_requests_this_week,
     join_requests_today,
     load_known_groups,
     load_last_run,
@@ -45,8 +46,9 @@ from group_discovery.state import (
     save_last_run,
     save_pending,
 )
+from group_discovery.status_classifier import classify_admission_likelihood
 from lib.fb.session import FbSession, build_fb_session
-from lib.local_env import get_group_join_limit
+from lib.local_env import get_group_join_limit, get_group_join_limit_per_week
 from lib.runtime.singleton import SingletonLock
 from notifier import skill_finished, skill_skipped, skill_started
 
@@ -57,7 +59,24 @@ if TYPE_CHECKING:
 # join_limit_per_day; falls back to 10 (~2.5x under FB's ~25/day ceiling)
 # for brands that don't customize it.
 JOIN_LIMIT_PER_DAY = get_group_join_limit()
+# Same overlay, group_discovery.join_limit_per_day's weekly sibling —
+# join_limit_per_week; falls back to 15 (documented 5/day, 15/week scouting
+# cadence) for brands that don't customize it.
+JOIN_LIMIT_PER_WEEK = get_group_join_limit_per_week()
 MIN_SCORE = 40
+
+# Pre-join admission-likelihood score adjustments (see apply_admission_likelihood).
+# "easy" groups look low-friction (public, active, no screening language) so
+# they're boosted above equally-scored groups that look harder to get into.
+# "admin_approval" groups are still worth trying — a private group already
+# gets +10 in score_group() just for being private — so this is a small
+# nudge down, not a disqualifier. "closed" groups are excluded outright
+# (see apply_admission_likelihood) rather than merely penalized, so a
+# high heuristic score can never buy a predicted-closed group a join-request
+# slot. "unknown"/None (ambiguous card text or LLM unavailable) leaves the
+# heuristic score untouched — the required no-regression fallback.
+ADMISSION_EASY_BOOST = 10
+ADMISSION_APPROVAL_PENALTY = 5
 
 SEARCH_QUERIES = [
     "homemade dog food", "raw dog food", "dog nutrition", "dog food recipes",
@@ -66,10 +85,27 @@ SEARCH_QUERIES = [
 ]
 
 
-def compute_budget(bypass_daily: bool = False) -> tuple[int, int]:
-    """Return (effective, daily_remaining). bypass_daily ignores the daily cap."""
-    d = max(0, JOIN_LIMIT_PER_DAY - join_requests_today())
-    return (JOIN_LIMIT_PER_DAY if bypass_daily else d), d
+def compute_budget(bypass_daily: bool = False) -> tuple[int, int, int]:
+    """Return (effective, daily_remaining, weekly_remaining).
+
+    Effective budget for a run is min(daily_remaining, weekly_remaining) —
+    both caps must pass. ``bypass_daily`` ignores ONLY the daily cap (per
+    the ``--bypass-daily-cap`` flag's own "Skip daily cap only" contract) —
+    the weekly cap still applies even when it's set.
+    """
+    daily_remaining = max(0, JOIN_LIMIT_PER_DAY - join_requests_today())
+    weekly_remaining = max(0, JOIN_LIMIT_PER_WEEK - join_requests_this_week())
+    daily_effective = JOIN_LIMIT_PER_DAY if bypass_daily else daily_remaining
+    return min(daily_effective, weekly_remaining), daily_remaining, weekly_remaining
+
+
+def _budget_status(daily_remaining: int, weekly_remaining: int) -> str:
+    """Format the daily+weekly remaining-budget status line, e.g.
+    'Join budget: 3/5 today, 8/15 this week'."""
+    return (
+        f"Join budget: {daily_remaining}/{JOIN_LIMIT_PER_DAY} today, "
+        f"{weekly_remaining}/{JOIN_LIMIT_PER_WEEK} this week"
+    )
 
 
 def check_rerun_guard(last_run: dict[str, dict[str, Any]]) -> bool:
@@ -145,6 +181,68 @@ def apply_competitor_boost(candidates: list[dict[str, Any]]) -> None:
         g["score"] = score_group(g, competitor_mentions=g.get("competitor_mentions", 0))
 
 
+def _card_text(g: dict[str, Any]) -> str:
+    """Join a candidate's scraped card fields into one text blob for the
+    admission-likelihood classifier — the same fields
+    EXTRACT_GROUP_CARDS_JS (lib.group_discovery.fb_search) scrapes per card."""
+    fields = ("name", "privacy", "member_text", "post_frequency", "description")
+    return "\n".join(str(g.get(f) or "") for f in fields).strip()
+
+
+def apply_admission_likelihood(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Classify each candidate's pre-join admission friction and fold it into
+    the ranking score.
+
+    Called AFTER score_group()/apply_competitor_boost() have set the
+    heuristic score and AFTER the MIN_SCORE filter (bounds LLM calls to
+    candidates already worth spending a call on), and BEFORE the final
+    sort + top-N slice — so the adjusted score, not the raw heuristic one,
+    decides who makes the join-request batch.
+
+    Returns the surviving candidates: "closed"-predicted groups are dropped
+    outright (never occupy a join-request slot); every other candidate is
+    kept with its score adjusted per likelihood (see ADMISSION_EASY_BOOST /
+    ADMISSION_APPROVAL_PENALTY above) and an ``admission_likelihood`` /
+    ``admission_reason`` pair recorded on it for auditability. A ``None``
+    classification (LLM unavailable, or card text too thin) or an
+    "unknown" classification both leave the score untouched — the
+    no-regression fallback path.
+    """
+    kept: list[dict[str, Any]] = []
+    for g in candidates:
+        result = classify_admission_likelihood(_card_text(g))
+        if result is None:
+            g["admission_likelihood"] = None
+            g["admission_reason"] = "classifier unavailable — heuristic score unchanged"
+            print(f"  [admission] {g['name']}: classifier unavailable — no score change")
+            kept.append(g)
+            continue
+
+        likelihood = result["likelihood"]
+        reason = result["reason"]
+        g["admission_likelihood"] = likelihood
+        g["admission_reason"] = reason
+
+        if likelihood == "easy":
+            g["score"] += ADMISSION_EASY_BOOST
+            print(f"  [admission] {g['name']}: EASY (+{ADMISSION_EASY_BOOST}) — {reason}")
+            kept.append(g)
+        elif likelihood == "admin_approval":
+            g["score"] = max(0, g["score"] - ADMISSION_APPROVAL_PENALTY)
+            print(
+                f"  [admission] {g['name']}: ADMIN_APPROVAL "
+                f"(-{ADMISSION_APPROVAL_PENALTY}) — {reason}"
+            )
+            kept.append(g)
+        elif likelihood == "closed":
+            print(f"  [admission] {g['name']}: CLOSED — excluded from join batch — {reason}")
+            # Deliberately NOT appended to `kept` — see docstring.
+        else:  # "unknown" — a successful classification the model was unsure about
+            print(f"  [admission] {g['name']}: UNKNOWN — no score change — {reason}")
+            kept.append(g)
+    return kept
+
+
 def main(
     session: FbSession, *, dry_run: bool = False,
     preselected: str | None = None, bypass_daily: bool = False,
@@ -155,9 +253,9 @@ def main(
     if check_rerun_guard(last_run):
         return
 
-    budget, daily = compute_budget(bypass_daily=bypass_daily)
-    caps = f"daily {daily}/{JOIN_LIMIT_PER_DAY}"
-    print(f"Budget — {caps}, effective: {budget}")
+    budget, daily, weekly = compute_budget(bypass_daily=bypass_daily)
+    caps = _budget_status(daily, weekly)
+    print(f"{caps}, effective: {budget}")
 
     # --- Join pre-approved groups first ---
     known_groups = load_known_groups()
@@ -197,14 +295,14 @@ def main(
             found=0, approved=len(to_join), sent=join_requests_sent, mode="pre-approved"
         )
         save_last_run(last_run)
-        _, daily_after = compute_budget()
+        _, daily_after, weekly_after = compute_budget()
         print(
             f"\n=== Pre-approved join complete: {join_requests_sent} joined "
-            f"({daily_after}/{JOIN_LIMIT_PER_DAY} daily remaining) ==="
+            f"({_budget_status(daily_after, weekly_after)}) ==="
         )
         skill_finished("fb-group-scout", (
             f"Pre-approved: joined {join_requests_sent} group(s)\n"
-            f"Daily remaining: {daily_after}/{JOIN_LIMIT_PER_DAY}"
+            f"{_budget_status(daily_after, weekly_after)}"
         ))
         return  # skip search phase this run
 
@@ -246,6 +344,8 @@ def main(
         candidates = list(all_candidates.values())
         apply_competitor_boost(candidates)
         candidates = [c for c in candidates if c["score"] >= MIN_SCORE]
+        print(f"\nClassifying admission likelihood for {len(candidates)} candidate(s)...")
+        candidates = apply_admission_likelihood(candidates)
         candidates.sort(key=lambda g: g["score"], reverse=True)
         candidates = candidates[:15]
 
@@ -295,8 +395,8 @@ def main(
     save_last_run(last_run)
 
     pending_remaining = len(load_pending())
-    _, daily_after = compute_budget()
-    caps_after = f"daily {daily_after}/{JOIN_LIMIT_PER_DAY}"
+    _, daily_after, weekly_after = compute_budget()
+    caps_after = _budget_status(daily_after, weekly_after)
     print(
         f"\n=== Scout Complete: {len(queries)} queries → {len(all_candidates)} raw → "
         f"{len(candidates)} surfaced → {join_requests_sent} joined "
@@ -304,7 +404,7 @@ def main(
     )
     skill_finished("fb-group-scout", (
         f"🔍 {len(queries)} queries → {len(candidates)} candidates\n"
-        f"✅ Joined: {join_requests_sent} ({daily_after}/{JOIN_LIMIT_PER_DAY} daily remaining)"
+        f"✅ Joined: {join_requests_sent} ({caps_after})"
     ))
 
 

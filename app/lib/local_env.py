@@ -113,6 +113,38 @@ def get_group_join_limit(default: int = 10) -> int:
     return limit
 
 
+def get_group_join_limit_per_week(default: int = 15) -> int:
+    """Return `scripts/fb_group_scout.py`'s weekly join-request cap from the
+    brand overlay.
+
+    Reads `<BRAND_DIR>/brand.json` -> `group_discovery.join_limit_per_week`.
+    Returns `default` if `BRAND_DIR` is unset, `brand.json` is missing or
+    malformed, or the field is absent or not an int -- same fallback
+    contract as `get_group_join_limit()`. `default=15` matches the
+    documented scouting cadence (5/day, 15/week) for brands that don't
+    customize it.
+    """
+    brand_dir = os.environ.get("BRAND_DIR")
+    if not brand_dir:
+        return default
+    brand_path = Path(brand_dir) / "brand.json"
+    if not brand_path.exists():
+        return default
+    try:
+        data: Any = json.loads(brand_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return default
+    if not isinstance(data, dict):
+        return default
+    group_discovery = data.get("group_discovery")
+    if not isinstance(group_discovery, dict):
+        return default
+    limit = group_discovery.get("join_limit_per_week")
+    if not isinstance(limit, int) or isinstance(limit, bool):
+        return default
+    return limit
+
+
 def load_brand_env(brand_dir: Path) -> dict[str, str]:
     """Parse `<brand_dir>/.env` (plain `KEY=VALUE` lines) into a dict.
 

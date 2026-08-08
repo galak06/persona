@@ -18,9 +18,10 @@ class GroupStatus:
     JOIN_REQUESTED: str = "join_requested"
     REJECTED: str = "rejected"
     NOT_JOINED_YET: str = "not_joined_yet"
+    STALE_PENDING: str = "stale_pending"
 
     ALL: frozenset[str] = frozenset(
-        {"joined", "join_requested", "rejected", "not_joined_yet"}
+        {"joined", "join_requested", "rejected", "not_joined_yet", "stale_pending"}
     )
 
 
