@@ -11,8 +11,9 @@ description: >
 # Facebook Group Scout — {{brand.name}}
 
 Find new Facebook groups worth joining as {{brand.persona}}. Both public and private groups
-are in scope — private groups often have higher engagement quality. All join requests
-require user approval before sending. Max 3 join requests per week.
+are in scope — private groups often have higher engagement quality. Max 5 join requests per
+day, 15 per week (brand-configurable via `brand.json`'s `group_discovery.join_limit_per_day` /
+`group_discovery.join_limit_per_week`).
 
 ---
 
@@ -24,8 +25,9 @@ from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 sys.path.insert(0, '../lib')
 
-# Re-run guard — skip if scout already ran successfully this week
-# (weekly cadence, not daily — group scouting is a weekly task)
+# Re-run guard — skip if scout already ran successfully today.
+# The cron schedule itself is weekly (Sunday), but the guard is same-day:
+# it only blocks a second run on the same calendar day (e.g. a manual re-trigger).
 last_run_file = Path('../.claude/state/last_run.json')
 last_run = json.loads(last_run_file.read_text()) if last_run_file.exists() else {}
 scout_last = last_run.get('fb_group_scout', {})
@@ -36,7 +38,7 @@ days_since_last = 999
 if scout_last_date:
     days_since_last = (today - date.fromisoformat(scout_last_date)).days
 
-if days_since_last < 7 and scout_last.get('status') == 'success':
+if days_since_last < 1 and scout_last.get('status') == 'success':
     print(f"SKIP: fb-group-scout already ran successfully {days_since_last} day(s) ago ({scout_last_date}).")
     print("Pass --force to override.")
     if '--force' not in sys.argv:
@@ -337,7 +339,7 @@ join request to group admins. This is intentional — private groups are worth r
 After clicking, verify the button state changed (should now show "Pending", "Joined",
 or "Requested"). Log the outcome.
 
-**Delay between join requests:** Wait 60–180 seconds between each request (random).
+**Delay between join requests:** Wait 45–180 seconds between each request (random).
 Never send multiple join requests back-to-back.
 
 ---
@@ -413,7 +415,8 @@ Joined / Requested:
 
 | Rule | Value |
 |---|---|
-| Max join requests per week | 3 |
+| Max join requests per day | 5 (brand-configurable via `group_discovery.join_limit_per_day`) |
+| Max join requests per week | 15 (brand-configurable via `group_discovery.join_limit_per_week`) |
 | Minimum group score | 40 / 100 |
 | Min member count | 1,000 |
 | Max member count | 150,000 |
@@ -421,5 +424,5 @@ Joined / Requested:
 | Competitor-run groups | ❌ Skipped (−40 score penalty) |
 | Already-joined groups | ❌ Skipped |
 | Groups with pending request | ❌ Skipped |
-| Delay between requests | 60–180 seconds (random) |
-| User approval required | ✅ Always — no auto-join |
+| Delay between requests | 45–180 seconds (random) |
+| User approval required | ⚙️ Auto-approved up to the daily cap — the interactive stdin approval prompt was removed from the script; there is no per-group human gate today |

@@ -85,7 +85,7 @@
       "approval_channel": "telegram",
       "telegram_notify": true,
       "rate_limits": {
-        "join_requests_per_week": 3
+        "join_requests_per_week": 15
       },
       "order": 100,
       "depends_on": [],
