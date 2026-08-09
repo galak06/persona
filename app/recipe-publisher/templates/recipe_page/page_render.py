@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[2]
@@ -136,17 +139,33 @@ def _gallery_block(data: RecipePageData) -> str:
 
 
 def _amazon_url(asin: str, tag: str) -> str:
-    base = f"https://www.amazon.com/dp/{asin}"
-    return f"{base}?tag={tag}" if tag else base
+    if not tag:
+        # Untagged links are unmonetized — refuse to render one silently.
+        raise ValueError("associates_tag is required to build an Amazon affiliate URL")
+    return f"https://www.amazon.com/dp/{asin}?tag={tag}"
+
+
+def _resolve_associates_tag(data: RecipePageData) -> str:
+    """Caller-supplied tag first, then AMAZON_ASSOCIATES_TAG from settings/env."""
+    return data.associates_tag.strip() or os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
 
 
 def _affiliate_block(data: RecipePageData) -> str:
     products = [p for p in data.affiliate_products if p.get("asin") and p.get("display")]
     if not products:
         return ""
+    tag = _resolve_associates_tag(data)
+    if not tag:
+        logger.error(
+            "AMAZON_ASSOCIATES_TAG missing — skipping affiliate block "
+            "(%d product(s), title=%r); refusing to emit untagged Amazon links",
+            len(products),
+            data.title,
+        )
+        return ""
     cards: list[str] = []
     for p in products:
-        url = _amazon_url(p["asin"], data.associates_tag)
+        url = _amazon_url(p["asin"], tag)
         cards.append(
             '<div class="dff-prod">'
             f'<div class="name">{html.escape(p["display"])}</div>'

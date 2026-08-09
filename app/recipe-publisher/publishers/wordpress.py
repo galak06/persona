@@ -243,7 +243,11 @@ def _maybe_attach_affiliate_block(html: str, recipe: Recipe) -> str:
     """
     tag = os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
     if not tag:
-        logger.info("AMAZON_ASSOCIATES_TAG not set — skipping recipe-tools block")
+        logger.error(
+            "AMAZON_ASSOCIATES_TAG not set — skipping recipe-tools block for "
+            "slug=%s (post publishes UNMONETIZED; set it in settings.local.json env)",
+            recipe.slug,
+        )
         return html
     try:
         catalog = load_catalog()
@@ -254,7 +258,13 @@ def _maybe_attach_affiliate_block(html: str, recipe: Recipe) -> str:
         block = render_block(products, recipe.slug, associates_tag=tag)
         return insert_or_replace_block(html, block)
     except Exception as exc:
-        logger.warning("recipe-tools block injection skipped: %s", exc)
+        logger.error(
+            "recipe-tools block injection FAILED for slug=%s — post publishes "
+            "without the affiliate block: %s",
+            recipe.slug,
+            exc,
+            exc_info=True,
+        )
         return html
 
 
