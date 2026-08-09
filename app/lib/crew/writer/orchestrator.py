@@ -23,7 +23,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from crewai import Agent, Task
 
@@ -42,7 +42,6 @@ from lib.crew.writer.context import (
     filter_links_to_allowed,
     idea_priority,
     internal_link_candidates_from_cache,
-    load_brand_affiliate_catalog,
     load_disclosure_text,
     mascot_facts_summary,
     read_brand_config,
@@ -55,6 +54,9 @@ from lib.crew.writer.models import ContentBrief, WrittenPost
 from lib.crew.writer.prompts import build_strategist_task_description, build_writer_task_description
 from lib.gsc_scout import load_site_content_cache
 from lib.observability import get_logger
+
+if TYPE_CHECKING:  # runtime import would be circular -- lib.crew.products
+    from lib.crew.products.selector import SelectorExecuteFn  # imports writer.context
 
 logger = get_logger(__name__)
 
@@ -141,13 +143,16 @@ def write_post_from_brief(
     brief: ContentBrief,
     *,
     execute_fn: WriterExecuteFn | None = None,
+    product_execute_fn: SelectorExecuteFn | None = None,
 ) -> WrittenPost | None:
-    """Writer stage: a `ContentBrief` -> a `WrittenPost` (internal links used
-    are re-filtered against the real site cache -- an independent LLM call
-    gets the same defensive treatment as the brief)."""
+    """Writer stage: a `ContentBrief` -> a `WrittenPost`. Internal links used
+    are re-filtered against the real site cache; the writer sees the
+    selector-curated per-post catalog (`lib.crew.products.selector`)."""
+    from lib.crew.products import record_usage, select_products_for_post  # break import cycle
+
     config = read_brand_config(brand_dir)
     site = config.get("site", {}) if isinstance(config, dict) else {}
-    catalog = load_brand_affiliate_catalog(brand_dir)
+    catalog = select_products_for_post(brand_dir, brief, execute_fn=product_execute_fn)
 
     description = build_writer_task_description(
         brief=brief,
@@ -162,10 +167,11 @@ def write_post_from_brief(
     )
     agent = build_writer_agent()
     task = build_writer_task(agent, description)
-    execute_fn = execute_fn or execute_writer_crew
-    written_post = execute_fn(agent, task)
+    written_post = (execute_fn or execute_writer_crew)(agent, task)
     if written_post is None:
         return None
+    if written_post.affiliate_keys_used:
+        record_usage(brief.suggested_title, written_post.affiliate_keys_used)
 
     allowed_urls = {c.url for c in brief.internal_link_candidates}
     filtered_links = filter_links_to_allowed(written_post.internal_links_used, allowed_urls)
@@ -218,7 +224,10 @@ def assemble_final_html(
     # in a real rendered post). Matches _compose_body()'s proven separator.
     body_with_schema = f"{body_html.rstrip()}\n\n{jsonld_block}\n"
 
-    catalog = catalog if catalog is not None else load_brand_affiliate_catalog(brand_dir)
+    # Merged-pool default: the selector may pick recipe-catalog keys too.
+    from lib.crew.products import load_candidate_pool  # runtime import: avoids cycle
+
+    catalog = catalog if catalog is not None else load_candidate_pool(brand_dir)
     return resolve_html(body_with_schema, catalog=catalog)
 
 
