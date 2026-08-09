@@ -3,7 +3,8 @@
 Facebook uses a two-step token model:
   1. Short-lived user token  (1 hour)  — from OAuth code exchange
   2. Long-lived user token   (60 days) — exchanged from short-lived
-  3. Page access token       (never expires while token is valid) — from /me/accounts
+  3. Page access token       (never expires while token is valid) — fetched
+     directly from the page node (GET /{page_id}?fields=access_token)
 
 Instagram uses the same page token (FB_PAGE_TOKEN) — no separate OAuth needed.
 
@@ -42,18 +43,25 @@ GRAPH_API = "https://graph.facebook.com/v23.0"
 OAUTH_DIALOG = "https://www.facebook.com/v23.0/dialog/oauth"
 
 # Permissions needed for the full Persona pipeline:
-#   pages_manage_posts        — publish to page
+#   pages_manage_posts        — publish to page; also what the /video_reels
+#                                endpoint (Reel publishing) actually requires,
+#                                alongside pages_read_engagement/pages_show_list
 #   pages_read_engagement     — read page comments
 #   pages_show_list           — list pages the user manages
-#   publish_video             — publish Reels/video to page
 #   instagram_basic           — read IG account
 #   instagram_content_publish — publish to IG
 #   groups_access_member_info — (limited) read group members
+#
+# `publish_video` deliberately NOT requested: confirmed live against a real
+# Meta app -- it doesn't appear in the app's Manage-Pages permissions table
+# at all (unlike pages_manage_posts, which showed a real "Add" button), and
+# requesting it makes the consent dialog fail before ever reaching the
+# redirect step (a misleading "Can't load URL" domain-mismatch screen was
+# actually that failure's teardown page, not a real redirect-URI problem).
 DEFAULT_SCOPES = [
     "pages_manage_posts",
     "pages_read_engagement",
     "pages_show_list",
-    "publish_video",
     "instagram_basic",
     "instagram_content_publish",
     "public_profile",
@@ -196,28 +204,33 @@ class FacebookOAuth:
         )
 
     def get_page_token(self, user_token: str, page_id: str) -> OAuthToken:
-        """Exchange a user token for a never-expiring page access token."""
+        """Exchange a user token for a never-expiring page access token.
+
+        Queries the page node directly instead of listing /me/accounts:
+        for business-owned pages Meta can return an empty list from
+        /me/accounts even when the token's granular scopes explicitly
+        authorize the page (confirmed live 2026-08-09) — direct node
+        access works in exactly that case.
+        """
         r = httpx.get(
-            f"{GRAPH_API}/me/accounts",
+            f"{GRAPH_API}/{page_id}",
             params={"access_token": user_token, "fields": "id,name,access_token"},
             timeout=15.0,
         )
         r.raise_for_status()
         data = r.json()
 
-        for page in data.get("data", []):
-            if page["id"] == page_id:
-                return OAuthToken(
-                    access_token=page["access_token"],
-                    token_type="page",
-                    expires_at=None,  # page tokens don't expire
-                    platform="facebook",
-                    token_id=page_id,
-                )
-
-        available = [p["id"] for p in data.get("data", [])]
-        raise ValueError(
-            f"Page {page_id} not found in managed pages. Available: {available}"
+        if "access_token" not in data:
+            raise ValueError(
+                f"Page {page_id} returned no access_token "
+                f"(check the token's granular page scopes): {data}"
+            )
+        return OAuthToken(
+            access_token=data["access_token"],
+            token_type="page",
+            expires_at=None,  # page tokens don't expire
+            platform="facebook",
+            token_id=page_id,
         )
 
     def refresh_long_lived(self, token: OAuthToken) -> OAuthToken:

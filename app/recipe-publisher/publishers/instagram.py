@@ -18,15 +18,28 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
-from generators.image import GeneratedImage
-from generators.recipe import Recipe
 
 from publishers.wordpress import (
     upload_image_to_media_library,
     upload_video_to_media_library,
 )
+
+if TYPE_CHECKING:
+    # Type-only: `from __future__ import annotations` means these names are
+    # never evaluated at runtime, only referenced in annotations below. A
+    # real (non-TYPE_CHECKING) import of Recipe pulls in generators.recipe
+    # -> recipe_from_seed -> anthropic transitively -- a real dependency
+    # for callers that pass an actual Recipe, but reel-publish callers
+    # pass a duck-typed stub instead (see scripts.crewai_reels_pipeline),
+    # so this module has no genuine runtime need for the real class.
+    # Confirmed live: publishing a Reel from the containerized API failed
+    # with ModuleNotFoundError: No module named 'anthropic' before this
+    # fix, since that image never installs recipe-publisher/requirements.txt.
+    from generators.image import GeneratedImage
+    from generators.recipe import Recipe
 
 logger = logging.getLogger(__name__)
 
