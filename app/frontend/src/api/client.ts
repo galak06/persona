@@ -19,8 +19,24 @@ interface ValidationItem {
   loc?: unknown[];
 }
 
+const DEFAULT_API_ORIGIN = "http://127.0.0.1:5001";
+
+/**
+ * Bare API origin (no `/api/v1` suffix), for callers that build their own
+ * path -- e.g. `reelVideoUrl`/`slideImageUrl` in `./ideas.ts`, which append
+ * `/api/v1/...` themselves. Derived from the same `VITE_API_URL` env var
+ * `apiClient.baseURL` uses below, so there's one source of truth instead of
+ * a second, separately-configured base (previously `window._API_BASE`,
+ * which nothing ever actually set -- it silently fell back to a
+ * hardcoded, wrong port and left reel/slide previews unable to load).
+ */
+export const apiOrigin = (import.meta.env.VITE_API_URL || `${DEFAULT_API_ORIGIN}/api/v1`).replace(
+  /\/api\/v1\/?$/,
+  "",
+);
+
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://127.0.0.1:5001/api/v1",
+  baseURL: import.meta.env.VITE_API_URL || `${DEFAULT_API_ORIGIN}/api/v1`,
   headers: {
     "Content-Type": "application/json",
   },

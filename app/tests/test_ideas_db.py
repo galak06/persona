@@ -28,6 +28,7 @@ def test_statuses_tuple_is_unchanged() -> None:
         "write_failed",
         "validation_failed",
         "drafting",
+        "composing_reel",
     )
 
 

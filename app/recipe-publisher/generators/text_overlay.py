@@ -94,7 +94,23 @@ def apply_overlay(
     head_font = ImageFont.truetype(_DEFAULT_HEADLINE_FONT, head_size)
     sub_font = ImageFont.truetype(_DEFAULT_SUBCOPY_FONT, sub_size, index=_SUBCOPY_FONT_INDEX)
 
-    lines = spec.headline.split("\n")
+    # Word-wrap each explicit line to fit the frame width -- the prompt asks
+    # the LLM for <=14 chars/line, but that's a character-count heuristic
+    # with no relationship to actual rendered pixel width (wide letters like
+    # M/W/A blow past it at the exact same count that narrow letters fit
+    # easily), and nothing here enforced it: confirmed live, "SAFER HOMEMADE"
+    # (exactly 14 chars) rendered wide enough to run off both frame edges.
+    # `_wrap_text` (already used for subcopy below) measures real pixel
+    # width via `draw.textbbox`, so this is a hard guarantee instead of a
+    # heuristic the LLM can miss.
+    measure_draw = ImageDraw.Draw(img)
+    head_margin = int(w * 0.06)
+    head_max_width = w - head_margin * 2
+    lines = [
+        wrapped_line
+        for raw_line in spec.headline.split("\n")
+        for wrapped_line in _wrap_text(measure_draw, raw_line, head_font, head_max_width)
+    ]
     line_spacing = int(head_size * 1.06)
     total_head_h = line_spacing * len(lines)
     head_y = int(h * headline_y_pct) - total_head_h // 2

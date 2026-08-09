@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
+import { apiOrigin } from "../api/client";
 import { ideasUrl, updateIdeaStatus, slidesApiUrl, slideImageUrl } from "../api/ideas";
 import type { ContentIdea, IdeasResponse, SlidesResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
@@ -46,7 +47,6 @@ function statusBadge(status: string): React.JSX.Element {
 }
 
 function SlidePreview({ ideaId }: { ideaId: string }): React.JSX.Element {
-  const apiBase = (window as Window & { _API_BASE?: string })._API_BASE ?? "http://localhost:8000";
   const { data, loading } = useApiQuery<SlidesResponse>(slidesApiUrl(ideaId));
   // Cache-busting token fixed at mount time (component remounts whenever the
   // idea list reloads, which is enough to bust stale slide images).
@@ -70,7 +70,7 @@ function SlidePreview({ ideaId }: { ideaId: string }): React.JSX.Element {
       {data.slides.map((s) => (
         <img
           key={s.n}
-          src={`${slideImageUrl(apiBase, ideaId, s.n)}?t=${bust}`}
+          src={`${slideImageUrl(apiOrigin, ideaId, s.n)}?t=${bust}`}
           alt={`Slide ${s.n}`}
           className="h-28 w-28 rounded-lg object-cover border border-stone-200 shadow-sm"
         />

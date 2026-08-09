@@ -13,6 +13,10 @@ export interface ContentIdea {
   brand_name: string | null;
   created_at: string | null;
   match_score: number | null;
+  reel_ig_caption: string | null;
+  reel_fb_caption: string | null;
+  reel_source: string | null;
+  reel_validation_flags: string[] | null;
 }
 
 export interface IdeasResponse {
@@ -59,4 +63,10 @@ export function slidesApiUrl(id: string): string {
 
 export function slideImageUrl(baseApiUrl: string, id: string, n: number): string {
   return `${baseApiUrl}/api/v1/ideas/${encodeURIComponent(id)}/slides/${n}`;
+}
+
+export type ReelPlatform = "ig" | "fb";
+
+export function reelVideoUrl(baseApiUrl: string, id: string, platform: ReelPlatform): string {
+  return `${baseApiUrl}/api/v1/ideas/${encodeURIComponent(id)}/reel-video/${platform}`;
 }

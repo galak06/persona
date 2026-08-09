@@ -11,11 +11,14 @@ import io
 from pathlib import Path
 
 from generators.text_overlay import (
+    OverlaySpec,
+    _wrap_text,
     apply_follow_badge,
     apply_image_badge,
+    apply_overlay,
     apply_site_cta_ribbon,
 )
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 
 def _solid_jpeg(size: int = 1080, color: tuple[int, int, int] = (200, 200, 200)) -> bytes:
@@ -122,4 +125,29 @@ def test_site_cta_ribbon_leaves_top_untouched() -> None:
 def test_site_cta_ribbon_preserves_dimensions() -> None:
     src = _solid_jpeg(1080)
     out = apply_site_cta_ribbon(src)
+    assert _open(out).size == (1080, 1080)
+
+
+def test_apply_overlay_headline_never_exceeds_frame_width() -> None:
+    """Regression test: 'SAFER HOMEMADE' (exactly the prompt's 14-char/line
+    limit) rendered wide enough to run off both frame edges in a real reel
+    -- character count has no relationship to actual pixel width, and
+    nothing enforced it. Every wrapped headline line must now fit within
+    the frame."""
+    src = _solid_jpeg(1080, color=(120, 90, 60))
+    apply_overlay(src, OverlaySpec(headline="SAFER HOMEMADE", subcopy="See what I feed Nalla instead"))
+
+    head_font = ImageFont.truetype(
+        "/System/Library/Fonts/Supplemental/Arial Black.ttf", int(1080 * 0.10)
+    )
+    draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    max_width = 1080 - int(1080 * 0.06) * 2
+    for line in _wrap_text(draw, "SAFER HOMEMADE", head_font, max_width):
+        bbox = draw.textbbox((0, 0), line, font=head_font)
+        assert bbox[2] - bbox[0] <= max_width, f"{line!r} overflows: {bbox[2] - bbox[0]}px > {max_width}px"
+
+
+def test_apply_overlay_preserves_dimensions() -> None:
+    src = _solid_jpeg(1080)
+    out = apply_overlay(src, OverlaySpec(headline="SHORT", subcopy="Short subcopy line"))
     assert _open(out).size == (1080, 1080)
