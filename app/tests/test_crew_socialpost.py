@@ -12,7 +12,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from lib.crew.socialpost.agent import build_social_post_agent, build_social_post_task
-from lib.crew.socialpost.execute import _parse_structured_output, execute_social_post_crew
+from lib.crew.socialpost.execute import (
+    MAX_ATTEMPTS,
+    _parse_structured_output,
+    execute_social_post_crew,
+)
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.socialpost.prompts import build_social_post_task_description
 from lib.crew.socialpost.rules import (
@@ -266,7 +270,7 @@ def test_execute_returns_plan_when_rules_pass(mock_crew: MagicMock) -> None:
 
 
 @patch("crewai.Crew")
-def test_execute_retries_once_on_rule_violation(mock_crew: MagicMock) -> None:
+def test_execute_retries_on_rule_violation(mock_crew: MagicMock) -> None:
     bad = _good_plan(fb_caption="Bone broth is safe. See https://x.com/p -- Comment BROTH? Follow.")
     task = _make_task_with_output(_plan_json(bad))
 
@@ -280,18 +284,66 @@ def test_execute_retries_once_on_rule_violation(mock_crew: MagicMock) -> None:
     result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
     assert result is not None
     assert mock_crew.call_count == 2
-    assert "PREVIOUS DRAFT WAS REJECTED" in task.description
+    assert "YOUR PREVIOUS DRAFT WAS REJECTED" in task.description
 
 
 @patch("crewai.Crew")
-def test_execute_none_when_retry_still_violates(mock_crew: MagicMock) -> None:
+def test_retry_prompt_is_surgical_not_a_redraft(mock_crew: MagicMock) -> None:
+    """The live failure this guards: 're-draft the full plan' made the model
+    fix the named rule and break a different one. The correction must hand
+    the rejected draft back and ask for a minimal edit."""
+    bad = _good_plan(fb_caption="Bone broth is safe. See https://x.com/p -- Comment BROTH? Follow.")
+    task = _make_task_with_output(_plan_json(bad))
+    execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+
+    assert "Return the SAME plan with ONLY those problems corrected" in task.description
+    assert "do not introduce any new rule violation" in task.description.lower()
+    # The rejected draft itself is included, so the retry is an edit.
+    assert "Bone broth is safe. See https://x.com/p" in task.description
+
+
+@patch("crewai.Crew")
+def test_each_retry_rebuilds_from_the_original_prompt(mock_crew: MagicMock) -> None:
+    """Correction blocks must not stack -- two appended blocks would give the
+    model contradictory 'previous draft' instructions."""
+    bad = _good_plan(
+        fb_caption="Bone broth is safe. Still https://x.com/p here. Comment BROTH? Follow."
+    )
+    task = _make_task_with_output(_plan_json(bad))
+    execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+
+    assert task.description.count("YOUR PREVIOUS DRAFT WAS REJECTED") == 1
+    assert task.description.startswith("base description")
+
+
+@patch("crewai.Crew")
+def test_execute_none_after_max_attempts(mock_crew: MagicMock) -> None:
     bad = _good_plan(
         fb_caption="Bone broth is safe. Still https://x.com/p here. Comment BROTH? Follow."
     )
     task = _make_task_with_output(_plan_json(bad))
     result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
     assert result is None
-    assert mock_crew.call_count == 2
+    assert mock_crew.call_count == MAX_ATTEMPTS
+
+
+@patch("crewai.Crew")
+def test_execute_succeeds_on_the_second_correction(mock_crew: MagicMock) -> None:
+    """One retry was not enough live -- attempt 2 fixed the question and broke
+    hashtags. The third attempt is what rescues that idea."""
+    bad = _good_plan(fb_caption="Bone broth is safe. See https://x.com/p -- Comment BROTH? Follow.")
+    task = _make_task_with_output(_plan_json(bad))
+
+    def fix_on_third_kickoff(*_args: object, **_kwargs: object) -> MagicMock:
+        crew_instance = MagicMock()
+        if mock_crew.call_count == 3:
+            task.output.raw = _plan_json(_good_plan())
+        return crew_instance
+
+    mock_crew.side_effect = fix_on_third_kickoff
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+    assert result is not None
+    assert mock_crew.call_count == 3
 
 
 @patch("crewai.Crew")

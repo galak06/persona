@@ -68,7 +68,13 @@ from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-_REQUIRED_ENV_VARS = ("DEEPSEEK_API_KEY", "GEMINI_API_KEY", "WP_URL", "WP_USER", "WP_APP_PASSWORD")
+# Publishing needs the WP credentials (the IG half uploads the image to the WP
+# media library, because Meta requires a public URL to build a container) and
+# nothing else -- the publishers read FB_PAGE_ID/FB_PAGE_TOKEN/IG_ACCOUNT_ID
+# themselves and raise their own clear errors.
+_RELEASE_ENV_VARS = ("WP_URL", "WP_USER", "WP_APP_PASSWORD")
+# Composition additionally needs the writer LLM and the image model.
+_COMPOSE_ENV_VARS = ("DEEPSEEK_API_KEY", "GEMINI_API_KEY", *_RELEASE_ENV_VARS)
 _BODY_TRUNCATE_CHARS = 3000
 _RECIPE_PUBLISHER_ROOT = _ENGINE_ROOT / "recipe-publisher"
 
@@ -89,8 +95,18 @@ def _infer_brand_dir() -> Path:
     )
 
 
-def _check_required_env() -> list[str]:
-    return [name for name in _REQUIRED_ENV_VARS if not os.environ.get(name, "").strip()]
+def _check_required_env(*, release_only: bool) -> list[str]:
+    """Missing env vars for the mode actually being run.
+
+    `--release-only` deliberately checks a SMALLER set: it never builds a
+    caption or an image, so demanding DEEPSEEK_API_KEY/GEMINI_API_KEY there is
+    wrong. It also breaks the scheduled path for real -- the cron flow runs
+    release-only inside the worker container, which has no reason to carry LLM
+    credentials, and the run died on `missing required env var(s):
+    DEEPSEEK_API_KEY` with four posts sitting past their slot.
+    """
+    required = _RELEASE_ENV_VARS if release_only else _COMPOSE_ENV_VARS
+    return [name for name in required if not os.environ.get(name, "").strip()]
 
 
 def _site_identity(brand_dir: Path) -> tuple[str, str]:
@@ -260,7 +276,7 @@ def main() -> int:
     load_brand_env_into_environ(brand_dir)
     load_local_env()
 
-    missing = _check_required_env()
+    missing = _check_required_env(release_only=args.release_only)
     if missing:
         print(f"ERROR: missing required env var(s): {', '.join(missing)}", file=sys.stderr)
         return 1

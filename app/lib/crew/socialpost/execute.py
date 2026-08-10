@@ -4,10 +4,21 @@ Same shape as `lib.crew.reels.execute.execute_reels_crew`: the only function
 in this package that makes a real LLM/network call, returning `None` (logged,
 not raised) on any failure so the orchestrator never crashes the run.
 
-Adds one retry-with-feedback pass when the parsed plan violates the hard
-caption rules (`lib.crew.socialpost.rules`) -- same shape as the reels crew's
-beat-count retry, because these are structural requirements (URL placement,
-hashtag counts, keyword-in-first-sentence), not nice-to-haves.
+Retries with feedback when the parsed plan violates the hard caption rules
+(`lib.crew.socialpost.rules`) -- same shape as the reels crew's beat-count
+retry, because these are structural requirements (no URLs, hashtag counts,
+comment-keyword CTA), not nice-to-haves.
+
+Two things learned from live runs, both encoded below:
+
+1. **Retries must be surgical, not a re-draft.** Asking for a fresh plan made
+   the model fix the named rule and break a different one -- observed twice on
+   the same idea: attempt 1 missed the closing question, attempt 2 added it and
+   simultaneously grew FB hashtags and a 6th IG hashtag. The retry prompt now
+   says to return the SAME plan with only the listed problems corrected.
+2. **One retry is not enough.** Each pass does fix what it was told about, so
+   the ceiling is `MAX_ATTEMPTS`, not one -- with surgical retries the drift
+   that made extra attempts pointless is gone.
 
 `_strip_code_fence`/`_iter_balanced_json_object_candidates` are a local,
 independent copy -- deliberately NOT imported from `lib.crew.reels.execute` or
@@ -31,6 +42,11 @@ from lib.observability import get_logger
 logger = get_logger(__name__)
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+# Total kickoffs allowed per idea: the first draft plus two corrections. Each
+# correction is one DeepSeek call (~7s), so the worst case stays well inside
+# the orchestrator's per-idea budget.
+MAX_ATTEMPTS = 3
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
@@ -122,32 +138,58 @@ def _kickoff_and_parse(agent: Agent, task: Task) -> SocialPostPlan | None:
     return _parse_structured_output(raw, SocialPostPlan, event="crew_socialpost")
 
 
+def _correction_prompt(plan: SocialPostPlan, violations: list[str]) -> str:
+    """Feedback for one retry: hand back the rejected draft and ask for a
+    minimal correction.
+
+    Handing the draft back verbatim is the point. Without it the model writes
+    a fresh plan from the original brief and re-breaks rules it had already
+    satisfied; with it, the task is an edit rather than a rewrite.
+    """
+    bullets = "\n".join(f"- {v}" for v in violations)
+    return (
+        "\n\n---\nYOUR PREVIOUS DRAFT WAS REJECTED. It was correct except for the "
+        "problems listed below.\n\nPrevious draft:\n"
+        f"{plan.model_dump_json(indent=2)}\n\n"
+        f"Problems to fix:\n{bullets}\n\n"
+        "Return the SAME plan with ONLY those problems corrected. Keep every other "
+        "field and sentence exactly as it was -- do not rewrite the captions, do not "
+        "change the hashtags unless a problem above is about hashtags, and do not "
+        "introduce any new rule violation while fixing these."
+    )
+
+
 def execute_social_post_crew(
     agent: Agent, task: Task, *, target_keyword: str
 ) -> SocialPostPlan | None:
-    """Run the real Social Post `Crew(...).kickoff()`, with one retry-with-
-    feedback pass if the parsed plan breaks the hard caption rules. `None` on
-    any failure, including a retry that still violates them."""
-    plan = _kickoff_and_parse(agent, task)
-    if plan is None:
-        return None
-    violations = find_caption_violations(plan, target_keyword=target_keyword)
-    if not violations:
-        return plan
+    """Run the real Social Post `Crew(...).kickoff()`, retrying with surgical
+    feedback while the plan breaks hard caption rules. `None` if no attempt
+    within `MAX_ATTEMPTS` produces a clean plan."""
+    base_description = task.description
+    plan: SocialPostPlan | None = None
 
-    logger.warning("crew_socialpost_rule_violations_retrying", violations=violations)
-    bullet_list = "\n".join(f"- {v}" for v in violations)
-    task.description = (
-        task.description
-        + "\n\n---\nPREVIOUS DRAFT WAS REJECTED for breaking these hard rules:\n"
-        + bullet_list
-        + "\nRe-draft the full plan fixing every one of them. All other rules still apply."
-    )
-    retry_plan = _kickoff_and_parse(agent, task)
-    if retry_plan is None:
-        return None
-    retry_violations = find_caption_violations(retry_plan, target_keyword=target_keyword)
-    if retry_violations:
-        logger.warning("crew_socialpost_rule_violations_after_retry", violations=retry_violations)
-        return None
-    return retry_plan
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        plan = _kickoff_and_parse(agent, task)
+        if plan is None:
+            return None
+        violations = find_caption_violations(plan, target_keyword=target_keyword)
+        if not violations:
+            return plan
+        if attempt == MAX_ATTEMPTS:
+            logger.warning(
+                "crew_socialpost_rule_violations_exhausted",
+                attempts=attempt,
+                violations=violations,
+            )
+            return None
+        logger.warning(
+            "crew_socialpost_rule_violations_retrying",
+            attempt=attempt,
+            violations=violations,
+        )
+        # Rebuild from the ORIGINAL description each time: appending to an
+        # already-appended prompt would stack contradictory correction blocks
+        # from earlier attempts.
+        task.description = base_description + _correction_prompt(plan, violations)
+
+    return None
