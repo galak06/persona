@@ -244,6 +244,7 @@ jobs:
         # before this PR's changes too (pre-existing, unrelated fixture bug).
         run: |
           pytest \
+            --timeout=90 --timeout-method=thread \
             tests/test_db.py \
             tests/test_groups_db.py \
             tests/test_engagements_db.py \

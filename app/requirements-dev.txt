@@ -15,3 +15,8 @@ types-croniter>=3.0.3   # lib/scheduling/cron_due.py (strict mypy override)
 
 # HTTP mocking — used by tests/test_wp_comments.py (was missing, broke CI)
 respx>=0.21.0
+
+# Per-test timeout. A hanging test used to run until GitHub's 6h job ceiling
+# and be cancelled, which reports as a failure with no traceback; with this
+# the job fails in seconds and names the test that blocked.
+pytest-timeout>=2.3.0
