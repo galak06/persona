@@ -301,9 +301,10 @@ CREATE INDEX IF NOT EXISTS idx_content_ideas_brand_id ON content_ideas(brand_id)
 -- every subsequent run (the bug the reels reject path has, see ideas_db).
 --
 -- ONE image, TWO captions: the generated hook image is shared by both
--- platforms; the captions are not (FB carries an inline URL, IG can't have a
--- clickable link at all), which is why the caption columns are per-platform
--- while the image columns are not.
+-- platforms; the captions are not (different lengths, hashtag rules and CTA
+-- phrasing -- neither carries a URL: both platforms reject caption links, so
+-- traffic runs through a comment-keyword CTA fulfilled by DM), which is why
+-- the caption columns are per-platform while the image columns are not.
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_status           TEXT;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_fb_caption       TEXT;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_ig_caption       TEXT;

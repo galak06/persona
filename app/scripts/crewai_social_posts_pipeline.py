@@ -130,12 +130,11 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         title=title,
         body=body,
         target_keyword=target_keyword,
-        post_url=wp_url,
         site_domain=site_domain,
         brand_voice=brand_voice_summary(brand_dir),
     )
     task = build_social_post_task(agent, description)
-    plan = execute_social_post_crew(agent, task, target_keyword=target_keyword, post_url=wp_url)
+    plan = execute_social_post_crew(agent, task, target_keyword=target_keyword)
     if plan is None:
         logger.warning("social_posts_plan_generation_failed", idea_id=idea_id)
         return "error"

@@ -5,14 +5,18 @@ direction for the single hook image both platforms share.
 
 **One image, two captions.** The image is generated once
 (`lib.crew.wp_image.generate_wp_image` + `text_overlay`) and posted to both
-platforms; the captions are not interchangeable, because the platforms differ
-in the one way that matters here -- Facebook renders an inline URL, Instagram
-cannot make a link clickable at all. Writing one caption and reusing it would
-mean either a dead URL sitting in the IG caption or no CTA on the FB post.
+platforms; the captions are not interchangeable -- different length budgets,
+hashtag rules (none on FB, 3-5 on IG) and platform-specific prohibitions
+("link in bio" phrasing is IG-only). Neither caption carries a URL: both
+platforms reject/suppress page posts with caption links (live-confirmed on
+this brand's accounts), so traffic runs through the comment-keyword CTA --
+readers comment the keyword, the article link is delivered by DM, where links
+ARE clickable and unpenalized. Fulfillment is the owner's existing manual
+reply flow.
 
-`target_question` is carried as its own field rather than left implicit in
-`fb_caption` so the answer-first rule is a testable property of the output
-instead of a hope about the prompt.
+`target_question` and `comment_keyword` are carried as their own fields rather
+than left implicit in the captions so the answer-first and comment-CTA rules
+are testable properties of the output instead of hopes about the prompt.
 """
 
 from __future__ import annotations
@@ -28,17 +32,24 @@ class SocialPostPlan(BaseModel):
         "way a reader would actually type it (e.g. 'Is bone broth safe for dogs?'). "
         "Both captions must answer it in their first sentence."
     )
+    comment_keyword: str = Field(
+        description="ONE topical word in ALL CAPS (e.g. 'BROTH') that readers comment "
+        "to get the article DM'd to them. Must appear verbatim in both captions' "
+        "closing comment-CTA. Replies are fulfilled manually -- never promise a bot "
+        "or instant delivery."
+    )
     fb_caption: str = Field(
-        description="Facebook Page post body, 150-200 words, no hashtags. Answers "
-        "target_question in sentence one with the target keyword in it. Carries the "
-        "post URL once, late in the body -- never in the opening line. Ends with a "
-        "genuine question to the reader, plus a separate short follow CTA."
+        description="Facebook Page post body, 150-200 words, no hashtags, NO URL of any "
+        "kind (Facebook rejects page posts with caption links). Answers target_question "
+        "in sentence one with the target keyword in it. May name the site in words once, "
+        "late. Ends with a comment-keyword CTA ('Comment {comment_keyword} and I'll DM "
+        "you the article') plus a separate short follow CTA."
     )
     ig_caption: str = Field(
-        description="Instagram feed caption. Answers target_question in sentence one "
-        "with the target keyword in it. Contains NO URL -- Instagram links are not "
-        "clickable -- and never says 'link in bio'. Ends with a genuine question plus "
-        "a separate short follow CTA, then 3-5 relevant hashtags on their own line."
+        description="Instagram feed caption, NO URL of any kind, never 'link in bio'. "
+        "Answers target_question in sentence one with the target keyword in it. Ends "
+        "with the same comment-keyword CTA plus a separate short follow CTA, then 3-5 "
+        "relevant hashtags on their own line."
     )
     overlay_headline: str = Field(
         description="Short on-screen headline painted over the image. May contain \\n "

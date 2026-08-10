@@ -156,10 +156,11 @@ def publish_photo_post_to_facebook(
     Chosen over `publish_link_post_to_facebook`'s `/feed` link card when the
     image itself is the point (a generated hook image with overlay text) --
     a link card would render the target page's OG image and discard ours.
-    Consequently there is no `link` parameter here at all: the caller's
-    `message` already carries any URL inline. This path deliberately never
-    uses `post_first_comment_to_facebook` -- the social-post pipeline's
-    posts don't put links in comments.
+    There is no `link` parameter here at all, and `message` carries no URL
+    either: FB rejects/suppresses page posts with caption links, so the
+    social-post pipeline drives traffic via a comment-keyword CTA (article
+    link delivered by DM) instead. This path also deliberately never uses
+    `post_first_comment_to_facebook` -- no links in comments either.
 
     `alt_text` is best-effort: sent as `alt_text_custom` (the field FB
     exposes when *reading* photos). If the Graph API rejects the parameter,
@@ -218,7 +219,7 @@ def publish_photo_post_to_facebook(
                 permalink = perm_resp.json().get("permalink_url")
             else:
                 warnings.append(f"permalink fetch {perm_resp.status_code}")
-        except Exception as exc:  # noqa: BLE001 — permalink is cosmetic
+        except Exception as exc:  # permalink is cosmetic
             warnings.append(f"permalink fetch error: {exc}")
 
     logger.info("FB Page photo post published: id=%s permalink=%s", post_id, permalink)

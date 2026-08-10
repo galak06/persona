@@ -23,7 +23,8 @@ from lib.crew.socialpost.prompts import IG_HASHTAG_MAX, IG_HASHTAG_MIN
 _HASHTAG_RE = re.compile(r"#\w+")
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s")
 # Only real link syntax counts as a URL. Naming the site in words
-# ("dogfoodandfun.com") is explicitly allowed in the IG caption for recall.
+# ("dogfoodandfun.com") is explicitly allowed in BOTH captions for recall --
+# the platforms reject/suppress link syntax, not a domain spelled as words.
 _LINK_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
 
 
@@ -34,9 +35,7 @@ def first_sentence(text: str) -> str:
     return parts[0].strip() if parts else stripped
 
 
-def find_caption_violations(
-    plan: SocialPostPlan, *, target_keyword: str, post_url: str
-) -> list[str]:
+def find_caption_violations(plan: SocialPostPlan, *, target_keyword: str) -> list[str]:
     """Every structural rule the plan breaks. Empty list means it's usable."""
     violations: list[str] = []
     keyword = target_keyword.strip().lower()
@@ -64,27 +63,23 @@ def find_caption_violations(
                 f"'{target_keyword}' verbatim."
             )
 
-    # Facebook: the URL exactly once, and never in the opening line.
-    if post_url:
-        fb_url_count = fb.count(post_url)
-        if fb_url_count == 0:
-            violations.append(f"fb_caption must contain the post URL {post_url}.")
-        elif fb_url_count > 1:
-            violations.append(
-                f"fb_caption contains the post URL {fb_url_count} times -- include it exactly once."
-            )
-        if post_url in first_sentence(fb):
-            violations.append(
-                "fb_caption must not put the URL in its first sentence -- move it "
-                "later, after the value."
-            )
+    # No link syntax anywhere -- FB and IG reject/suppress page posts whose
+    # caption carries a URL (live-confirmed on this brand's accounts). The
+    # site named in words is the only permitted pointer.
+    if _LINK_RE.search(fb):
+        violations.append(
+            "fb_caption must contain no URL -- Facebook rejects page posts with "
+            "caption links. Name the site in words instead."
+        )
+    if _LINK_RE.search(ig):
+        violations.append(
+            "ig_caption must contain no URL -- Instagram rejects caption links. "
+            "Name the site in words instead."
+        )
 
     if _HASHTAG_RE.search(fb):
         violations.append("fb_caption must contain no hashtags at all.")
 
-    # Instagram: no link syntax (it wouldn't be clickable), no bio-link phrasing.
-    if _LINK_RE.search(ig):
-        violations.append("ig_caption must contain no URL -- Instagram links are not clickable.")
     lowered_ig = ig.lower()
     for phrase in ("link in bio", "link in my bio", "check the bio", "bio link"):
         if phrase in lowered_ig:
@@ -99,6 +94,21 @@ def find_caption_violations(
             f"ig_caption has {len(hashtags)} hashtags -- it needs between "
             f"{IG_HASHTAG_MIN} and {IG_HASHTAG_MAX}."
         )
+
+    # The comment-keyword CTA is the traffic mechanism (links are banned
+    # everywhere else) -- one ALL-CAPS word, present verbatim in both captions.
+    ck = plan.comment_keyword.strip()
+    if not ck or not ck.isupper() or not ck.isalpha() or " " in ck:
+        violations.append("comment_keyword must be ONE topical word in ALL CAPS (e.g. 'BROTH').")
+    else:
+        if ck not in fb:
+            violations.append(
+                f"fb_caption must contain the comment-keyword CTA with '{ck}' verbatim."
+            )
+        if ck not in ig:
+            violations.append(
+                f"ig_caption must contain the comment-keyword CTA with '{ck}' verbatim."
+            )
 
     # A closing question is a hard brand rule on every caption.
     if "?" not in fb:

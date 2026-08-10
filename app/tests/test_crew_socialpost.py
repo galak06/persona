@@ -17,24 +17,24 @@ from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.socialpost.prompts import build_social_post_task_description
 from lib.crew.socialpost.rules import find_caption_violations, first_sentence
 
-_URL = "https://dogfoodandfun.com/p/bone-broth"
 _KW = "bone broth"
 
 
 def _good_plan(**overrides: str) -> SocialPostPlan:
     fields = {
         "target_question": "Is bone broth safe for dogs?",
+        "comment_keyword": "BROTH",
         "fb_caption": (
             "Bone broth is safe for most dogs when made without onions. "
             "Nalla has been drinking it all winter and her coat shows it. "
-            f"I wrote up the exact no-bones method here: {_URL} "
-            "Have you ever simmered a batch for your dog? "
+            "The full no-bones method is on dogfoodandfun.com. "
+            "Want the exact recipe? Comment BROTH and I'll DM it to you. "
             "Follow the page for weekly recipes."
         ),
         "ig_caption": (
             "Bone broth is safe for most dogs when made without onions. "
             "Nalla gets a ladle over dinner every night. "
-            "Would your dog go for it? "
+            "Want the recipe? Comment BROTH and I'll DM it to you. "
             "Follow for weekly dog food ideas.\n"
             "#dogfood #bonebroth #dogtreats"
         ),
@@ -60,87 +60,88 @@ def test_first_sentence_splits_on_terminator() -> None:
 
 
 def test_good_plan_has_no_violations() -> None:
-    assert find_caption_violations(_good_plan(), target_keyword=_KW, post_url=_URL) == []
+    assert find_caption_violations(_good_plan(), target_keyword=_KW) == []
 
 
 def test_keyword_must_be_in_first_sentence_of_both() -> None:
     plan = _good_plan(
-        fb_caption=f"Great news everyone. Bone broth rocks: {_URL} Right? Follow us.",
-        ig_caption="Great news everyone. Bone broth rocks. Right? Follow.\n#a #b #c",
+        fb_caption="Great news everyone. Bone broth rocks. Comment BROTH? Follow us.",
+        ig_caption="Great news everyone. Bone broth rocks. Comment BROTH? Follow.\n#a #b #c",
     )
-    violations = find_caption_violations(plan, target_keyword=_KW, post_url=_URL)
+    violations = find_caption_violations(plan, target_keyword=_KW)
     assert sum("FIRST sentence" in v for v in violations) == 2
 
 
-def test_fb_url_required_exactly_once_never_in_hook() -> None:
-    no_url = _good_plan(fb_caption="Bone broth is safe. Nalla loves it. Really? Follow.")
-    v1 = find_caption_violations(no_url, target_keyword=_KW, post_url=_URL)
-    assert any("must contain the post URL" in x for x in v1)
-
-    doubled = _good_plan()
-    doubled_fb = doubled.fb_caption + f" Again: {_URL}"
-    v2 = find_caption_violations(
-        doubled.model_copy(update={"fb_caption": doubled_fb}),
-        target_keyword=_KW,
-        post_url=_URL,
+def test_url_rejected_in_both_captions() -> None:
+    """The core platform constraint: FB and IG reject page posts whose
+    caption carries link syntax. Both captions must be URL-free."""
+    fb_url = _good_plan(
+        fb_caption=(
+            "Bone broth is safe for dogs. See https://dogfoodandfun.com/p "
+            "-- Nalla approves. Comment BROTH? Follow us."
+        )
     )
-    assert any("exactly once" in x for x in v2)
+    v1 = find_caption_violations(fb_url, target_keyword=_KW)
+    assert any("fb_caption must contain no URL" in x for x in v1)
 
-    hook_url = _good_plan(
-        fb_caption=f"Bone broth guide at {_URL} is live! Nalla approves. Right? Follow."
+    www = _good_plan(
+        fb_caption=(
+            "Bone broth is safe for dogs. Guide at www.dogfoodandfun.com -- "
+            "Nalla approves. Comment BROTH? Follow us."
+        )
     )
-    v3 = find_caption_violations(hook_url, target_keyword=_KW, post_url=_URL)
-    assert any("first sentence" in x for x in v3)
+    v2 = find_caption_violations(www, target_keyword=_KW)
+    assert any("fb_caption must contain no URL" in x for x in v2)
+
+    ig_url = _good_plan(
+        ig_caption=("Bone broth is safe. See https://x.com/p ok? Comment BROTH. Follow.\n#a #b #c")
+    )
+    v3 = find_caption_violations(ig_url, target_keyword=_KW)
+    assert any("ig_caption must contain no URL" in x for x in v3)
+
+
+def test_naming_the_site_in_words_is_allowed_on_both() -> None:
+    """dogfoodandfun.com in words (no scheme, no www.) is recall, not a link
+    -- allowed on BOTH platforms; it's link syntax that gets posts rejected."""
+    assert find_caption_violations(_good_plan(), target_keyword=_KW) == []
 
 
 def test_fb_hashtags_rejected() -> None:
     plan = _good_plan()
     tagged = plan.model_copy(update={"fb_caption": plan.fb_caption + " #dogs"})
-    violations = find_caption_violations(tagged, target_keyword=_KW, post_url=_URL)
+    violations = find_caption_violations(tagged, target_keyword=_KW)
     assert any("no hashtags" in v for v in violations)
 
 
-def test_ig_rejects_urls_and_bio_phrases() -> None:
-    with_url = _good_plan()
-    v1 = find_caption_violations(
-        with_url.model_copy(
-            update={"ig_caption": f"Bone broth is safe. See {_URL} ok? Follow.\n#a #b #c"}
-        ),
-        target_keyword=_KW,
-        post_url=_URL,
-    )
-    assert any("no URL" in x for x in v1)
-
-    bio = _good_plan()
-    v2 = find_caption_violations(
-        bio.model_copy(
-            update={"ig_caption": "Bone broth is safe. Link in bio! ok? Follow.\n#a #b #c"}
-        ),
-        target_keyword=_KW,
-        post_url=_URL,
-    )
-    assert any("link in bio" in x for x in v2)
+def test_ig_rejects_bio_phrases() -> None:
+    bio = _good_plan(ig_caption="Bone broth is safe. Link in bio! Comment BROTH? Follow.\n#a #b #c")
+    violations = find_caption_violations(bio, target_keyword=_KW)
+    assert any("link in bio" in v for v in violations)
 
 
 def test_ig_hashtag_count_bounds() -> None:
     plan = _good_plan()
     too_many = plan.model_copy(update={"ig_caption": plan.ig_caption + " #d #e #f #g"})
-    violations = find_caption_violations(too_many, target_keyword=_KW, post_url=_URL)
+    violations = find_caption_violations(too_many, target_keyword=_KW)
     assert any("hashtags" in v for v in violations)
 
 
-def test_naming_the_site_in_words_is_allowed_on_ig() -> None:
-    """dogfoodandfun.com in words (no scheme, no www.) is recall, not a link."""
-    plan = _good_plan()
-    named = plan.model_copy(
-        update={
-            "ig_caption": (
-                "Bone broth is safe for most dogs. Full guide on dogfoodandfun.com -- "
-                "Nalla approves. Would yours? Follow for more.\n#dogfood #broth #dogs"
-            )
-        }
+def test_comment_keyword_shape_enforced() -> None:
+    for bad in ("", "broth", "BONE BROTH", "BROTH1"):
+        plan = _good_plan(comment_keyword=bad)
+        violations = find_caption_violations(plan, target_keyword=_KW)
+        assert any("comment_keyword must be ONE topical word" in v for v in violations), bad
+
+
+def test_comment_keyword_must_appear_in_both_captions() -> None:
+    plan = _good_plan(
+        fb_caption=(
+            "Bone broth is safe for most dogs. Nalla loves it -- the full method "
+            "is on dogfoodandfun.com. Want it? Follow the page."
+        )
     )
-    assert find_caption_violations(named, target_keyword=_KW, post_url=_URL) == []
+    violations = find_caption_violations(plan, target_keyword=_KW)
+    assert any("fb_caption must contain the comment-keyword CTA" in v for v in violations)
 
 
 # ── agent/task construction ───────────────────────────────────────────────
@@ -159,19 +160,23 @@ def test_task_has_no_output_pydantic() -> None:
     assert "SocialPostPlan" in task.expected_output
 
 
-def test_prompt_carries_keyword_url_and_domain() -> None:
+def test_prompt_carries_keyword_domain_and_rules() -> None:
     desc = build_social_post_task_description(
         title="T",
         body="B",
         target_keyword=_KW,
-        post_url=_URL,
         site_domain="dogfoodandfun.com",
         brand_voice="voice",
     )
     assert _KW in desc
-    assert _URL in desc
+    assert "dogfoodandfun.com" in desc
+    assert "no URL" in desc  # the platform constraint is spelled out
+    assert "comment_keyword" in desc  # the traffic CTA contract
     assert "link in bio" in desc  # the prohibition is spelled out
     assert "voice" in desc
+    # The canonical URL must NOT be shown to the model at all -- the safest
+    # way to keep it out of the captions is to never hand it over.
+    assert "https://" not in desc
 
 
 # ── parsing ───────────────────────────────────────────────────────────────
@@ -180,7 +185,7 @@ def test_prompt_carries_keyword_url_and_domain() -> None:
 def test_parse_valid_json() -> None:
     parsed = _parse_structured_output(_plan_json(_good_plan()), SocialPostPlan, event="t")
     assert parsed is not None
-    assert parsed.target_question.startswith("Is bone broth")
+    assert parsed.comment_keyword == "BROTH"
 
 
 def test_parse_json_embedded_in_prose() -> None:
@@ -207,14 +212,14 @@ def _make_task_with_output(raw: str) -> MagicMock:
 @patch("crewai.Crew")
 def test_execute_returns_plan_when_rules_pass(mock_crew: MagicMock) -> None:
     task = _make_task_with_output(_plan_json(_good_plan()))
-    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW, post_url=_URL)
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
     assert result is not None
     assert mock_crew.call_count == 1
 
 
 @patch("crewai.Crew")
 def test_execute_retries_once_on_rule_violation(mock_crew: MagicMock) -> None:
-    bad = _good_plan(fb_caption="Bone broth is safe. No link here at all. Right? Follow.")
+    bad = _good_plan(fb_caption="Bone broth is safe. See https://x.com/p -- Comment BROTH? Follow.")
     task = _make_task_with_output(_plan_json(bad))
 
     def fix_on_second_kickoff(*_args: object, **_kwargs: object) -> MagicMock:
@@ -224,7 +229,7 @@ def test_execute_retries_once_on_rule_violation(mock_crew: MagicMock) -> None:
         return crew_instance
 
     mock_crew.side_effect = fix_on_second_kickoff
-    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW, post_url=_URL)
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
     assert result is not None
     assert mock_crew.call_count == 2
     assert "PREVIOUS DRAFT WAS REJECTED" in task.description
@@ -232,9 +237,11 @@ def test_execute_retries_once_on_rule_violation(mock_crew: MagicMock) -> None:
 
 @patch("crewai.Crew")
 def test_execute_none_when_retry_still_violates(mock_crew: MagicMock) -> None:
-    bad = _good_plan(fb_caption="Bone broth is safe. Still no link. Right? Follow.")
+    bad = _good_plan(
+        fb_caption="Bone broth is safe. Still https://x.com/p here. Comment BROTH? Follow."
+    )
     task = _make_task_with_output(_plan_json(bad))
-    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW, post_url=_URL)
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
     assert result is None
     assert mock_crew.call_count == 2
 
@@ -242,7 +249,5 @@ def test_execute_none_when_retry_still_violates(mock_crew: MagicMock) -> None:
 @patch("crewai.Crew")
 def test_execute_none_when_kickoff_raises(mock_crew: MagicMock) -> None:
     mock_crew.side_effect = RuntimeError("network down")
-    result = execute_social_post_crew(
-        MagicMock(), _make_task_with_output(""), target_keyword=_KW, post_url=_URL
-    )
+    result = execute_social_post_crew(MagicMock(), _make_task_with_output(""), target_keyword=_KW)
     assert result is None

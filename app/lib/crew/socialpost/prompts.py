@@ -11,15 +11,23 @@ model's instincts:
   and both index what's in them. Opening by answering one real search-intent
   question serves the truncation problem, keyword placement, and citation by
   answer engines at the same time.
-- **The URL is inline on Facebook, and absent on Instagram.** This brand cannot
-  use the two standard workarounds -- no link in the first comment, no bio-link
-  change -- so FB carries the URL in the body (accepting the reach cost) and IG
-  carries none at all, because an IG caption URL is not clickable and would just
-  be noise.
+- **NO URL in either caption.** Live-confirmed on this brand's accounts: FB and
+  IG reject/suppress page posts whose caption carries a raw link, and the two
+  standard workarounds are also unavailable here (no link in the first comment,
+  no bio-link change). The drive-to-site mechanism is therefore the site name
+  spelled in words ({site_domain}-style recall, which the platforms don't treat
+  as a link) plus the CTA ribbon painted onto the image itself.
 - **Never "link in bio".** Explicitly telling people to go to the bio link is a
   documented way to get a post's reach suppressed. `lib.crew.reels.prompts`
   already encodes the same rule for reels.
-- **Two CTAs with different jobs.** The closing question drives comments; the
+- **The comment-keyword CTA is the traffic mechanism.** With links banned from
+  captions, comments and bios, the one channel where a link IS clickable and
+  unpenalized is a DM. "Comment BROTH and I'll DM you the article" turns each
+  interested reader into a public comment (an engagement signal that lifts the
+  post's reach) plus a DM conversation carrying the real link. Fulfillment is
+  the owner's existing manual reply flow -- the captions must never promise a
+  bot or instant delivery.
+- **Two CTAs with different jobs.** The comment-keyword ask drives traffic; the
   follow CTA drives followers. Merged into one ask, they cannibalise each other.
 - **Hashtags: none on FB, 3-5 on IG.** Note this is deliberately fewer than the
   6-8 in `app/CLAUDE.md`, which predates keywords-in-captions displacing hashtags
@@ -41,7 +49,6 @@ def build_social_post_task_description(
     title: str,
     body: str,
     target_keyword: str,
-    post_url: str,
     site_domain: str,
     brand_voice: str,
 ) -> str:
@@ -66,9 +73,6 @@ art direction you also write. There is no video and no carousel.
 ### Target keyword (must appear verbatim in the first sentence of BOTH captions)
 {keyword}
 
-### Canonical URL
-{post_url}
-
 ### Body (truncated)
 {body}
 
@@ -80,23 +84,35 @@ sentence verbatim. No throat-clearing, no "let's talk about", no teaser that \
 withholds the answer. Both platforms cut the caption off after a couple of lines \
 and both index what's there, so the first sentence is doing almost all the work.
 
+## Hard rule for BOTH captions: no URL of any kind
+Neither caption may contain a URL, a "www." address, or anything shaped like a \
+link -- both platforms reject or suppress page posts whose caption carries one. \
+You MAY name the site in words ({site_domain}) once, late in the caption, as \
+recall ("full guide on {site_domain}") -- spelled as words, never as a link, \
+never as an instruction to click anything.
+
+## The traffic CTA: comment keyword
+Pick ONE topical word in ALL CAPS for `comment_keyword` (e.g. BROTH, GEAR, \
+HEAT) -- short, memorable, drawn from this post's actual subject. Both captions \
+end with a comment-keyword CTA using it verbatim, phrased naturally in the brand \
+voice: "Want the full guide? Comment {{keyword}} and I'll DM it to you." The DM \
+is where the article link actually gets delivered (replies are handled \
+personally by the owner -- NEVER promise a bot, automation, or instant delivery).
+
 ## Facebook caption (`fb_caption`)
 - {MIN_FB_CAPTION_WORDS}-{MAX_FB_CAPTION_WORDS} words.
 - NO hashtags at all.
-- Include the URL {post_url} EXACTLY ONCE, late in the body, after you've already \
-delivered real value. Never in the first sentence.
-- End with a genuine question to the reader, then a SEPARATE short line inviting \
-them to follow the page. Two distinct asks -- do not merge them into one sentence.
+- May name the site ({site_domain}) in words once, late in the body, after \
+you've already delivered real value. Never in the first sentence.
+- End with the comment-keyword CTA, then a SEPARATE short line inviting them to \
+follow the page. Two distinct asks -- do not merge them into one sentence.
 
 ## Instagram caption (`ig_caption`)
 - Shorter than the Facebook one.
-- Contains NO URL of any kind. Instagram captions cannot carry a clickable link, \
-so a URL there is dead text. You may name the site ({site_domain}) in words for \
-recall, but never as a "go to the link" instruction.
 - NEVER write "link in bio", "check the bio", or anything implying a clickable \
 link -- that phrasing gets the post's reach suppressed.
-- End with a genuine question, then a SEPARATE short follow invitation, then \
-{IG_HASHTAG_MIN}-{IG_HASHTAG_MAX} relevant hashtags on their own final line.
+- End with the comment-keyword CTA, then a SEPARATE short follow invitation, \
+then {IG_HASHTAG_MIN}-{IG_HASHTAG_MAX} relevant hashtags on their own final line.
 
 ## Both captions
 - Mention the brand's dog by name, as an actual anecdote from the post -- not a \

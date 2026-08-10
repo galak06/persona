@@ -123,7 +123,7 @@ def _kickoff_and_parse(agent: Agent, task: Task) -> SocialPostPlan | None:
 
 
 def execute_social_post_crew(
-    agent: Agent, task: Task, *, target_keyword: str, post_url: str
+    agent: Agent, task: Task, *, target_keyword: str
 ) -> SocialPostPlan | None:
     """Run the real Social Post `Crew(...).kickoff()`, with one retry-with-
     feedback pass if the parsed plan breaks the hard caption rules. `None` on
@@ -131,7 +131,7 @@ def execute_social_post_crew(
     plan = _kickoff_and_parse(agent, task)
     if plan is None:
         return None
-    violations = find_caption_violations(plan, target_keyword=target_keyword, post_url=post_url)
+    violations = find_caption_violations(plan, target_keyword=target_keyword)
     if not violations:
         return plan
 
@@ -146,9 +146,7 @@ def execute_social_post_crew(
     retry_plan = _kickoff_and_parse(agent, task)
     if retry_plan is None:
         return None
-    retry_violations = find_caption_violations(
-        retry_plan, target_keyword=target_keyword, post_url=post_url
-    )
+    retry_violations = find_caption_violations(retry_plan, target_keyword=target_keyword)
     if retry_violations:
         logger.warning("crew_socialpost_rule_violations_after_retry", violations=retry_violations)
         return None
