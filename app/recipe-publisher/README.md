@@ -31,7 +31,7 @@ Injected from project secrets — skill does not read `.env` itself.
 | `FB_APP_ID` / `FB_APP_SECRET` | required for auto token refresh |
 | `GEMINI_API_KEY` | voice + Imagen / Nano Pro images |
 | `ANTHROPIC_API_KEY` | alternative voice provider (if credits available) |
-| `JAMENDO_CLIENT_ID` | Reel music bed (required only for `--stage reel`) |
+| `JAMENDO_CLIENT_ID` | Reel music bed (music integration currently unused — see `generators/reel.py`) |
 
 Optional:
 

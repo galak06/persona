@@ -10,7 +10,11 @@ FROM python:3.11-slim
 # curl is kept for the container healthcheck (GET /api/v1/health); everything
 # else the worker image needs (ffmpeg, gcc, libc6-dev, libffi-dev, libssl-dev,
 # Playwright/Chromium) is intentionally omitted — the API never launches a
-# browser or touches the reel pipeline.
+# browser, and while it does subprocess-invoke recipe-publisher's reel
+# *publish* worker (uploading already-composed mp4s to IG/FB, see
+# api/ideas_api.py::_publish_reel_background), that path is pure httpx/API
+# calls, no ffmpeg/video composition involved (that happens on the host,
+# via scripts/crewai_reels_pipeline.py, before a reel ever reaches review).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,90 @@
+"""Task-description ("prompt") builder for the Reel Beats agent.
+
+Split out of `lib.crew.reels.agent` purely for file-size discipline, same
+role `lib.crew.idea.prompts` plays for its agent.
+
+Engagement structure is grounded against real short-form-video retention
+data (not assumed): the first 1-3 seconds drive ~80% of completion variance,
+so beat 1 must be a pattern-interrupt/curiosity-gap/bold-claim, not a slow
+lead-in. Beat 5 must be one clear, singular CTA to the site, on-screen.
+
+Each beat also carries an `image_prompt` -- concrete visual direction for
+OpenArt's per-beat image generation (`lib.crew.reels.openart_client`). If
+that fails for any reason, the WP post's own hero image is reused for all 5
+beats instead and `image_prompt` goes unused; the overlay text (headline/
+subcopy) is identical either way, so this one agent/prompt serves both
+outcomes without knowing in advance which one will run.
+"""
+
+from __future__ import annotations
+
+from lib.crew.reels.models import REEL_BEAT_COUNT
+
+MAX_HEADLINE_LINE_CHARS = 14
+MAX_SUBCOPY_CHARS = 32
+
+
+def build_reels_task_description(*, title: str, body: str, brand_voice: str) -> str:
+    """The full prompt handed to the fallback Reel Beats agent's `Task`.
+
+    `body` is the WP post's HTML-stripped content, already truncated by the
+    caller (`scripts/crewai_reels_pipeline.py`, ~3,000 chars) -- enough
+    material for 5 real distinct points without sending the whole post.
+    """
+    return f"""You are writing a {REEL_BEAT_COUNT}-beat, on-screen Reel script from a \
+published blog post for generation in [OpenArt](https://openart.ai/home). Each beat \
+consists of on-screen text overlaid on a high-impact visual frame (vertical 9:16 \
+aspect ratio). There is no voiceover, so the typography and the imagery carry the \
+entire viewer experience.
+
+## Brand voice (every beat and caption must fit this voice)
+{brand_voice or "(no voice guide available)"}
+
+## Source post
+### Title
+{title}
+
+### Body (truncated)
+{body}
+
+## Structure -- exactly {REEL_BEAT_COUNT} beats, in this exact order
+1. **Hook** -- a pattern-interrupt, curiosity gap, or bold claim. The first seconds \
+decide whether anyone keeps watching; never a slow, generic lead-in.
+2. **Point** -- one real, specific point from the post.
+3. **Point** -- a second real, specific point from the post.
+4. **Point** -- a third real, specific point from the post.
+5. **CTA** -- one clear, singular call-to-action: invite a DM (e.g. "DM me for the \
+article") -- never "link in bio" or any phrase implying a clickable link. Not vague, \
+not multiple asks.
+
+## Hard limits on overlay text (enforced, violations get you rejected and re-prompted)
+- headline: each line at most {MAX_HEADLINE_LINE_CHARS} characters (rendered in a \
+chunky stroked font -- longer gets clipped off the canvas)
+- subcopy: at most {MAX_SUBCOPY_CHARS} characters total
+
+## Each beat's `image_prompt` (Optimized for OpenArt)
+Write a concrete, highly-detailed image generation prompt tailored for OpenArt, grounded \
+in what that beat actually says -- never invent a visual claim the source post doesn't \
+make. Every prompt must explicitly define:
+- **Subject:** A clear, specific focus. Live-confirmed failure mode: this image is \
+generated with a real reference photo of the brand's actual dog, but that reference \
+only grounds the dog's appearance when the dog is the described subject -- a prompt \
+describing an unrelated scene (a phone, a screen, an article, packaging) gets the dog \
+right but freely invents everything else, including fake brand names and fake text. \
+Never describe a phone screen, website, article preview, product label, or any surface \
+with readable text/branding -- the model will hallucinate a plausible-looking but \
+entirely fake brand name on it. Keep every subject physical and real: the dog, the \
+food, the person's hands, the kitchen -- nothing with text for the model to invent.
+- **Action/Environment:** Grounded setting matching the beat's text.
+- **Cinematography & Style:** Vertical 9:16 aspect ratio, specific camera angle/lens \
+(e.g., macro, close-up, dramatic POV), and lighting (e.g., golden hour, studio soft \
+lighting, moody neon).
+- **Standalone design:** Each beat's image stands completely alone as a compelling \
+frame; do not reference continuity or "next shots."
+
+## Captions
+Write an `ig_caption` and `fb_caption` -- both end with one clear CTA: invite the \
+reader to DM for the article (e.g. "DM me and I'll send you the article" -- Reels \
+captions can't carry a clickable link, and replies are handled manually). Never \
+invent a claim the source post doesn't actually make.
+"""

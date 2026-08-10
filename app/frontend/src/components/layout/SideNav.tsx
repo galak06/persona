@@ -25,6 +25,7 @@ const SECTIONS: readonly NavSection[] = [
     items: [
       { to: "/inbox", label: "Inbox", icon: "📥" },
       { to: "/ideas", label: "Ideas", icon: "💡" },
+      { to: "/reels", label: "Reels", icon: "🎬" },
       { to: "/recipes", label: "Recipes", icon: "🍲" },
       { to: "/campaigns", label: "Campaigns", icon: "📣" },
     ],

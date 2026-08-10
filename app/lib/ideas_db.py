@@ -59,6 +59,7 @@ STATUSES = (
     "write_failed",
     "validation_failed",
     "drafting",
+    "composing_reel",
 )
 
 
@@ -129,6 +130,132 @@ def set_wp_result(idea_id: str, wp_post_id: str, wp_url: str) -> bool:
         return rowcount > 0
     except Exception as exc:
         _log.warning("ideas_db.set_wp_result failed: %s", exc)
+        return False
+
+
+def mark_wp_published(idea_id: str) -> bool:
+    """Atomically transition idea_id from status='wp_draft' to status='wp_published',
+    ONLY if it is still 'wp_draft' at the moment of the update. Returns True if this
+    call made the transition. Called by the reels pipeline's detect-publish sweep
+    once a CrewAI-drafted post is confirmed live via the WordPress REST API.
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'wp_published', updated_at = NOW() "
+            "WHERE id = %s AND status = 'wp_draft'",
+            (idea_id,),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("ideas_db.mark_wp_published failed: %s", exc)
+        return False
+
+
+def claim_idea_for_reel_composition(idea_id: str) -> bool:
+    """Atomically transition idea_id from status='wp_published' to status='composing_reel',
+    ONLY if it is still 'wp_published' at the moment of the update. Returns True if THIS
+    call won the claim. Prevents two overlapping crewai_reels_pipeline.py runs from both
+    composing the same idea's reel concurrently -- same role as claim_idea_for_drafting.
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'composing_reel', updated_at = NOW() "
+            "WHERE id = %s AND status = 'wp_published'",
+            (idea_id,),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("ideas_db.claim_idea_for_reel_composition failed: %s", exc)
+        return False
+
+
+def set_reel_pending_review(
+    idea_id: str,
+    *,
+    ig_video_path: str,
+    fb_video_path: str,
+    ig_caption: str,
+    fb_caption: str,
+    source: str,
+    validation_flags: list[str] | None = None,
+) -> bool:
+    """Store composed reel artifacts and move the idea to status='social_queued'
+    for human review, ONLY if it is still 'composing_reel'. `ig_video_path` and
+    `fb_video_path` are the same file when `source='openart'` (one shared clip),
+    distinct files when `source='fallback'` (two platform-tuned slideshow renders).
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'social_queued', "
+            "reel_ig_video_path = %s, reel_fb_video_path = %s, "
+            "reel_ig_caption = %s, reel_fb_caption = %s, reel_source = %s, "
+            "reel_validation_flags = %s, updated_at = NOW() "
+            "WHERE id = %s AND status = 'composing_reel'",
+            (
+                ig_video_path,
+                fb_video_path,
+                ig_caption,
+                fb_caption,
+                source,
+                validation_flags or None,
+                idea_id,
+            ),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("ideas_db.set_reel_pending_review failed: %s", exc)
+        return False
+
+
+def reject_reel(idea_id: str) -> bool:
+    """Reject a pending reel: atomically move idea_id from status='social_queued'
+    back to status='wp_published', clearing the pending-review columns so a
+    rejected reel doesn't linger in the review UI. The idea itself is untouched
+    and could be re-run through the reels pipeline later.
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'wp_published', "
+            "reel_ig_video_path = NULL, reel_fb_video_path = NULL, "
+            "reel_ig_caption = NULL, reel_fb_caption = NULL, reel_source = NULL, "
+            "reel_validation_flags = NULL, updated_at = NOW() "
+            "WHERE id = %s AND status = 'social_queued'",
+            (idea_id,),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("ideas_db.reject_reel failed: %s", exc)
+        return False
+
+
+def set_reel_result(
+    idea_id: str, *, ig_reel_url: str | None = None, fb_reel_url: str | None = None
+) -> bool:
+    """Store the live IG/FB reel URL(s). Supports being called once per platform
+    independently (partial-publish-failure retry case) -- only the columns for
+    whichever URL is passed get overwritten (COALESCE keeps the other as-is).
+    Flips status='social_done' only once BOTH ig_reel_url and fb_reel_url are
+    non-null on the row (either just-set here or already set from an earlier
+    partial call) -- otherwise the idea stays at 'social_queued' so a retry from
+    the review page still finds it.
+    """
+    try:
+        db.execute(
+            "UPDATE content_ideas SET "
+            "ig_reel_url = COALESCE(%s, ig_reel_url), "
+            "fb_reel_url = COALESCE(%s, fb_reel_url), "
+            "updated_at = NOW() WHERE id = %s",
+            (ig_reel_url, fb_reel_url, idea_id),
+        )
+        rowcount = db.execute(
+            "UPDATE content_ideas SET status = 'social_done', updated_at = NOW() "
+            "WHERE id = %s AND status = 'social_queued' "
+            "AND ig_reel_url IS NOT NULL AND fb_reel_url IS NOT NULL",
+            (idea_id,),
+        )
+        return rowcount >= 0
+    except Exception as exc:
+        _log.warning("ideas_db.set_reel_result failed: %s", exc)
         return False
 
 

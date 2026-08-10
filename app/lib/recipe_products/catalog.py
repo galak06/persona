@@ -1,4 +1,4 @@
-"""Load + validate data/recipe_products.json.
+"""Load + validate data/config/recipe_products.json.
 
 Single responsibility: deserialize JSON into typed dataclasses and surface
 clear errors when the catalog is malformed. No matching logic, no rendering.
@@ -7,14 +7,15 @@ clear errors when the catalog is malformed. No matching logic, no rendering.
 from __future__ import annotations
 
 import json
-from lib.config import settings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-DEFAULT_CATALOG_PATH: Final[Path] = (
-    settings.paths.data_dir / "recipe_products.json"
-)
+from lib.config import settings
+
+# $BRAND_DIR/data/config/recipe_products.json — resolved by lib.config so the
+# 2026-06 data/ reorg (config files under data/config/) has a single source of truth.
+DEFAULT_CATALOG_PATH: Final[Path] = settings.paths.recipe_products
 
 
 class RecipeCatalogError(ValueError):

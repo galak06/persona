@@ -244,18 +244,30 @@ CREATE INDEX IF NOT EXISTS idx_published_content_position   ON published_content
 -- predate brand scoping or come from a brand-agnostic run.
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS content_ideas (
-    id              TEXT        PRIMARY KEY,
-    category        TEXT        NOT NULL,
-    topic           TEXT        NOT NULL,
-    target_keyword  TEXT,
-    nalla_context   TEXT,
-    post_goal       TEXT,
-    status          TEXT        NOT NULL DEFAULT 'publish',
-    input           TEXT,
-    brand_id        TEXT,
-    brand_name      TEXT,
-    wp_post_id      TEXT,
-    wp_url          TEXT,
+    id                     TEXT        PRIMARY KEY,
+    category               TEXT        NOT NULL,
+    topic                  TEXT        NOT NULL,
+    target_keyword         TEXT,
+    nalla_context          TEXT,
+    post_goal              TEXT,
+    status                 TEXT        NOT NULL DEFAULT 'publish',
+    input                  TEXT,
+    brand_id               TEXT,
+    brand_name             TEXT,
+    wp_post_id             TEXT,
+    wp_url                 TEXT,
+    -- Reels crew (WP-post -> IG/FB Reels): reel_ig_video_path/reel_fb_video_path
+    -- point at the SAME local file when reel_source='openart' (one shared clip,
+    -- no per-platform overlay), distinct files when reel_source='fallback' (two
+    -- platform-tuned slideshow renders). See lib/crew/reels/.
+    reel_ig_video_path     TEXT,
+    reel_fb_video_path     TEXT,
+    reel_ig_caption        TEXT,
+    reel_fb_caption        TEXT,
+    reel_source            TEXT,
+    reel_validation_flags  TEXT[],
+    ig_reel_url            TEXT,
+    fb_reel_url            TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
