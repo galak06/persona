@@ -18,8 +18,11 @@ dog. On any generation failure that same hero is used directly as the image
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
+
+from PIL import Image
 
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.wp_image import generate_wp_image
@@ -35,6 +38,36 @@ def _sniff_mime(image_bytes: bytes) -> str:
     """JPEG vs PNG from magic bytes -- the WP hero arrives as raw bytes with
     no filename to go by."""
     return "image/jpeg" if image_bytes[:2] == b"\xff\xd8" else "image/png"
+
+
+def center_crop_square(image_bytes: bytes) -> bytes:
+    """Crop to 1:1, centered -- the same trick `worker_wp_ideas_reel.py`'s
+    `_center_crop_to_9_16` plays for Reels, with a square target.
+
+    Two things go wrong without this, both seen on the first live post:
+
+    * Gemini returns 16:9 (1376x768 in practice). Instagram letterboxes a
+      wide image in the feed, so the post shows black bars instead of photo.
+    * `text_overlay.apply_overlay`'s defaults (`headline_y_pct=0.72`,
+      `band_top_pct=0.58`) are calibrated for 1:1. On a 16:9 frame those
+      fractions land much lower in absolute pixels, so the subcopy collides
+      with `apply_site_cta_ribbon`'s bottom band and gets painted over --
+      "Skipping this could hurt your dog" was sliced in half.
+
+    Cropping first fixes both, and lets every downstream overlay keep the
+    geometry it was designed against.
+    """
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    w, h = img.size
+    side = min(w, h)
+    if w == h:
+        return image_bytes
+    left = (w - side) // 2
+    top = (h - side) // 2
+    cropped = img.crop((left, top, left + side, top + side))
+    out = io.BytesIO()
+    cropped.save(out, "JPEG", quality=95)
+    return out.getvalue()
 
 
 def generate_hook_image(
@@ -92,9 +125,15 @@ def compose_image(
             apply_site_cta_ribbon,
         )
 
+        # Square FIRST -- every overlay below is calibrated against 1:1.
+        square = center_crop_square(image_bytes)
         composed = apply_overlay(
-            image_bytes,
+            square,
             OverlaySpec(headline=plan.overlay_headline, subcopy=plan.overlay_subcopy),
+            # Lift the text clear of the CTA ribbon's band at the bottom.
+            # apply_overlay's 0.72 default assumes nothing is painted under it.
+            headline_y_pct=0.62,
+            band_top_pct=0.46,
         )
         composed = apply_site_cta_ribbon(composed, plan.cta_ribbon_text)
         composed = apply_follow_badge(composed, handle=ig_handle)

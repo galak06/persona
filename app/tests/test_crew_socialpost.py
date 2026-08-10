@@ -225,6 +225,11 @@ def test_prompt_carries_keyword_domain_and_rules() -> None:
     assert "no URL" in desc  # the platform constraint is spelled out
     assert "comment_keyword" in desc  # the traffic CTA contract
     assert "link in bio" in desc  # the prohibition is spelled out
+    # The prompt must ask for every rule find_caption_violations enforces.
+    # It briefly did not ask for a closing question while the rule still
+    # required one, so the model could never satisfy it -- two ideas burned
+    # all three attempts on 'ig_caption must end with a genuine question'.
+    assert desc.count("question mark") >= 2  # demanded for BOTH captions
     assert "voice" in desc
     # The canonical URL must NOT be shown to the model at all -- the safest
     # way to keep it out of the captions is to never hand it over.

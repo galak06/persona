@@ -113,6 +113,10 @@ personally by the owner -- NEVER promise a bot, automation, or instant delivery)
 you've already delivered real value. Never in the first sentence.
 - End with the comment-keyword CTA, then a SEPARATE short line inviting them to \
 follow the page. Two distinct asks -- do not merge them into one sentence.
+- The caption MUST contain a real question mark. Ask the reader something \
+genuine -- either open the comment CTA with it ("Want the full guide?") or add \
+a short question of your own ("What does your dog do?"). A caption with no "?" \
+is rejected.
 
 ## Instagram caption (`ig_caption`)
 - Shorter than the Facebook one.
@@ -120,6 +124,8 @@ follow the page. Two distinct asks -- do not merge them into one sentence.
 link -- that phrasing gets the post's reach suppressed.
 - End with the comment-keyword CTA, then a SEPARATE short follow invitation, \
 then {IG_HASHTAG_MIN}-{IG_HASHTAG_MAX} relevant hashtags on their own final line.
+- This caption MUST contain a real question mark too -- same rule as Facebook. \
+Do not skip it just because the caption is shorter.
 
 ## Both captions
 - Mention the brand's dog by name, as an actual anecdote from the post -- not a \
