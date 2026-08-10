@@ -153,3 +153,86 @@ def test_processing_never_ready_adds_warning(
     assert result.video_id == "VID1"
     assert result.post_id is None
     assert any("never reported ready" in w for w in result.warnings)
+
+
+# ── publish_photo_post_to_facebook (social-post pipeline) ─────────────────
+
+
+@respx.mock
+def test_photo_post_happy_path(tmp_path: Path) -> None:
+    image = tmp_path / "hook.jpg"
+    image.write_bytes(b"\xff\xd8\xff fake jpeg")
+
+    base = "https://graph.facebook.com/v23.0"
+    photos_route = respx.post(f"{base}/PAGEID/photos").respond(
+        200, json={"id": "PHOTO1", "post_id": "PAGEID_POST1"}
+    )
+    respx.get(f"{base}/PAGEID_POST1").respond(
+        200, json={"permalink_url": "https://facebook.com/PAGEID/posts/POST1"}
+    )
+
+    result = fb.publish_photo_post_to_facebook(
+        image_path=image,
+        message="Bone broth is safe. https://x.com/p Follow us.",
+        alt_text="A dog watching broth simmer.",
+    )
+
+    assert result.post_id == "PAGEID_POST1"
+    assert result.permalink == "https://facebook.com/PAGEID/posts/POST1"
+    assert result.warnings == []
+    sent = photos_route.calls[0].request
+    assert b"alt_text_custom" in sent.content
+    assert b"fake jpeg" in sent.content
+
+
+@respx.mock
+def test_photo_post_retries_without_alt_text_on_rejection(tmp_path: Path) -> None:
+    """alt_text_custom writability is undocumented — a rejection must degrade
+    to a plain photo post, never lose the publish."""
+    image = tmp_path / "hook.jpg"
+    image.write_bytes(b"jpeg")
+
+    base = "https://graph.facebook.com/v23.0"
+    photos_route = respx.post(f"{base}/PAGEID/photos").mock(
+        side_effect=[
+            respx.MockResponse(400, json={"error": {"message": "unknown param"}}),
+            respx.MockResponse(200, json={"id": "PHOTO1", "post_id": "P1"}),
+        ]
+    )
+    respx.get(f"{base}/P1").respond(200, json={"permalink_url": "https://fb/p"})
+
+    result = fb.publish_photo_post_to_facebook(
+        image_path=image, message="msg", alt_text="alt"
+    )
+
+    assert result.post_id == "P1"
+    assert photos_route.call_count == 2
+    assert b"alt_text_custom" not in photos_route.calls[1].request.content
+    assert any("retrying without" in w for w in result.warnings)
+
+
+@respx.mock
+def test_photo_post_hard_failure_raises(tmp_path: Path) -> None:
+    image = tmp_path / "hook.jpg"
+    image.write_bytes(b"jpeg")
+    respx.post("https://graph.facebook.com/v23.0/PAGEID/photos").respond(
+        500, json={"error": {"message": "server error"}}
+    )
+    with pytest.raises(fb.FacebookError, match="photo post failed"):
+        fb.publish_photo_post_to_facebook(image_path=image, message="msg")
+
+
+def test_photo_post_missing_image_raises(tmp_path: Path) -> None:
+    with pytest.raises(fb.FacebookError, match="image not found"):
+        fb.publish_photo_post_to_facebook(
+            image_path=tmp_path / "nope.jpg", message="msg"
+        )
+
+
+def test_photo_post_dry_run_no_network(tmp_path: Path) -> None:
+    image = tmp_path / "hook.jpg"
+    image.write_bytes(b"jpeg")
+    result = fb.publish_photo_post_to_facebook(
+        image_path=image, message="msg", dry_run=True
+    )
+    assert result.post_id == "dryrun_post_id"

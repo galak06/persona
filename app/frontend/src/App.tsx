@@ -6,6 +6,7 @@ import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
 import Ideas from "./pages/Ideas";
 import Reels from "./pages/Reels";
+import SocialPosts from "./pages/SocialPosts";
 import Operations from "./pages/Operations";
 import Inbox from "./pages/Inbox";
 import Groups from "./pages/Groups";
@@ -36,6 +37,7 @@ export default function App() {
               <Route path="/inbox" element={<Inbox />} />
               <Route path="/ideas" element={<Ideas />} />
               <Route path="/reels" element={<Reels />} />
+              <Route path="/social-posts" element={<SocialPosts />} />
               <Route path="/groups" element={<Groups />} />
               <Route path="/published" element={<Published />} />
               <Route path="/onboarding" element={<Onboarding />} />

@@ -112,6 +112,7 @@ from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
 from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
+from api.social_posts_api import router as _social_posts_router
 from api.tiktok_candidates_api import router as _tiktok_router
 from croniter import croniter
 from lib import activity_log, groups_db, groups_queue, schedule_db
@@ -144,6 +145,7 @@ app.include_router(_recipe_card_router, prefix="/api/v1")
 app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
+app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
