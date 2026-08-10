@@ -17,13 +17,13 @@ Three phases, run together on every invocation:
    `lib.medical_claims_validator.find_banned_claims` (flagged, not blocking
    -- the human gate sees the flags), and lands the row at
    `social_post_status='queued'` for review on the frontend. Publishing only
-   happens after that approval (`worker_wp_ideas_social_post.py`).
-3. **IG release sweep** -- rows at `'fb_published'` whose
-   `social_post_ig_due_at` has elapsed get their IG half published now, via
-   the same publish worker (`--platform ig`). This is what makes "publish FB
-   on approve, IG after the gap" actually happen without a scheduler: any
-   later run of this pipeline releases whatever became due. Skipped under
-   `--dry-run`.
+   happens after approval (`worker_wp_ideas_social_post.py`).
+3. **Release sweep** -- approval SCHEDULES rather than publishes (each
+   approved post takes the next free daily slot, see `lib.social_post_slots`),
+   so this phase is what actually posts: FB rows whose slot has arrived, then
+   IG halves whose FB<->IG gap has elapsed. Runs on every invocation, so any
+   run flushes whatever became due; `--release-only` runs just this, which is
+   the mode a daily cron wants. Skipped under `--dry-run`.
 
 Image fallback: if Gemini generation fails for any reason, the WP post's own
 hero image is used instead (`social_post_source='fallback'`), overlays still
@@ -35,7 +35,7 @@ Usage::
     python -m scripts.crewai_social_posts_pipeline --dry-run
     python -m scripts.crewai_social_posts_pipeline
     python -m scripts.crewai_social_posts_pipeline --idea-id <content_ideas id>
-    python -m scripts.crewai_social_posts_pipeline --release-ig-only
+    python -m scripts.crewai_social_posts_pipeline --release-only
 """
 
 from __future__ import annotations
@@ -181,44 +181,61 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     return f"composed_{source}"
 
 
-def _release_due_ig(*, brand_id: str, brand_dir: Path) -> dict[str, int]:
-    """Phase 3: publish the IG half of every row whose gap has elapsed, via
-    the publish worker subprocess (same worker Approve uses for FB -- one
-    publish code path, two callers)."""
+def _publish_one(idea_id: str, platform: str, *, brand_dir: Path) -> bool:
+    """Subprocess-invoke the publish worker for one row on one platform."""
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "workers.worker_wp_ideas_social_post",
+                "--idea-id",
+                idea_id,
+                "--platform",
+                platform,
+            ],
+            cwd=_RECIPE_PUBLISHER_ROOT,
+            env={**os.environ, "BRAND_DIR": str(brand_dir)},
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except Exception as exc:  # includes subprocess.TimeoutExpired
+        logger.error(
+            "social_posts_release_error", idea_id=idea_id, platform=platform, error=str(exc)
+        )
+        return False
+    if result.returncode != 0:
+        logger.error(
+            "social_posts_release_failed",
+            idea_id=idea_id,
+            platform=platform,
+            returncode=result.returncode,
+            stderr=(result.stderr or "")[-2000:],
+        )
+        return False
+    return True
+
+
+def _release_due(*, brand_id: str, brand_dir: Path) -> dict[str, int]:
+    """Phase 3: publish everything whose time has come -- FB posts whose
+    scheduled slot has arrived, then IG halves whose FB<->IG gap has elapsed.
+
+    This is what turns approval-as-scheduling into actual posts, so it runs on
+    EVERY invocation (not just `--release-only`): any run of this pipeline
+    flushes whatever became due since the last one.
+
+    FB first, deliberately: a row that publishes to FB in this pass arms its
+    IG due-time as a side effect, and that time is always in the future, so it
+    can't also fire in the same pass. No double-post, no ordering surprise.
+    """
     outcomes: dict[str, int] = {}
+    for row in social_post_db.list_due_for_fb(brand_id=brand_id):
+        key = "fb_published" if _publish_one(str(row["id"]), "fb", brand_dir=brand_dir) else "error"
+        outcomes[key] = outcomes.get(key, 0) + 1
     for row in social_post_db.list_due_for_ig(brand_id=brand_id):
-        idea_id = str(row["id"])
-        try:
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "workers.worker_wp_ideas_social_post",
-                    "--idea-id",
-                    idea_id,
-                    "--platform",
-                    "ig",
-                ],
-                cwd=_RECIPE_PUBLISHER_ROOT,
-                env={**os.environ, "BRAND_DIR": str(brand_dir)},
-                capture_output=True,
-                text=True,
-                timeout=600,
-            )
-        except Exception as exc:  # includes subprocess.TimeoutExpired
-            logger.error("social_posts_ig_release_error", idea_id=idea_id, error=str(exc))
-            outcomes["ig_error"] = outcomes.get("ig_error", 0) + 1
-            continue
-        if result.returncode == 0:
-            outcomes["ig_published"] = outcomes.get("ig_published", 0) + 1
-        else:
-            logger.error(
-                "social_posts_ig_release_failed",
-                idea_id=idea_id,
-                returncode=result.returncode,
-                stderr=(result.stderr or "")[-2000:],
-            )
-            outcomes["ig_error"] = outcomes.get("ig_error", 0) + 1
+        key = "ig_published" if _publish_one(str(row["id"]), "ig", brand_dir=brand_dir) else "error"
+        outcomes[key] = outcomes.get(key, 0) + 1
     return outcomes
 
 
@@ -229,9 +246,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--limit", type=int, default=5)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument(
-        "--release-ig-only",
+        "--release-only",
         action="store_true",
-        help="skip composition entirely; only publish IG halves whose gap has elapsed",
+        help="skip composition entirely; only publish what is already due "
+        "(this is the mode a daily cron should run)",
     )
     return p.parse_args()
 
@@ -250,7 +268,7 @@ def main() -> int:
     brand_id = brand_dir.name
     results: dict[str, int] = {}
 
-    if not args.release_ig_only:
+    if not args.release_only:
         flipped = wp_source.detect_publish_sweep(
             brand_id=brand_id, event="social_posts_marked_wp_published"
         )
@@ -276,10 +294,11 @@ def main() -> int:
             results[outcome] = results.get(outcome, 0) + 1
 
     if not args.dry_run:
-        results.update(_release_due_ig(brand_id=brand_id, brand_dir=brand_dir))
+        for key, count in _release_due(brand_id=brand_id, brand_dir=brand_dir).items():
+            results[key] = results.get(key, 0) + count
 
     print(f"summary: {json.dumps(results)}")
-    return 0 if results.get("error", 0) == 0 and results.get("ig_error", 0) == 0 else 1
+    return 0 if results.get("error", 0) == 0 else 1
 
 
 if __name__ == "__main__":

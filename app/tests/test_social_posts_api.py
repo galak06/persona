@@ -9,11 +9,12 @@ live Postgres, no FastAPI TestClient needed since these are plain functions.
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 from api import social_posts_api
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import HTTPException
 
 _IDEA_ID = "idea-1"
 
@@ -43,7 +44,9 @@ def _queued_idea(**overrides: Any) -> dict[str, Any]:
         "social_post_validation_flags": None,
         "fb_page_post_url": None,
         "ig_post_url": None,
+        "social_post_fb_due_at": None,
         "social_post_ig_due_at": None,
+        "brand_id": "dogfoodandfun",
     }
     idea.update(overrides)
     return idea
@@ -52,41 +55,84 @@ def _queued_idea(**overrides: Any) -> dict[str, Any]:
 # ------------------------------------------------------------ approve
 
 
-def test_approve_dispatches_fb_publish_background(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_approve_schedules_and_publishes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approve claims a slot; no publish subprocess may run."""
     monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
+    monkeypatch.setattr(
+        social_posts_api.social_post_db,
+        "last_scheduled_fb_slot",
+        lambda **_kw: datetime(2026, 8, 11, 13, tzinfo=UTC),
+    )
+    scheduled: list[tuple[str, datetime]] = []
+    monkeypatch.setattr(
+        social_posts_api.social_post_db,
+        "schedule_fb",
+        lambda i, *, due_at: scheduled.append((i, due_at)) or True,
+    )
     fake_run = _fake_run(returncode=0)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    tasks = BackgroundTasks()
-    result = social_posts_api.approve_social_post(_IDEA_ID, tasks)
-    assert result == {"id": _IDEA_ID, "status": "queued"}
+    result = social_posts_api.approve_social_post(_IDEA_ID)
 
-    # Run the queued background task synchronously to assert the dispatch.
-    for task in tasks.tasks:
-        task.func(*task.args, **task.kwargs)
-    assert len(fake_run.calls) == 1
-    cmd = fake_run.calls[0]
-    assert "workers.worker_wp_ideas_social_post" in cmd
-    assert "--platform" in cmd
-    assert cmd[cmd.index("--platform") + 1] == "fb"
+    assert result["status"] == "scheduled"
+    assert len(scheduled) == 1
+    # One full gap after the brand's last claimed slot.
+    assert scheduled[0][1] == datetime(2026, 8, 12, 13, tzinfo=UTC)
+    assert result["fb_due_at"] == "2026-08-12T13:00:00+00:00"
+    assert fake_run.calls == []  # nothing published
+
+
+def test_approve_first_post_takes_next_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
+    monkeypatch.setattr(
+        social_posts_api.social_post_db, "last_scheduled_fb_slot", lambda **_kw: None
+    )
+    captured: list[datetime] = []
+    monkeypatch.setattr(
+        social_posts_api.social_post_db,
+        "schedule_fb",
+        lambda _i, *, due_at: captured.append(due_at) or True,
+    )
+
+    social_posts_api.approve_social_post(_IDEA_ID)
+
+    assert len(captured) == 1
+    # Always a future preferred-hour window, never "now".
+    assert captured[0] > datetime.now(UTC)
+    assert captured[0].hour == social_posts_api.social_post_slots.DEFAULT_PREFERRED_HOUR_UTC
 
 
 def test_approve_409_when_not_queued(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         social_posts_api.ideas_db,
         "get_idea",
-        lambda _id: _queued_idea(social_post_status="fb_published"),
+        lambda _id: _queued_idea(social_post_status="scheduled"),
     )
     with pytest.raises(HTTPException) as exc:
-        social_posts_api.approve_social_post(_IDEA_ID, BackgroundTasks())
+        social_posts_api.approve_social_post(_IDEA_ID)
     assert exc.value.status_code == 409
 
 
 def test_approve_404_on_missing_idea(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: None)
     with pytest.raises(HTTPException) as exc:
-        social_posts_api.approve_social_post(_IDEA_ID, BackgroundTasks())
+        social_posts_api.approve_social_post(_IDEA_ID)
     assert exc.value.status_code == 404
+
+
+def test_unschedule_returns_to_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(social_posts_api.social_post_db, "unschedule_fb", lambda _i: True)
+    assert social_posts_api.unschedule_social_post(_IDEA_ID) == {
+        "id": _IDEA_ID,
+        "status": "queued",
+    }
+
+
+def test_unschedule_409_when_not_scheduled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(social_posts_api.social_post_db, "unschedule_fb", lambda _i: False)
+    with pytest.raises(HTTPException) as exc:
+        social_posts_api.unschedule_social_post(_IDEA_ID)
+    assert exc.value.status_code == 409
 
 
 # ------------------------------------------------------------ reject

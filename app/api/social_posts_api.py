@@ -5,16 +5,18 @@ A separate router from ``api.ideas_api`` on purpose: that module (and its
 drafting AND reel-review transitions on one overloaded endpoint, and is past
 the file-size limit. This track gets its own resource-shaped routes instead:
 
-  GET   /api/v1/social-posts                     — queued-for-review list
+  GET   /api/v1/social-posts                     — review/scheduled list
   GET   /api/v1/social-posts/{id}/image          — the composed hook image
-  POST  /api/v1/social-posts/{id}/approve        — publish FB now, arm IG
+  POST  /api/v1/social-posts/{id}/approve        — claim the next FB slot
+  POST  /api/v1/social-posts/{id}/unschedule     — release the slot, re-queue
   POST  /api/v1/social-posts/{id}/reject         — terminal reject + cleanup
 
-Approve publishes ONLY the Facebook half (subprocess →
-``worker_wp_ideas_social_post --platform fb``). The IG half is armed with a
-due-time and released later by ``scripts/crewai_social_posts_pipeline.py``'s
-release sweep — the FB<->IG publishing gap is the point, see
-``lib.social_post_db``.
+Approve SCHEDULES; it does not publish. Each approval claims the next free
+slot (``lib.social_post_slots``), so approving a batch of five spreads them
+across the following days instead of dumping them at once — which reads as
+inorganic and would breach the 3/day page-post cap besides. Publishing is done
+by ``scripts/crewai_social_posts_pipeline.py``'s release sweep: FB when its
+slot arrives, then IG once the FB<->IG gap has elapsed on top of that.
 """
 
 from __future__ import annotations
@@ -22,16 +24,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-import subprocess
-import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from lib import ideas_db, social_post_db
+from lib import ideas_db, social_post_db, social_post_slots
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -61,6 +62,7 @@ class SocialPost(BaseModel):
     validation_flags: list[str] | None = None
     fb_page_post_url: str | None = None
     ig_post_url: str | None = None
+    fb_due_at: str | None = None
     ig_due_at: str | None = None
 
 
@@ -82,6 +84,7 @@ def _to_model(r: dict[str, Any]) -> SocialPost:
         validation_flags=r.get("social_post_validation_flags"),
         fb_page_post_url=r.get("fb_page_post_url"),
         ig_post_url=r.get("ig_post_url"),
+        fb_due_at=str(r["social_post_fb_due_at"]) if r.get("social_post_fb_due_at") else None,
         ig_due_at=str(r["social_post_ig_due_at"]) if r.get("social_post_ig_due_at") else None,
     )
 
@@ -122,62 +125,16 @@ def get_social_post_image(idea_id: str) -> FileResponse:
     return FileResponse(target, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
-def _publish_fb_background(idea_id: str) -> None:
-    """Subprocess → the publish worker, FB platform only. The worker owns the
-    DB transition (``set_fb_result``) and the rate-limit check; a failure
-    leaves the row at 'queued' so Approve can simply be clicked again."""
-    try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "workers.worker_wp_ideas_social_post",
-                "--idea-id",
-                idea_id,
-                "--platform",
-                "fb",
-            ],
-            cwd=_PROJECT_ROOT / "recipe-publisher",
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-    except subprocess.TimeoutExpired:
-        log.error(json.dumps({"event": "social_post_fb_publish_timeout", "idea_id": idea_id}))
-        return
-    except Exception as exc:
-        log.error(
-            json.dumps(
-                {
-                    "event": "social_post_fb_publish_subprocess_error",
-                    "idea_id": idea_id,
-                    "error": str(exc),
-                }
-            )
-        )
-        return
-
-    if result.returncode == 0:
-        log.info(json.dumps({"event": "social_post_fb_publish_dispatched_ok", "idea_id": idea_id}))
-    else:
-        log.error(
-            json.dumps(
-                {
-                    "event": "social_post_fb_publish_dispatch_failed",
-                    "idea_id": idea_id,
-                    "returncode": result.returncode,
-                    "stderr_tail": (result.stderr or "")[-2000:],
-                }
-            )
-        )
-
-
 @router.post("/social-posts/{idea_id}/approve")
-def approve_social_post(idea_id: str, background_tasks: BackgroundTasks) -> dict[str, str]:
-    """Approve a queued social post: publish FB now (background), arm IG.
+def approve_social_post(idea_id: str) -> dict[str, str]:
+    """Approve a queued social post by claiming the next free FB slot.
 
-    Returns immediately with the current status -- the real flip to
-    'fb_published' happens in the worker once the FB post is actually live.
+    Nothing publishes here. The slot is the next preferred-hour window at
+    least one gap after whatever this brand already has scheduled, so
+    approving a batch spreads it across the following days
+    (``lib.social_post_slots``). The release sweep in
+    ``scripts/crewai_social_posts_pipeline.py`` does the actual publishing
+    when each slot arrives.
     """
     idea = ideas_db.get_idea(idea_id)
     if idea is None:
@@ -187,7 +144,26 @@ def approve_social_post(idea_id: str, background_tasks: BackgroundTasks) -> dict
             status_code=409,
             detail=f"idea is '{idea.get('social_post_status')}', not 'queued'",
         )
-    background_tasks.add_task(_publish_fb_background, idea_id)
+
+    due_at = social_post_slots.next_free_slot(
+        datetime.now(UTC),
+        last_scheduled=social_post_db.last_scheduled_fb_slot(brand_id=idea.get("brand_id")),
+    )
+    if not social_post_db.schedule_fb(idea_id, due_at=due_at):
+        raise HTTPException(status_code=409, detail="idea is no longer 'queued'")
+    log.info(
+        json.dumps(
+            {"event": "social_post_scheduled", "idea_id": idea_id, "due_at": due_at.isoformat()}
+        )
+    )
+    return {"id": idea_id, "status": "scheduled", "fb_due_at": due_at.isoformat()}
+
+
+@router.post("/social-posts/{idea_id}/unschedule")
+def unschedule_social_post(idea_id: str) -> dict[str, str]:
+    """Release a scheduled post's slot and put it back in the review queue."""
+    if not social_post_db.unschedule_fb(idea_id):
+        raise HTTPException(status_code=409, detail="idea is not 'scheduled'")
     return {"id": idea_id, "status": "queued"}
 
 

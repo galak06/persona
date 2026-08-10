@@ -28,13 +28,18 @@ Every helper is defensive (logs, never raises) -- same posture as
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from lib import db
 
 _log = logging.getLogger(__name__)
 
-STATUSES = ("composing", "queued", "fb_published", "published", "rejected")
+STATUSES = ("composing", "queued", "scheduled", "fb_published", "published", "rejected")
+
+# Slots already taken: every row that holds a future or past FB slot for the
+# brand, so a new approval lands strictly after the last one.
+_SLOT_HOLDING_STATUSES = ("scheduled", "fb_published", "published")
 
 # Ideas whose reel track has reached any of these are still postable -- the
 # social-post track doesn't care how far the reel got.
@@ -66,6 +71,46 @@ def list_candidates(*, brand_id: str | None = None, limit: int = 5) -> list[dict
         )
     except Exception as exc:
         _log.warning("social_post_db.list_candidates failed: %s", exc)
+        return []
+
+
+def last_scheduled_fb_slot(*, brand_id: str | None = None) -> datetime | None:
+    """The latest FB slot this brand has already claimed, or None."""
+    try:
+        params: list[Any] = [list(_SLOT_HOLDING_STATUSES)]
+        clause = ""
+        if brand_id:
+            clause = " AND brand_id = %s"
+            params.append(brand_id)
+        row = db.fetch_one(
+            "SELECT MAX(social_post_fb_due_at) AS slot FROM content_ideas "
+            f"WHERE social_post_status = ANY(%s){clause}",
+            tuple(params),
+        )
+        return row.get("slot") if row else None
+    except Exception as exc:
+        _log.warning("social_post_db.last_scheduled_fb_slot failed: %s", exc)
+        return None
+
+
+def list_due_for_fb(*, brand_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """Scheduled rows whose FB slot has arrived."""
+    try:
+        params: list[Any] = []
+        clause = ""
+        if brand_id:
+            clause = " AND brand_id = %s"
+            params.append(brand_id)
+        params.append(max(1, min(limit, 500)))
+        return db.fetch_all(
+            "SELECT * FROM content_ideas "
+            "WHERE social_post_status = 'scheduled' "
+            "AND social_post_fb_due_at IS NOT NULL AND social_post_fb_due_at <= NOW()"
+            f"{clause} ORDER BY social_post_fb_due_at ASC LIMIT %s",
+            tuple(params),
+        )
+    except Exception as exc:
+        _log.warning("social_post_db.list_due_for_fb failed: %s", exc)
         return []
 
 
@@ -186,6 +231,42 @@ def reject(idea_id: str) -> bool:
         return False
 
 
+def schedule_fb(idea_id: str, *, due_at: datetime) -> bool:
+    """Approve a queued post into a FB slot: ``'queued' -> 'scheduled'``.
+
+    Approval schedules rather than publishes -- see ``lib.social_post_slots``
+    for why, and for how `due_at` is chosen. Guarded on 'queued' so a double
+    click can't re-slot an already-scheduled post.
+    """
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET social_post_status = 'scheduled', "
+            "social_post_fb_due_at = %s, updated_at = NOW() "
+            "WHERE id = %s AND social_post_status = 'queued'",
+            (due_at, idea_id),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("social_post_db.schedule_fb failed: %s", exc)
+        return False
+
+
+def unschedule_fb(idea_id: str) -> bool:
+    """Put a scheduled post back in the review queue (``-> 'queued'``),
+    releasing its slot. Lets a reviewer change their mind before it fires."""
+    try:
+        rowcount = db.execute(
+            "UPDATE content_ideas SET social_post_status = 'queued', "
+            "social_post_fb_due_at = NULL, updated_at = NOW() "
+            "WHERE id = %s AND social_post_status = 'scheduled'",
+            (idea_id,),
+        )
+        return rowcount > 0
+    except Exception as exc:
+        _log.warning("social_post_db.unschedule_fb failed: %s", exc)
+        return False
+
+
 def set_fb_result(idea_id: str, *, url: str | None, ig_gap_hours: float) -> bool:
     """Record the live FB Page post and arm the IG half.
 
@@ -194,8 +275,8 @@ def set_fb_result(idea_id: str, *, url: str | None, ig_gap_hours: float) -> bool
     necessarily agree on wall-clock, and the gap only means anything relative to
     the moment the FB post actually went out.
 
-    Guarded on ``'queued'`` so a double-approve can't re-arm an already-published
-    row and push its IG half further into the future.
+    Guarded on ``'scheduled'`` so a re-run of the release sweep can't re-arm an
+    already-published row and push its IG half further into the future.
     """
     try:
         rowcount = db.execute(
@@ -203,7 +284,7 @@ def set_fb_result(idea_id: str, *, url: str | None, ig_gap_hours: float) -> bool
             "fb_page_post_url = %s, "
             "social_post_ig_due_at = NOW() + make_interval(secs => %s), "
             "updated_at = NOW() "
-            "WHERE id = %s AND social_post_status = 'queued'",
+            "WHERE id = %s AND social_post_status = 'scheduled'",
             (url, float(ig_gap_hours) * 3600.0, idea_id),
         )
         return rowcount > 0

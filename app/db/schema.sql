@@ -287,11 +287,17 @@ CREATE INDEX IF NOT EXISTS idx_content_ideas_brand_id ON content_ideas(brand_id)
 -- fight over the same row. `social_post_status` is an independent track, so one
 -- idea can be reeled and posted in either order, or only one of the two.
 --
---   NULL -> 'composing' -> 'queued' --approve--> 'fb_published' --+--> 'published'
---                                   \-> 'rejected' (terminal)     |
---                                                                 |
--- 'fb_published' is a real resting state, not a transient: FB goes out on
--- approval, then IG waits out the documented FB<->IG gap (config.json
+--   NULL -> 'composing' -> 'queued' --approve--> 'scheduled' -> 'fb_published'
+--                                   \-> 'rejected' (terminal)         -> 'published'
+--
+-- Approval SCHEDULES rather than publishes: approving a batch must not dump
+-- every post at once (it looks inorganic, and facebook:page_post is capped at
+-- 3/day anyway). `social_post_fb_due_at` is the assigned slot -- each approval
+-- takes the next free one, spacing posts across the week.
+--
+-- 'scheduled' and 'fb_published' are both real resting states, not transients.
+-- A pipeline release sweep publishes FB once its slot arrives, then IG once the
+-- documented FB<->IG gap has elapsed on top of that (config.json
 -- min_gap_between_feed_posts_hours / Publishing Coordination in CLAUDE.md).
 -- `social_post_ig_due_at` is when the IG half becomes eligible; a later run of
 -- the pipeline releases it and the row lands at 'published'.
@@ -314,6 +320,7 @@ ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_image_path       
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_image_alt        TEXT;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_source           TEXT;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_validation_flags TEXT[];
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_fb_due_at        TIMESTAMPTZ;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_ig_due_at        TIMESTAMPTZ;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS fb_page_post_url             TEXT;
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS ig_post_url                  TEXT;

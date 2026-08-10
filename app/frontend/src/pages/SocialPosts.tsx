@@ -22,13 +22,29 @@ function sourceBadge(source: string | null): React.JSX.Element {
   );
 }
 
+function formatSlot(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 interface CardProps {
   post: SocialPost;
   onDecision: (id: string, approve: boolean) => void;
   busy: boolean;
+  scheduledFor?: string;
 }
 
-function SocialPostCard({ post, onDecision, busy }: CardProps): React.JSX.Element {
+function SocialPostCard({
+  post,
+  onDecision,
+  busy,
+  scheduledFor,
+}: CardProps): React.JSX.Element {
   const flags = post.validation_flags ?? [];
 
   return (
@@ -39,22 +55,30 @@ function SocialPostCard({ post, onDecision, busy }: CardProps): React.JSX.Elemen
           <div className="mt-1">{sourceBadge(post.source)}</div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(post.id, false)}
-            className="px-3 py-1.5 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          >
-            Reject
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(post.id, true)}
-            className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
-          >
-            Approve
-          </button>
+          {scheduledFor ? (
+            <span className="px-3 py-1.5 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
+              Scheduled {formatSlot(scheduledFor)}
+            </span>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onDecision(post.id, false)}
+                className="px-3 py-1.5 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onDecision(post.id, true)}
+                className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
+              >
+                Approve
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -77,13 +101,13 @@ function SocialPostCard({ post, onDecision, busy }: CardProps): React.JSX.Elemen
         </div>
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Facebook — publishes on approve
+            Facebook — posts in its slot
           </div>
           <p className="text-xs text-slate-600 whitespace-pre-wrap">{post.fb_caption}</p>
         </div>
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Instagram — auto-releases 4h later
+            Instagram — 4h after Facebook
           </div>
           <p className="text-xs text-slate-600 whitespace-pre-wrap">{post.ig_caption}</p>
         </div>
@@ -94,21 +118,26 @@ function SocialPostCard({ post, onDecision, busy }: CardProps): React.JSX.Elemen
 
 export default function SocialPosts(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
-  const [decided, setDecided] = useState<Record<string, boolean>>({});
+  const [rejected, setRejected] = useState<Set<string>>(new Set());
+  // Approve claims a slot rather than publishing, so the card stays visible
+  // with its scheduled time instead of disappearing.
+  const [slots, setSlots] = useState<Record<string, string>>({});
 
   const { data, loading, error, refetch } = useApiQuery<SocialPostsResponse>(socialPostsUrl());
 
-  const pending = (data?.posts ?? []).filter((p) => decided[p.id] === undefined);
+  const visible = (data?.posts ?? []).filter((p) => !rejected.has(p.id));
+  const awaiting = visible.filter((p) => slots[p.id] === undefined);
 
   const handleDecision = useCallback(async (id: string, approve: boolean): Promise<void> => {
     setBusyIds((prev) => new Set(prev).add(id));
     try {
       if (approve) {
-        await approveSocialPost(id);
+        const result = await approveSocialPost(id);
+        setSlots((prev) => ({ ...prev, [id]: result.fb_due_at }));
       } else {
         await rejectSocialPost(id);
+        setRejected((prev) => new Set(prev).add(id));
       }
-      setDecided((prev) => ({ ...prev, [id]: approve }));
     } finally {
       setBusyIds((prev) => {
         const next = new Set(prev);
@@ -133,8 +162,11 @@ export default function SocialPosts(): React.JSX.Element {
     <div className="space-y-5">
       <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card px-5 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-baseline gap-3">
-          <span className="text-2xl font-bold text-slate-900 leading-none">{pending.length}</span>
-          <span className="text-sm text-slate-500">posts awaiting review</span>
+          <span className="text-2xl font-bold text-slate-900 leading-none">{awaiting.length}</span>
+          <span className="text-sm text-slate-500">
+            posts awaiting review
+            {Object.keys(slots).length > 0 && ` · ${Object.keys(slots).length} scheduled`}
+          </span>
         </div>
         <button
           type="button"
@@ -146,19 +178,20 @@ export default function SocialPosts(): React.JSX.Element {
         </button>
       </div>
 
-      {pending.length === 0 ? (
+      {visible.length === 0 ? (
         <EmptyState
           title="No social posts pending review"
           description="Run scripts/crewai_social_posts_pipeline.py to compose FB+IG posts from published articles."
         />
       ) : (
         <div className="space-y-4">
-          {pending.map((post) => (
+          {visible.map((post) => (
             <SocialPostCard
               key={post.id}
               post={post}
               onDecision={(id, approve) => void handleDecision(id, approve)}
               busy={busyIds.has(post.id)}
+              scheduledFor={slots[post.id] ?? post.fb_due_at ?? undefined}
             />
           ))}
         </div>

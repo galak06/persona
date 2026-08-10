@@ -12,6 +12,7 @@ export interface SocialPost {
   validation_flags: string[] | null;
   fb_page_post_url: string | null;
   ig_post_url: string | null;
+  fb_due_at: string | null;
   ig_due_at: string | null;
 }
 
@@ -28,8 +29,22 @@ export function socialPostImageUrl(baseApiUrl: string, id: string): string {
   return `${baseApiUrl}/api/v1/social-posts/${encodeURIComponent(id)}/image`;
 }
 
-export async function approveSocialPost(id: string): Promise<void> {
-  await apiClient.post(`/social-posts/${encodeURIComponent(id)}/approve`);
+export interface ApproveResult {
+  id: string;
+  status: string;
+  fb_due_at: string;
+}
+
+/** Claims the next free posting slot — does not publish immediately. */
+export async function approveSocialPost(id: string): Promise<ApproveResult> {
+  const { data } = await apiClient.post<ApproveResult>(
+    `/social-posts/${encodeURIComponent(id)}/approve`,
+  );
+  return data;
+}
+
+export async function unscheduleSocialPost(id: string): Promise<void> {
+  await apiClient.post(`/social-posts/${encodeURIComponent(id)}/unschedule`);
 }
 
 export async function rejectSocialPost(id: string): Promise<void> {

@@ -3,13 +3,15 @@
 The publish half of the social-post track (`lib.social_post_db`), invoked
 once per row per platform -- never a sweep:
 
-- `--platform fb`: by `api/ideas_api.py`'s Approve handler. Publishes the
-  Facebook Page photo post, records the result, and arms the IG half's
+Both callers are `scripts/crewai_social_posts_pipeline.py`'s release sweep,
+which only hands over rows whose due-time has passed:
+
+- `--platform fb`: once the approved post's scheduled slot arrives. Publishes
+  the Facebook Page photo post, records the result, and arms the IG half's
   `social_post_ig_due_at` (the documented FB<->IG gap).
-- `--platform ig`: by `scripts/crewai_social_posts_pipeline.py`'s release
-  sweep, once that gap has elapsed. Uploads the same image to the WP media
-  library (Meta needs a public URL for IG container creation), publishes the
-  IG feed post, and moves the row to its terminal 'published' state. The
+- `--platform ig`: once that gap has elapsed. Uploads the same image to the WP
+  media library (Meta needs a public URL for IG container creation), publishes
+  the IG feed post, and moves the row to its terminal 'published' state. The
   local image file is only deleted here, after BOTH platforms are done.
 
 Unlike the reels publish worker's per-platform-independent single pass, the
@@ -167,7 +169,7 @@ def _do_one(idea_id: str, platform: str) -> str:
         log.error(json.dumps({"event": "social_post_publish_no_idea", "idea_id": idea_id}))
         return "error"
 
-    expected_status = "queued" if platform == "fb" else "fb_published"
+    expected_status = "scheduled" if platform == "fb" else "fb_published"
     if idea.get("social_post_status") != expected_status:
         log.info(
             json.dumps(
@@ -176,6 +178,24 @@ def _do_one(idea_id: str, platform: str) -> str:
                     "idea_id": idea_id,
                     "platform": platform,
                     "status": idea.get("social_post_status"),
+                }
+            )
+        )
+        return "skipped"
+
+    # Second line of defence on timing. The release sweep only hands over rows
+    # whose slot has arrived, but this worker is directly invocable, and a
+    # post firing early is exactly what the spread exists to prevent.
+    due_column = "social_post_fb_due_at" if platform == "fb" else "social_post_ig_due_at"
+    due_at = idea.get(due_column)
+    if due_at is not None and due_at > datetime.now(UTC):
+        log.info(
+            json.dumps(
+                {
+                    "event": "social_post_publish_skipped_not_due",
+                    "idea_id": idea_id,
+                    "platform": platform,
+                    "due_at": str(due_at),
                 }
             )
         )
