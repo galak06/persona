@@ -15,7 +15,13 @@ from lib.crew.socialpost.agent import build_social_post_agent, build_social_post
 from lib.crew.socialpost.execute import _parse_structured_output, execute_social_post_crew
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.socialpost.prompts import build_social_post_task_description
-from lib.crew.socialpost.rules import find_caption_violations, first_sentence
+from lib.crew.socialpost.rules import (
+    KEYWORD_MIN_COVERAGE,
+    find_caption_violations,
+    first_sentence,
+    keyword_coverage,
+    keyword_terms,
+)
 
 _KW = "bone broth"
 
@@ -63,13 +69,55 @@ def test_good_plan_has_no_violations() -> None:
     assert find_caption_violations(_good_plan(), target_keyword=_KW) == []
 
 
-def test_keyword_must_be_in_first_sentence_of_both() -> None:
+def test_off_topic_opener_is_rejected() -> None:
     plan = _good_plan(
         fb_caption="Great news everyone. Bone broth rocks. Comment BROTH? Follow us.",
         ig_caption="Great news everyone. Bone broth rocks. Comment BROTH? Follow.\n#a #b #c",
     )
     violations = find_caption_violations(plan, target_keyword=_KW)
     assert sum("FIRST sentence" in v for v in violations) == 2
+
+
+def test_natural_phrasing_passes_without_verbatim_keyword() -> None:
+    """The relaxation this rule exists for: an SEO keyword pasted in whole
+    produces broken English ("What are the raw dog food dangers 2024?"), so
+    coverage of its meaningful words is what's required, not the phrase."""
+    plan = _good_plan(
+        target_question="What are the dangers of raw dog food?",
+        comment_keyword="STUDIES",
+        fb_caption=(
+            "Raw dog food carries a real contamination risk -- 94% of samples in the "
+            "studies versus 35% for cooked. Nalla is a shepherd mix and I decided "
+            "against it. The full write-up is on dogfoodandfun.com. "
+            "Want it? Comment STUDIES and I'll DM you the article. "
+            "Follow the page for more."
+        ),
+        ig_caption=(
+            "Raw dog food carries a real contamination risk that the marketing skips. "
+            "Nalla does not eat it -- would you take the chance? "
+            "Comment STUDIES and I'll DM you the article. Follow for more.\n"
+            "#rawdogfood #doghealth #dogfood"
+        ),
+    )
+    # Note: no "2024", and the phrase is never pasted in whole.
+    assert find_caption_violations(plan, target_keyword="raw dog food dangers 2024") == []
+
+
+def test_year_and_stopwords_do_not_count_toward_coverage() -> None:
+    assert keyword_terms("raw dog food dangers 2024") == ["raw", "dog", "food", "dangers"]
+    assert keyword_terms("best gps for your dog") == ["gps", "dog"]
+
+
+def test_coverage_matches_on_stem_not_exact_word() -> None:
+    """'danger' has to satisfy 'dangers' -- otherwise the rule just forces
+    the SEO string's exact inflection back in."""
+    terms = keyword_terms("raw dog food dangers 2024")
+    assert keyword_coverage("Raw dog food has a real danger nobody mentions", terms) == 1.0
+
+
+def test_partial_coverage_below_threshold_fails() -> None:
+    terms = keyword_terms("raw dog food dangers 2024")  # 4 terms
+    assert keyword_coverage("Dog owners deserve better", terms) < KEYWORD_MIN_COVERAGE
 
 
 def test_url_rejected_in_both_captions() -> None:

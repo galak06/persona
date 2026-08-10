@@ -26,6 +26,49 @@ _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s")
 # ("dogfoodandfun.com") is explicitly allowed in BOTH captions for recall --
 # the platforms reject/suppress link syntax, not a domain spelled as words.
 _LINK_RE = re.compile(r"https?://|www\.", re.IGNORECASE)
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+# Fraction of a keyword's meaningful words that must show up in the opening
+# sentence. Deliberately NOT 1.0 and deliberately not a verbatim match: target
+# keywords are SEO strings ("raw dog food dangers 2024"), and forcing them in
+# whole produced openers like "What are the raw dog food dangers 2024?" --
+# grammatically broken, and the first line is the one doing all the work.
+# Two thirds keeps the post recognisably on-topic while leaving the writer
+# room for real English.
+KEYWORD_MIN_COVERAGE = 2 / 3
+
+# Dropped before measuring coverage: they carry no topical signal, and a
+# caption shouldn't be penalised for phrasing around them.
+_KEYWORD_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "and",
+        "or",
+        "for",
+        "of",
+        "to",
+        "in",
+        "on",
+        "with",
+        "your",
+        "you",
+        "my",
+        "is",
+        "are",
+        "be",
+        "best",
+        "how",
+        "what",
+        "why",
+        "vs",
+        "versus",
+        "at",
+        "by",
+        "from",
+    }
+)
 
 
 def first_sentence(text: str) -> str:
@@ -33,6 +76,30 @@ def first_sentence(text: str) -> str:
     stripped = text.strip()
     parts = _SENTENCE_END_RE.split(stripped, maxsplit=1)
     return parts[0].strip() if parts else stripped
+
+
+def keyword_terms(target_keyword: str) -> list[str]:
+    """The meaningful words of a target keyword, for coverage checking.
+
+    Stopwords go, and so do bare years/numbers: "2024" in an SEO keyword is a
+    freshness signal for search, not something a human says out loud in a
+    caption's first line.
+    """
+    return [
+        w
+        for w in _WORD_RE.findall(target_keyword.lower())
+        if w not in _KEYWORD_STOPWORDS and not w.isdigit() and len(w) > 2
+    ]
+
+
+def keyword_coverage(sentence: str, terms: list[str]) -> float:
+    """Fraction of `terms` present in `sentence`, matched on a 4-char stem so
+    singular/plural and simple inflections count ("danger" ~ "dangers")."""
+    if not terms:
+        return 1.0
+    lowered = sentence.lower()
+    hits = sum(1 for t in terms if t[: min(len(t), 4)] in lowered)
+    return hits / len(terms)
 
 
 def find_caption_violations(plan: SocialPostPlan, *, target_keyword: str) -> list[str]:
@@ -50,18 +117,18 @@ def find_caption_violations(plan: SocialPostPlan, *, target_keyword: str) -> lis
     if not fb or not ig:
         return violations
 
-    # Answer-first: the keyword has to be in the sentence that survives truncation.
-    if keyword:
-        if keyword not in first_sentence(fb).lower():
-            violations.append(
-                f"fb_caption's FIRST sentence must contain the target keyword "
-                f"'{target_keyword}' verbatim."
-            )
-        if keyword not in first_sentence(ig).lower():
-            violations.append(
-                f"ig_caption's FIRST sentence must contain the target keyword "
-                f"'{target_keyword}' verbatim."
-            )
+    # Answer-first: the opening sentence -- the part that survives truncation
+    # and gets indexed -- has to be recognisably about the target keyword.
+    # Coverage, not a verbatim paste: see KEYWORD_MIN_COVERAGE.
+    terms = keyword_terms(keyword)
+    if terms:
+        for label, caption in (("fb_caption", fb), ("ig_caption", ig)):
+            if keyword_coverage(first_sentence(caption), terms) < KEYWORD_MIN_COVERAGE:
+                violations.append(
+                    f"{label}'s FIRST sentence must be clearly about '{target_keyword}' -- "
+                    f"work most of these words into it naturally: {', '.join(terms)}. "
+                    "Write real English; do not paste the keyword phrase in verbatim."
+                )
 
     # No link syntax anywhere -- FB and IG reject/suppress page posts whose
     # caption carries a URL (live-confirmed on this brand's accounts). The

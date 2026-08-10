@@ -40,16 +40,17 @@ class SocialPostPlan(BaseModel):
     )
     fb_caption: str = Field(
         description="Facebook Page post body, 150-200 words, no hashtags, NO URL of any "
-        "kind (Facebook rejects page posts with caption links). Answers target_question "
-        "in sentence one with the target keyword in it. May name the site in words once, "
-        "late. Ends with a comment-keyword CTA ('Comment {comment_keyword} and I'll DM "
-        "you the article') plus a separate short follow CTA."
+        "kind (Facebook rejects page posts with caption links). Sentence one answers "
+        "target_question and reads as natural English clearly about the target keyword "
+        "-- never the keyword phrase pasted in verbatim. May name the site in words "
+        "once, late. Ends with a comment-keyword CTA ('Comment {comment_keyword} and "
+        "I'll DM you the article') plus a separate short follow CTA."
     )
     ig_caption: str = Field(
         description="Instagram feed caption, NO URL of any kind, never 'link in bio'. "
-        "Answers target_question in sentence one with the target keyword in it. Ends "
-        "with the same comment-keyword CTA plus a separate short follow CTA, then 3-5 "
-        "relevant hashtags on their own line."
+        "Sentence one answers target_question in natural English clearly about the "
+        "target keyword. Ends with the same comment-keyword CTA plus a separate short "
+        "follow CTA, then 3-5 relevant hashtags on their own line."
     )
     overlay_headline: str = Field(
         description="Short on-screen headline painted over the image. May contain \\n "

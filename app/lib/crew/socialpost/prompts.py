@@ -79,10 +79,17 @@ art direction you also write. There is no video and no carousel.
 ## The single most important rule: answer first
 Pick the one real question a reader would actually type into a search box that \
 this post answers -- put it in `target_question`, phrased the way they'd type it. \
-Then ANSWER IT in the first sentence of both captions, with "{keyword}" in that \
-sentence verbatim. No throat-clearing, no "let's talk about", no teaser that \
-withholds the answer. Both platforms cut the caption off after a couple of lines \
-and both index what's there, so the first sentence is doing almost all the work.
+Then ANSWER IT in the first sentence of both captions. No throat-clearing, no \
+"let's talk about", no teaser that withholds the answer. Both platforms cut the \
+caption off after a couple of lines and both index what's there, so the first \
+sentence is doing almost all the work.
+
+That first sentence must also be clearly about "{keyword}" -- work most of those \
+words into it NATURALLY, as real English. Do NOT paste the keyword phrase in \
+verbatim: it is a search string, not a sentence, and jamming it in whole produces \
+broken openers like "What are the raw dog food dangers 2024?". Rephrase around it \
+("Raw dog food carries real contamination risks..."), drop any year, and write the \
+line you'd actually say to another dog owner.
 
 ## Hard rule for BOTH captions: no URL of any kind
 Neither caption may contain a URL, a "www." address, or anything shaped like a \
