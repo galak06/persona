@@ -200,6 +200,21 @@ jobs:
       # a generic placeholder brand (tests/fixtures/ci_brand/), built from
       # config.example.json, not any real brand's data.
       BRAND_DIR: ${{ github.workspace }}/app/tests/fixtures/ci_brand
+      # tests/test_crew_products_stage.py builds a real crewai Agent to cover
+      # the factory. Constructing one starts crewai's OpenTelemetry exporter,
+      # which blocks on egress this runner does not have -- the "Run tests
+      # with coverage" step then hangs until GitHub's 6h ceiling instead of
+      # failing (see the cancelled run on 0d53ffc's successor). Opting out of
+      # telemetry keeps agent construction offline and instant.
+      # (crewai 1.15.12 reads exactly these: telemetry.py checks OTEL_SDK_DISABLED
+      # and CREWAI_DISABLE_TELEMETRY; the tracing listener checks CREWAI_TRACING_ENABLED.)
+      OTEL_SDK_DISABLED: "true"
+      CREWAI_DISABLE_TELEMETRY: "true"
+      CREWAI_TRACING_ENABLED: "false"
+      # Agent construction resolves the configured provider. No test ever
+      # performs a completion (crewai is faked at the Crew.kickoff boundary),
+      # so this is a placeholder purely to keep provider setup from stalling.
+      DEEPSEEK_API_KEY: ci-placeholder-never-called
     steps:
       - uses: actions/checkout@v4
 
