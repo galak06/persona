@@ -53,6 +53,7 @@ services:
       - BRAND_DIR=/app/brands/_shared
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
+      - PERSONA_SECRET_KEY=${PERSONA_SECRET_KEY}
     volumes:
       # Read-only: the dispatcher only reads brand config -- it never
       # writes to any brand folder (no session/browser state, no
@@ -72,6 +73,7 @@ services:
       - BRAND_DIR=/app/brands/_shared
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
+      - PERSONA_SECRET_KEY=${PERSONA_SECRET_KEY}
       - PLAYWRIGHT_HEADLESS=1
       # Engine-wide LLM key. Brand-owned credentials arrive via each brand's
       # own $BRAND_DIR/.env through the ./brands mount below, but engine-wide

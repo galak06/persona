@@ -106,6 +106,7 @@ services:
       - PERSONA_BRAND=${PERSONA_BRAND:-default}
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
+      - PERSONA_SECRET_KEY=${PERSONA_SECRET_KEY}
       # Platform credentials — set in .env
       - WP_URL=${WP_URL}
       - WP_USER=${WP_USER}
