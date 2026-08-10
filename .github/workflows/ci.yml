@@ -1,12 +1,16 @@
 name: CI
 
 on:
+  # This file is in the filter on purpose: without it a CI-only commit never
+  # runs CI, so a change to the pipeline could not be verified by the pipeline.
   push:
     paths:
       - "app/**"
+      - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "app/**"
+      - ".github/workflows/ci.yml"
   workflow_dispatch:
 
 defaults:
@@ -201,16 +205,23 @@ jobs:
       # config.example.json, not any real brand's data.
       BRAND_DIR: ${{ github.workspace }}/app/tests/fixtures/ci_brand
       # tests/test_crew_products_stage.py builds a real crewai Agent to cover
-      # the factory. Constructing one starts crewai's OpenTelemetry exporter,
-      # which blocks on egress this runner does not have -- the "Run tests
-      # with coverage" step then hangs until GitHub's 6h ceiling instead of
-      # failing (see the cancelled run on 0d53ffc's successor). Opting out of
-      # telemetry keeps agent construction offline and instant.
+      # the factory. Keep crewai's OpenTelemetry exporter and tracing listener
+      # out of the picture so agent construction stays offline and instant --
+      # nothing in this suite wants telemetry, and an exporter reaching for the
+      # network only adds a way for the job to stall. (This was first added as
+      # a suspected fix for the 6h hang; the actual cause was the dotted
+      # --cov=lib.crew.products below. Tracing crewai's imports shows zero
+      # socket connects, so these are hygiene, not the fix.)
       # (crewai 1.15.12 reads exactly these: telemetry.py checks OTEL_SDK_DISABLED
       # and CREWAI_DISABLE_TELEMETRY; the tracing listener checks CREWAI_TRACING_ENABLED.)
       OTEL_SDK_DISABLED: "true"
       CREWAI_DISABLE_TELEMETRY: "true"
       CREWAI_TRACING_ENABLED: "false"
+      # Makes SIGABRT dump every thread's Python stack. Paired with the
+      # `timeout --signal=ABRT` wrapper below, so a hang that pytest-timeout
+      # structurally cannot see (anything before the first test item) still
+      # names itself instead of running to GitHub's 6h ceiling.
+      PYTHONFAULTHANDLER: "1"
       # Agent construction resolves the configured provider. No test ever
       # performs a completion (crewai is faked at the Crew.kickoff boundary),
       # so this is a placeholder purely to keep provider setup from stalling.
@@ -242,8 +253,23 @@ jobs:
         # reject, but the check reads the real settings.site.url
         # (dogfoodandfun.com) — never matched, confirmed failing identically
         # before this PR's changes too (pre-existing, unrelated fixture bug).
+        # --cov=lib/crew/products is a PATH, deliberately not the dotted
+        # `lib.crew.products`. pytest-cov hands a dotted source to coverage,
+        # which resolves it by IMPORTING the package inside pytest_configure --
+        # before the session header, before collection, before any test exists.
+        # That import runs lib/crew/__init__.py, which eagerly pulls
+        # lib.crew.scout -> crewai -> chromadb/numpy, and on this runner it
+        # never returns: three runs (16m, 33m, 6h) logged not one byte of
+        # pytest output. The path form makes coverage measure files by path and
+        # never import them. Keep it a path for any heavy package added here.
+        # `timeout --signal=ABRT 600` is the outer net: --timeout below only
+        # arms a timer per test item (setup/call/teardown), so any hang before
+        # the first test -- plugin load, coverage's source resolution, conftest
+        # import, collection -- is invisible to it. SIGABRT + PYTHONFAULTHANDLER
+        # turns such a hang into an all-thread traceback within 10 minutes
+        # instead of a 6h cancellation with an empty log.
         run: |
-          pytest \
+          timeout --signal=ABRT 600 pytest \
             --timeout=90 --timeout-method=thread \
             tests/test_db.py \
             tests/test_groups_db.py \
@@ -296,7 +322,7 @@ jobs:
             --cov=comment_generator --cov=comment_generator_defaults --cov=reply_drafter --cov=draft_helper --cov=llm_tracing --cov=gemini_client \
             --cov=api.brands_api --cov=api.brand_settings_api --cov=api.brand_schemas --cov=api.brand_flows_api \
             --cov=api.oauth_api --cov=api.session_status_api \
-            --cov=lib.crew.products \
+            --cov=lib/crew/products \
             --cov-report=term-missing --cov-fail-under=80
 
   security:
