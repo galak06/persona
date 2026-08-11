@@ -36,3 +36,5 @@ crewai>=1.15.0
 crewai-tools>=1.15.0
 # Fernet encryption for lib/brand_secrets.py (per-brand credentials at rest)
 cryptography>=43.0.3
+# R2/S3 upload for scripts/pg_backup.py (offsite DB backups)
+boto3>=1.34
