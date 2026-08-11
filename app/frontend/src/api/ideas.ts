@@ -88,3 +88,13 @@ export async function fetchGenerateStatus(): Promise<GenerateStatus> {
   const { data } = await apiClient.get<GenerateStatus>("/ideas/generate/status");
   return data;
 }
+
+/** Starts a CrewAI reels-compose run over wp_published ideas. 409 if one is in flight. */
+export async function composeReels(): Promise<void> {
+  await apiClient.post("/reels/compose");
+}
+
+export async function fetchComposeStatus(): Promise<GenerateStatus> {
+  const { data } = await apiClient.get<GenerateStatus>("/reels/compose/status");
+  return data;
+}
