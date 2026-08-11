@@ -34,3 +34,5 @@ google-api-python-client>=2.100.0
 google-auth>=2.23.0
 crewai>=1.15.0
 crewai-tools>=1.15.0
+# Fernet encryption for lib/brand_secrets.py (per-brand credentials at rest)
+cryptography>=43.0.3

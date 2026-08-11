@@ -327,3 +327,32 @@ ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS ig_post_url                  
 
 CREATE INDEX IF NOT EXISTS idx_content_ideas_social_post_status
     ON content_ideas(social_post_status);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- brand_secrets (lib/brand_secrets.py)
+--
+-- Per-brand platform credentials (FB/IG/WP), ENCRYPTED at rest with Fernet.
+-- `value_enc` is ciphertext; the key lives in PERSONA_SECRET_KEY in .env and
+-- never in this database -- a dump of this table on its own reveals nothing.
+--
+-- Engine-wide keys (DEEPSEEK/GEMINI/SERPER) and everything Compose needs at
+-- container start (POSTGRES_*, DATABASE_URL) stay in .env by design: a process
+-- cannot read from this table the credentials it needs to reach the database.
+--
+-- Exists because .env loaders merge with skip-if-present semantics, so any
+-- ambient value wins. A stale FB_PAGE_TOKEN from a deleted Meta app shadowed
+-- the correct token in two .env files and broke every publish with
+-- OAuthException 190. lib.brand_secrets.load_into_environ OVERRIDES instead.
+-- ────────────────────────────────────────────────────────────────────────────
+-- brand_id references brands(id) -- same convention as fb_groups. Rejects
+-- rows for typo'd/unregistered brand ids at the DB (a CLI typo would
+-- otherwise store orphan secrets that nothing ever loads, and --verify
+-- would bless them). No separate brand_id index: the composite PK's leading
+-- column already serves every WHERE brand_id = %s lookup here.
+CREATE TABLE IF NOT EXISTS brand_secrets (
+    brand_id    TEXT        NOT NULL    REFERENCES brands(id),
+    key         TEXT        NOT NULL,
+    value_enc   TEXT        NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (brand_id, key)
+);

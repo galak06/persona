@@ -31,6 +31,7 @@ _EXPECTED_TABLES = {
     "flow_templates",
     "published_content",
     "content_ideas",
+    "brand_secrets",  # encrypted per-brand credentials (lib/brand_secrets.py)
 }
 _EXCLUDED_TABLES = {"recipes", "oauth_tokens", "raw_scrapes"}
 

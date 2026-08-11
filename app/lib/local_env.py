@@ -16,9 +16,12 @@ read `<BRAND_DIR>/brand.json` for env-specific Playwright flags.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _SETTINGS_FILE = Path(__file__).resolve().parent.parent.parent / ".claude" / "settings.local.json"
 
@@ -172,7 +175,9 @@ def load_brand_env(brand_dir: Path) -> dict[str, str]:
     return result
 
 
-def load_brand_env_into_environ(brand_dir: Path | None = None) -> int:
+def load_brand_env_into_environ(
+    brand_dir: Path | None = None, *, apply_secrets: bool = True
+) -> int:
     """Merge `<brand_dir>/.env` into os.environ. Returns count loaded.
 
     The single-brand-per-process counterpart to `load_brand_env()`: host
@@ -189,6 +194,15 @@ def load_brand_env_into_environ(brand_dir: Path | None = None) -> int:
 
     `brand_dir` defaults to `$BRAND_DIR`, falling back to `default_brand_dir()`
     so bootstrap works before BRAND_DIR has been sourced from settings.
+
+    `apply_secrets` overlays this brand's encrypted credentials
+    (`_apply_brand_secrets`) as a side effect, NOT counted in the return value,
+    and deliberately OVERRIDING what was just loaded. Entrypoints that publish
+    want it (the default). `lib.config`'s import-time bootstrap passes False:
+    the overlay opens a DB connection, and `lib.config` is imported by nearly
+    every module — wiring a Postgres round-trip (or, with the DB down, a
+    ~10-second pool timeout) into `import lib.config` was measured, real, and
+    unacceptable. Import must stay cheap; credentials are an entrypoint concern.
     """
     if brand_dir is None:
         raw = os.environ.get("BRAND_DIR")
@@ -205,7 +219,51 @@ def load_brand_env_into_environ(brand_dir: Path | None = None) -> int:
             continue
         os.environ[key] = value
         loaded += 1
+
+    if apply_secrets:
+        _apply_brand_secrets(brand_dir.name)
     return loaded
+
+
+def _apply_brand_secrets(brand_id: str) -> int:
+    """Overlay this brand's encrypted secrets (`lib.brand_secrets`) on top of
+    the `.env` values just loaded, OVERRIDING them and any ambient value.
+
+    The override is the point, and it inverts the skip-if-present rule above.
+    That rule exists so `FB_PAGE_TOKEN=... python ...` can win, but it cannot
+    tell a deliberate override from a stale variable a shell happened to
+    export -- and a dead token from a deleted Meta app did exactly that,
+    shadowing the correct credential in two `.env` files until every publish
+    failed with `OAuthException 190`. A row in `brand_secrets` is an explicit
+    statement of what this brand's credential IS, so it wins.
+
+    Failure severity depends on what failed:
+
+    * **No master key** -> debug, skip quietly. Pre-migration state; the `.env`
+      values stand and that is correct.
+    * **Key present but the overlay failed** (wrong key, table missing, DB
+      down) -> WARNING. Secrets were configured and could not be applied, so
+      the process is now running on `.env`/ambient fallbacks -- the exact
+      silent-stale-credential regression this module exists to prevent must
+      never hide at debug level.
+    """
+    try:
+        from lib import brand_secrets
+
+        if brand_secrets.resolve_master_key() is None:
+            logger.debug(
+                "no %s; brand secrets skipped for %s", brand_secrets.MASTER_KEY_ENV, brand_id
+            )
+            return 0
+        return brand_secrets.load_into_environ(brand_id, override=True)
+    except Exception as exc:  # wrong key, no table, DB down -- key WAS present
+        logger.warning(
+            "brand secrets NOT applied for %s (%s) -- running on .env/ambient "
+            "credentials, which may be stale",
+            brand_id,
+            exc,
+        )
+        return 0
 
 
 def get_brand_campaign() -> dict[str, Any]:
