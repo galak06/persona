@@ -42,8 +42,12 @@ export interface Brand extends BrandSummary {
 }
 
 /** Every flow id `enabled_flows` can govern — mirrors
- * `lib.brands_db.models.MANAGED_FLOW_IDS` (Python side). */
-export const MANAGED_FLOW_IDS = ["ig-engager", "fb-scanner", "fb-group-scout"] as const;
+ * `lib.brands_db.models.MANAGED_FLOW_IDS` (Python side), in the same
+ * presentation order `lib/flow_readiness.py` uses. Pinned by
+ * `tests/test_managed_flow_ids_consistency.py`, which parses this literal:
+ * the list drifted for two days after PR #61 renamed fb-scanner to
+ * fb-engager because nothing imported it and nothing compared it. */
+export const MANAGED_FLOW_IDS = ["ig-engager", "fb-group-scout", "fb-engager"] as const;
 
 export interface BrandsResponse {
   brands: BrandSummary[];
