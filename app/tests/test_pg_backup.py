@@ -7,9 +7,7 @@
 from __future__ import annotations
 
 import gzip
-import os
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -68,21 +66,21 @@ def test_dump_refuses_missing_create_table(tmp_path: Path, monkeypatch: pytest.M
 # ── retention ─────────────────────────────────────────────────────────────
 
 
-def test_prune_removes_only_past_retention(tmp_path: Path) -> None:
+def test_prune_keeps_only_the_newest_dump(tmp_path: Path) -> None:
     d = tmp_path / "backups" / "db"
     d.mkdir(parents=True)
-    old = d / "persona-20200101-000000.sql.gz"
-    new = d / "persona-20990101-000000.sql.gz"
-    for f in (old, new):
+    older = d / "persona-20260101-000000.sql.gz"
+    newer = d / "persona-20260102-000000.sql.gz"
+    newest = d / "persona-20260103-000000.sql.gz"
+    for f in (older, newer, newest):
         f.write_bytes(b"x")
-    ancient = time.time() - (pg_backup.RETENTION_DAYS + 5) * 86400
-    os.utime(old, (ancient, ancient))
 
     removed = pg_backup._prune_local(tmp_path)
 
-    assert removed == 1
-    assert not old.exists()
-    assert new.exists()
+    assert removed == 2
+    assert not older.exists()
+    assert not newer.exists()
+    assert newest.exists()
 
 
 # ── R2 config resolution ──────────────────────────────────────────────────
@@ -124,12 +122,10 @@ def test_upload_pushes_then_prunes_remote(tmp_path: Path) -> None:
     dump.write_bytes(b"x")
     cfg = dict.fromkeys(pg_backup._R2_KEYS, "v") | {"R2_BUCKET": "bkt"}
     client = MagicMock()
-    from datetime import UTC, datetime
-
     client.list_objects_v2.return_value = {
         "Contents": [
-            {"Key": "pg/ancient.sql.gz", "LastModified": datetime(2020, 1, 1, tzinfo=UTC)},
-            {"Key": f"pg/{dump.name}", "LastModified": datetime.now(UTC)},
+            {"Key": "pg/persona-20200101-000000.sql.gz"},
+            {"Key": f"pg/{dump.name}"},
         ]
     }
     with patch.object(pg_backup, "_r2_client", return_value=client):
@@ -137,4 +133,4 @@ def test_upload_pushes_then_prunes_remote(tmp_path: Path) -> None:
 
     client.upload_file.assert_called_once_with(str(dump), "bkt", f"pg/{dump.name}")
     deleted = client.delete_objects.call_args.kwargs["Delete"]["Objects"]
-    assert deleted == [{"Key": "pg/ancient.sql.gz"}]
+    assert deleted == [{"Key": "pg/persona-20200101-000000.sql.gz"}]

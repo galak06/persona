@@ -1,4 +1,4 @@
-"""Nightly Postgres backup: pg_dump -> gzip -> local retention -> optional R2.
+"""Nightly Postgres backup: pg_dump -> gzip -> keep-latest-only -> optional R2.
 
 The `postgres_data` Docker volume is the ONLY copy of every idea, caption,
 schedule, publish record and encrypted secret -- one Docker Desktop reset
@@ -39,7 +39,7 @@ import gzip
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -52,7 +52,10 @@ from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-RETENTION_DAYS = 90
+# Keep exactly this many dumps, locally and in R2. At 1, a dump taken after
+# a corruption event (e.g. an accidental TRUNCATE) replaces the only good
+# copy the next night -- widen this if that trade-off ever feels wrong.
+KEEP_LATEST = 1
 _CONTAINER = os.environ.get("PG_BACKUP_CONTAINER", "persona-postgres-1")
 _DB_USER = "persona"
 _DB_NAME = "persona"
@@ -91,12 +94,13 @@ def _dump(brand_dir: Path) -> Path:
 
 
 def _prune_local(brand_dir: Path) -> int:
-    cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
+    """Keep only the newest KEEP_LATEST dumps. Filenames embed a UTC
+    timestamp, so lexicographic order is chronological order."""
+    files = sorted(_backup_dir(brand_dir).glob(f"{_DB_NAME}-*.sql.gz"))
     removed = 0
-    for f in sorted(_backup_dir(brand_dir).glob(f"{_DB_NAME}-*.sql.gz")):
-        if datetime.fromtimestamp(f.stat().st_mtime, UTC) < cutoff:
-            f.unlink()
-            removed += 1
+    for f in files[:-KEEP_LATEST]:
+        f.unlink()
+        removed += 1
     if removed:
         logger.info("pg_backup_pruned_local", removed=removed)
     return removed
@@ -136,9 +140,9 @@ def _upload_and_prune_r2(cfg: dict[str, str], dump_path: Path) -> None:
     logger.info("pg_backup_uploaded_r2", bucket=cfg["R2_BUCKET"], key=key)
 
     try:
-        cutoff = datetime.now(UTC) - timedelta(days=RETENTION_DAYS)
         listing = client.list_objects_v2(Bucket=cfg["R2_BUCKET"], Prefix="pg/")
-        stale = [o["Key"] for o in listing.get("Contents", []) if o["LastModified"] < cutoff]
+        keys = sorted(o["Key"] for o in listing.get("Contents", []))
+        stale = keys[:-KEEP_LATEST]
         if stale:
             client.delete_objects(
                 Bucket=cfg["R2_BUCKET"],
