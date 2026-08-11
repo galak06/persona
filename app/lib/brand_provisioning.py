@@ -52,9 +52,16 @@ BRANDS_ROOT = _PERSONA_ROOT / "brands"
 # edit reaches onboarding after a backfill run rather than being read live
 # from disk here. Not every brand gets every row -- `_build_stage1_tasks`
 # filters this list down to `spec.enabled_flows` (default: just the first
-# two -- see `default_enabled_flows()`), so a brand that never opts into
+# one -- see `default_enabled_flows()`), so a brand that never opts into
 # `fb-group-scout` never gets that `schedule_tasks` row at all.
-_STAGE1_FLOWS: tuple[str, ...] = ("ig-engager", "fb-scanner", "fb-group-scout")
+#
+# Must stay in sync with `lib.brands_db.models.MANAGED_FLOW_IDS` -- a flow
+# that is gated by `enabled_flows` but absent here is enable-able in the UI
+# yet never gets a `schedule_tasks` row, so "Run now" 404s forever. That is
+# exactly what happened to `fb-engager` between PR #61 (which swapped it into
+# MANAGED_FLOW_IDS) and this line still naming the `fb-scanner` it replaced.
+# `tests/test_managed_flow_ids_consistency.py` pins the two lists together.
+_STAGE1_FLOWS: tuple[str, ...] = ("ig-engager", "fb-group-scout", "fb-engager")
 
 
 @dataclass
@@ -110,7 +117,15 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
         "requires_browser": True,
         "re_run_guard": bool(flow.get("re_run_guard", True)),
         "output_file": flow.get("output_file"),
-        "schedule": {"cron": flow["schedule"]["cron"]},
+        # A flow without a schedule block is legitimate -- fb-engager runs
+        # on demand only (PR #61 deliberately removed the fb-scanner/fb-comment
+        # crons). A schedule-less task row means the dispatcher never fires it
+        # on a timer, but "Run now" from the UI still works.
+        "schedule": (
+            {"cron": flow["schedule"]["cron"]}
+            if isinstance(flow.get("schedule"), dict) and flow["schedule"].get("cron")
+            else None
+        ),
         "inputs": [],
         "telegram_notify": bool(flow.get("telegram_notify", True)),
         "extra": {},
