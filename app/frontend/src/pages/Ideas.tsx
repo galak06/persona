@@ -1,6 +1,13 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { apiOrigin } from "../api/client";
-import { ideasUrl, updateIdeaStatus, slidesApiUrl, slideImageUrl } from "../api/ideas";
+import {
+  ideasUrl,
+  updateIdeaStatus,
+  slidesApiUrl,
+  slideImageUrl,
+  generateIdeas,
+  fetchGenerateStatus,
+} from "../api/ideas";
 import type { ContentIdea, IdeasResponse, SlidesResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
 import ErrorState from "../components/ui/ErrorState";
@@ -191,9 +198,58 @@ export default function Ideas(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [generateNote, setGenerateNote] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const url = ideasUrl({ status: statusFilter === "all" ? undefined : statusFilter });
   const { data, loading, error, refetch } = useApiQuery<IdeasResponse>(url);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Poll while a scout run is in flight; refetch the list when it lands so
+  // the new ideas appear without a manual refresh.
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = setInterval(() => {
+      void fetchGenerateStatus().then((s) => {
+        if (s.running) return;
+        stopPolling();
+        setGenerating(false);
+        setGenerateNote(s.ok ? "New ideas generated." : `Generation failed: ${s.detail ?? "?"}`);
+        if (s.ok) void refetch();
+      });
+    }, 5000);
+  }, [refetch, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]); // clear the interval on unmount
+
+  // A run may already be in flight (another tab, or a page reload mid-run).
+  useEffect(() => {
+    void fetchGenerateStatus().then((s) => {
+      if (s.running) {
+        setGenerating(true);
+        startPolling();
+      }
+    });
+  }, [startPolling]);
+
+  const handleGenerate = useCallback(async (): Promise<void> => {
+    setGenerating(true);
+    setGenerateNote(null);
+    try {
+      await generateIdeas();
+      startPolling();
+    } catch {
+      // 409 = already running elsewhere; just track it.
+      startPolling();
+    }
+  }, [startPolling]);
 
   const filtered = useMemo(() => {
     const ideas = data?.ideas ?? [];
@@ -240,14 +296,25 @@ export default function Ideas(): React.JSX.Element {
             )}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={loading}
-          className="px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {generateNote && <span className="text-xs text-slate-500">{generateNote}</span>}
+          <button
+            type="button"
+            onClick={() => void handleGenerate()}
+            disabled={generating}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
+          >
+            {generating ? "Generating… (runs a few minutes)" : "✨ Generate ideas"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={loading}
+            className="px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3">

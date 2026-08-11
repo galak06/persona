@@ -124,6 +124,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - SERPER_API_KEY=${SERPER_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       # Pinned alongside the key: Google retires models for new API keys without
       # warning (gemini-2.5-flash and 2.0-flash both 404 as of 2026-07-29), and
       # this client turns that into an empty draft that is indistinguishable
