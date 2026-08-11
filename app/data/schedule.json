@@ -42,6 +42,10 @@
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "33 15 * * *"
+      },
       "script": "scripts/fb_scan.py",
       "skill": "fb-scanner",
       "telegram_notify": true
@@ -61,36 +65,13 @@
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 10 * * *"
+      },
       "script": "scripts/fb_comment.py",
       "skill": "fb-comment",
       "telegram_notify": true
-    },
-    {
-      "depends_on": [
-        "site-analyzer"
-      ],
-      "description": "Scan joined Facebook groups, like qualifying posts, draft and post a comment inline (single-pass)",
-      "id": "fb-engager",
-      "inputs": [
-        {
-          "max_age_hours": 26,
-          "min_count": 1,
-          "path": "data/site_content_cache.json",
-          "produced_by": "site-analyzer"
-        }
-      ],
-      "order": 25,
-      "rate_limits": {
-        "comments_per_day": 5,
-        "likes_per_day": 5
-      },
-      "re_run_guard": true,
-      "requires_approval": false,
-      "requires_browser": true,
-      "script": "scripts/fb_engager.py",
-      "skill": "fb-engager",
-      "telegram_notify": true,
-      "timeout_minutes": 30
     },
     {
       "depends_on": [
@@ -299,6 +280,27 @@
       "telegram_notify": true
     },
     {
+      "args": [
+        "--release-only"
+      ],
+      "depends_on": [],
+      "description": "Hourly social-post release \u2014 publishes approved FB posts when their scheduled slot arrives, then their IG halves after the FB\u2194IG gap",
+      "id": "social-posts-release",
+      "inputs": [],
+      "order": 85,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "hourly",
+        "cron": "5 * * * *"
+      },
+      "script": "scripts/crewai_social_posts_pipeline.py",
+      "skill": "fb-post-creator",
+      "telegram_notify": false
+    },
+    {
       "depends_on": [
         "recipe-ideator"
       ],
@@ -327,7 +329,7 @@
       "order": 100,
       "output_file": ".claude/state/pending_groups.json",
       "rate_limits": {
-        "join_requests_per_week": 3
+        "join_requests_per_week": 15
       },
       "re_run_cadence": "weekly",
       "re_run_guard": true,

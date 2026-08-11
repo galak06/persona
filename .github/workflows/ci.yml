@@ -90,6 +90,14 @@ jobs:
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
           tests/test_backfill_blog_product_blocks.py
+          lib/crew/reels/ scripts/crewai_reels_pipeline.py
+          tests/test_crew_reels.py tests/test_reels_openart_client.py
+          tests/test_ideas_api_reel_transitions.py tests/test_ideas_db_reels.py
+          lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
+          scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
+          lib/social_post_slots.py tests/test_social_post_slots.py
+          tests/test_crew_socialpost.py tests/test_social_post_db.py
+          tests/test_social_posts_api.py
 
       - name: Ruff format check
         run: >-
@@ -126,6 +134,11 @@ jobs:
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
           tests/test_backfill_blog_product_blocks.py
+          lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
+          scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
+          lib/social_post_slots.py tests/test_social_post_slots.py
+          tests/test_crew_socialpost.py tests/test_social_post_db.py
+          tests/test_social_posts_api.py
 
   typecheck:
     name: Type Check
@@ -155,6 +168,10 @@ jobs:
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
+          lib/crew/reels/ scripts/crewai_reels_pipeline.py
+          lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
+          lib/social_post_slots.py
+          scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
           --ignore-missing-imports
 
   test:
@@ -313,6 +330,14 @@ jobs:
             tests/test_crew_products_block.py \
             tests/test_crew_products_blog_backfill.py \
             tests/test_backfill_blog_product_blocks.py \
+            tests/test_crew_reels.py \
+            tests/test_reels_openart_client.py \
+            tests/test_ideas_api_reel_transitions.py \
+            tests/test_ideas_db_reels.py \
+            tests/test_crew_socialpost.py \
+            tests/test_social_post_db.py \
+            tests/test_social_post_slots.py \
+            tests/test_social_posts_api.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \

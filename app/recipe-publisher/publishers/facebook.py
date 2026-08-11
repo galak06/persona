@@ -144,6 +144,88 @@ def publish_link_post_to_facebook(
     return FBPagePostResult(post_id=post_id, permalink=permalink, warnings=warnings)
 
 
+def publish_photo_post_to_facebook(
+    *,
+    image_path: Path,
+    message: str,
+    alt_text: str = "",
+    dry_run: bool = False,
+) -> FBPagePostResult:
+    """Post a photo to the FB Page feed (multipart `POST /{page_id}/photos`).
+
+    Chosen over `publish_link_post_to_facebook`'s `/feed` link card when the
+    image itself is the point (a generated hook image with overlay text) --
+    a link card would render the target page's OG image and discard ours.
+    There is no `link` parameter here at all, and `message` carries no URL
+    either: FB rejects/suppresses page posts with caption links, so the
+    social-post pipeline drives traffic via a comment-keyword CTA (article
+    link delivered by DM) instead. This path also deliberately never uses
+    `post_first_comment_to_facebook` -- no links in comments either.
+
+    `alt_text` is best-effort: sent as `alt_text_custom` (the field FB
+    exposes when *reading* photos). If the Graph API rejects the parameter,
+    the photo is retried once without it -- a publish must never fail over
+    alt text.
+    """
+    page_id = os.environ.get("FB_PAGE_ID") or ""
+    token = os.environ.get("FB_PAGE_TOKEN") or ""
+    if not page_id:
+        raise FacebookError("FB_PAGE_ID not set")
+    if not token:
+        raise FacebookError("FB_PAGE_TOKEN not set")
+    if not image_path.exists():
+        raise FacebookError(f"image not found: {image_path}")
+
+    data: dict[str, str] = {"caption": message, "access_token": token}
+    if alt_text:
+        data["alt_text_custom"] = alt_text
+
+    if dry_run:
+        redacted = {k: ("<redacted>" if k == "access_token" else v) for k, v in data.items()}
+        logger.info(
+            "[dry-run] FB /photos POST url=%s/%s/photos file=%s payload=%s",
+            _GRAPH_BASE, page_id, image_path, redacted,
+        )
+        return FBPagePostResult(post_id="dryrun_post_id", permalink=None, warnings=[])
+
+    warnings: list[str] = []
+    image_bytes = image_path.read_bytes()
+    with httpx.Client(timeout=120.0) as client:
+        files = {"source": (image_path.name, image_bytes, "image/jpeg")}
+        resp = client.post(f"{_GRAPH_BASE}/{page_id}/photos", data=data, files=files)
+        if resp.status_code >= 400 and "alt_text_custom" in data:
+            # Writability of alt_text_custom on publish is undocumented --
+            # degrade rather than lose the post over an accessibility field.
+            warnings.append(
+                f"photo POST with alt_text_custom failed ({resp.status_code}); retrying without"
+            )
+            del data["alt_text_custom"]
+            resp = client.post(f"{_GRAPH_BASE}/{page_id}/photos", data=data, files=files)
+        if resp.status_code >= 400:
+            raise FacebookError(f"FB photo post failed: {resp.status_code} {resp.text[:300]}")
+        body = resp.json()
+        # /photos returns the photo id plus post_id for the feed story.
+        post_id = body.get("post_id") or body.get("id") or ""
+        if not post_id:
+            raise FacebookError(f"FB photo post returned no id: {resp.text[:300]}")
+
+        permalink: str | None = None
+        try:
+            perm_resp = client.get(
+                f"{_GRAPH_BASE}/{post_id}",
+                params={"fields": "permalink_url", "access_token": token},
+            )
+            if perm_resp.status_code == 200:
+                permalink = perm_resp.json().get("permalink_url")
+            else:
+                warnings.append(f"permalink fetch {perm_resp.status_code}")
+        except Exception as exc:  # permalink is cosmetic
+            warnings.append(f"permalink fetch error: {exc}")
+
+    logger.info("FB Page photo post published: id=%s permalink=%s", post_id, permalink)
+    return FBPagePostResult(post_id=post_id, permalink=permalink, warnings=warnings)
+
+
 def post_first_comment_to_facebook(
     post_id: str,
     message: str,

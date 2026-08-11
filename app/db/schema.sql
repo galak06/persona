@@ -276,3 +276,54 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_content_ideas_topic_brand
     ON content_ideas (lower(topic), COALESCE(brand_id, ''));
 CREATE INDEX IF NOT EXISTS idx_content_ideas_status   ON content_ideas(status);
 CREATE INDEX IF NOT EXISTS idx_content_ideas_brand_id ON content_ideas(brand_id);
+
+-- Social post crew (WP post -> FB Page photo post + IG feed post; lib/crew/socialpost/).
+-- Added via ALTER (same pattern as the `brands` table above) so existing
+-- databases pick these up without a rebuild.
+--
+-- These deliberately do NOT drive the shared `status` column, unlike the reels
+-- columns above. Reels own `status` (wp_published -> composing_reel ->
+-- social_queued -> social_done); if posts drove it too the two tracks would
+-- fight over the same row. `social_post_status` is an independent track, so one
+-- idea can be reeled and posted in either order, or only one of the two.
+--
+--   NULL -> 'composing' -> 'queued' --approve--> 'scheduled' -> 'fb_published'
+--                                   \-> 'rejected' (terminal)         -> 'published'
+--
+-- Approval SCHEDULES rather than publishes: approving a batch must not dump
+-- every post at once (it looks inorganic, and facebook:page_post is capped at
+-- 3/day anyway). `social_post_fb_due_at` is the assigned slot -- each approval
+-- takes the next free one, spacing posts across the week.
+--
+-- 'scheduled' and 'fb_published' are both real resting states, not transients.
+-- A pipeline release sweep publishes FB once its slot arrives, then IG once the
+-- documented FB<->IG gap has elapsed on top of that (config.json
+-- min_gap_between_feed_posts_hours / Publishing Coordination in CLAUDE.md).
+-- `social_post_ig_due_at` is when the IG half becomes eligible; a later run of
+-- the pipeline releases it and the row lands at 'published'.
+--
+-- 'rejected' is terminal on purpose -- returning the row to NULL would put it
+-- straight back in the candidate query and the pipeline would regenerate it on
+-- every subsequent run (the bug the reels reject path has, see ideas_db).
+--
+-- ONE image, TWO captions: the generated hook image is shared by both
+-- platforms; the captions are not (different lengths, hashtag rules and CTA
+-- phrasing -- neither carries a URL: both platforms reject caption links, so
+-- traffic runs through a comment-keyword CTA fulfilled by DM), which is why
+-- the caption columns are per-platform while the image columns are not.
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_status           TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_fb_caption       TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_ig_caption       TEXT;
+-- Stored RELATIVE to $BRAND_DIR (like reel_*_video_path) so the host-side
+-- composer and the containerized API resolve the same bind-mounted tree.
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_image_path       TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_image_alt        TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_source           TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_validation_flags TEXT[];
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_fb_due_at        TIMESTAMPTZ;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS social_post_ig_due_at        TIMESTAMPTZ;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS fb_page_post_url             TEXT;
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS ig_post_url                  TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_content_ideas_social_post_status
+    ON content_ideas(social_post_status);

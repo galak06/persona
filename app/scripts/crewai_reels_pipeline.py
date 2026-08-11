@@ -41,10 +41,8 @@ from __future__ import annotations
 
 import argparse
 import functools
-import html
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -56,9 +54,9 @@ if str(_ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINE_ROOT))
 
 import anyio
-import httpx
 
 from lib import ideas_db
+from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
 from lib.crew.reels import build_reels_agent, build_reels_task, execute_reels_crew
 from lib.crew.reels.models import ReelPlan
@@ -66,15 +64,12 @@ from lib.crew.reels.openart_client import generate_image
 from lib.crew.reels.prompts import build_reels_task_description
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import get_logger
-from lib.sessions.wp_client import wp_client
 
 logger = get_logger(__name__)
 
 _REQUIRED_ENV_VARS = ("DEEPSEEK_API_KEY", "WP_URL", "WP_USER", "WP_APP_PASSWORD")
 _BODY_TRUNCATE_CHARS = 3000
 _RECIPE_PUBLISHER_ROOT = _ENGINE_ROOT / "recipe-publisher"
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-_WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _infer_brand_dir() -> Path:
@@ -95,55 +90,6 @@ def _infer_brand_dir() -> Path:
 
 def _check_required_env() -> list[str]:
     return [name for name in _REQUIRED_ENV_VARS if not os.environ.get(name, "").strip()]
-
-
-def _strip_html(raw_html: str) -> str:
-    text = _HTML_TAG_RE.sub(" ", raw_html)
-    text = html.unescape(text)
-    return _WHITESPACE_RE.sub(" ", text).strip()
-
-
-def _fetch_wp_post(wp_post_id: str) -> dict[str, Any] | None:
-    with wp_client() as client:
-        resp = client.get(f"/wp-json/wp/v2/posts/{wp_post_id}")
-        if resp.status_code != 200:
-            return None
-        data: dict[str, Any] = resp.json()
-        return data
-
-
-def _fetch_featured_image_bytes(featured_media_id: int) -> bytes | None:
-    if not featured_media_id:
-        return None
-    with wp_client() as client:
-        resp = client.get(f"/wp-json/wp/v2/media/{featured_media_id}")
-        if resp.status_code != 200:
-            return None
-        source_url = resp.json().get("source_url")
-    if not source_url:
-        return None
-    r = httpx.get(source_url, timeout=60.0)
-    r.raise_for_status()
-    return r.content
-
-
-def _detect_publish_sweep(*, brand_id: str) -> int:
-    """Phase 1: for `wp_draft` rows with `wp_post_id` set, check live WP
-    status; flip to `wp_published` if now live. Always real -- a cheap,
-    idempotent status check, not gated by `--dry-run`. Returns count flipped."""
-    rows = ideas_db.list_ideas(status="wp_draft", brand_id=brand_id, limit=500)
-    flipped = 0
-    for row in rows:
-        wp_post_id = row.get("wp_post_id")
-        if not wp_post_id:
-            continue
-        post = _fetch_wp_post(str(wp_post_id))
-        if post is None or post.get("status") != "publish":
-            continue
-        if ideas_db.mark_wp_published(str(row["id"])):
-            logger.info("reels_marked_wp_published", idea_id=row["id"])
-            flipped += 1
-    return flipped
 
 
 def _try_openart_images(plan: ReelPlan, hero_bytes: bytes) -> list[bytes] | None:
@@ -251,13 +197,13 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     if not wp_post_id:
         return "skipped_no_wp_post_id"
 
-    post = _fetch_wp_post(str(wp_post_id))
+    post = wp_source.fetch_post(str(wp_post_id))
     if post is None:
         logger.warning("reels_wp_post_fetch_failed", idea_id=idea_id, wp_post_id=wp_post_id)
         return "error"
 
     title = post.get("title", {}).get("rendered", "")
-    body = _strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
+    body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
     featured_media_id = int(post.get("featured_media") or 0)
 
     brand_voice = brand_voice_summary(brand_dir)
@@ -279,7 +225,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     # fails, reused directly as all 5 fallback images. No reel is possible
     # without it, so a missing hero image is a hard failure before any
     # claim is taken.
-    hero_bytes = _fetch_featured_image_bytes(featured_media_id)
+    hero_bytes = wp_source.fetch_featured_image_bytes(featured_media_id)
     if hero_bytes is None:
         logger.warning("reels_no_hero_image", idea_id=idea_id)
         return "error"
@@ -321,7 +267,9 @@ def main() -> int:
         return 1
 
     brand_id = brand_dir.name
-    flipped = _detect_publish_sweep(brand_id=brand_id)
+    flipped = wp_source.detect_publish_sweep(
+        brand_id=brand_id, event="reels_marked_wp_published"
+    )
     print(f"detect-publish sweep: {flipped} idea(s) marked wp_published")
 
     if args.idea_id:
