@@ -1,6 +1,12 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiOrigin } from "../api/client";
-import { ideasUrl, updateIdeaStatus, reelVideoUrl } from "../api/ideas";
+import {
+  ideasUrl,
+  updateIdeaStatus,
+  reelVideoUrl,
+  composeReels,
+  fetchComposeStatus,
+} from "../api/ideas";
 import type { ContentIdea, IdeasResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
 import ErrorState from "../components/ui/ErrorState";
@@ -90,9 +96,58 @@ function ReelCard({ idea, onDecision, busy }: CardProps): React.JSX.Element {
 export default function Reels(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
+  const [composing, setComposing] = useState(false);
+  const [composeNote, setComposeNote] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const url = ideasUrl({ status: "social_queued" });
   const { data, loading, error, refetch } = useApiQuery<IdeasResponse>(url);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Poll while a compose run is in flight; refetch the list when it lands so
+  // the new reels appear without a manual refresh.
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = setInterval(() => {
+      void fetchComposeStatus().then((s) => {
+        if (s.running) return;
+        stopPolling();
+        setComposing(false);
+        setComposeNote(s.ok ? "New reels composed." : `Compose failed: ${s.detail ?? "?"}`);
+        if (s.ok) void refetch();
+      });
+    }, 5000);
+  }, [refetch, stopPolling]);
+
+  useEffect(() => stopPolling, [stopPolling]); // clear the interval on unmount
+
+  // A run may already be in flight (another tab, or a page reload mid-run).
+  useEffect(() => {
+    void fetchComposeStatus().then((s) => {
+      if (s.running) {
+        setComposing(true);
+        startPolling();
+      }
+    });
+  }, [startPolling]);
+
+  const handleCompose = useCallback(async (): Promise<void> => {
+    setComposing(true);
+    setComposeNote(null);
+    try {
+      await composeReels();
+      startPolling();
+    } catch {
+      // 409 = already running elsewhere; just track it.
+      startPolling();
+    }
+  }, [startPolling]);
 
   const pending = (data?.ideas ?? []).filter((i) => localStatuses[i.id] === undefined);
 
@@ -128,20 +183,31 @@ export default function Reels(): React.JSX.Element {
           <span className="text-2xl font-bold text-slate-900 leading-none">{pending.length}</span>
           <span className="text-sm text-slate-500">reels awaiting review</span>
         </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={loading}
-          className="px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
+          <button
+            type="button"
+            onClick={() => void handleCompose()}
+            disabled={composing}
+            className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
+          >
+            {composing ? "Composing… (runs several minutes)" : "🎬 Compose reels"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={loading}
+            className="px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {pending.length === 0 ? (
         <EmptyState
           title="No reels pending review"
-          description="Run scripts/crewai_reels_pipeline.py to compose reels from newly-published posts."
+          description="Click 🎬 Compose reels to build reels from newly-published posts."
         />
       ) : (
         <div className="space-y-4">

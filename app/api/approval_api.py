@@ -111,6 +111,7 @@ from api.ideas_generate_api import router as _ideas_generate_router
 from api.oauth_api import router as _oauth_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
+from api.reels_compose_api import router as _reels_compose_router
 from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
 from api.social_posts_api import router as _social_posts_router
@@ -148,6 +149,7 @@ app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
+app.include_router(_reels_compose_router, prefix="/api/v1", tags=["reels"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
