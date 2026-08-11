@@ -14,7 +14,11 @@ import pytest
 
 from lib import brand_secrets
 
-_KEY = "kJ0Yy3Qm8fVQe0z4rL7xk4nQ0uH8bqZ5t9dW2sYcXpM="  # a valid Fernet key, test-only
+# Generated fresh per test run -- a hardcoded key literal, even a test-only
+# one, is indistinguishable from a leaked credential to secret scanners
+# (GitGuardian flagged the previous static value within hours of the push)
+# and normalizes exactly the pattern this module exists to eliminate.
+_KEY = brand_secrets.generate_master_key()
 
 
 @pytest.fixture(autouse=True)
