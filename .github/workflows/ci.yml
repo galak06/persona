@@ -98,7 +98,6 @@ jobs:
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
-
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
 
       - name: Ruff format check
@@ -141,7 +140,6 @@ jobs:
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
-
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
 
   typecheck:
@@ -176,7 +174,6 @@ jobs:
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           lib/social_post_slots.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
-
           lib/brand_secrets.py scripts/brand_secrets.py
           --ignore-missing-imports
 
@@ -344,7 +341,6 @@ jobs:
             tests/test_social_post_db.py \
             tests/test_social_post_slots.py \
             tests/test_social_posts_api.py \
-
             tests/test_brand_secrets.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
