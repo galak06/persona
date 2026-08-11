@@ -70,3 +70,21 @@ export type ReelPlatform = "ig" | "fb";
 export function reelVideoUrl(baseApiUrl: string, id: string, platform: ReelPlatform): string {
   return `${baseApiUrl}/api/v1/ideas/${encodeURIComponent(id)}/reel-video/${platform}`;
 }
+
+export interface GenerateStatus {
+  running: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  ok: boolean | null;
+  detail: string | null;
+}
+
+/** Starts a CrewAI scout run (Trends + Idea crews). 409 if one is in flight. */
+export async function generateIdeas(): Promise<void> {
+  await apiClient.post("/ideas/generate");
+}
+
+export async function fetchGenerateStatus(): Promise<GenerateStatus> {
+  const { data } = await apiClient.get<GenerateStatus>("/ideas/generate/status");
+  return data;
+}

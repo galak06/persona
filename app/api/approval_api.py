@@ -107,6 +107,7 @@ from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
 from api.flow_templates_api import router as _flow_templates_router
 from api.ideas_api import router as _ideas_router
+from api.ideas_generate_api import router as _ideas_generate_router
 from api.oauth_api import router as _oauth_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
@@ -146,6 +147,7 @@ app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
+app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
