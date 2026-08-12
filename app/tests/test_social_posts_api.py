@@ -55,8 +55,18 @@ def _queued_idea(**overrides: Any) -> dict[str, Any]:
 # ------------------------------------------------------------ approve
 
 
+class _FrozenDatetime(datetime):
+    """`next_free_slot` is fed `datetime.now(UTC)`, so the expected slot moves
+    with the wall clock unless it is pinned."""
+
+    @classmethod
+    def now(cls, tz: object = None) -> datetime:  # noqa: ARG003 - signature parity
+        return datetime(2026, 8, 11, 20, tzinfo=UTC)
+
+
 def test_approve_schedules_and_publishes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Approve claims a slot; no publish subprocess may run."""
+    monkeypatch.setattr(social_posts_api, "datetime", _FrozenDatetime)
     monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
     monkeypatch.setattr(
         social_posts_api.social_post_db,

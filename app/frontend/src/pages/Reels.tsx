@@ -106,11 +106,23 @@ function ReelCard({ idea, onDecision, busy }: CardProps): React.JSX.Element {
   );
 }
 
+/** Note to show when landing back from the OpenArt OAuth callback
+ * (`?openart=connected|error`). Read during state init rather than in an
+ * effect so the first render already carries it. */
+function readOpenArtNote(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  const openart = params.get("openart");
+  if (!openart) return null;
+  return openart === "connected"
+    ? "OpenArt connected — new reels will use AI-generated images."
+    : `OpenArt not connected: ${params.get("reason") ?? "unknown error"}`;
+}
+
 export default function Reels(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [composing, setComposing] = useState(false);
-  const [composeNote, setComposeNote] = useState<string | null>(null);
+  const [composeNote, setComposeNote] = useState<string | null>(readOpenArtNote);
   const { selectedBrand } = useBrand();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -153,17 +165,11 @@ export default function Reels(): React.JSX.Element {
     });
   }, [startPolling]);
 
-  // Landing back from the OpenArt OAuth callback (?openart=connected|error).
+  // Strip the OAuth callback params once the note above has been read from
+  // them, so a reload doesn't re-announce a connection the user already saw.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const openart = params.get("openart");
-    if (!openart) return;
-    // Feedback for an action the user just took, not an unprompted notice.
-    setComposeNote(
-      openart === "connected"
-        ? "OpenArt connected — new reels will use AI-generated images."
-        : `OpenArt not connected: ${params.get("reason") ?? "unknown error"}`,
-    );
+    if (!params.get("openart")) return;
     params.delete("openart");
     params.delete("reason");
     const query = params.toString();

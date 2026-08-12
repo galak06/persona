@@ -109,12 +109,30 @@ def test_is_not_db_key(key: str) -> None:
     assert not local_env._is_db_key(key)
 
 
+def _ambient_settings_carry_dsn() -> bool:
+    """Whether this checkout's own settings.local.json holds a DSN.
+
+    The bootstrap reads a fixed path and the file is gitignored, so CI has
+    nothing to inject and the control below would assert against an absence.
+    """
+    path = local_env._SETTINGS_FILE
+    if not path.is_file():
+        return False
+    try:
+        return "DATABASE_URL" in json.loads(path.read_text()).get("env", {})
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 def test_importing_lib_config_injects_dsn_without_pytest() -> None:
     """Control: outside pytest the import-time bootstrap still supplies the DSN.
 
     Proves the guard -- not a broken bootstrap -- is what keeps the DSN out of
     the test process in `test_import_under_pytest_does_not_inject_dsn`.
     """
+    if not _ambient_settings_carry_dsn():
+        pytest.skip("no settings.local.json carrying a DSN in this checkout (e.g. CI)")
+
     result = _run_python("import os, lib.config; print('DATABASE_URL' in os.environ)")
 
     assert result.returncode == 0, result.stderr
