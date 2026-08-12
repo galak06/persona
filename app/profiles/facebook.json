@@ -14,56 +14,14 @@
   },
   "flows": [
     {
-      "id": "fb-scanner",
-      "skill": "fb-scanner",
-      "script": "scripts/fb_scan.py",
-      "description": "Scan joined Facebook dog groups for relevant posts, queue for commenting",
-      "output_file": "state/facebook_comment_queue.json",
-      "re_run_guard": true,
-      "requires_browser": true,
-      "requires_approval": false,
-      "telegram_notify": true,
-      "rate_limits": {
-        "group_visits_per_day": 15,
-        "comments_per_day": 15
-      },
-      "order": 20,
-      "depends_on": [
-        "site-analyzer"
-      ],
-      "inputs": [
-        {
-          "path": "data/site_content_cache.json",
-          "min_count": 1,
-          "max_age_hours": 26,
-          "produced_by": "site-analyzer"
-        }
-      ]
-    },
-    {
-      "id": "fb-comment",
-      "skill": "fb-comment",
-      "script": "scripts/fb_comment.py",
-      "description": "FB loop: draft one short reply per queued post and post it (max 5/day) from the Facebook queue",
-      "output_file": "logs/engagement_log.jsonl",
-      "re_run_guard": true,
-      "requires_browser": true,
-      "requires_approval": false,
-      "telegram_notify": true,
-      "rate_limits": {
-        "comments_per_day": 15
-      },
-      "order": 21,
-      "depends_on": [
-        "fb-scanner"
-      ],
-      "inputs": []
-    },
-    {
       "id": "fb-engager",
       "skill": "fb-engager",
       "script": "scripts/fb_engager.py",
       "description": "Scan joined Facebook groups, like qualifying posts, draft and post a comment inline (single-pass)",
+      "schedule": {
+        "cron": "33 15 * * *",
+        "cadence": "daily"
+      },
       "re_run_guard": true,
       "requires_browser": true,
       "requires_approval": false,
@@ -136,7 +94,7 @@
     },
     {
       "id": "fb-notification-scan",
-      "skill": "fb-scanner",
+      "skill": "fb-notification-scan",
       "script": "scripts/fb_notification_scan.py",
       "description": "Weekly Facebook notification sweep — surface group activity worth a follow-up reply",
       "schedule": {
@@ -153,5 +111,5 @@
       "inputs": []
     }
   ],
-  "_notes": "Slice B: flows[] added. fb-group-distribute orphan fix: depends_on now [content-publish] (was []). PR #61: fb-engager (single-pass scan->like->comment) supersedes the fb-scanner+fb-comment pair; those two keep their entries but have NO schedule (cron-disabled, still Run-Now-able), and fb-engager ships without a cron until it is proven reliable. #61 edited the generated data/schedule.json directly and missed this file, so every profiles_build run silently reverted it -- keep the change HERE, not in the artifacts."
+  "_notes": "Slice B: flows[] added. fb-group-distribute orphan fix: depends_on now [content-publish] (was []). fb-engager (single-pass scan->like->comment) is the SOLE Facebook engagement flow, cron 33 15 * * * daily; the fb-scanner+fb-comment pair is retired and their entries deleted. Schedule edits go HERE, never in the generated data/schedule.json -- every profiles_build run regenerates that artifact and silently reverts direct edits to it."
 }

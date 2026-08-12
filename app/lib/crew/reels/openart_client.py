@@ -55,7 +55,7 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import CallToolResult, Tool
 
-from lib.oauth.openart import OPENART_MCP_URL, build_openart_oauth_provider
+from lib.oauth.openart import OPENART_MCP_URL, build_openart_oauth_provider, extract_auth_required
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -75,6 +75,13 @@ _REQUIRED_TOOL_NAMES = (
     "openart_upload_sign",
     "openart_upload_list",
 )
+# The MCP SDK's own HTTP timeout defaults to 30s, which is SHORTER than an
+# `openart_generate_image` submit legitimately takes -- confirmed live: a beat
+# died with `{"status":"FAILED","historyId":"submit-failed","error":"The
+# operation was aborted due to timeout"}` while its siblings succeeded, i.e.
+# the request was aborted client-side mid-submit, not a real generation
+# failure. Raised well past the observed submit latency.
+_MCP_HTTP_TIMEOUT = 180.0
 _POLL_TIMEOUT_SECONDS = 90
 _MAX_POLL_ATTEMPTS = 60  # confirmed live: a real generation outlived a 12-attempt (~70s) budget
 _DEFAULT_POLL_AFTER_SECONDS = 5.0
@@ -315,7 +322,11 @@ async def _generate_image_impl(
 
     provider = build_openart_oauth_provider()
     async with (
-        streamablehttp_client(OPENART_MCP_URL, auth=provider) as (read, write, _get_session_id),
+        streamablehttp_client(OPENART_MCP_URL, auth=provider, timeout=_MCP_HTTP_TIMEOUT) as (
+            read,
+            write,
+            _get_session_id,
+        ),
         ClientSession(read, write) as session,
     ):
         await session.initialize()
@@ -386,4 +397,9 @@ async def generate_image(
             reference_content_type=reference_content_type,
         )
     except BaseExceptionGroup as eg:
+        # Auth-required must survive even multi-exception groups (teardown
+        # errors ride along) so callers can catch the TYPED error, not a group.
+        auth_error = extract_auth_required(eg)
+        if auth_error is not None:
+            raise auth_error from eg
         raise _unwrap_single(eg) from eg

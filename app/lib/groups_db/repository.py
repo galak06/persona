@@ -22,7 +22,12 @@ from psycopg.types.json import Jsonb
 
 from lib import brands_db
 from lib.db import execute, fetch_all, fetch_one
-from lib.groups_db.models import _ALWAYS_KEYS, GROUP_COLUMNS, group_id_from_url
+from lib.groups_db.models import (
+    _ALWAYS_KEYS,
+    FIRST_COMMENT_COLUMNS,
+    GROUP_COLUMNS,
+    group_id_from_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +78,14 @@ class GroupsRepository:
             return
         gid = group_id_from_url(url)
         notes = group.get("notes", [])
-        extra = {k: v for k, v in group.items() if k not in GROUP_COLUMNS and k != "notes"}
+        # FIRST_COMMENT_COLUMNS are excluded so round-tripped dicts (load_all
+        # -> save_all) can't smuggle gate values into extra; only the dedicated
+        # setters below write them.
+        extra = {
+            k: v
+            for k, v in group.items()
+            if k not in GROUP_COLUMNS and k != "notes" and k not in FIRST_COMMENT_COLUMNS
+        }
 
         row: dict[str, Any] = {"id": gid, "brand_id": brand_id}
         for col in GROUP_COLUMNS:
@@ -113,6 +125,25 @@ class GroupsRepository:
 
     def set_posting_mode(self, group_url: str, mode: str) -> bool:
         return self._update_column(group_url, "posting_mode", mode)
+
+    def set_first_comment_flagged(self, group_url: str, at_iso: str) -> bool:
+        """Write-once flag for the fb-engager first-comment gate.
+
+        Only transitions an unset column (`''`/NULL) to ``at_iso``. Returns
+        True iff THIS call did the flagging — callers use that to notify
+        (Telegram) exactly once per group, ever.
+        """
+        rowcount = execute(
+            "UPDATE fb_groups SET first_comment_flagged_at = %s "
+            "WHERE group_url = %s "
+            "AND (first_comment_flagged_at IS NULL OR first_comment_flagged_at = '')",
+            (at_iso, group_url),
+        )
+        return rowcount > 0
+
+    def set_first_comment_approved(self, group_url: str, at_iso: str) -> bool:
+        """Approve inline comments for a group (plain update, overwrite allowed)."""
+        return self._update_column(group_url, "first_comment_approved_at", at_iso)
 
     def append_note(self, group_url: str, note: dict[str, str]) -> bool:
         """Append one {at, text} note to a group's notes list (never clobbers)."""
@@ -156,6 +187,10 @@ class GroupsRepository:
             value = r.get(col, "")
             if value not in ("", None) or col in _ALWAYS_KEYS:
                 out[col] = value if value is not None else ""
+        for col in FIRST_COMMENT_COLUMNS:  # same skip-empty rule as above
+            value = r.get(col, "")
+            if value not in ("", None):
+                out[col] = value
         raw_notes = r.get("notes") or []
         out["notes"] = json.loads(raw_notes) if isinstance(raw_notes, str) else raw_notes
         raw_extra = r.get("extra") or {}

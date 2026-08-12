@@ -7,7 +7,7 @@ limit; same router/prefix, registered as a third brands router in
 
 `GET .../flows` answers the earlier open UX question -- "how does the
 operator know fb-group-scout needs to run (and its groups approved) before
-fb-scanner has anything to scan" -- by surfacing per-flow last-run status
+fb-engager has anything to scan" -- by surfacing per-flow last-run status
 and a readiness signal (see `lib/flow_readiness.py`) instead of leaving a
 0-groups/0-hashtags brand silently doing nothing.
 

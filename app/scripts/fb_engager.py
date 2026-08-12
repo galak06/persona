@@ -4,14 +4,22 @@ Orchestration lives in `lib.engagement.pipeline`; platform mechanics live
 in `FacebookGroupAdapter`. This wrapper builds the collaborators, calls the
 pipeline, and persists the last-run stamp.
 
-Each post is opened exactly once: the scan scores it, likes it, and — when
-it clears the auto-approve threshold — drafts and posts the comment in that
-same visit. There is no Redis queue and no `scripts/fb_comment.py` handoff
-for this flow. This differs from the older two-stage `scripts/fb_scan.py`
--> `scripts/fb_comment.py` split (scan-and-queue, then a separate drain
-run), which keeps running unchanged alongside this one. Iterate-once is
+This is THE Facebook engagement flow: the older two-stage
+`scripts/fb_scan.py` -> `scripts/fb_comment.py` split (scan-and-queue,
+then a separate drain run) is retired and deleted. Each post is opened
+exactly once: the scan scores it, likes it, and — when it clears the
+auto-approve threshold — drafts and posts the comment in that same visit.
+There is no Redis queue and no separate comment handoff. Iterate-once is
 enforced by `lib.scan_dedup.ScanDedup`, which marks every OPENED post so
 the next run skips it.
+
+Two group-level guards run inside the scan: `WarmFilteredAdapter` drops
+groups still inside the comment warmup window (newly joined groups are
+never engaged immediately — same semantics the retired fb_scan.py
+enforced), and `FirstCommentApprovalGate` skips the comment step (never
+the like) in any group whose first comment has not been human-approved on
+the Groups page — flagging the group and sending one Telegram message the
+first time it is seen.
 """
 
 from __future__ import annotations
@@ -36,14 +44,18 @@ WORKER_LABEL = worker_label_for_flow("fb-engager")
 import draft_helper
 import rate_limiter
 from comment_generator import score_relevance as _score_relevance
+from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
+from lib.engagement.first_comment_gate import FirstCommentApprovalGate
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.warm_sources import WarmFilteredAdapter
 from lib.io.jsonio import read_json, write_json
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.scan_dedup import ScanDedup
-from notifier import skill_finished, skill_skipped, skill_started
+from notifier import send, skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, daily_limit, print_status
 
 LAST_RUN_FILE = settings.paths.last_run
@@ -52,9 +64,9 @@ CONFIG_FILE = settings.paths.brand_dir / "config.json"
 
 # Bound at import: the system prompt comes from .claude/skills/fb-engager/
 # SKILL.md, so a broken or missing skill file (SkillPromptError) aborts the
-# run at startup — before any group is scanned — matching
-# scripts/fb_comment.py's abort-loudly pattern. The per-post USER prompt is
-# built by the drafter per call.
+# run at startup — before any group is scanned (the abort-loudly pattern
+# inherited from the retired scripts/fb_comment.py). The per-post USER
+# prompt is built by the drafter per call.
 _DRAFTER = draft_helper.for_skill("fb-engager")
 
 
@@ -112,8 +124,16 @@ def run_fb_engager_scan(
         skill_skipped("fb-engager", "already ran successfully today")
         log_trace("facebook", "Skipped: already ran today")
         return None
-    if not dry_run and not can_act("facebook", "like") and "--force" not in sys.argv:
-        skill_skipped("fb-engager", "Daily FB like limit reached")
+    # GAP-5: the run is worth starting while EITHER budget remains — a scan
+    # with likes exhausted can still comment, and vice versa. Per-action
+    # quotas are enforced downstream by the pipeline's rate_tracker.
+    if (
+        not dry_run
+        and not can_act("facebook", "like")
+        and not can_act("facebook", "comment")
+        and "--force" not in sys.argv
+    ):
+        skill_skipped("fb-engager", "Daily FB like+comment limits reached")
         print_status()
         return None
 
@@ -131,14 +151,27 @@ def run_fb_engager_scan(
         "groups_tracker": str(settings.paths.groups_tracker),
     }
     policy = EngagementPolicy.from_config(config)
-    active = adapter or FacebookGroupAdapter(config)
+    # Warmup filter wraps WHATEVER adapter is active — injected test
+    # adapters included — exactly as the retired fb_scan.py wrapped its
+    # `_WarmFiltered`: newly joined groups sit out the comment warmup.
+    active = WarmFilteredAdapter(adapter or FacebookGroupAdapter(config))
+    # One-time human approval for the FIRST comment in each group; the
+    # run's dry_run is passed through so a preview never flags or notifies.
+    gate = FirstCommentApprovalGate(
+        get_group=groups_db.get_by_url,
+        flag_group=groups_db.set_first_comment_flagged,
+        notify=send,
+        now_iso=lambda: datetime.now(UTC).isoformat(),
+        log=log,
+        dry_run=dry_run,
+    )
     try:
         report = run_outbound_scan(
             active,
             policy,
             # Single pass: the drafter runs INSIDE the scan so a qualifying
             # post is liked and commented in the one visit that opened it.
-            # No queue, no fb_comment.py handoff (see module docstring).
+            # No queue, no separate comment handoff (see module docstring).
             dedup=ScanDedup(WORKER_LABEL, log=log),
             rate_tracker=rate_limiter,
             drafter=_DRAFTER,
@@ -147,6 +180,7 @@ def run_fb_engager_scan(
             score_relevance=_score_post,
             dry_run=dry_run,
             inline_comment=True,
+            comment_gate=gate,
         )
     except (RuntimeError, FileNotFoundError) as exc:
         msg = str(exc)
@@ -213,10 +247,18 @@ if __name__ == "__main__":
 
     _brand_dir = settings.paths.brand_dir
     _brand = _brand_dir.name
-    record_start(_brand_dir, WORKER_LABEL, _brand)
+    # GAP-4: singleton lock — a cron tick overlapping a still-running scan
+    # exits cleanly WITHOUT writing worker rows (record_start is inside the
+    # lock), mirroring lib/engagement/commenter.py's runner pattern.
     try:
-        run_fb_engager_scan()
-        record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
-    except Exception as _exc:
-        record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
-        raise
+        with SingletonLock("fb-engager"):
+            record_start(_brand_dir, WORKER_LABEL, _brand)
+            try:
+                run_fb_engager_scan()
+                record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
+            except Exception as _exc:
+                record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
+                raise
+    except LockAcquisitionError as _lock_exc:
+        print(f"another instance of 'fb-engager' is running: {_lock_exc}", file=sys.stderr)
+        sys.exit(0)

@@ -1,8 +1,8 @@
 """Reconciliation layer between this app's two dedup stores.
 
 Extracted from `scripts/ig_engager.py` so any scanner can adopt iterate-once.
-Instagram uses it today; `scripts/fb_scan.py` has no iterate-once yet and is
-deliberately left unwired — this class is importable so it can be.
+Both single-pass engagers use it today: `scripts/ig_engager.py` and
+`scripts/fb_engager.py`.
 """
 
 from __future__ import annotations
@@ -78,8 +78,9 @@ class ScanDedup:
             withheld), so the next run opens it again. The like is a no-op
             second time round: `adapter.like` returns `skipped:already_liked`.
 
-        Facebook is unaffected — `fb_scan.py` passes the bare `deduplication`
-        module and keeps presence-only semantics.
+        Facebook gets the same semantics — single-pass `fb_engager.py`
+        passes this class too (the retired two-stage `fb_scan.py` used the
+        bare `deduplication` module, presence-only).
         """
         if deduplication.already_commented(cast(_DedupPlatform, platform), post_id):
             return True

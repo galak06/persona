@@ -1,12 +1,12 @@
 # pyright: reportMissingImports=false
 """Shared engagement-commenter core for the per-platform comment actions.
 
-``scripts/fb_comment.py`` and ``scripts/ig_comment.py`` are thin wrappers that
-build a :class:`CommenterSpec` (platform mechanics: session, queue, draft fn,
-post fn) and call :func:`main_for`. The drain loop — re-run guard, pending
-filter (skip only already-commented posts), draft-at-post-time, Playwright
-post, dedup + rate + engagements.db recording, pacing — lives here once so the
-two platforms never duplicate it.
+``scripts/ig_comment.py`` (the sole wrapper since the fb-engager single-pass
+cutover retired ``scripts/fb_comment.py``) builds a :class:`CommenterSpec`
+(platform mechanics: session, queue, draft fn, post fn) and calls
+:func:`main_for`. The drain loop — re-run guard, pending filter (skip only
+already-commented posts), draft-at-post-time, Playwright post, dedup + rate +
+engagements.db recording, pacing — lives here, not in the wrapper.
 
 Bare ``import deduplication`` / ``import rate_limiter`` match the worker modules'
 identity so tests that monkeypatch those bare modules still bite (the project's
@@ -45,7 +45,7 @@ class CommenterSpec:
     """Everything platform-specific about one comment action."""
 
     platform: str  # "facebook" | "instagram"
-    skill_name: str  # "fb-comment" | "ig-comment"
+    skill_name: str  # "ig-comment" (sole queue-based platform post-cutover)
     label: str  # short tag for logs/CLI, e.g. "FB" | "IG"
     guard_key: str  # per-platform re-run-guard key
     session_file: Path

@@ -40,6 +40,7 @@ from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.io.jsonio import read_json, write_json
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.scan_dedup import ScanDedup
 from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, daily_limit, print_status
@@ -201,10 +202,18 @@ if __name__ == "__main__":
 
     _brand_dir = settings.paths.brand_dir
     _brand = _brand_dir.name
-    record_start(_brand_dir, WORKER_LABEL, _brand)
+    # GAP-4: singleton lock — a cron tick overlapping a still-running scan
+    # exits cleanly WITHOUT writing worker rows (record_start is inside the
+    # lock), mirroring lib/engagement/commenter.py's runner pattern.
     try:
-        run_ig_scan()
-        record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
-    except Exception as _exc:
-        record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
-        raise
+        with SingletonLock("ig-engager"):
+            record_start(_brand_dir, WORKER_LABEL, _brand)
+            try:
+                run_ig_scan()
+                record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
+            except Exception as _exc:
+                record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
+                raise
+    except LockAcquisitionError as _lock_exc:
+        print(f"another instance of 'ig-engager' is running: {_lock_exc}", file=sys.stderr)
+        sys.exit(0)

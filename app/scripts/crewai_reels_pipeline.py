@@ -40,7 +40,6 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import functools
 import json
 import os
 import subprocess
@@ -53,14 +52,14 @@ _ENGINE_ROOT = Path(__file__).resolve().parent.parent
 if str(_ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENGINE_ROOT))
 
-import anyio
+from scripts.pipeline_env import check_required_env, infer_brand_dir
+from scripts.reels_images import resolve_images
 
 from lib import ideas_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
 from lib.crew.reels import build_reels_agent, build_reels_task, execute_reels_crew
 from lib.crew.reels.models import ReelPlan
-from lib.crew.reels.openart_client import generate_image
 from lib.crew.reels.prompts import build_reels_task_description
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import get_logger
@@ -70,48 +69,6 @@ logger = get_logger(__name__)
 _REQUIRED_ENV_VARS = ("DEEPSEEK_API_KEY", "WP_URL", "WP_USER", "WP_APP_PASSWORD")
 _BODY_TRUNCATE_CHARS = 3000
 _RECIPE_PUBLISHER_ROOT = _ENGINE_ROOT / "recipe-publisher"
-
-
-def _infer_brand_dir() -> Path:
-    """Same convention as `scripts/crewai_content_pipeline.py::_infer_brand_dir`."""
-    brand_dir_env = os.environ.get("BRAND_DIR")
-    if brand_dir_env:
-        return Path(brand_dir_env)
-    brands_root = _ENGINE_ROOT / "brands"
-    candidates = sorted(
-        d for d in brands_root.glob("*") if d.is_dir() and not d.name.startswith((".", "_"))
-    )
-    if len(candidates) == 1:
-        return candidates[0]
-    raise SystemExit(
-        "BRAND_DIR not set and brands/ doesn't have exactly one brand folder -- pass --brand-dir"
-    )
-
-
-def _check_required_env() -> list[str]:
-    return [name for name in _REQUIRED_ENV_VARS if not os.environ.get(name, "").strip()]
-
-
-def _try_openart_images(plan: ReelPlan, hero_bytes: bytes) -> list[bytes] | None:
-    """Primary path: one OpenArt-generated image per beat, from that beat's
-    own `image_prompt`, generated in image2image mode with the WP post's
-    hero image as a reference -- confirmed live: without a reference,
-    OpenArt has no idea what the brand's actual mascot looks like and
-    invents a generic dog instead. Returns `None` on ANY failure -- partial
-    results are discarded and the caller falls through entirely to reusing
-    the WP post's hero image for all 5 beats, same all-or-nothing
-    philosophy the OpenArt video path (which this replaced) used."""
-    images: list[bytes] = []
-    for index, beat in enumerate(plan.beats):
-        try:
-            image_bytes = anyio.run(
-                functools.partial(generate_image, beat.image_prompt, reference_image=hero_bytes)
-            )
-        except Exception as exc:
-            logger.warning("reels_openart_image_generation_failed", beat_index=index, error=str(exc))
-            return None
-        images.append(image_bytes)
-    return images
 
 
 def _compose_reel(
@@ -191,16 +148,18 @@ def _revert_claim(idea_id: str) -> None:
         ideas_db.update_status(idea_id, "wp_published")
 
 
-def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str:
+def _process_idea(
+    row: dict[str, Any], *, dry_run: bool, brand_dir: Path
+) -> tuple[str, int, int]:
     idea_id = str(row["id"])
     wp_post_id = row.get("wp_post_id")
     if not wp_post_id:
-        return "skipped_no_wp_post_id"
+        return "skipped_no_wp_post_id", 0, 0
 
     post = wp_source.fetch_post(str(wp_post_id))
     if post is None:
         logger.warning("reels_wp_post_fetch_failed", idea_id=idea_id, wp_post_id=wp_post_id)
-        return "error"
+        return "error", 0, 0
 
     title = post.get("title", {}).get("rendered", "")
     body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
@@ -214,36 +173,40 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     plan = execute_reels_crew(agent, task)
     if plan is None:
         logger.warning("reels_plan_generation_failed", idea_id=idea_id)
-        return "error"
+        return "error", 0, 0
 
     if dry_run:
         logger.info("reels_dry_run_plan", idea_id=idea_id, plan=plan)
-        return "dry_run"
+        return "dry_run", 0, 0
 
     # Fetched once, up front: needed either way -- as OpenArt's mascot-
-    # consistency reference (see `_try_openart_images`) or, if that path
-    # fails, reused directly as all 5 fallback images. No reel is possible
-    # without it, so a missing hero image is a hard failure before any
-    # claim is taken.
+    # consistency reference or, when OpenArt isn't used, reused directly as
+    # all 5 images. No reel is possible without it, so a missing hero image
+    # is a hard failure before any claim is taken.
     hero_bytes = wp_source.fetch_featured_image_bytes(featured_media_id)
     if hero_bytes is None:
         logger.warning("reels_no_hero_image", idea_id=idea_id)
-        return "error"
+        return "error", 0, 0
 
     if not ideas_db.claim_idea_for_reel_composition(idea_id):
-        return "skipped_claim_lost"
+        return "skipped_claim_lost", 0, 0
 
-    images = _try_openart_images(plan, hero_bytes)
-    source = "openart"
-    if images is None:
-        images = [hero_bytes] * len(plan.beats)
-        source = "fallback"
+    # OpenArt is an optional upgrade, applied PER BEAT: each beat keeps its
+    # own generated image, and only the beats that failed use the hero image
+    # (see `scripts.reels_images`). Never raises, so the reel composes either way.
+    resolved = resolve_images(plan, hero_bytes, brand_dir=brand_dir, idea_id=idea_id)
 
-    if _compose_reel(idea_id=idea_id, plan=plan, images=images, source=source, brand_dir=brand_dir):
-        return f"composed_{source}"
+    if _compose_reel(
+        idea_id=idea_id,
+        plan=plan,
+        images=resolved.images,
+        source=resolved.source,
+        brand_dir=brand_dir,
+    ):
+        return f"composed_{resolved.source}", resolved.ai_count, resolved.total - resolved.ai_count
 
     _revert_claim(idea_id)
-    return "error"
+    return "error", 0, 0
 
 
 def _parse_args() -> argparse.Namespace:
@@ -257,11 +220,11 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    brand_dir = (args.brand_dir or _infer_brand_dir()).resolve()
+    brand_dir = (args.brand_dir or infer_brand_dir()).resolve()
     load_brand_env_into_environ(brand_dir)
     load_local_env()
 
-    missing = _check_required_env()
+    missing = check_required_env(_REQUIRED_ENV_VARS)
     if missing:
         print(f"ERROR: missing required env var(s): {', '.join(missing)}", file=sys.stderr)
         return 1
@@ -283,10 +246,19 @@ def main() -> int:
         return 0
 
     results: dict[str, int] = {}
+    ai_images = 0
+    hero_images = 0
     for row in rows:
-        outcome = _process_idea(row, dry_run=args.dry_run, brand_dir=brand_dir)
+        outcome, ai, hero = _process_idea(row, dry_run=args.dry_run, brand_dir=brand_dir)
         results[outcome] = results.get(outcome, 0) + 1
+        ai_images += ai
+        hero_images += hero
 
+    # Image counts, not just the per-idea label, are what let the API report
+    # honestly: a reel with 4 AI beats and 1 hero beat is NOT a pure fallback.
+    if ai_images or hero_images:
+        results["ai_images"] = ai_images
+        results["hero_images"] = hero_images
     print(f"summary: {json.dumps(results)}")
     return 0 if results.get("error", 0) == 0 else 1
 

@@ -186,7 +186,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--images", required=True, type=Path, help="JSON file: list of 5 image paths")
     p.add_argument("--plan", required=True, type=Path)
     p.add_argument("--slug", required=True)
-    p.add_argument("--source", required=True, choices=("openart", "fallback"))
+    # "mixed" = some beats are OpenArt-generated, others fell back to the hero
+    # image. Per-beat fallback means a partly-AI reel is the normal middle
+    # case, and filing it as "fallback" would misreport what was produced.
+    p.add_argument("--source", required=True, choices=("openart", "mixed", "fallback"))
     args = p.parse_args(argv)
 
     logging.basicConfig(

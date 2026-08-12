@@ -1,15 +1,19 @@
-"""Retry + accumulator tests for ``run_outbound_scan``.
+"""Iterate-once (seen-mark) + accumulator tests for ``run_outbound_scan``.
 
-Two behaviours that a code review caught, split out of
-``test_pipeline_inline_comment.py`` (already at the 300-line cap):
+The single-pass seen-mark contract, split out of
+``test_pipeline_inline_comment.py`` (300-line cap):
 
   1. A comment that was ATTEMPTED and FAILED must leave the post
      retryable. The seen-mark used to be written immediately after the
      duplicate gate, so a post whose comment submission missed was retired
      forever without ever having been commented on.
-  2. Single-pass mode never cherry-picks, so it must not accumulate the
-     candidate list that only the two-stage path reads — while still
-     reporting the candidate COUNT, which both modes expose.
+  2. Every other outcome is terminal: commented, low-score and
+     pre-filtered posts are ALL marked seen, the mark sticks across runs,
+     and a dedup collaborator without the optional ``mark_seen``
+     capability degrades to a no-op instead of crashing.
+  3. The queue stage is retired, so the accumulator only COUNTS comment
+     candidates — the (post, score) list the old cherry-pick read no
+     longer exists, and ``ScanReport.queued`` is hardwired to 0.
 
 Fakes + factories live in ``_pipeline_fakes``.
 """
@@ -20,6 +24,7 @@ from lib.engagement.adapters.fake import FakeAdapter
 from lib.engagement.pipeline import _Counters
 from lib.engagement.scan_results import PostOutcome
 from tests.lib.engagement._pipeline_fakes import (
+    FakeDedup,
     FakeIterateOnceDedup,
     make_ig_posts,
     make_post,
@@ -50,7 +55,7 @@ def test_failed_comment_leaves_the_post_unmarked() -> None:
     """
     adapter = _ig_adapter(comment_should_fail=True)
     dedup = FakeIterateOnceDedup()
-    report, _d, _rt, _dr, _q = run(adapter, dedup=dedup, inline_comment=True)
+    report, _d, _rt, _dr = run(adapter, dedup=dedup, inline_comment=True)
 
     assert adapter.comments != [], "fixture assumption: the post was attempted"
     assert report.comments_posted == 0
@@ -63,7 +68,7 @@ def test_failed_comment_is_retried_on_the_next_run() -> None:
     run(_ig_adapter(comment_should_fail=True), dedup=dedup, inline_comment=True)
 
     retry = _ig_adapter()
-    report, _d, _rt, _dr, _q = run(retry, dedup=dedup, inline_comment=True)
+    report, _d, _rt, _dr = run(retry, dedup=dedup, inline_comment=True)
 
     assert retry.comments == [("p0", "DRAFT for https://x/p/p0")]
     assert report.comments_posted == 1
@@ -78,31 +83,74 @@ def test_terminal_outcomes_are_still_marked() -> None:
     assert ("instagram", "p0") in dedup.seen_marked
 
 
-# --- 2. the candidate list is not built when nothing reads it ----------------
+# --- 2. iterate-once: every other outcome is terminal ------------------------
 
 
-def test_inline_mode_counts_candidates_without_retaining_them() -> None:
-    """Single-pass mode never cherry-picks, so retaining candidates is waste.
+def test_every_opened_post_is_marked_seen_whatever_the_outcome() -> None:
+    """Commented, low-score and pre-filtered posts all get marked."""
+    src = make_src("s1")
+    posts = [
+        make_post("p_ok", "food question?"),        # commented
+        make_post("p_low", "boring question?"),     # below candidate threshold
+        make_post("p_pre", "food question?"),       # pre-filtered
+    ]
+    adapter = FakeAdapter(
+        "instagram", [src], {"s1": posts},
+        pre_filter_overrides={"p_pre": "competitor"},
+    )
+    dedup = FakeIterateOnceDedup()
+    run(adapter, dedup=dedup, inline_comment=True)
 
-    The COUNT still has to be reported, so only the (post, score) pairs are
-    dropped — the accumulator is the unit that draws that distinction.
+    marked = {post_id for _platform, post_id in dedup.seen_marked}
+    assert marked == {"p_ok", "p_low", "p_pre"}
+
+
+def test_marked_posts_are_skipped_on_the_next_run() -> None:
+    """The seen-mark must land in the store ``is_duplicate`` reads."""
+    dedup = FakeIterateOnceDedup()
+    run(_ig_adapter(), dedup=dedup, inline_comment=True)
+
+    second = _ig_adapter()
+    report, _d, _rt, drafter = run(second, dedup=dedup, inline_comment=True)
+
+    assert report.posts_scanned == 1, "the post was still enumerated"
+    assert second.likes_attempted == [], "an opened post was re-opened"
+    assert second.comments == []
+    assert drafter.calls == []
+
+
+def test_dedup_without_mark_seen_capability_is_a_no_op() -> None:
+    """A collaborator lacking `mark_seen` (bare `deduplication`) still works."""
+    adapter = _ig_adapter()
+    report, _d, _rt, _dr = run(adapter, dedup=FakeDedup(), inline_comment=True)
+
+    assert report.comments_posted == 1, "scan must not depend on mark_seen"
+
+
+# --- 3. the accumulator counts candidates without a queue --------------------
+
+
+def test_counters_count_candidates_and_hardwire_queued_to_zero() -> None:
+    """Nothing cherry-picks anymore, so the accumulator keeps only the COUNT.
+
+    The report shape (``ScanReport``) still carries ``queued`` for its
+    consumers' benefit; the accumulator freezes it at 0.
     """
     post = make_post("p0", "food question?")
     scored = PostOutcome(candidate_score=0.85)
 
-    inline = _Counters("instagram", collect_candidates=False)
-    inline.add(post, scored)
-    assert inline.candidate_count == 1, "the report still needs the count"
-    assert inline.candidates == [], "inline mode accumulated a dead list"
+    counters = _Counters("instagram")
+    counters.add(post, scored)
+    assert counters.candidate_count == 1, "the report still needs the count"
 
-    two_stage = _Counters("facebook", collect_candidates=True)
-    two_stage.add(post, scored)
-    assert two_stage.candidates == [(post, 0.85)], "cherry-pick lost its input"
+    report = counters.to_report()
+    assert report.candidates == 1
+    assert report.queued == 0, "the queue stage is retired"
 
 
 def test_inline_scan_reports_candidates_but_queues_nothing() -> None:
-    """End-to-end: the count survives even though the list is never built."""
-    report, _d, _rt, _dr, queue = run(
+    """End-to-end: the count survives even though no queue exists."""
+    report, _d, _rt, _dr = run(
         FakeAdapter("instagram", [make_src("s1")], {"s1": make_ig_posts(5)}),
         dedup=FakeIterateOnceDedup(),
         inline_comment=True,
@@ -110,4 +158,3 @@ def test_inline_scan_reports_candidates_but_queues_nothing() -> None:
 
     assert report.candidates == 5
     assert report.queued == 0
-    assert queue.appended == []

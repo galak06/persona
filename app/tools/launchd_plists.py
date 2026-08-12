@@ -154,7 +154,7 @@ def cron_to_launchd(cron: str) -> dict[str, int] | list[dict[str, int]]:
 def _task_short_name(task_id: str, brand_key: str) -> str:
     """Strip the `<brand-key>-` prefix from a task id to get the bare skill slug.
 
-    `dogfood-fb-scanner` + brand key `dogfood` → `fb-scanner`.
+    `dogfood-fb-engager` + brand key `dogfood` → `fb-engager`.
     Falls back to the raw id if the prefix doesn't match.
     """
     prefix = f"{brand_key}-"

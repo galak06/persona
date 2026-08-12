@@ -278,9 +278,14 @@ try:
     # apply_secrets=False: this runs at IMPORT time of a module ~everything
     # imports. The encrypted-secrets overlay opens a DB connection; wiring
     # that into `import lib.config` costs seconds per process (a ~10s pool
-    # timeout when Postgres is unreachable) and, under pytest, injects a DSN
-    # after conftest's live-DB guard has already run. Entrypoints that publish
-    # call load_brand_env_into_environ() themselves and get the overlay there.
+    # timeout when Postgres is unreachable). Entrypoints that publish call
+    # load_brand_env_into_environ() themselves and get the overlay there.
+    #
+    # Both calls below merge env at import time, i.e. DURING pytest collection,
+    # which is after conftest's live-DB guard has run. That is how the live DB
+    # was wiped on 2026-08-12; `lib.local_env._is_db_key` now refuses to inject
+    # any DSN under pytest, so this bootstrap can no longer smuggle one past the
+    # guard. Test runs must pass a disposable DSN on the command line instead.
     load_brand_env_into_environ(apply_secrets=False)
     load_local_env()
 except ImportError:

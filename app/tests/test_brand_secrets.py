@@ -218,6 +218,24 @@ def test_load_is_atomic_one_bad_row_applies_nothing(
     assert "FB_PAGE_TOKEN" not in os.environ
 
 
+@patch("lib.brand_secrets.db.fetch_all")
+def test_load_skips_namespaced_app_data_rows(
+    mock_all: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Namespaced rows (`openart:tokens`) are structured app data, not env
+    vars -- `lib.oauth.openart_store` keeps multi-KB OAuth token JSON here.
+    Merging those into os.environ would push credentials into every
+    subprocess environment; only plain keys are applied."""
+    monkeypatch.delenv("FB_PAGE_TOKEN", raising=False)
+    mock_all.return_value = _rows(
+        **{"FB_PAGE_TOKEN": "GOOD-token", "openart:tokens": '{"access_token": "at"}'}
+    )
+
+    assert brand_secrets.load_into_environ("b1") == 1
+    assert os.environ["FB_PAGE_TOKEN"] == "GOOD-token"
+    assert "openart:tokens" not in os.environ
+
+
 def test_managed_keys_are_brand_scoped_only() -> None:
     """Engine-wide keys must NOT be here: stored per brand they would have to
     be duplicated and rotated once per brand."""

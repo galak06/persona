@@ -35,6 +35,8 @@ __all__ = [
     "migrate",
     "resolve_groups_db_path",
     "save_all",
+    "set_first_comment_approved",
+    "set_first_comment_flagged",
     "set_posting_mode",
     "set_status",
 ]
@@ -72,6 +74,16 @@ def set_status(group_url: str, status: str) -> bool:
 
 def set_posting_mode(group_url: str, mode: str) -> bool:
     return _repo().set_posting_mode(group_url, mode)
+
+
+def set_first_comment_flagged(group_url: str, at_iso: str) -> bool:
+    """Write-once gate flag — True iff THIS call did the flagging (notify-once)."""
+    return _repo().set_first_comment_flagged(group_url, at_iso)
+
+
+def set_first_comment_approved(group_url: str, at_iso: str) -> bool:
+    """Approve inline comments for a group (overwrite allowed)."""
+    return _repo().set_first_comment_approved(group_url, at_iso)
 
 
 def append_note(group_url: str, note: dict[str, str]) -> bool:

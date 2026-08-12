@@ -1,4 +1,4 @@
-"""Tests for the agentic drafting helper used by fb_comment/ig_comment.
+"""Tests for the agentic drafting helper used by fb_engager/ig_engager/ig_comment.
 
 Mocks ``draft_helper._llm_json`` (no network) and exercises the real
 ``lib.comment_generator.validate_voice`` so the voice contract is enforced.
@@ -36,7 +36,7 @@ _SYSTEM = "SYSTEM RULES (stand-in for the bound skill's ## LLM Prompt section)."
 def drafter(monkeypatch: pytest.MonkeyPatch) -> draft_helper.SkillDrafter:
     """A drafter with a stubbed system prompt — no SKILL.md / BRAND_DIR read."""
     monkeypatch.setattr(draft_helper, "_system_prompt", lambda _skill: _SYSTEM)
-    return draft_helper.for_skill("fb-comment")
+    return draft_helper.for_skill("fb-engager")
 
 
 def _set_key(monkeypatch: pytest.MonkeyPatch) -> None:

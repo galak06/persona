@@ -1,8 +1,8 @@
 """Per-flow readiness signals + last-run status for the brand settings UI.
 
 Answers the operator question "how do I know fb-group-scout needs to run
-(and its candidates approved) before fb-scanner has anything to scan" --
-today that's silent (0 groups joined -> fb-scanner just finds nothing, with
+(and its candidates approved) before fb-engager has anything to scan" --
+today that's silent (0 groups joined -> fb-engager just finds nothing, with
 no UI signal explaining why). `flow_status()` surfaces, per managed flow:
 whether it's enabled, its last `worker_runs` status, and a flow-specific
 readiness count (joined-group count for the two Facebook flows, hashtag

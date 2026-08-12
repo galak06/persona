@@ -13,6 +13,7 @@ runs on Postgres via `lib/db.py`.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -162,3 +163,77 @@ def test_get_by_name(repo: GroupsRepository) -> None:
     assert g is not None
     assert g["group_url"] == _RUN_URL
     assert repo.get_by_name("No Such Group") is None
+
+
+# ------------------------------------------- first-comment gate (fb-engager)
+
+_FLAGGED_AT = "2026-08-01T10:00:00+00:00"
+_APPROVED_AT = "2026-08-01T11:00:00+00:00"
+
+
+@requires_postgres
+def test_set_first_comment_flagged_is_write_once(repo: GroupsRepository) -> None:
+    """True iff THIS call did the flagging -- that return value drives the
+    notify-exactly-once Telegram message, so a second call must be a no-op."""
+    repo.save_all([dict(_SAMPLE[0])])
+    assert repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT) is True
+    assert repo.set_first_comment_flagged(_TREATS_URL, "2026-08-02T09:00:00+00:00") is False
+    g = repo.get_by_url(_TREATS_URL)
+    assert g is not None
+    assert g["first_comment_flagged_at"] == _FLAGGED_AT  # original stamp survives
+    assert repo.set_first_comment_flagged("https://nope/", _FLAGGED_AT) is False
+
+
+@requires_postgres
+def test_set_first_comment_approved_sets_and_overwrites(repo: GroupsRepository) -> None:
+    """Approval is a plain update (re-approving refreshes the stamp)."""
+    repo.save_all([dict(_SAMPLE[0])])
+    assert repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT) is True
+    assert repo.set_first_comment_approved(_TREATS_URL, "2026-08-03T12:00:00+00:00") is True
+    g = repo.get_by_url(_TREATS_URL)
+    assert g is not None
+    assert g["first_comment_approved_at"] == "2026-08-03T12:00:00+00:00"
+    assert repo.set_first_comment_approved("https://nope/", _APPROVED_AT) is False
+
+
+@requires_postgres
+def test_gate_columns_emitted_only_when_set(repo: GroupsRepository) -> None:
+    """load_all/_row_to_dict emit the gate columns when set, and never as
+    spurious empty keys on untouched groups (same rule as GROUP_COLUMNS)."""
+    repo.save_all([dict(g) for g in _SAMPLE])
+    repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT)
+    repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT)
+
+    out = {g["group_url"]: g for g in repo.load_all()}
+    treats = out[_TREATS_URL]
+    assert treats["first_comment_flagged_at"] == _FLAGGED_AT
+    assert treats["first_comment_approved_at"] == _APPROVED_AT
+    run = out[_RUN_URL]
+    assert "first_comment_flagged_at" not in run
+    assert "first_comment_approved_at" not in run
+
+
+@requires_postgres
+def test_gate_columns_survive_a_save_all_round_trip(repo: GroupsRepository) -> None:
+    """The clobber guard: a load_all -> save_all round trip (every tracker
+    writer does this) must neither reset the gate columns -- they are
+    deliberately absent from GROUP_COLUMNS -- nor smuggle them into `extra`,
+    where a later upsert would resurrect stale values past the setters."""
+    repo.save_all([dict(_SAMPLE[0])])
+    repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT)
+    repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT)
+
+    repo.save_all(repo.load_all())  # round-trip the stored records verbatim
+
+    g = repo.get_by_url(_TREATS_URL)
+    assert g is not None
+    assert g["first_comment_flagged_at"] == _FLAGGED_AT
+    assert g["first_comment_approved_at"] == _APPROVED_AT
+
+    row = db.fetch_one("SELECT extra FROM fb_groups WHERE group_url = %s", (_TREATS_URL,))
+    assert row is not None
+    raw_extra = row["extra"] or {}
+    extra: dict[str, Any] = json.loads(raw_extra) if isinstance(raw_extra, str) else raw_extra
+    assert "first_comment_flagged_at" not in extra
+    assert "first_comment_approved_at" not in extra
+    assert extra.get("weird_extra_key") == "keepme"  # real extras still round-trip

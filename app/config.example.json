@@ -89,6 +89,13 @@
     }
   },
 
+  "integrations": {
+    "openart": {
+      "_comment": "Optional. enabled: true lets the reels pipeline generate per-beat images via OpenArt's MCP server. Requires OAuth — click 'Authorize OpenArt' on the Reels page, or run `python -m lib.oauth.openart` on the host. Disabled: reels still compose, reusing the post's hero image for every beat.",
+      "enabled": false
+    }
+  },
+
   "approval_gates": {
     "first_post_to_new_group": true,
     "comment_contains_url": true,

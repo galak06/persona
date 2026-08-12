@@ -182,7 +182,7 @@ def run() -> None:
 
     skill_started("comment-composer", f"Posting {len(approved)} approved comments")
 
-    # WordPress-only: FB → scripts/fb_comment.py, IG → scripts/ig_comment.py.
+    # WordPress-only: FB → scripts/fb_engager.py, IG → scripts/ig_comment.py.
     wp_approved = [q for q in approved if q["platform"] == "wordpress"]
 
     posted = 0
@@ -236,7 +236,7 @@ def run() -> None:
                 item["error"] = str(e)[:200]
                 failed += 1
 
-    # WordPress-only now (no browser): FB → fb_comment.py, IG → ig_comment.py.
+    # WordPress-only now (no browser): FB → fb_engager.py, IG → ig_comment.py.
     save_json(QUEUE_FILE, queue)
     last_run[GUARD_KEY] = {
         "last_run_at": datetime.now(UTC).isoformat(),

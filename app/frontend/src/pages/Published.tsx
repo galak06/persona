@@ -10,7 +10,7 @@ import LoadingState from "../components/ui/LoadingState";
 
 /**
  * Published — the post + comment history recorded in engagements.db by the
- * publish workers (fb_comment, fb_group_post, publish_prepared). Read-only.
+ * publish workers (fb_engager, fb_group_post, publish_prepared). Read-only.
  * Filter by platform; each row links out to the live post when a permalink or
  * target URL is known.
  */

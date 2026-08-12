@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from lib.engagement.adapter import Source
+from lib.engagement.post import Post
+
 
 class Dedup(Protocol):
     """Records which posts have already been engaged with."""
@@ -65,12 +68,15 @@ class Drafter(Protocol):
     ) -> str: ...
 
 
-class QueueIO(Protocol):
-    """The two-stage comment queue (Facebook only)."""
+class CommentGate(Protocol):
+    """Pre-comment veto consulted before the quota/draft/post steps.
 
-    def append(self, record: dict[str, object]) -> None: ...
-    def save(self) -> None: ...
-    def existing_today(self, platform: str) -> int: ...
+    `check` returns None to allow the comment, or a short skip-reason
+    string (e.g. "first_comment_approval_pending") to suppress it. The
+    like step is never gated — only the comment is withheld.
+    """
+
+    def check(self, post: Post, source: Source) -> str | None: ...
 
 
 class Log(Protocol):

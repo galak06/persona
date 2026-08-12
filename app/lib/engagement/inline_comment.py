@@ -1,8 +1,13 @@
 """The inline (single-pass) comment step: draft and post in one visit.
 
-Used only when `run_outbound_scan(inline_comment=True)` (Instagram).
-Facebook drafts and posts in a separate stage — see
-`lib/engagement/queueing.py` and `scripts/fb_comment.py`.
+Both engagers run this path via `run_outbound_scan(inline_comment=True)`:
+`scripts/ig_engager.py` and `scripts/fb_engager.py` each like AND comment
+a qualifying post in the single visit that opened it. The old Facebook
+two-stage queue (scan -> queue file -> separate commenter run) is retired.
+
+Every posted or failed comment is persisted to `lib.engagements_db`
+(`record_publish` swallows DB errors, so recording can never break a run)
+and to the JSONL engagement log with the canonical `comment` action.
 
 Split out of `pipeline.py` to keep every engagement module under the
 300-line cap.
@@ -10,8 +15,11 @@ Split out of `pipeline.py` to keep every engagement module under the
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from lib import engagements_db
 from lib.engagement.adapter import Source, SupportsComment
-from lib.engagement.collaborators import Dedup, Drafter, Log, RateTracker
+from lib.engagement.collaborators import CommentGate, Dedup, Drafter, Log, RateTracker
 from lib.engagement.log import log_engagement
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
@@ -31,15 +39,18 @@ def maybe_comment(
     rate_tracker: RateTracker,
     log: Log,
     dry_run: bool,
+    comment_gate: CommentGate | None = None,
 ) -> CommentOutcome:
     """Draft and post one comment during this post's visit.
 
-    Order: auto-approve gate -> comment quota -> draft -> post -> record.
-    Under `dry_run` the drafter still runs (so the preview shows the real
-    text) but nothing leaves the process: no `comment()`, no rate spend, no
-    dedup mark.
+    Order: auto-approve gate -> comment gate -> comment quota -> draft ->
+    post -> record. Under `dry_run` the drafter still runs (so the preview
+    shows the real text) but nothing leaves the process: no `comment()`,
+    no rate spend, no dedup mark.
     """
     if _blocked_by_approval_gate(post, score, platform, policy, log):
+        return CommentOutcome()
+    if _blocked_by_comment_gate(post, source, platform, comment_gate, log):
         return CommentOutcome()
     if _blocked_by_comment_quota(platform, rate_tracker, log):
         return CommentOutcome()
@@ -83,6 +94,36 @@ def _blocked_by_approval_gate(
         post.post_id,
         score,
         policy.approval_threshold,
+        post.post_url,
+    )
+    return True
+
+
+def _blocked_by_comment_gate(
+    post: Post,
+    source: Source,
+    platform: str,
+    comment_gate: CommentGate | None,
+    log: Log,
+) -> bool:
+    """True when the injected `CommentGate` vetoes this post's comment.
+
+    Runs after the approval band (so borderline posts never trigger gate
+    side effects like first-comment flagging) and before the quota/LLM
+    steps (a vetoed post must spend nothing). A gated skip is terminal,
+    not retryable: the post is still liked upstream and gets marked seen,
+    so it is never revisited even after the gate later opens.
+    """
+    if comment_gate is None:
+        return False
+    reason = comment_gate.check(post, source)
+    if reason is None:
+        return False
+    log.info(
+        "comment_skipped_gated platform=%s post_id=%s reason=%s url=%s",
+        platform,
+        post.post_id,
+        reason,
         post.post_url,
     )
     return True
@@ -164,6 +205,16 @@ def _submit(
             result.reason,
             post.post_url,
         )
+        engagements_db.record_publish(
+            platform=platform,
+            kind="comment",
+            status="failed",
+            target_name=post.source_name or "",
+            target_url=post.post_url,
+            content=text,
+            ref=post.post_id,
+            error=result.reason,
+        )
         # `failed` (not merely "not posted") keeps the post retryable — see
         # `PostOutcome.is_retryable`; it must NOT be marked seen.
         return CommentOutcome(attempted=True, failed=True)
@@ -173,6 +224,7 @@ def _submit(
         source=source,
         platform=platform,
         score=score,
+        text=text,
         dedup=dedup,
         rate_tracker=rate_tracker,
         log=log,
@@ -186,18 +238,33 @@ def _record_comment(
     source: Source,
     platform: str,
     score: float,
+    text: str,
     dedup: Dedup,
     rate_tracker: RateTracker,
     log: Log,
 ) -> None:
-    """Spend the comment budget, mark engaged, log, then pace the next one."""
+    """Spend the budget, mark engaged, persist (JSONL + DB), pace the next one."""
     rate_tracker.record_action(platform, "comment")
     dedup.mark_engaged(platform, post.post_id, "comment", source.name or "")
     log_engagement(
-        "commented",
+        "comment",
         platform,
-        post.post_url,
-        f"Commented inline: {post.post_url} (score={score:.2f})",
+        post.source_name or source.name or "",
+        text,
+        post_url=post.post_url,
+        post_id=post.post_id,
+        relevance_score=round(score, 3),
+        post_text=post.text,
+    )
+    engagements_db.record_publish(
+        platform=platform,
+        kind="comment",
+        status="posted",
+        target_name=post.source_name or "",
+        target_url=post.post_url,
+        content=text,
+        ref=post.post_id,
+        posted_at=datetime.now(UTC).isoformat(),
     )
     log.info(
         "post_commented platform=%s post_id=%s score=%.2f url=%s",

@@ -3,7 +3,7 @@ WordPress Comment Scanner — pulls pending visitor comments from
 the brand site, auto-trashes obvious spam, and queues the rest for a
 persona reply.
 
-Mirrors fb_scan.py / ig_engager.py: scan → queue. The drafting step happens in
+Two-stage flow: scan → queue. The drafting step happens in
 comment-composer (which calls Claude). The approve + post step happens in
 comment_approver.py → comment_poster.py.
 
@@ -241,7 +241,7 @@ def run(dry_run: bool = False) -> None:
     print("=== WordPress Comment Scan ===\n", flush=True)
     print_status()
 
-    # Re-run guard — match fb_scan / ig_engager style.
+    # Re-run guard — match ig_engager style.
     last_run = load_json(LAST_RUN_FILE, {})
     today = date.today().isoformat()
     wp_last = last_run.get("wp_scan", {})

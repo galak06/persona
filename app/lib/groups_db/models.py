@@ -80,5 +80,14 @@ GROUP_COLUMNS: tuple[str, ...] = (
     "last_checked_at",
 )
 
+# fb-engager first-comment gate columns. Deliberately NOT in GROUP_COLUMNS:
+# upsert_group writes every GROUP_COLUMNS column on conflict, so listing them
+# there would let save_all round-trips clobber a user's approval. Only the
+# dedicated repository setters (and the schema defaults) ever write these.
+FIRST_COMMENT_COLUMNS: tuple[str, ...] = (
+    "first_comment_flagged_at",
+    "first_comment_approved_at",
+)
+
 # Always emitted by _row_to_dict even when empty (API requires these).
 _ALWAYS_KEYS: frozenset[str] = frozenset({"group_url", "group_name", "status"})

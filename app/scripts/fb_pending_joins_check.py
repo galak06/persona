@@ -74,7 +74,7 @@ from lib.groups_db.models import GroupStatus
 
 def _visit_gate() -> bool:
     """Shared facebook:group_visit budget (6/day) — same gate+consume
-    pattern as lib.engagement.post_processor.gate_source / fb_scan.py."""
+    pattern as lib.engagement.post_processor.gate_source / fb_engager.py."""
     if not can_act("facebook", "group_visit"):
         return False
     record_action("facebook", "group_visit")

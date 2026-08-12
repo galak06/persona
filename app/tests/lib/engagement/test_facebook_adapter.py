@@ -121,7 +121,7 @@ def test_build_post_comments_disabled_false_when_explicitly_false() -> None:
 
 def test_pipeline_surfaces_comments_disabled_in_report() -> None:
     """A post pre-filtered as comments_disabled lands in both report fields
-    and is never queued."""
+    and is never engaged with."""
     src = make_src("g1", name="grp1")
     posts = [
         make_post(
@@ -139,15 +139,13 @@ def test_pipeline_surfaces_comments_disabled_in_report() -> None:
         {"g1": posts},
         pre_filter_overrides={"p1": "comments_disabled"},
     )
-    report, _d, _rt, _dr, q = run(adapter)
+    report, _d, _rt, _dr = run(adapter)
 
     # Aggregated count.
     assert report.pre_filtered == {"comments_disabled": 1}
     # Per-post (post_id, reason) tuple.
     assert ("p1", "comments_disabled") in report.pre_filtered_posts
-    # The flagged post is not queued; the clean one is.
-    queued_ids = {r["post_id"] for r in q.appended}
-    assert "p1" not in queued_ids
-    assert "p2" in queued_ids
+    # The flagged post is not a candidate; the clean one is.
+    assert report.candidates == 1
     # Pre-filtered post is never offered to .like().
     assert all(post.post_id != "p1" for post in adapter.likes_attempted)

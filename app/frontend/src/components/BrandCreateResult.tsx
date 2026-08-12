@@ -12,7 +12,7 @@ import CodeBlock from "./ui/CodeBlock";
  * settings page (where login status, last-run, and readiness signals live)
  * instead of leaving them to notice the small "Settings" link back on the
  * brands list, and flags that `fb-group-scout` is off by default so a
- * silent, empty `fb-scanner` doesn't read as broken.
+ * silent, empty `fb-engager` doesn't read as broken.
  */
 
 export default function BrandCreateResult({
@@ -57,7 +57,7 @@ export default function BrandCreateResult({
       <Alert status="info">
         <code className="font-mono text-xs">fb-group-scout</code> (finds new Facebook groups to
         join) is off by default — enable it on the flow status page above once you're ready;
-        until then <code className="font-mono text-xs">fb-scanner</code> will find nothing to
+        until then <code className="font-mono text-xs">fb-engager</code> will find nothing to
         scan.
       </Alert>
 
@@ -93,7 +93,7 @@ export default function BrandCreateResult({
 
       <div>
         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-1">
-          Facebook login (run once, before fb-scanner can do anything live)
+          Facebook login (run once, before fb-engager can do anything live)
         </p>
         <CodeBlock code={result.fb_login_command} />
       </div>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiOrigin } from "../api/client";
+import { apiOrigin, getErrorMessage, isHttpStatus } from "../api/client";
+import { endpoints } from "../api/endpoints";
+import { useBrand } from "../context/BrandContext";
 import {
   ideasUrl,
   updateIdeaStatus,
@@ -13,12 +15,23 @@ import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 
+// Beat images are resolved per beat, so "mixed" (some AI, some hero) is a
+// normal middle state -- labelling such a reel "Fallback" would misreport it.
+// All three are ordinary outcomes: understated styling, never an error look.
+const SOURCE_LABELS: Record<string, string> = {
+  openart: "AI images",
+  mixed: "Partly AI images",
+  fallback: "Hero image",
+};
+
 function sourceBadge(source: string | null): React.JSX.Element {
   const cls =
-    source === "openart" ? "bg-indigo-50 text-indigo-700" : "bg-stone-100 text-slate-600";
+    source === "openart" || source === "mixed"
+      ? "bg-indigo-50 text-indigo-700"
+      : "bg-stone-100 text-slate-600";
   return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${cls}`}>
-      {source ?? "unknown"}
+    <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {(source && SOURCE_LABELS[source]) ?? source ?? "unknown"}
     </span>
   );
 }
@@ -98,6 +111,7 @@ export default function Reels(): React.JSX.Element {
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [composing, setComposing] = useState(false);
   const [composeNote, setComposeNote] = useState<string | null>(null);
+  const { selectedBrand } = useBrand();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const url = ideasUrl({ status: "social_queued" });
@@ -119,6 +133,8 @@ export default function Reels(): React.JSX.Element {
         if (s.running) return;
         stopPolling();
         setComposing(false);
+        // A run without OpenArt is a plain success (hero images) -- never
+        // flagged as degraded, never prompts to authorize anything.
         setComposeNote(s.ok ? "New reels composed." : `Compose failed: ${s.detail ?? "?"}`);
         if (s.ok) void refetch();
       });
@@ -137,17 +153,43 @@ export default function Reels(): React.JSX.Element {
     });
   }, [startPolling]);
 
+  // Landing back from the OpenArt OAuth callback (?openart=connected|error).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openart = params.get("openart");
+    if (!openart) return;
+    // Feedback for an action the user just took, not an unprompted notice.
+    setComposeNote(
+      openart === "connected"
+        ? "OpenArt connected — new reels will use AI-generated images."
+        : `OpenArt not connected: ${params.get("reason") ?? "unknown error"}`,
+    );
+    params.delete("openart");
+    params.delete("reason");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
+
   const handleCompose = useCallback(async (): Promise<void> => {
     setComposing(true);
     setComposeNote(null);
     try {
       await composeReels();
       startPolling();
-    } catch {
-      // 409 = already running elsewhere; just track it.
-      startPolling();
+    } catch (err) {
+      if (isHttpStatus(err, 409)) {
+        startPolling(); // already running elsewhere; just track it
+        return;
+      }
+      setComposing(false);
+      setComposeNote(getErrorMessage(err, "Compose failed."));
     }
   }, [startPolling]);
+
+  const handleAuthorizeOpenArt = useCallback((): void => {
+    const returnTo = `${window.location.origin}/reels`;
+    window.location.href = `${apiOrigin}/api/v1${endpoints.oauthOpenartStart(selectedBrand, returnTo)}`;
+  }, [selectedBrand]);
 
   const pending = (data?.ideas ?? []).filter((i) => localStatuses[i.id] === undefined);
 
@@ -185,6 +227,16 @@ export default function Reels(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
+          {/* Opt-in upgrade, deliberately understated: reels compose fine
+              without OpenArt, so this is never a warning or a next step. */}
+          <button
+            type="button"
+            onClick={handleAuthorizeOpenArt}
+            title="Optional: connect OpenArt to generate AI images for each beat instead of reusing the post's hero image"
+            className="text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600"
+          >
+            Connect OpenArt
+          </button>
           <button
             type="button"
             onClick={() => void handleCompose()}

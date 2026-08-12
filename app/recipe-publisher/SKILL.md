@@ -35,7 +35,7 @@ secrets_required:
 
 # recipe-publisher
 
-Replaces the n8n "recipes" workflow with a Python skill that lives in-repo, runs from launchd alongside the other scanners (`fb_scanner`, `ig_engager`, `comment_composer`, `site_analyzer`), and shares the same secrets + state conventions.
+Replaces the n8n "recipes" workflow with a Python skill that lives in-repo, runs from launchd alongside the other scanners (`fb_engager`, `ig_engager`, `comment_composer`, `site_analyzer`), and shares the same secrets + state conventions.
 
 ## When to invoke
 

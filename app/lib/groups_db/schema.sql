@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS fb_groups (
     last_reel_post_at        TEXT DEFAULT '',
     last_reel_post_permalink TEXT DEFAULT '',
     last_checked_at          TEXT DEFAULT '',
+    first_comment_flagged_at  TEXT DEFAULT '',   -- fb-engager gate: first comment flagged (write-once)
+    first_comment_approved_at TEXT DEFAULT '',   -- fb-engager gate: user approved inline comments
     extra                    TEXT DEFAULT '{}',  -- any keys not modeled above
     created_at               TEXT,
     updated_at               TEXT

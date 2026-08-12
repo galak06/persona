@@ -77,6 +77,15 @@ export interface GenerateStatus {
   finished_at: string | null;
   ok: boolean | null;
   detail: string | null;
+  /**
+   * Reels compose only, purely informational: how many beat images came from
+   * OpenArt vs the post's hero image. Images are resolved per beat, so a mix
+   * is normal. Any mix is an ordinary success — OpenArt is an opt-in upgrade,
+   * so this is never an error or a prompt.
+   */
+  used_openart?: boolean | null;
+  ai_images?: number | null;
+  hero_images?: number | null;
 }
 
 /** Starts a CrewAI scout run (Trends + Idea crews). 409 if one is in flight. */

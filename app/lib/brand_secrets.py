@@ -263,6 +263,12 @@ def load_into_environ(brand_id: str, *, override: bool = True) -> int:
 
     applied = 0
     for key, value in decrypted.items():
+        if ":" in key:
+            # Namespaced app-data rows (e.g. lib.oauth.openart_store's
+            # "openart:tokens") are structured secrets, not env vars --
+            # merging multi-KB token JSON into every process environment
+            # (inherited by every subprocess) would be a leak, not a load.
+            continue
         if not override and key in os.environ:
             continue
         os.environ[key] = value

@@ -2,7 +2,7 @@
 
 Pairs with `lib/brand_templates.py` (pure rendering) -- this module is the
 I/O side: computes `brands/<slug>/`, writes the three rendered files, and
-inserts the brand's `ig-engager`/`fb-scanner` `schedule_tasks` rows via
+inserts the brand's `ig-engager`/`fb-engager` `schedule_tasks` rows via
 `lib/schedule_db.py` so PR2's `scripts/task_dispatcher.py` picks them up.
 
 Deliberately does NOT import `lib.config`/`lib.bootstrap` (or anything that
@@ -97,7 +97,7 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
     have would be misleading. `task_dispatcher.py` doesn't currently
     evaluate `depends_on` at all, so this is a data-hygiene choice, not a
     behavior change. `requires_browser` is forced `true` per the plan's B3
-    spec regardless of the source flow's value (`ig-engager`/`fb-scanner`/
+    spec regardless of the source flow's value (`ig-engager`/`fb-engager`/
     `fb-group-scout` are all Playwright-driven, so this is always accurate
     for every id `_STAGE1_FLOWS` can name).
     """
@@ -117,10 +117,9 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
         "requires_browser": True,
         "re_run_guard": bool(flow.get("re_run_guard", True)),
         "output_file": flow.get("output_file"),
-        # A flow without a schedule block is legitimate -- fb-engager runs
-        # on demand only (PR #61 deliberately removed the fb-scanner/fb-comment
-        # crons). A schedule-less task row means the dispatcher never fires it
-        # on a timer, but "Run now" from the UI still works.
+        # A flow without a schedule block is legitimate -- some flows run
+        # on demand only. A schedule-less task row means the dispatcher never
+        # fires it on a timer, but "Run now" from the UI still works.
         "schedule": (
             {"cron": flow["schedule"]["cron"]}
             if isinstance(flow.get("schedule"), dict) and flow["schedule"].get("cron")
@@ -203,9 +202,9 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
         )
 
     # Only these three directories -- session files, dedup caches, and
-    # queues are lazily created by ig_engager.py/fb_scan.py themselves on first
-    # write (confirmed by reading both scripts). No data/db/: everything is
-    # Postgres now.
+    # queues are lazily created by ig_engager.py/fb_engager.py themselves on
+    # first write (confirmed by reading both scripts). No data/db/: everything
+    # is Postgres now.
     (brand_dir / "data" / "config").mkdir(parents=True, exist_ok=True)
     (brand_dir / "state").mkdir(parents=True, exist_ok=True)
     (brand_dir / "logs").mkdir(parents=True, exist_ok=True)
