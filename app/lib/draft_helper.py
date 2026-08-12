@@ -4,7 +4,7 @@
 binds a skill's ``## LLM Prompt`` section (``lib.skill_loader``) plus brand
 facts as the SYSTEM prompt and sends only per-post context as the USER
 prompt. Every wired flow — ``scripts/ig_comment.py``, ``scripts/ig_engager.py``,
-``scripts/fb_comment.py``, ``scripts/wp_scan.py`` — binds its own skill, so
+``scripts/fb_engager.py``, ``scripts/wp_scan.py`` — binds its own skill, so
 the flow's voice, engage-decision and length rules live in that SKILL.md and
 never in Python. The system prompt is loaded eagerly so a broken SKILL.md
 aborts at startup (fail-fast), while per-call failures below still degrade

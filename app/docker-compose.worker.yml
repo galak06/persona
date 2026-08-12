@@ -21,7 +21,7 @@
 #                Playwright/Chromium).
 #   worker     — scripts/task_worker.py --loop: round-robin pops every
 #                brand's queue and actually runs each task's script
-#                (ig_scan.py/fb_scan.py/fb_group_scout.py/...) as a
+#                (ig_engager.py/fb_engager.py/fb_group_scout.py/...) as a
 #                subprocess, with that task's own brand_dir/credentials
 #                (lib.local_env.load_brand_env) injected into just that
 #                subprocess call. Builds off Dockerfile.worker (has
@@ -84,6 +84,18 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_REPLY_MODEL=${GEMINI_REPLY_MODEL:-gemini-3.6-flash}
       - SERPER_API_KEY=${SERPER_API_KEY}
+      # Engine-wide too, and required by the reels pipeline's Beats Agent
+      # (scripts/crewai_reels_pipeline.py refuses to start without it).
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      # Reel text overlays. recipe-publisher/generators/text_overlay.py
+      # defaults to macOS host paths (/System/Library/Fonts/...), which do
+      # not exist in this Linux image -- PIL then dies with "cannot open
+      # resource" and no reel is ever produced. These DejaVu faces ship in
+      # the image (verified inside the container); the subcopy index must be
+      # 0 because DejaVuSans.ttf is a single-face .ttf, not a .ttc collection.
+      - OVERLAY_HEADLINE_FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+      - OVERLAY_SUBCOPY_FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+      - OVERLAY_SUBCOPY_FONT_INDEX=0
     volumes:
       # Read-write: the worker writes session/browser state, logs, and
       # queue files into whichever brand a given task's brand_dir points

@@ -1,6 +1,6 @@
 """Tests for the IG comment action's thin spec + draft delegation.
 
-Mirrors test_fb_comment.py — the shared drain/filter logic is in
+The shared drain/filter logic is in
 test_commenter.py; here we verify the IG ``CommenterSpec`` wiring and that
 ``_draft`` delegates to the skill-bound drafter with the hashtag + post
 fields. Importing ``scripts.ig_comment`` also exercises the module-level

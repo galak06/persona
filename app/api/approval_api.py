@@ -106,9 +106,11 @@ from api.brands_api import router as _brands_router
 from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
 from api.flow_templates_api import router as _flow_templates_router
+from api.groups_api import router as _groups_router
 from api.ideas_api import router as _ideas_router
 from api.ideas_generate_api import router as _ideas_generate_router
 from api.oauth_api import router as _oauth_router
+from api.oauth_openart_api import router as _oauth_openart_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.recipes_api import router as _recipes_router
 from api.reels_compose_api import router as _reels_compose_router
@@ -152,10 +154,12 @@ app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_reels_compose_router, prefix="/api/v1", tags=["reels"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])
+app.include_router(_oauth_openart_router, prefix="/api/v1/oauth", tags=["oauth"])
 app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_settings_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_flows_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_flow_templates_router, prefix="/api/v1", tags=["flow-templates"])
+app.include_router(_groups_router, prefix="/api/v1", tags=["groups"])
 app.include_router(_session_status_router, prefix="/api/v1", tags=["sessions"])
 
 
@@ -427,10 +431,10 @@ _LABEL_PREFIX = "com.persona."
 
 
 def _normalize_label(label: str) -> str:
-    """Accept task id (dogfood-fb-scanner) or full launchd label (com.persona.fb-scanner).
+    """Accept task id (dogfood-fb-engager) or full launchd label (com.persona.fb-engager).
 
     Uses label_for_task_id for task ids so the dogfood- prefix is stripped correctly,
-    matching how launchd labels are actually generated (dogfood-fb-scanner → com.persona.fb-scanner).
+    matching how launchd labels are actually generated (dogfood-fb-engager → com.persona.fb-engager).
     """
     if label.startswith(_LABEL_PREFIX):
         return label

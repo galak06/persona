@@ -3,6 +3,10 @@
 Lives next to ``test_pipeline.py`` to keep that file under the 300-line
 limit. No production deps, no I/O, no ``tmp_path``. All fakes match the
 structural shapes the pipeline's internal ``Protocol`` classes require.
+
+The two-stage queue fake is gone with the queue itself: both engagers run
+single-pass (``inline_comment=True``), and ``inline_comment=False`` is now
+only a like-only degrade — there is no ``queue_io`` collaborator anymore.
 """
 
 from __future__ import annotations
@@ -39,10 +43,11 @@ class FakeDedup:
 class FakeIterateOnceDedup(FakeDedup):
     """Dedup double that ALSO implements the optional `mark_seen` capability.
 
-    Mirrors `scripts.ig_engager._ScanDedup`: a post marked seen is a duplicate
-    on the next run, whatever the outcome of this one. Plain `FakeDedup` has
-    no `mark_seen` — that models the bare `deduplication` module Facebook
-    passes, so tests can prove the capability probe leaves FB untouched.
+    Mirrors `lib.scan_dedup.ScanDedup` (what both engagers pass): a post
+    marked seen is a duplicate on the next run, whatever the outcome of this
+    one. Plain `FakeDedup` has no `mark_seen` — that models the bare
+    `deduplication` module, so tests can prove the capability probe keeps
+    working for collaborators without it.
     """
 
     def __init__(self, seen: set[str] | None = None) -> None:
@@ -114,20 +119,20 @@ class FakeDrafter:
         return f"DRAFT for {post_url}"
 
 
-class FakeQueueIO:
-    def __init__(self, existing_today_count: int = 0) -> None:
-        self._existing_today = existing_today_count
-        self.appended: list[dict[str, object]] = []
-        self.saved = False
+class FakeCommentGate:
+    """`CommentGate` double: vetoes with a fixed reason, or allows with None.
 
-    def append(self, record: dict[str, object]) -> None:
-        self.appended.append(record)
+    Records every `(post_id, source_url)` it was consulted for, so tests can
+    assert both that the gate ran and that it ran per-post.
+    """
 
-    def save(self) -> None:
-        self.saved = True
+    def __init__(self, reason: str | None = None) -> None:
+        self.reason = reason
+        self.checked: list[tuple[str, str]] = []
 
-    def existing_today(self, platform: str) -> int:
-        return self._existing_today
+    def check(self, post: Post, source: object) -> str | None:
+        self.checked.append((post.post_id, getattr(source, "url", "")))
+        return self.reason
 
 
 class FakeLog:
@@ -219,22 +224,22 @@ def run(
     dedup: FakeDedup | None = None,
     rate_tracker: FakeRateTracker | None = None,
     drafter: FakeDrafter | None = None,
-    queue_io: FakeQueueIO | None = None,
     log: FakeLog | None = None,
     score: Callable[[Post], float] = stub_score,
     dry_run: bool = False,
     inline_comment: bool = False,
-) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter, FakeQueueIO]:
+    comment_gate: FakeCommentGate | None = None,
+) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter]:
     """Run pipeline with sensible defaults; return report + collaborators.
 
     Pass `log=` a `FakeLog()` instance to inspect its `.calls` afterward --
-    not part of the return tuple since most tests don't need it.
+    not part of the return tuple since most tests don't need it. Same for
+    `comment_gate=` (the caller keeps its reference).
     """
     p = policy or make_policy()
     d = dedup or FakeDedup()
     rt = rate_tracker or FakeRateTracker()
     dr = drafter or FakeDrafter()
-    q = queue_io or FakeQueueIO()
     lg = log or FakeLog()
     report = run_outbound_scan(
         adapter,
@@ -242,11 +247,11 @@ def run(
         dedup=d,
         rate_tracker=rt,
         drafter=dr,
-        queue_io=q,
         log=lg,
         now_iso=stub_now,
         score_relevance=score,
         dry_run=dry_run,
         inline_comment=inline_comment,
+        comment_gate=comment_gate,
     )
-    return report, d, rt, dr, q
+    return report, d, rt, dr

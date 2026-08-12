@@ -102,7 +102,7 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS mascot_name         TEXT  DEFAULT ''
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS target_audience     TEXT  DEFAULT '';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS keywords            JSONB DEFAULT '{}';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS competitor_accounts JSONB DEFAULT '[]';
-ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '["ig-engager","fb-scanner"]';
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS enabled_flows       JSONB DEFAULT '["ig-engager","fb-engager"]';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS status              TEXT  NOT NULL DEFAULT 'draft';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS brand_dir           TEXT  DEFAULT '';
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS extra               JSONB DEFAULT '{}';
@@ -142,10 +142,18 @@ CREATE TABLE IF NOT EXISTS fb_groups (
     last_reel_post_at        TEXT    DEFAULT '',
     last_reel_post_permalink TEXT    DEFAULT '',
     last_checked_at          TEXT    DEFAULT '',
+    first_comment_flagged_at  TEXT   DEFAULT '',
+    first_comment_approved_at TEXT   DEFAULT '',
     extra                    JSONB               DEFAULT '{}',
     created_at               TEXT,
     updated_at               TEXT
 );
+
+-- Additive (fb-engager first-comment gate): a group's first-ever comment is
+-- never posted inline — the run flags the group once (flagged_at, write-once)
+-- and the user approves one-time via the Groups UI (approved_at).
+ALTER TABLE fb_groups ADD COLUMN IF NOT EXISTS first_comment_flagged_at  TEXT DEFAULT '';
+ALTER TABLE fb_groups ADD COLUMN IF NOT EXISTS first_comment_approved_at TEXT DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_fb_groups_status   ON fb_groups(status);
 CREATE INDEX IF NOT EXISTS idx_fb_groups_brand_id ON fb_groups(brand_id);

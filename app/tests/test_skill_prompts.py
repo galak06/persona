@@ -40,7 +40,7 @@ _SKILLS_DIR = skill_loader.default_skills_dir()
 _BRAND = skill_loader.load_brand_vars(str(_CI_BRAND))
 
 # The four flows whose drafts run through draft_helper.SkillDrafter.
-_ENGAGEMENT_SKILLS = ("ig-comment", "fb-comment", "ig-engager", "wp-comment-handler")
+_ENGAGEMENT_SKILLS = ("ig-comment", "fb-engager", "ig-engager", "wp-comment-handler")
 # ...plus the reply/first-touch drafter (lib/reply_drafter.py).
 _WIRED_SKILLS = (*_ENGAGEMENT_SKILLS, "comment-composer")
 
@@ -49,17 +49,18 @@ _WIRED_SKILLS = (*_ENGAGEMENT_SKILLS, "comment-composer")
 _FRAMING = {
     "ig-comment": "commenting on Instagram",
     "ig-engager": "commenting on Instagram",
-    "fb-comment": "commenting in Facebook groups",
+    "fb-engager": "commenting in Facebook groups",
     "wp-comment-handler": "replying to reader comments on our own blog",
 }
 
 # The length rule the flow's Python entry point relies on (it no longer
-# restates one): fb_comment.py calls draft_short_comment_for_post.
+# restates one): fb_engager.py's inline commenter calls
+# draft_short_comment_for_post.
 _LENGTH_RULES = {
     "ig-comment": "a single short reply (1-3 sentences)",
     "ig-engager": "a single short reply (1-3 sentences)",
     "wp-comment-handler": "a single short reply (1-3 sentences)",
-    "fb-comment": "ONE short sentence (15-25 words)",
+    "fb-engager": "ONE short sentence (15-25 words)",
 }
 
 _DECISION_BULLETS = (

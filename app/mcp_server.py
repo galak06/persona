@@ -122,14 +122,14 @@ TOOLS: list[Tool] = [
     Tool(
         name="list_workers",
         description=(
-            "List all scheduled workers (fb-scanner, ig-engager, comment-composer, etc.) "
+            "List all scheduled workers (fb-engager, ig-engager, comment-composer, etc.) "
             "with their last-run time and status."
         ),
         inputSchema={"type": "object", "properties": {}},
     ),
     Tool(
         name="trigger_worker",
-        description="Manually trigger a scheduled worker by label (e.g. 'fb-scanner').",
+        description="Manually trigger a scheduled worker by label (e.g. 'fb-engager').",
         inputSchema={
             "type": "object",
             "properties": {

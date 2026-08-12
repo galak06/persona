@@ -1,132 +1,201 @@
 """OpenArt MCP OAuth 2.0 client (PKCE + Dynamic Client Registration).
 
-OpenArt's video-generation MCP server (`https://mcp.openart.ai/mcp`) is
-authorized via the standard MCP Authorization spec (OAuth 2.0 + PKCE +
-Dynamic Client Registration), not an app-id/secret pair like
-`lib.oauth.facebook`. The `mcp` SDK already implements the full flow --
-discovery, PKCE, DCR, token exchange, refresh -- via
-`mcp.client.auth.OAuthClientProvider`; this module only supplies:
+OpenArt's video/image-generation MCP server (`https://mcp.openart.ai/mcp`)
+is authorized via the standard MCP Authorization spec (OAuth 2.0 + PKCE +
+DCR). The `mcp` SDK implements the full flow -- discovery, PKCE, DCR, token
+exchange, refresh -- via `mcp.client.auth.OAuthClientProvider`; this module
+supplies what's around it:
 
-  - persistent storage for the resulting tokens + registered client info
-    (JSON files under `$BRAND_DIR/state/oauth_tokens/<brand>/openart/`,
-    same directory tree `lib.oauth.store.TokenStore` uses for other
-    platforms -- though OpenArt's token/client-info shape doesn't fit that
-    module's Facebook-specific `OAuthToken` dataclass, so it gets its own
-    small file-backed storage here rather than being forced into it)
-  - a one-time interactive setup entrypoint: run `build_openart_oauth_provider()`
-    once (e.g. `python -m lib.oauth.openart`), approve in the browser, and the
-    stored tokens are then reused headlessly by every later reels pipeline run
-    -- `OAuthClientProvider` refreshes an expiring token transparently.
+  - persistent storage (`lib.oauth.openart_store`: encrypted `brand_secrets`
+    rows, with additive migration from the legacy JSON files)
+  - a per-brand enable gate (`openart_enabled`): OpenArt is optional, keyed
+    on `integrations.openart.enabled` in `$BRAND_DIR/config.json`
+  - **headless safety**: the SDK's authorization-code grant needs a human in
+    a browser. That is only allowed when stdin is a real TTY (or the caller
+    passes `interactive=True`, as the `python -m lib.oauth.openart` setup
+    entrypoint does). Anywhere else -- the API container, cron -- the
+    handlers raise `OpenArtAuthRequiredError` instead of blocking on
+    `input()`, which previously died with EOFError in the container.
+
+Authorize either from the Reels page ("Authorize OpenArt", the web flow in
+`api.oauth_openart_api`) or one-time on a host terminal::
+
+    PERSONA_BRAND=<brand> BRAND_DIR=<brand-dir> python -m lib.oauth.openart
+
+Stored tokens are then reused headlessly; expiring access tokens refresh
+silently via the stored refresh token (see `openart_store` for how the
+SDK's lost-expiry quirk is worked around).
 """
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 import webbrowser
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import httpx
 from mcp.client.auth import OAuthClientProvider
-from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import OAuthClientMetadata, OAuthMetadata
 from pydantic import AnyUrl
 
+from lib.oauth.openart_store import OpenArtTokenStorage, resolve_brand_id
+from lib.observability import get_logger
+
+logger = get_logger(__name__)
+
 OPENART_MCP_URL = "https://mcp.openart.ai/mcp"
-_REDIRECT_URI = "http://localhost:8734/callback"
+CLI_REDIRECT_URI = "http://localhost:8734/callback"
+_ASM_URL = "https://mcp.openart.ai/.well-known/oauth-authorization-server"
+
+# Process-level cache: the document is static, and the provider is rebuilt
+# once per generated image (5x per reel).
+_cached_metadata: OAuthMetadata | None = None
 
 
-def _storage_dir() -> Path:
-    brand_dir = Path(os.environ.get("BRAND_DIR", "."))
-    brand_id = os.environ.get("PERSONA_BRAND", "default")
-    d = brand_dir / "state" / "oauth_tokens" / brand_id / "openart"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def _authorization_server_metadata() -> OAuthMetadata | None:
+    """OpenArt's RFC 8414 metadata, fetched once per process.
 
+    **Load-bearing for silent token refresh.** `mcp` 1.28's `_refresh_token()`
+    picks the token endpoint from `context.oauth_metadata`, falling back to
+    `<server_base>/token` when it is unset -- and `_initialize()` only loads
+    tokens and client info, never metadata (discovery happens in the 401
+    branch, which a refresh is supposed to avoid). So every refresh POSTed to
+    `https://mcp.openart.ai/token`, got **404**, cleared the tokens and
+    dropped into the interactive grant -- confirmed live as
+    `WARNING mcp.client.auth.oauth2: Token refresh failed: 404`, which is why
+    an expired-but-refreshable token still ended up composing hero-image
+    reels. Pre-populating the real endpoint
+    (`https://openart.ai/suite/api/auth/oauth/token`) is what makes refresh work.
 
-class OpenArtTokenStorage:
-    """File-backed implementation of `mcp.client.auth`'s `TokenStorage` protocol."""
-
-    def __init__(self) -> None:
-        self._tokens_path = _storage_dir() / "tokens.json"
-        self._client_info_path = _storage_dir() / "client_info.json"
-
-    async def get_tokens(self) -> OAuthToken | None:
-        if not self._tokens_path.exists():
-            return None
-        try:
-            return OAuthToken.model_validate_json(self._tokens_path.read_text())
-        except Exception:
-            return None
-
-    async def set_tokens(self, tokens: OAuthToken) -> None:
-        self._tokens_path.write_text(tokens.model_dump_json())
-
-    async def get_client_info(self) -> OAuthClientInformationFull | None:
-        if not self._client_info_path.exists():
-            return None
-        try:
-            return OAuthClientInformationFull.model_validate_json(
-                self._client_info_path.read_text()
-            )
-        except Exception:
-            return None
-
-    async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        self._client_info_path.write_text(client_info.model_dump_json())
-
-
-async def _redirect_handler(auth_url: str) -> None:
-    """Interactive step, run once: open the consent URL in a browser."""
-    print(f"\nOpen this URL to authorize OpenArt:\n{auth_url}\n")
-    webbrowser.open(auth_url)
-
-
-async def _callback_handler() -> tuple[str, str | None]:
-    """Interactive step, run once: prompt for the full redirect URL and parse
-    `code`/`state` out of it ourselves.
-
-    Deliberately takes the *whole* URL rather than asking for `code` and
-    `state` as two separate manually-copied fragments -- live-reproduced:
-    a user reasonably pasted `state=<value>` (the literal query-string
-    segment, exactly as it appears in the address bar) rather than just
-    `<value>`, which the raw-value prompt wording didn't make clear it
-    needed. Parsing the full URL removes that ambiguity entirely -- it's
-    also just what's actually sitting in the browser's address bar, no
-    manual extraction required.
+    Returns None on any failure -- the provider then behaves exactly as before.
     """
-    from urllib.parse import parse_qs, urlsplit
-
-    redirect_url = input(
-        "Paste the FULL redirect URL from your browser's address bar "
-        "(starts with http://localhost:8734/callback...): "
-    ).strip()
-    query = parse_qs(urlsplit(redirect_url).query)
-    code_values = query.get("code")
-    state_values = query.get("state")
-    code = code_values[0] if code_values else ""
-    state = state_values[0] if state_values else None
-    if not code:
-        raise ValueError(f"no 'code' query param found in pasted URL: {redirect_url!r}")
-    return code, state
+    global _cached_metadata
+    if _cached_metadata is not None:
+        return _cached_metadata
+    try:
+        response = httpx.get(_ASM_URL, timeout=15.0)
+        if response.status_code == 200:
+            _cached_metadata = OAuthMetadata.model_validate(response.json())
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("openart_asm_discovery_failed", error=str(exc))
+    return _cached_metadata
 
 
-def build_openart_oauth_provider() -> OAuthClientProvider:
-    """Construct the OAuth provider used for both the one-time interactive setup
-    and headless reuse afterward -- the same call handles both, since
-    `OAuthClientProvider` checks stored tokens first and only drives the
-    interactive flow when nothing usable is stored yet.
+class OpenArtAuthRequiredError(RuntimeError):
+    """No usable OpenArt authorization and no human available to grant one.
+
+    Raised instead of prompting whenever the OAuth provider would need the
+    interactive consent flow in a non-interactive context (headless API
+    container, cron). Carries an actionable message -- surface it verbatim.
     """
-    return OAuthClientProvider(
+
+
+def reauth_message(brand_id: str | None = None) -> str:
+    brand = brand_id or resolve_brand_id()
+    brand_dir = os.environ.get("BRAND_DIR", "<brand-dir>")
+    return (
+        f"OpenArt authorization required for brand '{brand}'. "
+        f"Click 'Authorize OpenArt' on the Reels page, or on the host run: "
+        f"PERSONA_BRAND={brand} BRAND_DIR={brand_dir} python -m lib.oauth.openart "
+        f"-- then retry Compose."
+    )
+
+
+def openart_enabled(brand_dir: Path | None = None) -> bool:
+    """True when the brand opts in via `integrations.openart.enabled` in
+    `$BRAND_DIR/config.json`. Absent section/file/flag -> disabled."""
+    base = brand_dir or Path(os.environ.get("BRAND_DIR", "."))
+    config_path = base / "config.json"
+    if not config_path.exists():
+        return False
+    try:
+        config = json.loads(config_path.read_text())
+    except ValueError:
+        return False
+    openart = config.get("integrations", {}).get("openart", {})
+    return isinstance(openart, dict) and bool(openart.get("enabled"))
+
+
+def extract_auth_required(exc: BaseException) -> OpenArtAuthRequiredError | None:
+    """First OpenArtAuthRequiredError leaf inside (possibly nested) exception
+    groups -- anyio task groups wrap it, sometimes alongside teardown errors."""
+    if isinstance(exc, OpenArtAuthRequiredError):
+        return exc
+    if isinstance(exc, BaseExceptionGroup):
+        for sub in exc.exceptions:
+            found = extract_auth_required(sub)
+            if found is not None:
+                return found
+    return None
+
+
+def _make_redirect_handler(interactive: bool) -> Callable[[str], Awaitable[None]]:
+    async def _redirect_handler(auth_url: str) -> None:
+        if not interactive:
+            raise OpenArtAuthRequiredError(reauth_message())
+        print(f"\nOpen this URL to authorize OpenArt:\n{auth_url}\n")
+        webbrowser.open(auth_url)
+
+    return _redirect_handler
+
+
+def _make_callback_handler(
+    interactive: bool,
+) -> Callable[[], Awaitable[tuple[str, str | None]]]:
+    async def _callback_handler() -> tuple[str, str | None]:
+        """Interactive step: prompt for the full redirect URL and parse
+        `code`/`state` out of it (the full URL, not fragments -- live-
+        reproduced paste ambiguity with separate code/state prompts)."""
+        if not interactive:
+            raise OpenArtAuthRequiredError(reauth_message())
+        from urllib.parse import parse_qs, urlsplit
+
+        redirect_url = input(
+            "Paste the FULL redirect URL from your browser's address bar "
+            "(starts with http://localhost:8734/callback...): "
+        ).strip()
+        query = parse_qs(urlsplit(redirect_url).query)
+        code_values = query.get("code")
+        state_values = query.get("state")
+        code = code_values[0] if code_values else ""
+        state = state_values[0] if state_values else None
+        if not code:
+            raise ValueError(f"no 'code' query param found in pasted URL: {redirect_url!r}")
+        return code, state
+
+    return _callback_handler
+
+
+def build_openart_oauth_provider(interactive: bool | None = None) -> OAuthClientProvider:
+    """OAuth provider for both one-time interactive setup and headless reuse.
+
+    `interactive=None` (the default) auto-detects: interactive only when
+    stdin is a real TTY. Non-interactive contexts never prompt -- if the
+    stored token can't be silently refreshed, the consent handlers raise
+    `OpenArtAuthRequiredError` instead.
+    """
+    resolved = sys.stdin.isatty() if interactive is None else interactive
+    provider = OAuthClientProvider(
         server_url=OPENART_MCP_URL,
         client_metadata=OAuthClientMetadata(
             client_name="Persona Reels Crew",
-            redirect_uris=[AnyUrl(_REDIRECT_URI)],
+            redirect_uris=[AnyUrl(CLI_REDIRECT_URI)],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
             scope="full_access",
         ),
         storage=OpenArtTokenStorage(),
-        redirect_handler=_redirect_handler,
-        callback_handler=_callback_handler,
+        redirect_handler=_make_redirect_handler(resolved),
+        callback_handler=_make_callback_handler(resolved),
     )
+    # Must be set BEFORE the first request: it is what points a silent
+    # refresh at the real token endpoint instead of a 404 (see
+    # `_authorization_server_metadata`).
+    provider.context.oauth_metadata = _authorization_server_metadata()
+    return provider
 
 
 if __name__ == "__main__":
@@ -135,12 +204,10 @@ if __name__ == "__main__":
     from mcp.client.streamable_http import streamablehttp_client
 
     async def _setup() -> None:
-        """One-time interactive setup: connecting at all drives the OAuth
-        provider through discovery + DCR + the interactive consent flow if
-        no usable token is stored yet -- the same code path
-        `openart_client.py` uses for headless reuse afterward.
-        """
-        provider = build_openart_oauth_provider()
+        """One-time interactive setup: connecting drives the provider through
+        discovery + DCR + consent if no usable token is stored yet -- the same
+        code path `openart_client.py` then reuses headlessly."""
+        provider = build_openart_oauth_provider(interactive=True)
         async with streamablehttp_client(OPENART_MCP_URL, auth=provider) as (
             read,
             write,

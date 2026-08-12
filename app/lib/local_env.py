@@ -9,6 +9,9 @@ launchd plists. Scripts call `load_local_env()` at startup to bridge the gap.
 Existing values in os.environ are NOT overwritten, so a manual `FB_PAGE_TOKEN=...
 python ...` invocation still wins.
 
+Database DSNs are the one exception: under pytest they are never merged, see
+`_is_under_pytest`.
+
 Also exposes brand-overlay runtime helpers (e.g. `get_runtime_headless`) that
 read `<BRAND_DIR>/brand.json` for env-specific Playwright flags.
 """
@@ -18,12 +21,50 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _SETTINGS_FILE = Path(__file__).resolve().parent.parent.parent / ".claude" / "settings.local.json"
+
+
+def _is_under_pytest() -> bool:
+    """True when this process is a test run.
+
+    Detected via `sys.modules`, NOT `PYTEST_CURRENT_TEST`: that variable is set
+    per-test, so it is absent during *collection* -- which is precisely when the
+    2026-08-12 wipe happened (see `_is_db_key`).
+    """
+    return "pytest" in sys.modules
+
+
+def _is_db_key(key: str) -> bool:
+    """True for keys holding a database DSN.
+
+    These are refused under pytest. On 2026-08-12 the live Postgres was wiped
+    because `settings.local.json` carries the production `DATABASE_URL`, this
+    module merges it at `import lib.config` time, and nearly every test module
+    imports `lib.config` transitively. `tests/conftest.py`'s live-DB guard runs
+    at `pytest_configure` -- BEFORE collection -- so it passed, then collection
+    injected the production DSN behind it and the pg fixtures truncated the real
+    tables. Never letting a DSN reach a test process closes that hole at the
+    source; conftest's `pytest_collection_finish` re-check remains the backstop.
+
+    Tests that legitimately need a database get an explicit, disposable DSN from
+    the invoking command (`DATABASE_URL=...persona_test pytest ...`), which is
+    already in `os.environ` and therefore never passes through this merge.
+    """
+    return key == "DATABASE_URL" or key.endswith("_DATABASE_URL")
+
+
+def _skip_db_key(key: str) -> bool:
+    """Whether `key` must not be merged into os.environ right now."""
+    if not (_is_db_key(key) and _is_under_pytest()):
+        return False
+    logger.debug("refusing to inject %s under pytest; pass an explicit test DSN", key)
+    return True
 
 
 def load_local_env(*, settings_file: Path | None = None) -> int:
@@ -38,7 +79,7 @@ def load_local_env(*, settings_file: Path | None = None) -> int:
     env = data.get("env") or {}
     loaded = 0
     for k, v in env.items():
-        if k in os.environ or v is None:
+        if k in os.environ or v is None or _skip_db_key(k):
             continue
         os.environ[k] = str(v)
         loaded += 1
@@ -215,7 +256,7 @@ def load_brand_env_into_environ(
 
     loaded = 0
     for key, value in load_brand_env(brand_dir).items():
-        if key in os.environ:
+        if key in os.environ or _skip_db_key(key):
             continue
         os.environ[key] = value
         loaded += 1

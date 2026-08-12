@@ -140,7 +140,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
       <p className="text-sm text-slate-500 mb-3">
         Creates the brand row, scaffolds <code className="font-mono text-xs">brands/&lt;slug&gt;/</code>, and
         seeds its <code className="font-mono text-xs">ig-engager</code> /{" "}
-        <code className="font-mono text-xs">fb-scanner</code> schedule.
+        <code className="font-mono text-xs">fb-engager</code> schedule.
       </p>
 
       {showDraftNotice && (

@@ -124,6 +124,10 @@ export const endpoints = {
   /** OAuth — start Facebook OAuth flow (redirect) for one brand. */
   oauthFacebookStart: (brandId: string): string => `/oauth/facebook?brand_id=${enc(brandId)}`,
 
+  /** OAuth — start OpenArt OAuth flow (redirect) for one brand; lands back on returnTo. */
+  oauthOpenartStart: (brandId: string, returnTo: string): string =>
+    `/oauth/openart/start?brand_id=${enc(brandId)}&return_to=${enc(returnTo)}`,
+
   /** OAuth — exchange stored user token for a page token. */
   oauthFacebookPage: (brandId: string, pageId: string): string =>
     `/oauth/facebook/page/${enc(pageId)}?brand_id=${enc(brandId)}`,

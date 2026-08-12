@@ -1,7 +1,8 @@
 """Submit a comment on a Facebook post via an authenticated Playwright page.
 
 Extracted from ``scripts/comment_poster.py`` so the FB comment action
-(``scripts/fb_comment.py``) and any other caller share one posting path
+(``scripts/fb_engager.py`` via ``lib/engagement/adapters/facebook.py``)
+and any other caller share one posting path
 instead of duplicating the brittle FB DOM walk. The caller owns the browser
 context/session; this function only drives one post → comment-box → submit.
 """

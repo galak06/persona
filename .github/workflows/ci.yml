@@ -54,7 +54,7 @@ jobs:
       # scripts/wp_scan.py: the fourth SKILL.md-bound flow, but it carries
       # pre-existing (unrelated) ruff-format drift -- excluded from both
       # lists here, while its test (tests/test_wp_scan_skill.py) is clean
-      # and included. scripts/fb_comment.py and scripts/ig_comment.py are
+      # and included. scripts/fb_engager.py and scripts/ig_comment.py are
       # clean on both and included.
       - name: Ruff check (lint)
         run: >-
@@ -69,12 +69,18 @@ jobs:
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
-          scripts/fb_scan.py scripts/ig_engager.py scripts/fb_group_scout.py
-          scripts/fb_comment.py scripts/ig_comment.py
+          scripts/fb_engager.py scripts/ig_engager.py scripts/fb_group_scout.py
+          scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
+          tests/test_api_first_comment_approval.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
           tests/lib/engagement/test_pipeline.py tests/lib/engagement/_pipeline_fakes.py
+          tests/lib/engagement/test_fb_engager_with_fake.py
+          tests/lib/engagement/test_first_comment_gate.py
+          tests/lib/engagement/test_pipeline_record_publish.py
+          tests/lib/engagement/test_pipeline_like_only.py
+          tests/lib/test_local_env_pytest_guard.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
@@ -118,12 +124,16 @@ jobs:
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
-          scripts/fb_scan.py scripts/ig_engager.py
-          scripts/fb_comment.py scripts/ig_comment.py
+          scripts/fb_engager.py scripts/ig_engager.py
+          scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
+          tests/test_api_first_comment_approval.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
           tests/lib/engagement/_pipeline_fakes.py
+          tests/lib/engagement/test_pipeline_record_publish.py
+          tests/lib/engagement/test_pipeline_like_only.py
+          tests/lib/test_local_env_pytest_guard.py
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_resolver.py
@@ -307,6 +317,7 @@ jobs:
             --timeout=90 --timeout-method=thread \
             tests/test_db.py \
             tests/test_groups_db.py \
+            tests/test_api_first_comment_approval.py \
             tests/test_engagements_db.py \
             tests/test_worker_db.py \
             tests/test_schedule_db.py \
@@ -336,6 +347,11 @@ jobs:
             tests/test_api_session_status.py \
             tests/test_activity_log.py \
             tests/lib/engagement/test_pipeline.py \
+            tests/lib/engagement/test_fb_engager_with_fake.py \
+            tests/lib/engagement/test_first_comment_gate.py \
+            tests/lib/engagement/test_pipeline_record_publish.py \
+            tests/lib/engagement/test_pipeline_like_only.py \
+            tests/lib/test_local_env_pytest_guard.py \
             tests/test_reply_drafter.py \
             tests/test_draft_helper.py \
             tests/test_llm_tracing.py \

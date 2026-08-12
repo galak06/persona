@@ -222,6 +222,7 @@ def test_dispatch_task_skips_row_missing_cron(pg: None, tmp_path: Path) -> None:
     assert queue.pushed == []
 
 
+@requires_postgres
 def test_dispatch_task_skips_skill_only_row_without_warning(
     pg: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -251,6 +252,7 @@ def test_dispatch_task_skips_skill_only_row_without_warning(
     assert "task_missing_script" not in out
 
 
+@requires_postgres
 def test_dispatch_task_still_warns_when_row_has_neither_script_nor_skill(
     pg: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -255,7 +255,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="after --apply, launchctl bootout/bootstrap changed plists",
     )
-    p.add_argument("--only", help="restrict to a single label suffix (e.g. fb-scanner)")
+    p.add_argument("--only", help="restrict to a single label suffix (e.g. fb-engager)")
     p.add_argument("--claude-bin", help="path to the claude CLI binary")
     p.add_argument("--python", help="python3 binary to embed in plists")
     p.add_argument(

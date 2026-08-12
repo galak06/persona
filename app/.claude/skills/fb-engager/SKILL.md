@@ -19,9 +19,10 @@ comments/day (hard limits — `facebook:` block, app/CLAUDE.md Rate Limits).
 
 Single pass, like `ig-engager`: each post is opened once, scored, liked, and
 (if it qualifies) commented on in that one visit — no Redis/JSON queue and
-no separate `fb-comment` drain run. This differs from the older two-stage
-`fb-scanner` → `fb-comment` split (scan-and-queue, then a separate drain
-script); `fb-engager` folds both steps into one run via
+no separate `fb-comment` drain run. This is now THE Facebook engagement
+flow: the old two-stage `fb-scanner` → `fb-comment` split (scan-and-queue,
+then a separate drain script) is retired and its scripts are deleted;
+`fb-engager` folds both steps into one run via
 `lib.engagement.pipeline.run_outbound_scan(..., inline_comment=True)`, using
 `FacebookGroupAdapter`, which already implements the `comment()` method
 (`SupportsComment`) that inline mode requires — the same mechanism
@@ -36,24 +37,26 @@ cd /Users/gilcohen/Projects/persona/app
 python scripts/fb_engager.py
 ```
 
-Requires a saved Facebook session (`.claude/state/facebook_session.json`) —
-the same session used by `fb-scanner`/`fb-comment`. If it's missing or
-expired the run aborts with `SESSION_EXPIRED`; re-establish it the same way
-those skills do.
+Requires a saved Facebook session (`.claude/state/facebook_session.json`).
+If it's missing or expired the run aborts with `SESSION_EXPIRED`;
+re-establish it with `scripts/login.py fb`.
 
 ---
 
 ## What the Script Does
 
 1. **Pre-flight checks** — verifies the saved FB session and that today's
-   `like` budget isn't already exhausted (`can_act('facebook', 'like')`).
+   `like` and `comment` budgets aren't BOTH already exhausted (the run
+   proceeds while either remains; per-action quotas are enforced per post).
 2. **Loads joined groups** — from `lib.groups_db`, the same source
-   `fb-scanner` and `fb-group-publisher` read (Self-Promo/eligibility
-   filters applied the same way).
+   `fb-group-publisher` reads (Self-Promo/eligibility filters applied the
+   same way). Groups still inside the 48h comment warmup are skipped
+   entirely (`WarmFilteredAdapter`) — a newly joined group is never
+   engaged immediately.
 3. **Scans each group feed** — via `FacebookGroupAdapter`, extracting post
    text/url/author/comment-count/timestamp for each visible post.
 4. **Scores relevance** — `lib.comment_generator.score_relevance()`, the
-   same food/GPS/engagement signals `fb-scanner` uses.
+   same food/GPS/engagement signals the retired `fb-scanner` used.
 5. **Likes qualifying posts** — if the post scores at or above the queue
    threshold (0.75) and today's like budget remains.
 6. **Drafts + posts a comment inline** — for posts clearing the
@@ -61,8 +64,12 @@ those skills do.
    calls the bound drafter (this skill's `## LLM Prompt` below) for an
    `{engage, comment, reason}` decision. `engage: true` posts the comment
    immediately via `post_comment_fb`; `engage: false` skips the post with
-   `reason` logged. This decision IS the approval — matching
-   `fb-comment`/`ig-comment`, there is no separate human-in-the-loop step.
+   `reason` logged. This decision IS the approval — matching `ig-comment`,
+   there is no separate human-in-the-loop step — EXCEPT the first-ever
+   comment in each group: `FirstCommentApprovalGate` skips it (the like
+   still happens), flags the group once, and sends one Telegram message
+   asking for one-time approval on the Groups page. Once approved,
+   comments in that group flow inline forever after.
 7. **Updates state** — marks every opened post via `lib.scan_dedup` (so a
    re-run never re-opens it, independent of whether it was engaged),
    records rate-limit counters, and writes the last-run timestamp.
@@ -78,7 +85,8 @@ those skills do.
 - Random delays between group visits and between actions — no back-to-back
   navigation.
 - The `engage`/`comment`/`reason` decision from the LLM Prompt below is the
-  approval gate for the comment — no separate Telegram confirmation.
+  approval gate for the comment — no separate Telegram confirmation, except
+  the one-time first-comment-per-group approval (Groups page) above.
 
 ---
 

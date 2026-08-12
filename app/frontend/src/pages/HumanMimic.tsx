@@ -13,7 +13,7 @@ import FlowReadinessPanel from "../components/FlowReadinessPanel";
  * person, not a bot") side of a brand in one place: saved login sessions
  * (this page's own session-status query, single-tenant like its
  * Engagement-section siblings) and flow status/Run Now for
- * ig-engager/fb-scanner/fb-group-scout (moved here from Brand Settings —
+ * ig-engager/fb-engager/fb-group-scout (moved here from Brand Settings —
  * `FlowReadinessPanel` is brand-scoped via `useBrand()`'s sidebar
  * selection, same fallback the standalone `/connect` route uses).
  */

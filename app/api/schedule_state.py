@@ -37,8 +37,7 @@ def _paths() -> BrandPaths:
 # Map plist short-name (label suffix) → parent flow_id. Anything not in the
 # map maps to None and renders unparented in the UI.
 _LABEL_TO_FLOW: dict[str, str] = {
-    "fb-scanner": "engagement-comment",
-    "fb-comment": "engagement-comment",
+    "fb-engager": "engagement-comment",
     "ig-engager": "engagement-comment",
     "ig-comment": "engagement-comment",
     "comment-approver": "engagement-comment",
@@ -64,8 +63,7 @@ _LABEL_TO_FLOW: dict[str, str] = {
 
 # Map plist short-name → cron log filename (in settings.paths.logs_dir).
 _LABEL_TO_LOG: dict[str, str] = {
-    "fb-scanner": "cron_fb_scan.log",
-    "fb-comment": "cron_fb_comment.log",
+    "fb-engager": "cron_fb_engager.log",
     "ig-engager": "cron_ig_engager.log",
     "ig-comment": "cron_ig_comment.log",
     "comment-approver": "cron_comment_approver.log",

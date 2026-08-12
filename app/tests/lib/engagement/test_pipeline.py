@@ -3,6 +3,12 @@
 Exercises the pipeline via ``FakeAdapter`` and small in-test fakes.
 Fakes + factories live in ``_pipeline_fakes`` to keep this file lean.
 No I/O, no ``tmp_path``, no production singletons.
+
+This file covers the orchestration shared by both modes — enumeration,
+dedup gate, pre-filter, scoring, the like step, rate budgets, report
+counters. The queue stage is retired: ``inline_comment=False`` is only a
+like-only degrade (candidates are counted, never retained), and the
+single-pass comment behavior lives in ``test_pipeline_inline_comment``.
 """
 
 from __future__ import annotations
@@ -11,7 +17,6 @@ from lib.engagement.adapters.fake import FakeAdapter
 from tests.lib.engagement._pipeline_fakes import (
     FakeDedup,
     FakeLog,
-    FakeQueueIO,
     FakeRateTracker,
     make_ig_posts,
     make_policy,
@@ -23,25 +28,23 @@ from tests.lib.engagement._pipeline_fakes import (
 
 def test_empty_source_list_returns_empty_report() -> None:
     adapter = FakeAdapter("instagram", [], {})
-    report, _d, _rt, _dr, q = run(adapter)
+    report, _d, _rt, _dr = run(adapter)
     assert report.sources_visited == 0
     assert report.posts_scanned == 0
+    assert report.candidates == 0
     assert report.queued == 0
-    assert q.appended == []
-    assert q.saved is True
 
 
-def test_high_score_post_queued_top_n_by_score() -> None:
-    """IG quota=3: top-3 of 5 same-score posts queued; all valid."""
+def test_high_score_posts_are_counted_and_never_queued() -> None:
+    """Like-only mode counts candidates; the queue stage no longer exists."""
     src = make_src("s1")
     posts = make_ig_posts(5)
     adapter = FakeAdapter("instagram", [src], {"s1": posts})
-    report, _d, _rt, _dr, q = run(adapter, policy=make_policy(ig_comment_quota=3))
+    report, _d, _rt, drafter = run(adapter, policy=make_policy(ig_comment_quota=3))
     assert report.candidates == 5
-    assert report.queued == 3
-    assert len(q.appended) == 3
-    for record in q.appended:
-        assert record["relevance_score"] == 0.85
+    assert report.queued == 0, "the report's queued counter is hardwired to 0"
+    assert drafter.calls == [], "like-only mode must not draft"
+    assert adapter.comments == []
 
 
 def test_dedup_skips_already_seen_posts() -> None:
@@ -52,11 +55,12 @@ def test_dedup_skips_already_seen_posts() -> None:
         make_post("p3", "food question?"),
     ]
     adapter = FakeAdapter("instagram", [src], {"s1": posts})
-    report, _d, _rt, _dr, q = run(adapter, dedup=FakeDedup(seen={"p1"}))
+    report, _d, _rt, _dr = run(adapter, dedup=FakeDedup(seen={"p1"}))
     assert report.posts_scanned == 3
-    queued_ids = [r["post_id"] for r in q.appended]
-    assert "p1" not in queued_ids
-    assert set(queued_ids) == {"p2", "p3"}
+    liked_ids = {p.post_id for p in adapter.likes_attempted}
+    assert "p1" not in liked_ids, "a duplicate post was re-engaged"
+    assert liked_ids == {"p2", "p3"}
+    assert report.candidates == 2
 
 
 def test_pre_filter_rejection_counted_in_report() -> None:
@@ -66,30 +70,27 @@ def test_pre_filter_rejection_counted_in_report() -> None:
         "instagram", [src], {"s1": posts},
         pre_filter_overrides={"p1": "competitor"},
     )
-    report, _d, _rt, _dr, q = run(adapter)
+    report, _d, _rt, _dr = run(adapter)
     assert report.pre_filtered == {"competitor": 1}
-    queued_ids = {r["post_id"] for r in q.appended}
-    assert "p1" not in queued_ids and "p2" in queued_ids
+    assert report.candidates == 1
     # Pre-filtered post is never offered to .like()
     assert all(post.post_id != "p1" for post in adapter.likes_attempted)
 
 
 def test_below_candidate_threshold_skipped() -> None:
-    """Posts without 'food' score 0.40 (below 0.70) — no like, no queue."""
+    """Posts without 'food' score 0.40 (below 0.70) — no like, no candidacy."""
     src = make_src("s1")
     posts = [make_post("p1", "boring question?"), make_post("p2", "ok?")]
     adapter = FakeAdapter("instagram", [src], {"s1": posts})
-    report, _d, _rt, _dr, q = run(adapter)
+    report, _d, _rt, _dr = run(adapter)
     assert report.candidates == 0
-    assert report.queued == 0
-    assert q.appended == []
     assert adapter.likes_attempted == []
 
 
 def test_ig_like_step_called_for_qualifying_posts() -> None:
     src = make_src("s1")
     adapter = FakeAdapter("instagram", [src], {"s1": [make_post("p1", "food question?")]})
-    report, _d, rt, _dr, _q = run(adapter)
+    report, _d, rt, _dr = run(adapter)
     assert len(adapter.likes_succeeded) == 1
     assert adapter.likes_succeeded[0].post_id == "p1"
     assert ("instagram", "like") in rt.recorded
@@ -97,14 +98,13 @@ def test_ig_like_step_called_for_qualifying_posts() -> None:
     assert report.likes_attempted == 1
 
 
-def test_fb_like_failure_still_queues_post() -> None:
-    """A like that fails (LikeResult.failed) does not block queueing.
+def test_fb_like_failure_still_counts_the_candidate() -> None:
+    """A like that fails (LikeResult.failed) does not disqualify the post.
 
     Requires ``fb_like_quota>0`` — the pipeline gates the like step by
     ``policy.daily_like_quota[platform] > 0`` to avoid calling
     ``rate_tracker.can_act("facebook", "like")`` on the production
     rate_limiter (which would raise ``ValueError: Unknown action key``).
-    Slice 4 wires real FB inline-like; here we just exercise the path.
     """
     src = make_src("g1", name="grp1")
     posts = [
@@ -115,58 +115,25 @@ def test_fb_like_failure_still_queues_post() -> None:
     ]
     adapter = FakeAdapter("facebook", [src], {"g1": posts}, like_should_fail=True)
     rt = FakeRateTracker(visits_left=10, likes_left=10)
-    report, _d, _rt, _dr, q = run(
+    report, _d, _rt, _dr = run(
         adapter,
         policy=make_policy(fb_like_quota=10),
         rate_tracker=rt,
     )
     assert report.likes_attempted == 1
     assert report.likes_succeeded == 0
-    assert len(q.appended) == 1
-    assert q.appended[0]["post_id"] == "p1"
-
-
-def test_ig_requires_approval_always_true() -> None:
-    """IG always sets requires_approval=True, even at high score."""
-    src = make_src("s1")
-    # Score 0.85 ≥ approval_threshold 0.80, but IG forces approval.
-    adapter = FakeAdapter("instagram", [src], {"s1": [make_post("p1", "food question?")]})
-    _r, _d, _rt, _dr, q = run(adapter)
-    assert len(q.appended) == 1
-    assert q.appended[0]["requires_approval"] is True
-
-
-def test_quota_cap_enforced() -> None:
-    src = make_src("s1")
-    adapter = FakeAdapter("instagram", [src], {"s1": make_ig_posts(10)})
-    report, _d, _rt, _dr, q = run(adapter, policy=make_policy(ig_comment_quota=5))
-    assert report.candidates == 10
-    assert report.queued == 5
-    assert len(q.appended) == 5
-
-
-def test_existing_today_reduces_budget() -> None:
-    src = make_src("s1")
-    adapter = FakeAdapter("instagram", [src], {"s1": make_ig_posts(10)})
-    queue = FakeQueueIO(existing_today_count=3)
-    report, _d, _rt, _dr, q = run(
-        adapter, policy=make_policy(ig_comment_quota=5), queue_io=queue
-    )
-    assert report.candidates == 10
-    assert report.queued == 2
-    assert len(q.appended) == 2
+    assert report.candidates == 1
 
 
 def test_ig_question_mark_gate() -> None:
-    """High-score IG post lacking '?' is liked but NOT queued."""
+    """High-score IG post lacking '?' is liked but is NOT a comment candidate."""
     src = make_src("s1")
     adapter = FakeAdapter(
         "instagram", [src], {"s1": [make_post("p1", "food story without question.")]}
     )
-    report, _d, _rt, _dr, q = run(adapter)
+    report, _d, _rt, _dr = run(adapter)
     assert report.likes_succeeded == 1
     assert report.candidates == 0
-    assert q.appended == []
 
 
 def test_fb_visit_budget_aborts_iteration() -> None:
@@ -183,14 +150,14 @@ def test_fb_visit_budget_aborts_iteration() -> None:
     }
     adapter = FakeAdapter("facebook", sources, posts_by_source)
     rt = FakeRateTracker(visits_left=2, likes_left=0)
-    report, _d, _rt, _dr, _q = run(adapter, rate_tracker=rt)
+    report, _d, _rt, _dr = run(adapter, rate_tracker=rt)
     assert report.sources_visited == 2
     assert report.posts_scanned == 2  # one post per visited source
 
 
 def test_scanned_and_liked_posts_are_logged() -> None:
     """Every visited post logs post_scanned; a successful like logs post_liked --
-    the trail an operator needs to verify the scanner is really running and
+    the trail an operator needs to verify the engager is really running and
     see which posts it liked (previously silent, see lib/bootstrap.py)."""
     src = make_src("s1")
     adapter = FakeAdapter("instagram", [src], {"s1": [make_post("p1", "food question?")]})
@@ -223,21 +190,21 @@ def test_scan_report_counts_accurate() -> None:
     s1 = make_src("s1", name="src1")
     s2 = make_src("s2", name="src2")
     s1_posts = [
-        make_post("p1", "food question?"),    # queued + liked
+        make_post("p1", "food question?"),    # candidate + liked
         make_post("p2", "boring question?"),  # below threshold
         make_post("p3", "food question?"),    # pre-filtered
         make_post("p4", "food question?"),    # dedup skip
     ]
     s2_posts = [
-        make_post("p5", "food question?"),    # queued + liked
-        make_post("p6", "food story."),       # liked, no '?' → not queued
+        make_post("p5", "food question?"),    # candidate + liked
+        make_post("p6", "food story."),       # liked, no '?' → not a candidate
     ]
     adapter = FakeAdapter(
         "instagram", [s1, s2],
         {"s1": s1_posts, "s2": s2_posts},
         pre_filter_overrides={"p3": "competitor"},
     )
-    report, _d, _rt, _dr, q = run(adapter, dedup=FakeDedup(seen={"p4"}))
+    report, _d, _rt, _dr = run(adapter, dedup=FakeDedup(seen={"p4"}))
 
     assert report.sources_visited == 2
     assert report.posts_scanned == 6
@@ -247,6 +214,5 @@ def test_scan_report_counts_accurate() -> None:
     #   p2 below, p3 pre-filtered, p4 dedup-skipped before like
     assert report.likes_attempted == 3
     assert report.likes_succeeded == 3
-    assert report.queued == 2
+    assert report.queued == 0
     assert report.pre_filtered == {"competitor": 1}
-    assert {r["post_id"] for r in q.appended} == {"p1", "p5"}

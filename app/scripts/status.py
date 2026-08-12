@@ -69,13 +69,13 @@ def status_icon(last_run_entry: dict) -> str:
     return "⬜"
 
 
-def _ig_engager_stat(entry: dict) -> str:
-    """One-line IG engager stat, for both the single-pass and legacy shapes.
+def _engager_stat(entry: dict) -> str:
+    """One-line engager stat, for both the single-pass and legacy shapes.
 
-    Instagram is single-pass now: ``ig_engager.py`` likes and comments in one
-    visit and writes ``posts_commented`` / ``comments_declined``. Entries
-    written before that migration (and Facebook's, which is still two-stage)
-    carry ``posts_queued_for_comment`` instead, so fall back to it rather
+    Both engagers are single-pass now: ``ig_engager.py`` and ``fb_engager.py``
+    like and comment in one visit and write ``posts_commented`` /
+    ``comments_declined``. Entries written before that migration carry
+    ``posts_queued_for_comment`` instead, so fall back to it rather
     than rendering a bare "?" against old runs.
     """
     liked = entry.get("posts_liked", "?")
@@ -111,7 +111,7 @@ def main() -> None:
 
     skill_keys = {
         "site-analyzer": "site_analyzer",
-        "fb-scanner": "fb_scanner",
+        "fb-engager": "fb_engager",
         "ig-engager": "ig_engager",
         "comment-composer": "comment_composer",
         "fb-group-scout": "fb_group_scout",
@@ -132,12 +132,8 @@ def main() -> None:
 
         # Extra stat
         stat = ""
-        if key == "fb_scanner":
-            stat = (
-                f"groups={entry.get('groups_scanned', '?')} queued={entry.get('posts_queued', '?')}"
-            )
-        elif key == "ig_engager":
-            stat = _ig_engager_stat(entry)
+        if key in ("fb_engager", "ig_engager"):
+            stat = _engager_stat(entry)
         elif key == "comment_composer":
             stat = f"posted={entry.get('comments_posted', '?')} skipped={entry.get('comments_skipped', '?')}"
         elif key == "fb_group_scout":

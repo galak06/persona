@@ -108,7 +108,7 @@ def validate_voice(
     allow_own_url: when True, the "your-brand.com" phrase is excluded from
     the SALESY check. Only brand publishers that bake the URL into post
     bodies (FB group posts, FB page link cards, IG carousel captions) may
-    pass True. Engagement-comment paths (fb_scanner, ig_engager,
+    pass True. Engagement-comment paths (fb_engager, ig_engager,
     wp_comment_handler, comment_composer) MUST use the default (False) so
     third-party replies never carry our URL.
 

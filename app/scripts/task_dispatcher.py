@@ -217,7 +217,7 @@ def run_once(
 
     A single row raising never stops the rest -- logged + Telegram-notified,
     then the pass continues to the next row. A row for a managed flow
-    (`ig-engager`/`fb-scanner`/`fb-group-scout`) not currently in the
+    (`ig-engager`/`fb-engager`/`fb-group-scout`) not currently in the
     brand's `enabled_flows` is skipped (not treated as an error) -- this is
     what makes disabling a flow in settings take effect on the very next
     dispatch pass, with no re-provisioning or row deletion needed.

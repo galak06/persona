@@ -1,47 +1,64 @@
 """Trigger the CrewAI reels pipeline from the frontend.
 
-  POST /api/v1/reels/compose         — start a compose run in the background
-  GET  /api/v1/reels/compose/status  — is one running / how did the last end
+  POST /api/v1/reels/compose         — dispatch a compose run to the worker
+  GET  /api/v1/reels/compose/status  — is one queued/running / how did it end
 
-Structural twin of `api.ideas_generate_api`, for the same reason: the Reels
-page could only *review* reels; composing them meant a terminal. This module
-owns exactly one concern — running `scripts/crewai_reels_pipeline.py` on
-demand so the 🎬 button exists.
+**The run executes on the worker, not here.** Composing a reel needs ffmpeg
+and real fonts; `Dockerfile.api` deliberately ships neither ("video
+composition happens on the host"), so running the pipeline as an API
+subprocess died on `OSError: cannot open resource` from PIL's font loader
+and never produced a reel. `persona-worker-1` already has both, so this
+module now *dispatches* instead of executing: it pushes a `flow-run` item
+onto the same Redis queue `scripts/task_dispatcher.py` and
+`POST /brands/{id}/flows/{flow_id}/run` use, and `scripts/task_worker.py`
+picks it up, runs the pipeline with the brand's own environment, and records
+the outcome in `worker_runs`.
 
-Concurrency: one run at a time via a non-blocking module-level lock. The
-pipeline claims ideas row-by-row (`composing_reel` guards concurrent runs at
-the DB layer too), but two runs would still race the OpenArt/ffmpeg work and
-double the spend — a second click while one is in flight gets 409.
+Status therefore reads that shared `worker_runs` row rather than any
+in-process global -- the API process no longer owns the run and may not even
+be the process that started it.
+
+Concurrency: one run at a time, enforced against the shared row (a run
+already `queued`/`running` gets 409) under a local mutex that makes the
+check-then-enqueue atomic within this process.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import sys
 import threading
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from lib import brands_db, worker_db
+from lib.task_queue import TaskQueue
+
 # Per idea: crew + image generation + two ffmpeg renders. A five-idea batch
 # runs well past the scout's 900s, so this ceiling is wider.
 _COMPOSE_TIMEOUT_SECONDS = 1800
+_PIPELINE_SCRIPT = "scripts/crewai_reels_pipeline.py"
+# Must match scripts/task_worker.py's QUEUE_WORKER -- same Redis list.
+_QUEUE_WORKER = "flow-run"
+_FLOW_ID = "reels-compose"
+
+# Statuses that mean "a run is already in flight". `queued` is written here at
+# dispatch so a second click is refused before the worker has picked the item
+# up; the worker overwrites it with `running`, then the terminal status.
+_QUEUED = "queued"
+_RUNNING = "running"
+_IN_FLIGHT = frozenset({_QUEUED, _RUNNING})
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["reels"])
 
-_run_lock = threading.Lock()
-# Written only while _run_lock is held (or before any run exists) -- the
-# status endpoint reads it lock-free, which is safe for a dict swapped
-# atomically by reference.
-_last_run: dict[str, Any] = {}
+# Makes check-then-enqueue atomic within this process. NOT the run's lifetime
+# lock (the run outlives this request, in another container) -- the shared
+# `worker_runs` row is the real single-flight guard.
+_dispatch_lock = threading.Lock()
 
 
 class ComposeStatus(BaseModel):
@@ -50,86 +67,127 @@ class ComposeStatus(BaseModel):
     finished_at: str | None = None
     ok: bool | None = None
     detail: str | None = None
+    # Purely informational: how many beat images came from OpenArt vs the
+    # post's hero image. Images are resolved per beat, so any mix is an
+    # ordinary success -- OpenArt is an opt-in upgrade, never an error.
+    used_openart: bool | None = None
+    ai_images: int | None = None
+    hero_images: int | None = None
 
 
-def _run_pipeline() -> None:
-    """The background task: run the pipeline subprocess and record the outcome.
+def _image_counts(message: str) -> tuple[int | None, int | None]:
+    """AI vs hero image counts from the pipeline's own summary line, as
+    captured into `worker_runs.message`. `(None, None)` when no reel was
+    composed (nothing to report)."""
+    for line in reversed(message.splitlines()):
+        if not line.startswith("summary: "):
+            continue
+        try:
+            counts = json.loads(line[len("summary: ") :])
+        except ValueError:
+            return None, None
+        if not isinstance(counts, dict):
+            return None, None
+        ai = counts.get("ai_images")
+        hero = counts.get("hero_images")
+        if isinstance(ai, int) and isinstance(hero, int):
+            return ai, hero
+        return None, None
+    return None, None
 
-    The lock is acquired by the ROUTE (so the 409 answer is immediate) and
-    released here when the run finishes -- acquire/release straddle the
-    background boundary on purpose.
+
+def _brand() -> tuple[str, str]:
+    """(brand_id, brand_dir) for the brand this API serves.
+
+    `brand_dir` comes from the brands table, not this process's own
+    `BRAND_DIR`: the worker resolves the path inside ITS container, and the
+    registered value is the one both agree on.
     """
-    global _last_run
-    started = datetime.now(UTC).isoformat()
-    outcome: dict[str, Any] = {"running": True, "started_at": started}
-    _last_run = outcome
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "scripts.crewai_reels_pipeline"],
-            cwd=_PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=_COMPOSE_TIMEOUT_SECONDS,
-        )
-        tail = (result.stdout or "").strip().splitlines()[-3:]
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": result.returncode == 0,
-            "detail": " | ".join(tail) if result.returncode == 0 else (result.stderr or "")[-500:],
-        }
-        log.info(
-            json.dumps(
-                {
-                    "event": "reels_compose_finished",
-                    "returncode": result.returncode,
-                    "stdout_tail": tail,
-                }
-            )
-        )
-    except subprocess.TimeoutExpired:
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": False,
-            "detail": f"compose timed out after {_COMPOSE_TIMEOUT_SECONDS}s",
-        }
-        log.error(json.dumps({"event": "reels_compose_timeout"}))
-    except Exception as exc:
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": False,
-            "detail": str(exc)[-500:],
-        }
-        log.error(json.dumps({"event": "reels_compose_error", "error": str(exc)}))
-    finally:
-        _run_lock.release()
+    from lib.oauth.openart_store import resolve_brand_id
+
+    brand_id = resolve_brand_id()
+    row = brands_db.get(brand_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"brand '{brand_id}' is not registered")
+    brand_dir = str(row.get("brand_dir") or "")
+    if not brand_dir:
+        raise HTTPException(status_code=500, detail=f"brand '{brand_id}' has no brand_dir")
+    return brand_id, brand_dir
+
+
+def _label(brand_id: str) -> str:
+    """`worker_runs.worker_label` for this flow.
+
+    Prefixed with the brand so `task_worker._write_flow_log` strips it back to
+    `reels-compose` and writes `logs/cron_reels_compose.log`, matching the
+    convention the Explorer page's log viewer already expects.
+    """
+    return f"{brand_id}-{_FLOW_ID}"
 
 
 @router.post("/reels/compose", status_code=202)
-def compose_reels(background_tasks: BackgroundTasks) -> dict[str, str]:
-    """Start one pipeline run. 202 immediately; poll /reels/compose/status."""
-    if not _run_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="a compose run is already in progress")
-    background_tasks.add_task(_run_pipeline)
+def compose_reels() -> dict[str, str]:
+    """Dispatch one pipeline run to the worker. 202 immediately; poll
+    /reels/compose/status.
+
+    Deliberately no OpenArt pre-flight. OpenArt is an optional upgrade, not a
+    prerequisite: an unconfigured or unauthorized brand still composes reels
+    from the post's hero image (see `scripts.reels_images`), so refusing the
+    run here would block a feature that works fine without it.
+    """
+    brand_id, brand_dir = _brand()
+    label = _label(brand_id)
+
+    with _dispatch_lock:
+        current = worker_db.get_one(brand_dir, label, brand_id)
+        if current is not None and str(current.get("status")) in _IN_FLIGHT:
+            raise HTTPException(status_code=409, detail="a compose run is already in progress")
+
+        # Recorded BEFORE the push so the status endpoint reports the run the
+        # moment this returns, rather than a gap where it looks idle until the
+        # worker's own record_start lands.
+        worker_db.record_start(brand_dir, label, brand_id)
+        payload: dict[str, Any] = {
+            "schedule_task_id": label,
+            "script": _PIPELINE_SCRIPT,
+            "args": [],
+            "brand": brand_id,
+            "brand_dir": brand_dir,
+            "timeout_seconds": _COMPOSE_TIMEOUT_SECONDS,
+        }
+        TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+
+    log.info(json.dumps({"event": "reels_compose_dispatched", "brand": brand_id, "label": label}))
     return {"status": "started"}
 
 
 @router.get("/reels/compose/status", response_model=ComposeStatus)
 def compose_status() -> ComposeStatus:
-    """State of the current/last run, for the frontend's polling loop."""
-    if _run_lock.locked() and _last_run.get("running"):
-        return ComposeStatus(running=True, started_at=_last_run.get("started_at"))
-    if not _last_run:
+    """State of the current/last run, for the frontend's polling loop.
+
+    Read from the shared `worker_runs` row, so it reflects a run executing in
+    the worker container (and survives an API restart mid-run).
+    """
+    brand_id, brand_dir = _brand()
+    row = worker_db.get_one(brand_dir, _label(brand_id), brand_id)
+    if row is None:
         return ComposeStatus(running=False)
+
+    status = str(row.get("status") or "")
+    last_run = row.get("last_run")
+    last_run_str = str(last_run) if last_run else None
+    if status in _IN_FLIGHT:
+        # Queued counts as in-progress: the user clicked, work is coming.
+        return ComposeStatus(running=True, started_at=last_run_str)
+
+    message = str(row.get("message") or "")
+    ai_images, hero_images = _image_counts(message)
     return ComposeStatus(
         running=False,
-        started_at=_last_run.get("started_at"),
-        finished_at=_last_run.get("finished_at"),
-        ok=_last_run.get("ok"),
-        detail=_last_run.get("detail"),
+        finished_at=last_run_str,
+        ok=status == "success",
+        detail=message[-500:],
+        used_openart=None if ai_images is None else ai_images > 0,
+        ai_images=ai_images,
+        hero_images=hero_images,
     )

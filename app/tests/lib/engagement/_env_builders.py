@@ -1,24 +1,19 @@
-"""Tmp-path environment builders for the FB + IG scanner tests.
+"""Tmp-path environment builders for the FB + IG engager tests.
 
-Extracted from ``conftest.py`` to keep that file under the 300-line cap.
-The conftest still owns the public ``@pytest.fixture`` declarations and
-re-exports ``read_queue``; this module owns the heavy wiring (config
-payloads, bare-module path patches, collaborator stubs).
-
-Both FB and IG follow the same recipe: build a tmp brand-dir layout,
-point ``AppSettings`` + scanner-module path constants at it, then stub
-the external collaborators the pipeline calls (Gemini drafter, Telegram
-notifier, random delays, log writers).
+Extracted from ``conftest.py`` (which owns the public ``@pytest.fixture``
+declarations) to keep both files under the 300-line cap. Both FB and IG
+follow the same recipe: build a tmp brand-dir layout, point ``AppSettings``
++ engager-module path constants at it, then stub the external collaborators
+the pipeline calls (Telegram notifier, random delays, log writers, the
+groups-db-backed first-comment gate).
 
 Why the bare-module patching dance:
-    ``pyproject.toml`` sets ``pythonpath = ["lib"]``, so
-    ``scripts/fb_scan.py`` (and ``ig_engager.py``) imports collaborators as
-    bare top-level modules (``import rate_limiter``) — NOT via the
-    ``lib.`` namespace. Python creates two distinct module objects for
-    the same source file: ``rate_limiter`` and ``lib.rate_limiter``.
-    Patching ``lib.rate_limiter.STATE_FILE`` would silently miss what
-    the scanner reads. We patch the bare-name modules instead. This is
-    the "dual-module-identity footgun" — slice 5 work.
+    ``pyproject.toml`` sets ``pythonpath = ["lib"]``, so the engagers import
+    collaborators as bare top-level modules (``import rate_limiter``) — NOT
+    via the ``lib.`` namespace. Python creates two distinct module objects
+    for the same source file, so patching ``lib.rate_limiter.STATE_FILE``
+    would silently miss what the engager reads. We patch the bare-name
+    modules instead. This is the "dual-module-identity footgun" — slice 5.
 """
 from __future__ import annotations
 
@@ -39,6 +34,7 @@ def build_config_payload() -> dict[str, Any]:
         "rate_limits": {
             "facebook": {
                 "comments_per_day": 5,
+                "likes_per_day": 5,
                 "group_visits_per_day": 6,
             },
             "instagram": {
@@ -50,9 +46,9 @@ def build_config_payload() -> dict[str, Any]:
 
 
 def seed_empty_state(*paths: Path) -> None:
-    """Write the empty-collection shape each scanner expects on first read."""
+    """Write the empty-collection shape each engager expects on first read."""
     for p in paths:
-        p.write_text("[]" if p.name == "comment_queue.json" else "{}")
+        p.write_text("{}")
 
 
 def patch_bare_path_modules(
@@ -64,7 +60,7 @@ def patch_bare_path_modules(
 ) -> None:
     """Redirect module-level path constants on the BARE-name modules.
 
-    Scanners + the new shared pipeline both reach for these as bare
+    Engagers + the shared pipeline both reach for these as bare
     modules (``import deduplication``); ``lib.<name>`` would miss.
     """
     if dedup_file is not None:
@@ -84,20 +80,15 @@ def patch_bare_path_modules(
 
 
 def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the bare-module collaborators the new pipeline injects.
+    """Stub the bare-module collaborators the pipeline injects.
 
-    Post-slice-3 the scanners pass ``rate_limiter`` / ``deduplication``
-    modules into ``run_outbound_scan`` instead of looking those names up on
-    the scanner module. Patching must happen on the bare modules now. The
-    real ``can_act`` is used unchanged — the pipeline gates the like step by
-    ``policy.daily_like_quota[platform] > 0`` before probing it, so
-    ``facebook:like`` (absent from ``DAILY_LIMITS``) is never looked up in
-    production.
-
-    Drafting is NOT stubbed here: ``fb_scan`` is scan-only (``drafter=None``)
-    and every drafting flow now injects a ``draft_helper.SkillDrafter``
-    instance, so tests that need a fake draft patch that instance (see
-    ``test_ig_engager_with_fake``).
+    The engagers pass the ``rate_limiter`` / ``deduplication`` modules into
+    ``run_outbound_scan``, so patching must happen on the bare modules. The
+    real ``can_act`` is used unchanged — quotas resolve against the tmp
+    state file redirected by ``patch_bare_path_modules``. Drafting is NOT
+    stubbed here: both engagers inject a ``draft_helper.SkillDrafter``
+    instance bound at import, so tests patch that instance (see
+    ``test_ig_engager_with_fake`` / ``test_fb_engager_with_fake``).
     """
     import rate_limiter as bare_rate_limiter
 
@@ -109,25 +100,60 @@ def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
 def stub_skill_notifications(
     monkeypatch: pytest.MonkeyPatch, scanner_module: Any
 ) -> None:
-    """No-op the Telegram skill-notification hooks on a scanner module."""
+    """No-op the Telegram skill-notification hooks on an engager module."""
     for fn_name in ("skill_started", "skill_finished", "skill_skipped"):
         monkeypatch.setattr(scanner_module, fn_name, lambda *_a, **_k: None)
 
 
-def build_fb_environment(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    stub_mark_engaged: bool = True,
-) -> dict[str, Path]:
-    """Tmp-path environment for ``scripts.fb_scan`` tests.
+def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sever ``ScanDedup``'s Postgres side so single-pass tests stay hermetic.
 
-    Patches the AppSettings singleton paths AND the module-level path
-    constants in ``scripts.fb_scan``, bare ``deduplication``, and bare
-    ``rate_limiter``. Stubs Gemini drafter, Telegram notifier, sleep
-    delays, and (optionally) ``mark_engaged``. Pass ``stub_mark_engaged=
-    False`` to let the production call path execute against the tmp
-    dedup file (used by the signature-regression test).
+    Both engagers pass ``lib.scan_dedup.ScanDedup``, whose iterate-once
+    seen-marks live in Postgres ``completed_tasks``. Tests want neither the
+    DB dependency nor the cross-test pollution real marks cause, so the two
+    Postgres calls ``scan_dedup`` binds by name are stubbed: reads return an
+    empty set, writes are no-ops. Iterate-once still works WITHIN a run via
+    ScanDedup's in-memory ``_seen_ids`` set; the JSON ``deduplication`` side
+    keeps using the tmp cache (via ``patch_bare_path_modules``).
+
+    The inline-comment persistence sinks (``log_engagement`` JSONL +
+    ``engagements_db.record_publish``) are already no-oped for every test in
+    this directory by conftest's autouse ``_hermetic_engagement_sinks``.
+    """
+    import lib.scan_dedup as scan_dedup
+
+    monkeypatch.setattr(scan_dedup, "completed_entity_ids", lambda *_a, **_k: set())
+    monkeypatch.setattr(scan_dedup, "record_done", lambda *_a, **_k: True)
+
+
+def _approved_group_row(group_url: str) -> dict[str, Any]:
+    """A groups-db row whose first comment is already human-approved."""
+    return {
+        "group_url": group_url,
+        "group_name": f"Group {group_url.rstrip('/').rsplit('/', 1)[-1]}",
+        "first_comment_approved_at": "2026-01-01T00:00:00+00:00",
+        "first_comment_flagged_at": "",
+    }
+
+
+def build_fb_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Path]:
+    """Tmp-path environment for ``scripts.fb_engager`` tests (SINGLE-PASS).
+
+    Facebook mirrors Instagram now: no ``QUEUE_FILE`` to patch. Redirects
+    the AppSettings singleton paths AND the path constants ``fb_engager``
+    owns (``LAST_RUN_FILE``, ``CONFIG_FILE``, ``SESSION_FILE``), plus the
+    bare dedup/rate/log path modules, then neutralizes what a run reaches
+    for: ``ScanDedup``'s Postgres backend, the Telegram hooks (``skill_*``
+    no-oped; ``fb_engager.send`` — the first-comment gate's notifier —
+    stubbed to return True; gate tests re-patch it with a recorder), the
+    gate's groups-db seams (``get_by_url`` returns an APPROVED row for any
+    URL, ``set_first_comment_flagged`` returns False — gate tests re-patch
+    both), the warmup filter (``lib.group_warmup._load_tracker`` returns
+    ``[]`` so the REAL ``is_group_warm`` logic says warm; warmup tests
+    re-patch it with recent ``joined_at`` rows), ``log_trace`` and delays.
+    Returns the tmp paths tests assert against.
     """
     brand_dir = tmp_path / "brand"
     state_dir = brand_dir / "state"
@@ -136,15 +162,15 @@ def build_fb_environment(
     for d in (state_dir, logs_dir, data_dir):
         d.mkdir(parents=True)
 
-    queue_file = state_dir / "comment_queue.json"
     last_run_file = state_dir / "last_run.json"
     rate_limit_file = state_dir / "rate_limit_tracker.json"
     dedup_file = state_dir / "dedup_cache.json"
     fb_session_file = state_dir / "facebook_session.json"
     config_file = brand_dir / "config.json"
+    engagement_log_path = logs_dir / "engagement_log.jsonl"
 
     config_file.write_text(json.dumps(build_config_payload()))
-    seed_empty_state(dedup_file, rate_limit_file, queue_file)
+    seed_empty_state(dedup_file, rate_limit_file, last_run_file)
 
     from lib.config import settings as live_settings
 
@@ -153,66 +179,59 @@ def build_fb_environment(
     monkeypatch.setattr(live_settings.paths, "state_dir", state_dir)
     monkeypatch.setattr(live_settings.paths, "logs_dir", logs_dir)
     monkeypatch.setattr(live_settings.paths, "data_dir", data_dir)
-    monkeypatch.setattr(live_settings.paths, "comment_queue", queue_file)
     monkeypatch.setattr(live_settings.paths, "last_run", last_run_file)
     monkeypatch.setattr(live_settings.paths, "rate_limit_tracker", rate_limit_file)
     monkeypatch.setattr(live_settings.paths, "dedup_cache", dedup_file)
     monkeypatch.setattr(live_settings.paths, "facebook_session", fb_session_file)
 
-    import scripts.fb_scan as fb_scan
+    import scripts.fb_engager as fb_engager
 
-    monkeypatch.setattr(fb_scan, "QUEUE_FILE", queue_file)
-    monkeypatch.setattr(fb_scan, "LAST_RUN_FILE", last_run_file)
-    monkeypatch.setattr(fb_scan, "CONFIG_FILE", config_file)
-    monkeypatch.setattr(fb_scan, "SESSION_FILE", fb_session_file)
+    monkeypatch.setattr(fb_engager, "LAST_RUN_FILE", last_run_file)
+    monkeypatch.setattr(fb_engager, "CONFIG_FILE", config_file)
+    monkeypatch.setattr(fb_engager, "SESSION_FILE", fb_session_file)
     patch_bare_path_modules(
-        monkeypatch, dedup_file=dedup_file, rate_limit_file=rate_limit_file
+        monkeypatch,
+        dedup_file=dedup_file,
+        rate_limit_file=rate_limit_file,
+        engagement_log_path=engagement_log_path,
     )
     stub_pipeline_collaborators(monkeypatch)
+    neutralize_scan_dedup_backend(monkeypatch)
 
-    import activity_log as bare_activity_log
-    import deduplication as bare_dedup
-    import notifier as bare_notifier
+    # `log_trace` is imported by name (`from lib.activity_log import
+    # log_trace`), so patch the bound name on the engager module.
+    monkeypatch.setattr(fb_engager, "log_trace", lambda *_a, **_k: None)
+    stub_skill_notifications(monkeypatch, fb_engager)
+    # The first-comment gate's notifier (bound name: `from notifier import
+    # send`). Default: swallow. Gate tests re-patch with a recorder.
+    monkeypatch.setattr(fb_engager, "send", lambda *_a, **_k: True)
 
-    monkeypatch.setattr(bare_notifier, "send", lambda *a, **kw: True)
-    monkeypatch.setattr(bare_activity_log, "log_trace", lambda *a, **kw: None)
-    monkeypatch.setattr(fb_scan, "log_trace", lambda *a, **kw: None)
-    stub_skill_notifications(monkeypatch, fb_scan)
-    if stub_mark_engaged:
-        monkeypatch.setattr(bare_dedup, "mark_engaged", lambda *a, **kw: None)
+    # First-comment gate seams: default every group to APPROVED so the
+    # happy-path tests comment inline. Gate tests override both.
+    import lib.groups_db as groups_db
+
+    monkeypatch.setattr(
+        groups_db, "get_by_url", lambda url: _approved_group_row(url)
+    )
+    monkeypatch.setattr(
+        groups_db, "set_first_comment_flagged", lambda *_a, **_k: False
+    )
+
+    # Warmup filter: real `is_group_warm` logic over an empty tracker
+    # (joined_at unknown -> warm). Warmup tests re-patch `_load_tracker`.
+    import lib.group_warmup as group_warmup
+
+    monkeypatch.setattr(group_warmup, "_load_tracker", lambda: [])
 
     return {
         "state_dir": state_dir,
-        "queue_file": queue_file,
+        "brand_dir": brand_dir,
         "last_run_file": last_run_file,
         "dedup_file": dedup_file,
         "rate_limit_file": rate_limit_file,
         "config_file": config_file,
-        "brand_dir": brand_dir,
+        "session_file": fb_session_file,
     }
-
-
-def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sever ``ScanDedup``'s Postgres side so IG single-pass tests stay hermetic.
-
-    Post-PR#36 IG runs the single-pass pipeline with ``lib.scan_dedup.ScanDedup``,
-    whose iterate-once seen-marks live in Postgres ``completed_tasks``. Tests want
-    neither the DB dependency nor the cross-test pollution real marks cause (post
-    ids repeat across cases), so we stub the two Postgres calls ``scan_dedup``
-    binds by name: reads return an empty set, writes are no-ops. Iterate-once
-    still works WITHIN a run via ScanDedup's in-memory ``_seen_ids`` set; the JSON
-    ``deduplication`` side keeps using the tmp cache (via ``patch_bare_path_modules``).
-
-    Also silence the inline-comment engagement-log writer: a posted comment calls
-    ``log_engagement`` with no path override, which would append to the REAL brand
-    ``engagement_log.jsonl`` — a live-brand side effect a test must not have.
-    """
-    import lib.engagement.inline_comment as inline_comment
-    import lib.scan_dedup as scan_dedup
-
-    monkeypatch.setattr(scan_dedup, "completed_entity_ids", lambda *_a, **_k: set())
-    monkeypatch.setattr(scan_dedup, "record_done", lambda *_a, **_k: True)
-    monkeypatch.setattr(inline_comment, "log_engagement", lambda *_a, **_k: None)
 
 
 def build_ig_environment(
@@ -220,17 +239,14 @@ def build_ig_environment(
 ) -> dict[str, Path]:
     """Tmp-path environment for ``scripts.ig_engager`` tests (SINGLE-PASS).
 
-    Post-PR#36 Instagram likes AND comments in one visit and persists no queue,
-    so ``ig_engager`` no longer exposes a ``QUEUE_FILE`` to patch. We redirect the
-    two path constants it still owns (``LAST_RUN_FILE``, ``CONFIG_FILE``) plus
-    the bare dedup/rate/log path modules, and neutralize the single-pass
-    collaborators the run now reaches for (``ScanDedup``'s Postgres backend, the
-    trace + engagement JSONL writers) so a run touches no real brand state.
-
-    Returns ``{"state_dir", "tmp_path", "config_path", "rate_path",
-    "last_run_path"}`` so individual tests can pre-spend the rate-limiter budget
-    (``rate_path``), assert the last-run stamp (``last_run_path``), or rewrite
-    the config file to override the policy.
+    Post-PR#36 Instagram likes AND comments in one visit and persists no
+    queue, so there is no ``QUEUE_FILE`` to patch. We redirect the two path
+    constants it still owns (``LAST_RUN_FILE``, ``CONFIG_FILE``) plus the
+    bare dedup/rate/log path modules, and neutralize ``ScanDedup``'s
+    Postgres backend + the trace writer so a run touches no real brand
+    state. Returns ``{"state_dir", "tmp_path", "config_path", "rate_path",
+    "last_run_path"}`` so tests can pre-spend the rate budget, assert the
+    last-run stamp, or rewrite the config file to override the policy.
     """
     state_dir = tmp_path / "state"
     state_dir.mkdir(parents=True)

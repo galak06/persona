@@ -18,7 +18,7 @@ Usage::
 
     # ... perform the action ...
 
-    record_done("like", "facebook", post_id, worker_label="fb-scanner")
+    record_done("like", "facebook", post_id, worker_label="fb-engager")
 """
 
 from __future__ import annotations

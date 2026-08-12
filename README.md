@@ -129,9 +129,8 @@ python scripts/ig_scan.py --health-check
 
 | Script | What it does |
 |---|---|
-| `app/scripts/ig_scan.py` | Single-pass IG: scan hashtags → score → like → agent comment |
-| `app/scripts/fb_scan.py` | FB scan + queue (parked — needs single-pass rewrite) |
-| `app/scripts/fb_comment.py` | FB comment drainer (parked) |
+| `app/scripts/ig_engager.py` | Single-pass IG: scan hashtags → score → like → agent comment |
+| `app/scripts/fb_engager.py` | Single-pass FB: scan joined groups → score → like → agent comment |
 | `app/scripts/fb_group_scout.py` | Find + join new FB groups |
 | `app/scripts/fb_group_post.py` | Publish link posts to joined FB groups |
 | `app/scripts/wp_scan.py` | Moderate held WP comments |

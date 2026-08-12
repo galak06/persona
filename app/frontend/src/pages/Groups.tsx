@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchGroups, updateGroup, type FacebookGroup } from "../api/groups";
+import {
+  approveFirstComment,
+  fetchGroups,
+  updateGroup,
+  type FacebookGroup,
+} from "../api/groups";
 import { getErrorMessage } from "../api/client";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
@@ -56,6 +61,17 @@ export default function Groups() {
       );
     } catch (err) {
       alert(getErrorMessage(err, "Failed to update posting mode"));
+    }
+  }
+
+  async function handleApproveFirstComment(groupName: string) {
+    try {
+      const updated = await approveFirstComment(groupName);
+      setGroups((prev) =>
+        prev.map((g) => (g.group_name === groupName ? updated : g))
+      );
+    } catch (err) {
+      alert(getErrorMessage(err, "Failed to approve first comment"));
     }
   }
 
@@ -128,6 +144,7 @@ export default function Groups() {
                 <th className="py-3 px-4 w-1/3">Group</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Mode</th>
+                <th className="py-3 px-4">First comment</th>
                 <th className="py-3 px-4 text-right">Members</th>
               </tr>
             </thead>
@@ -175,6 +192,26 @@ export default function Groups() {
                         <option value="needs_approval">Needs Approval</option>
                         <option value="paused">Paused</option>
                       </select>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    {isMemberBucket && g.first_comment_approved_at ? (
+                      <span
+                        className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200"
+                        title={`Approved ${g.first_comment_approved_at}`}
+                      >
+                        Approved
+                      </span>
+                    ) : isMemberBucket && g.first_comment_flagged_at ? (
+                      <button
+                        onClick={() => void handleApproveFirstComment(g.group_name)}
+                        className="px-2.5 py-1 rounded text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
+                        title="Allow fb-engager to comment inline in this group"
+                      >
+                        Approve
+                      </button>
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}

@@ -78,15 +78,20 @@ def test_managed_flows_have_a_profile_entry() -> None:
     assert facebook_managed <= profile_flow_ids
 
 
-def test_superseded_facebook_flows_have_no_cron() -> None:
+def test_fb_engager_owns_the_cron_and_superseded_flows_are_gone() -> None:
     """`fb-scanner`/`fb-comment` are the two-stage pair `fb-engager` replaced.
-    PR #61 disabled their cron rather than deleting them (reversible), so a
-    reappearing `schedule` block means the profile was reverted and the old
-    pipeline is dispatching again alongside its replacement.
+    PR #61 only disabled their cron (reversible); the single-pass cutover
+    deleted their profile entries outright. A reappearing entry means the
+    profile was reverted and the old pipeline is dispatching again alongside
+    its replacement. fb-engager itself must keep the daily 15:33 schedule --
+    it is the sole Facebook engagement flow now, so losing its cron silences
+    FB engagement entirely (nothing else would ever dispatch it).
     """
     flows = {
         flow["id"]: flow
         for flow in json.loads(_FACEBOOK_PROFILE.read_text(encoding="utf-8"))["flows"]
     }
     for flow_id in ("fb-scanner", "fb-comment"):
-        assert "schedule" not in flows[flow_id], f"{flow_id} cron is back; fb-engager supersedes it"
+        assert flow_id not in flows, f"{flow_id} entry is back; fb-engager supersedes it"
+    assert "fb-engager" in flows, "fb-engager missing from profiles/facebook.json"
+    assert flows["fb-engager"]["schedule"]["cron"] == "33 15 * * *"

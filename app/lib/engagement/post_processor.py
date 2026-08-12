@@ -14,6 +14,7 @@ from collections.abc import Callable
 
 from lib.engagement.adapter import OutboundAdapter, Source, SupportsComment
 from lib.engagement.collaborators import (
+    CommentGate,
     Dedup,
     Drafter,
     Log,
@@ -51,6 +52,7 @@ def process_post(
     dry_run: bool = False,
     commenter: SupportsComment | None = None,
     drafter: Drafter | None = None,
+    comment_gate: CommentGate | None = None,
 ) -> PostOutcome:
     """Score, like, optionally comment, and mark one post."""
     platform = adapter.platform
@@ -70,6 +72,7 @@ def process_post(
         dry_run=dry_run,
         commenter=commenter,
         drafter=drafter,
+        comment_gate=comment_gate,
     )
     # Iterate-once, marked AFTER the visit so a failed comment stays
     # retryable (see `PostOutcome.is_retryable`). The tradeoff: a crash
@@ -78,13 +81,11 @@ def process_post(
     # self-correcting direction; a permanently skipped post is not.
     #
     # Withholding the mark only restores eligibility if nothing ELSE marks
-    # the post, so the collaborator's duplicate gate has to agree. IG's
-    # `lib.scan_dedup.ScanDedup` asks `already_commented` rather than the
-    # presence-only `deduplication.is_duplicate` — otherwise the like this
-    # visit just recorded would make the post a duplicate forever and the
-    # retry below would never happen. Facebook keeps presence-only semantics
-    # via the bare `deduplication` module, which is correct for its
-    # two-stage flow.
+    # the post, so the collaborator's duplicate gate has to agree. Both
+    # engagers pass `lib.scan_dedup.ScanDedup`, which asks
+    # `already_commented` rather than a presence-only `is_duplicate` —
+    # otherwise the like this visit just recorded would make the post a
+    # duplicate forever and the retry below would never happen.
     if not outcome.is_retryable:
         mark_seen(dedup, platform, post.post_id, log=log, dry_run=dry_run)
     return outcome
@@ -103,6 +104,7 @@ def _visit_post(
     dry_run: bool,
     commenter: SupportsComment | None,
     drafter: Drafter | None,
+    comment_gate: CommentGate | None,
 ) -> PostOutcome:
     """Filter, score, like and comment one non-duplicate post."""
     platform = adapter.platform
@@ -136,6 +138,7 @@ def _visit_post(
         dry_run=dry_run,
         commenter=commenter,
         drafter=drafter,
+        comment_gate=comment_gate,
     )
     return PostOutcome(
         like_attempted=like.attempted,
@@ -161,11 +164,12 @@ def _run_comment_step(
     dry_run: bool,
     commenter: SupportsComment | None,
     drafter: Drafter | None,
+    comment_gate: CommentGate | None,
 ) -> tuple[CommentOutcome, float | None]:
     """Comment inline if the post qualifies; return the outcome + its score.
 
-    The returned score is non-None only for comment candidates — that is
-    what the two-stage path later cherry-picks from.
+    The returned score is non-None only for comment candidates — the
+    report counts them even when no comment lands.
     """
     if not _is_comment_candidate(platform, post, score, policy):
         _log_near_miss(post, platform, score, log)
@@ -193,6 +197,7 @@ def _run_comment_step(
         rate_tracker=rate_tracker,
         log=log,
         dry_run=dry_run,
+        comment_gate=comment_gate,
     )
     return outcome, score
 
@@ -246,9 +251,9 @@ def mark_seen(
 ) -> None:
     """Record that `post_id` was opened, if the dedup collaborator supports it.
 
-    No-op for collaborators without `mark_seen` (the bare `deduplication`
-    module Facebook passes), so the two-stage path is untouched. Fully
-    suppressed under `dry_run` — a preview must leave posts eligible.
+    No-op for collaborators without `mark_seen` (probed structurally, so
+    test fakes and legacy modules keep working). Fully suppressed under
+    `dry_run` — a preview must leave posts eligible.
     """
     if dry_run or not isinstance(dedup, SupportsMarkSeen):
         return

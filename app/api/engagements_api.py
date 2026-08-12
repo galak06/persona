@@ -1,6 +1,6 @@
 """Read-only API for the published posts + comments history (engagements.db).
 
-Surfaces rows recorded by the publish workers (``fb_comment.py``,
+Surfaces rows recorded by the publish workers (``fb_engager.py``,
 ``fb_group_post.py``, ``publish_prepared.py``) so the UI can show what we've
 posted and commented, across platforms. Strictly read-only.
 """
