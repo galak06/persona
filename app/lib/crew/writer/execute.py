@@ -19,13 +19,13 @@ just validated on our side instead of crewai's.
 
 from __future__ import annotations
 
-import json
 import re
 from typing import TypeVar
 
 from crewai import Agent, Task
 from pydantic import BaseModel, ValidationError
 
+from lib.crew.json_recovery import loads_lenient
 from lib.crew.writer.models import ContentBrief, WrittenPost
 from lib.observability import get_logger
 
@@ -52,16 +52,21 @@ def _parse_structured_output(raw: str | None, model: type[ModelT], *, event: str
         logger.warning(f"{event}_empty_output")
         return None
     text = _strip_code_fence(raw)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
+    payload, repair = loads_lenient(text)
+    if payload is None:
         # Full text, not a short excerpt -- a 200-char excerpt was proven
         # useless for real diagnosis (two consecutive live failures on the
         # same brief, error position always well past char 200, no way to
         # see what was actually malformed). This is a structured JSON log
         # field, not stdout prose -- large string values are fine here.
-        logger.warning(f"{event}_json_decode_failed", error=str(exc), raw_output=text)
+        logger.warning(f"{event}_json_decode_failed", raw_output=text)
         return None
+    if repair is not None:
+        # Logged at warning, not info: the post is usable, but the model
+        # emitted damaged JSON and the recovery may have left an artifact in
+        # the body (see `lib.crew.json_recovery.repair_invalid_escapes`).
+        # A recovered parse must never look like a clean one.
+        logger.warning(f"{event}_json_recovered", repair=repair)
     try:
         return model.model_validate(payload)
     except ValidationError as exc:

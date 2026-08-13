@@ -130,8 +130,18 @@ services:
       # this client turns that into an empty draft that is indistinguishable
       # from the agent declining to engage. Same passthrough as the worker.
       - GEMINI_REPLY_MODEL=${GEMINI_REPLY_MODEL:-gemini-3.6-flash}
-      - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID}
-      - AMAZON_ASSOCIATES_TAG=${AMAZON_ASSOCIATES_TAG}
+      # JAMENDO_CLIENT_ID / AMAZON_ASSOCIATES_TAG are deliberately NOT passed
+      # through here. They are brand-owned, live in `<brand_dir>/.env`, and are
+      # undefined in the shell/`app/.env` this file interpolates from -- so a
+      # passthrough line sets them to the EMPTY STRING rather than leaving them
+      # unset. That is strictly worse than absent: `load_brand_env_into_environ`
+      # skips keys already present, so an empty passthrough permanently shadows
+      # the brand's real value, and callers that check
+      # `os.environ.get(k, "").strip()` read it as missing. That is exactly how
+      # every "approve idea" draft died on `missing required env var(s):
+      # AMAZON_ASSOCIATES_TAG` while brands/dogfoodandfun/.env held the correct
+      # tag the whole time. Add a passthrough here only for engine-wide values
+      # that genuinely originate in `app/.env`.
       - OAUTH_REDIRECT_BASE_URL=${OAUTH_REDIRECT_BASE_URL:-http://localhost:5001}
     volumes:
       # Whole brands root, read-write — api provisions new brand folders for

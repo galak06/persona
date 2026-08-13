@@ -132,30 +132,43 @@ class BrowserSession:
 
         playwright = sync_playwright().start()
         self._playwright = playwright
-        browser = playwright.chromium.launch(headless=self._config.headless)
-        self._browser = browser
-        viewport: ViewportSize = {
-            "width": self._config.viewport_width,
-            "height": self._config.viewport_height,
-        }
-        # Branch on storage_state existence so we can pass typed kwargs
-        # rather than dict-spread (which mypy strict rejects against
-        # Playwright's narrowly-typed signature).
-        if self._config.storage_state_path.exists():
-            context = browser.new_context(
-                viewport=viewport,
-                user_agent=self._config.user_agent,
-                storage_state=str(self._config.storage_state_path),
-            )
-        else:
-            context = browser.new_context(
-                viewport=viewport,
-                user_agent=self._config.user_agent,
-            )
-        self._context = context
-        page = context.new_page()
-        self._page = page
-        return page
+        # Everything after `.start()` runs guarded: `__exit__` only fires once
+        # `__enter__` RETURNS, so a failure in here would otherwise leak the
+        # driver subprocess AND the event loop `.start()` spun up, for the life
+        # of the process. That leak is not inert -- a still-running loop makes
+        # crewai refuse every later synchronous `Crew.kickoff()` ("invoked
+        # synchronously from within a running event loop"), which is exactly
+        # how a missing Chromium binary silently killed the content scout's
+        # crews in the API container. Tear down whatever we got, re-raise the
+        # original error unchanged.
+        try:
+            browser = playwright.chromium.launch(headless=self._config.headless)
+            self._browser = browser
+            viewport: ViewportSize = {
+                "width": self._config.viewport_width,
+                "height": self._config.viewport_height,
+            }
+            # Branch on storage_state existence so we can pass typed kwargs
+            # rather than dict-spread (which mypy strict rejects against
+            # Playwright's narrowly-typed signature).
+            if self._config.storage_state_path.exists():
+                context = browser.new_context(
+                    viewport=viewport,
+                    user_agent=self._config.user_agent,
+                    storage_state=str(self._config.storage_state_path),
+                )
+            else:
+                context = browser.new_context(
+                    viewport=viewport,
+                    user_agent=self._config.user_agent,
+                )
+            self._context = context
+            page = context.new_page()
+            self._page = page
+            return page
+        except BaseException:
+            self.__exit__()
+            raise
 
     def __exit__(self, *_args: object) -> None:
         # Persist cookies/storage back to disk before tearing down.

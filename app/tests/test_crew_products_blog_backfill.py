@@ -250,3 +250,66 @@ class TestSelection:
         )
         # None category/notes render as empty fields, never the string "None".
         assert "cooling-vest | ChillPup Cooling Vest |  | " in seen[0]
+
+
+# ── recently-used products are excluded, not just ranked ─────────────────────
+
+
+def _entry(key: str) -> ProductEntry:
+    return ProductEntry(key=key, asin=f"B{key[:9].upper():0<9}", display=key)
+
+
+def _pool(*keys: str) -> dict[str, ProductEntry]:
+    return {k: _entry(k) for k in keys}
+
+
+def _picker(*keys: str):
+    def _run(_agent: object, _task: object) -> ProductSelection:
+        return ProductSelection(
+            products=[SelectedProduct(key=k, reason="fits") for k in keys]
+        )
+
+    return _run
+
+
+def test_a_used_product_is_removed_from_the_candidate_list() -> None:
+    """Ranking it last was not enough: the model still picked
+    `iris-weatherpro-33qt` for two storage posts in a row."""
+    captured: list[str] = []
+
+    def _capture(_agent: object, task: object) -> ProductSelection:
+        captured.append(task.description)  # type: ignore[attr-defined]
+        return ProductSelection()
+
+    select_products_for_existing_post(
+        _pool("used-one", "fresh-a", "fresh-b", "fresh-c", "fresh-d"),
+        _brief(),
+        usage_counts={"used-one": 1},
+        execute_fn=_capture,
+    )
+
+    assert "used-one |" not in captured[0]
+    assert "fresh-a |" in captured[0]
+
+
+def test_a_used_product_cannot_be_picked_even_if_the_model_names_it() -> None:
+    result = select_products_for_existing_post(
+        _pool("used-one", "fresh-a", "fresh-b", "fresh-c", "fresh-d"),
+        _brief(),
+        usage_counts={"used-one": 1},
+        execute_fn=_picker("used-one", "fresh-a"),
+    )
+
+    assert result == {"fresh-a": _entry("fresh-a")}
+
+
+def test_exclusion_relaxes_rather_than_starving_a_small_pool() -> None:
+    """A brand with few products must not be reduced to empty prompts."""
+    result = select_products_for_existing_post(
+        _pool("used-one", "fresh-a"),
+        _brief(),
+        usage_counts={"used-one": 1, "fresh-a": 1},
+        execute_fn=_picker("used-one"),
+    )
+
+    assert result == {"used-one": _entry("used-one")}

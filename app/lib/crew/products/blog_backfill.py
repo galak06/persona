@@ -81,6 +81,25 @@ def to_post(row: Mapping[str, Any]) -> WpPost:
     )
 
 
+def fetch_posts_by_id(client: httpx.Client, post_ids: list[int]) -> list[WpPost]:
+    """Specific POSTs by id, at ANY status -- drafts included.
+
+    The sweep deliberately only sees `status=publish` (a backfill exists to
+    fix posts already facing readers). Addressing a draft is the opposite
+    case and has to be asked for explicitly, by id: a draft the writer just
+    produced can be given its product block before it ever goes live, instead
+    of being published bare and swept afterwards. Ids rather than a
+    `status=draft` sweep so the blast radius is exactly what the caller named.
+    """
+    posts: list[WpPost] = []
+    for post_id in post_ids:
+        resp = client.get(f"/wp-json/wp/v2/posts/{post_id}", params={"context": "edit"})
+        resp.raise_for_status()
+        posts.append(to_post(resp.json()))
+    logger.info("blog_backfill_posts_fetched_by_id", count=len(posts), ids=post_ids)
+    return posts
+
+
 def fetch_published_posts(client: httpx.Client, *, slug: str | None = None) -> list[WpPost]:
     """Every published POST -- never `/pages` -- following `X-WP-TotalPages`."""
     posts: list[WpPost] = []

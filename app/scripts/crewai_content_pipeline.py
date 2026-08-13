@@ -184,7 +184,9 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     print(f"brief    : {brief.suggested_title} ({len(brief.outline)} sections)")
 
     print("\nrunning writer crew (real DeepSeek call)...")
-    written_post = write_post_from_brief(brand_dir, brief)
+    # discover=True only here: the drafting path is the one place a post about
+    # a topic nobody curated products for must still find something linkable.
+    written_post = write_post_from_brief(brand_dir, brief, discover=True)
     if written_post is None:
         print("\nwriter produced no structured post (see logs) -- aborting")
         ideas_db.update_status(idea_id, "write_failed")

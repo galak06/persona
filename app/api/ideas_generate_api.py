@@ -1,47 +1,82 @@
 """Trigger the CrewAI content scout (Trends + Idea crews) from the frontend.
 
-  POST /api/v1/ideas/generate         — start a scout run in the background
-  GET  /api/v1/ideas/generate/status  — is one running / how did the last end
+  POST /api/v1/ideas/generate         — dispatch a scout run to the worker
+  GET  /api/v1/ideas/generate/status  — is one queued/running / how did it end
 
-A separate router from `api.ideas_api` for the same reason `social_posts_api`
-is: that module is past the file-size limit and its PATCH handler is already
-overloaded. This one owns exactly one concern — running
-`scripts/crewai_content_scout.py --apply` on demand instead of only from a
-terminal.
+**The run executes on the worker, not here.** The scout's Trends stage scrapes
+the public Instagram trends feed through Playwright. `Dockerfile.api` installs
+the `playwright` Python package (it arrives with the full `requirements.txt`)
+but never runs `playwright install`, so `chromium.launch()` fails on a missing
+binary in this container while the driver itself imports and starts fine.
 
-Concurrency: one run at a time, enforced with a non-blocking module-level
-lock. The scout is expensive (Serper searches + two DeepSeek crews, minutes
-of wall-clock) and self-deduplicating against existing topics — but two
-concurrent runs would race that dedup check and write duplicate ideas, so a
-second click while one is in flight gets 409 rather than a second crew.
+That half-install was not survivable. The failed launch left Playwright's
+event loop running in the process, and the installed crewai (1.15.14) refuses
+a synchronous `Crew.kickoff()` while a loop is running -- so the Trends crew
+died, the Idea crew never ran, and `run_crew_scout` returned `[]`. The scout
+then exited 0, this module recorded `ok: true`, and the button reported
+success over a run that wrote nothing. Zero ideas were inserted between
+2026-08-06 and the cutover. `lib/sessions/browser.py` no longer leaks the loop
+on a failed launch, but the real fix is running the scout where the browser
+actually exists: `persona-worker-1` is built with
+`playwright install --with-deps chromium` (see `Dockerfile.worker`).
+
+So this module now *dispatches* instead of executing: it pushes a `flow-run`
+item onto the same Redis queue `scripts/task_dispatcher.py` and
+`POST /brands/{id}/flows/{flow_id}/run` use, and `scripts/task_worker.py`
+picks it up, runs the scout with the brand's own environment, and records the
+outcome in `worker_runs`. Same dispatch shape `reels_compose_api` uses, for
+the same reason (that one needs ffmpeg and fonts the API image also lacks).
+
+Status therefore reads that shared `worker_runs` row rather than any
+in-process global -- the API no longer owns the run, may not be the process
+that started it, and can restart mid-run without losing it.
+
+Concurrency: one run at a time, enforced against the shared row (a run already
+`queued`/`running` gets 409) under a local mutex that makes the
+check-then-enqueue atomic within this process. The scout is expensive (Serper
+searches + two DeepSeek crews) and self-deduplicating against existing topics,
+so two concurrent runs would race that dedup check and write duplicates.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import subprocess
-import sys
 import threading
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
-_SCOUT_TIMEOUT_SECONDS = 900  # Serper + two crews; generous, not unbounded
+from api.brand_context import resolve_api_brand
+from lib import worker_db
+from lib.task_queue import TaskQueue
+
+# Serper + two crews; generous, not unbounded. Passed explicitly because the
+# worker's own default (600s) is tighter than this run needs.
+_SCOUT_TIMEOUT_SECONDS = 900
+_SCOUT_SCRIPT = "scripts/crewai_content_scout.py"
+# Without --apply the scout is a dry run and writes nothing.
+_SCOUT_ARGS = ["--apply"]
+# Must match scripts/task_worker.py's QUEUE_WORKER -- same Redis list.
+_QUEUE_WORKER = "flow-run"
+_FLOW_ID = "content-scout"
+
+# Statuses that mean "a run is already in flight". `queued` is written here at
+# dispatch so a second click is refused before the worker has picked the item
+# up; the worker overwrites it with `running`, then the terminal status.
+_QUEUED = "queued"
+_RUNNING = "running"
+_IN_FLIGHT = frozenset({_QUEUED, _RUNNING})
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["ideas"])
 
-_run_lock = threading.Lock()
-# Written only while _run_lock is held (or before any run exists) -- the
-# status endpoint reads it lock-free, which is safe for a dict swapped
-# atomically by reference.
-_last_run: dict[str, Any] = {}
+# Makes check-then-enqueue atomic within this process. NOT the run's lifetime
+# lock (the run outlives this request, in another container) -- the shared
+# `worker_runs` row is the real single-flight guard.
+_dispatch_lock = threading.Lock()
 
 
 class GenerateStatus(BaseModel):
@@ -52,84 +87,68 @@ class GenerateStatus(BaseModel):
     detail: str | None = None
 
 
-def _run_scout() -> None:
-    """The background task: run the scout subprocess and record the outcome.
+def _label(brand_id: str) -> str:
+    """`worker_runs.worker_label` for this flow.
 
-    The lock is acquired by the ROUTE (so the 409 answer is immediate) and
-    released here when the run finishes -- acquire/release straddle the
-    background boundary on purpose.
+    Prefixed with the brand so `task_worker._write_flow_log` strips it back to
+    `content-scout` and writes `logs/cron_content_scout.log`, matching the
+    convention the Explorer page's log viewer already expects.
     """
-    global _last_run
-    started = datetime.now(UTC).isoformat()
-    outcome: dict[str, Any] = {"running": True, "started_at": started}
-    _last_run = outcome
-    try:
-        result = subprocess.run(
-            [sys.executable, "-m", "scripts.crewai_content_scout", "--apply"],
-            cwd=_PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=_SCOUT_TIMEOUT_SECONDS,
-        )
-        tail = (result.stdout or "").strip().splitlines()[-3:]
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": result.returncode == 0,
-            "detail": " | ".join(tail) if result.returncode == 0 else (result.stderr or "")[-500:],
-        }
-        log.info(
-            json.dumps(
-                {
-                    "event": "ideas_generate_finished",
-                    "returncode": result.returncode,
-                    "stdout_tail": tail,
-                }
-            )
-        )
-    except subprocess.TimeoutExpired:
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": False,
-            "detail": f"scout timed out after {_SCOUT_TIMEOUT_SECONDS}s",
-        }
-        log.error(json.dumps({"event": "ideas_generate_timeout"}))
-    except Exception as exc:
-        _last_run = {
-            "running": False,
-            "started_at": started,
-            "finished_at": datetime.now(UTC).isoformat(),
-            "ok": False,
-            "detail": str(exc)[-500:],
-        }
-        log.error(json.dumps({"event": "ideas_generate_error", "error": str(exc)}))
-    finally:
-        _run_lock.release()
+    return f"{brand_id}-{_FLOW_ID}"
 
 
 @router.post("/ideas/generate", status_code=202)
-def generate_ideas(background_tasks: BackgroundTasks) -> dict[str, str]:
-    """Start one scout run. 202 immediately; poll /ideas/generate/status."""
-    if not _run_lock.acquire(blocking=False):
-        raise HTTPException(status_code=409, detail="a generation run is already in progress")
-    background_tasks.add_task(_run_scout)
+def generate_ideas() -> dict[str, str]:
+    """Dispatch one scout run to the worker. 202 immediately; poll
+    /ideas/generate/status."""
+    brand_id, brand_dir = resolve_api_brand()
+    label = _label(brand_id)
+
+    with _dispatch_lock:
+        current = worker_db.get_one(brand_dir, label, brand_id)
+        if current is not None and str(current.get("status")) in _IN_FLIGHT:
+            raise HTTPException(status_code=409, detail="a generation run is already in progress")
+
+        # Recorded BEFORE the push so the status endpoint reports the run the
+        # moment this returns, rather than a gap where it looks idle until the
+        # worker's own record_start lands.
+        worker_db.record_start(brand_dir, label, brand_id)
+        payload: dict[str, Any] = {
+            "schedule_task_id": label,
+            "script": _SCOUT_SCRIPT,
+            "args": list(_SCOUT_ARGS),
+            "brand": brand_id,
+            "brand_dir": brand_dir,
+            "timeout_seconds": _SCOUT_TIMEOUT_SECONDS,
+        }
+        TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+
+    log.info(json.dumps({"event": "ideas_generate_dispatched", "brand": brand_id, "label": label}))
     return {"status": "started"}
 
 
 @router.get("/ideas/generate/status", response_model=GenerateStatus)
 def generate_status() -> GenerateStatus:
-    """State of the current/last run, for the frontend's polling loop."""
-    if _run_lock.locked() and _last_run.get("running"):
-        return GenerateStatus(running=True, started_at=_last_run.get("started_at"))
-    if not _last_run:
+    """State of the current/last run, for the frontend's polling loop.
+
+    Read from the shared `worker_runs` row, so it reflects a run executing in
+    the worker container (and survives an API restart mid-run).
+    """
+    brand_id, brand_dir = resolve_api_brand()
+    row = worker_db.get_one(brand_dir, _label(brand_id), brand_id)
+    if row is None:
         return GenerateStatus(running=False)
+
+    status = str(row.get("status") or "")
+    last_run = row.get("last_run")
+    last_run_str = str(last_run) if last_run else None
+    if status in _IN_FLIGHT:
+        # Queued counts as in-progress: the user clicked, work is coming.
+        return GenerateStatus(running=True, started_at=last_run_str)
+
     return GenerateStatus(
         running=False,
-        started_at=_last_run.get("started_at"),
-        finished_at=_last_run.get("finished_at"),
-        ok=_last_run.get("ok"),
-        detail=_last_run.get("detail"),
+        finished_at=last_run_str,
+        ok=status == "success",
+        detail=str(row.get("message") or "")[-500:],
     )

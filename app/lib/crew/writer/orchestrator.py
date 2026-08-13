@@ -144,15 +144,31 @@ def write_post_from_brief(
     *,
     execute_fn: WriterExecuteFn | None = None,
     product_execute_fn: SelectorExecuteFn | None = None,
+    discover: bool = False,
 ) -> WrittenPost | None:
     """Writer stage: a `ContentBrief` -> a `WrittenPost`. Internal links used
     are re-filtered against the real site cache; the writer sees the
-    selector-curated per-post catalog (`lib.crew.products.selector`)."""
+    selector-curated per-post catalog (`lib.crew.products.selector`).
+
+    `discover=True` lets that catalog include products found live for this
+    post (`lib.crew.products.discovery`). Off by default and opted into only
+    by `scripts/crewai_content_pipeline.py`: discovery costs a DeepSeek call
+    plus Serper searches, and defaulting it on silently billed the test suite
+    for real ones.
+
+    Whatever the catalog ends up being, the selector's picks are guaranteed
+    into the body (`lib.crew.products.ensure_block`) rather than left to the
+    writer to reference or ignore, and `affiliate_keys_used` is rewritten to
+    what actually landed in the post.
+    """
     from lib.crew.products import record_usage, select_products_for_post  # break import cycle
+    from lib.crew.products.ensure_block import ensure_product_block
 
     config = read_brand_config(brand_dir)
     site = config.get("site", {}) if isinstance(config, dict) else {}
-    catalog = select_products_for_post(brand_dir, brief, execute_fn=product_execute_fn)
+    catalog = select_products_for_post(
+        brand_dir, brief, execute_fn=product_execute_fn, discover=discover
+    )
 
     description = build_writer_task_description(
         brief=brief,
@@ -170,12 +186,21 @@ def write_post_from_brief(
     written_post = (execute_fn or execute_writer_crew)(agent, task)
     if written_post is None:
         return None
-    if written_post.affiliate_keys_used:
-        record_usage(brief.suggested_title, written_post.affiliate_keys_used)
+
+    body_html, block_keys = ensure_product_block(written_post.body_html, catalog, brief)
+    used_keys = list(dict.fromkeys([*written_post.affiliate_keys_used, *block_keys]))
+    if used_keys:
+        record_usage(brief.suggested_title, used_keys)
 
     allowed_urls = {c.url for c in brief.internal_link_candidates}
     filtered_links = filter_links_to_allowed(written_post.internal_links_used, allowed_urls)
-    return written_post.model_copy(update={"internal_links_used": filtered_links})
+    return written_post.model_copy(
+        update={
+            "internal_links_used": filtered_links,
+            "body_html": body_html,
+            "affiliate_keys_used": used_keys,
+        }
+    )
 
 
 def assemble_final_html(
@@ -239,6 +264,7 @@ def strategist_and_writer(
     update_status_fn: UpdateStatusFn = ideas_db.update_status,
     strategist_execute_fn: StrategistExecuteFn | None = None,
     writer_execute_fn: WriterExecuteFn | None = None,
+    discover: bool = False,
 ) -> ContentDraftResult | None:
     """Full pipeline: pick an idea, build a brief, write the post, assemble
     the final HTML. Returns `None` (logged) if no idea is found, or if
@@ -270,7 +296,9 @@ def strategist_and_writer(
         sections=len(brief.outline),
     )
 
-    written_post = write_post_from_brief(brand_dir, brief, execute_fn=writer_execute_fn)
+    written_post = write_post_from_brief(
+        brand_dir, brief, execute_fn=writer_execute_fn, discover=discover
+    )
     if written_post is None:
         logger.warning("crew_writer_writer_produced_no_post", idea_id=real_idea_id)
         update_status_fn(real_idea_id, "write_failed")

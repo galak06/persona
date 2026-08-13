@@ -77,9 +77,27 @@ def select_products_for_existing_post(
         logger.info("blog_products_pool_empty")
         return {}
 
+    # Already-used products are REMOVED, not merely ranked last. Ordering
+    # alone was proven insufficient: `iris-weatherpro-33qt` was placed on two
+    # storage-adjacent posts (4289, 4295) because the model still judged it
+    # the best fit no matter where it sat in the list. A candidate the model
+    # cannot see is a repeat it cannot make.
+    #
+    # The exclusion relaxes back to the full pool when it would leave too few
+    # to choose from -- the same guard `selector.select_products_for_post`
+    # uses, and the reason a small catalog isn't starved into empty prompts.
+    candidates = {key: entry for key, entry in pool.items() if not (usage_counts or {}).get(key)}
+    if len(candidates) < max_products:
+        logger.info(
+            "blog_products_dedupe_relaxed",
+            candidate_count=len(candidates),
+            pool_size=len(pool),
+        )
+        candidates = dict(pool)
+
     description = build_selector_task_description(
         brief=brief,
-        candidates_text=candidates_text(pool, usage_counts=usage_counts),
+        candidates_text=candidates_text(candidates, usage_counts=usage_counts),
         max_products=max_products,
     )
     agent = build_product_selector_agent()
@@ -92,12 +110,15 @@ def select_products_for_existing_post(
 
     picked: dict[str, ProductEntry] = {}
     for product in selection.products:
-        if product.key not in pool:
+        # Validated against `candidates`, not `pool`: an excluded product is
+        # not a legal pick, so a model that names one anyway (from an earlier
+        # turn, or invention) must be refused rather than quietly re-admitted.
+        if product.key not in candidates:
             logger.warning("blog_products_unknown_key_dropped", key=product.key)
             continue
         if product.key in picked:
             continue
-        picked[product.key] = pool[product.key]
+        picked[product.key] = candidates[product.key]
         if len(picked) >= max_products:
             break
     logger.info("blog_products_selected", keys=list(picked))

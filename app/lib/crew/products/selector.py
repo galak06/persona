@@ -34,7 +34,7 @@ from lib.crew.products.execute import execute_product_selector_crew
 from lib.crew.products.models import ProductSelection
 from lib.crew.products.pool import load_candidate_pool
 from lib.crew.products.prompts import build_selector_task_description
-from lib.crew.products.usage import recently_used_keys
+from lib.crew.products.usage import SOURCE_DRAFT, recently_used_keys
 from lib.crew.writer.context import load_brand_affiliate_catalog
 from lib.crew.writer.models import ContentBrief
 from lib.observability import get_logger
@@ -44,6 +44,31 @@ logger = get_logger(__name__)
 MAX_PRODUCTS = 4
 
 SelectorExecuteFn = Callable[[Agent, Task], ProductSelection | None]
+DiscoveryFn = Callable[[Path, ContentBrief], dict[str, ProductEntry]]
+
+
+def _discover_for_brief(brand_dir: Path, brief: ContentBrief) -> dict[str, ProductEntry]:
+    """Live discovery for one post: brief -> buyer-intent queries -> products.
+
+    Imported inside the call (not at module scope) so `lib.crew.products`
+    stays importable, and this module stays unit-testable, without crewai or
+    a network -- the same deferred-import posture the rest of this package
+    uses for `Crew` construction.
+    """
+    import os
+
+    # Checked before synthesizing queries, not after: query synthesis is a
+    # billed LLM call, and with no Serper key there is nothing to search with,
+    # so the whole stage is a guaranteed no-op. Also what keeps the writer
+    # tests offline -- they run without this key and never reach a crew.
+    if not os.environ.get("SERPER_API_KEY", "").strip():
+        logger.info("crew_products_discovery_skipped_no_search_key")
+        return {}
+
+    from lib.crew.products.discovery import discover_products
+    from lib.crew.products.discovery_queries import shopping_queries_for_brief
+
+    return discover_products(brand_dir, shopping_queries_for_brief(brief))
 
 
 def _candidates_text(candidates: dict[str, ProductEntry]) -> str:
@@ -63,9 +88,21 @@ def select_products_for_post(
     *,
     execute_fn: SelectorExecuteFn | None = None,
     usage_path: Path | None = None,
+    discover: bool = False,
+    discovery_fn: DiscoveryFn | None = None,
 ) -> dict[str, ProductEntry]:
     """The catalog the writer stage should see for THIS post: at most
     `MAX_PRODUCTS` selector-curated entries from the merged candidate pool.
+
+    With `discover=True` the pool is the brand's curated catalogs PLUS
+    products found live for this specific post (`lib.crew.products.discovery`).
+    Off by default so the only caller that pays for searches is the drafting
+    path that opts in -- the backfill sweep and every test keep the cheap,
+    catalog-only behavior. Curated entries win any key collision: they carry real
+    editorial notes the selector reasons over, where a discovered entry has
+    only a SERP snippet. Discovery is what makes a post about an uncurated
+    topic linkable at all -- the curated catalog is hand-typed, so without it
+    the selector has nothing to offer for any subject nobody anticipated.
 
     Recently featured products (`lib.crew.products.usage`) are excluded from
     the candidates unless that would leave fewer than `MAX_PRODUCTS` to
@@ -73,11 +110,28 @@ def select_products_for_post(
     so the exclusion relaxes back to the full pool (logged).
     """
     pool = load_candidate_pool(brand_dir)
+    if discover:
+        # Discovered products are merged UNDER the curated pool (`setdefault`),
+        # never over it. The guard is here rather than inside the default
+        # implementation so that ANY discovery function -- including one a
+        # caller injects -- can fail without taking the draft down with it:
+        # products are an enhancement, and a Serper outage must degrade to the
+        # curated-only behavior this function had before, not lose the post.
+        try:
+            discovered = (discovery_fn or _discover_for_brief)(brand_dir, brief)
+        except Exception as exc:
+            logger.warning("crew_products_discovery_failed", error=str(exc))
+            discovered = {}
+        for key, entry in discovered.items():
+            pool.setdefault(key, entry)
     if not pool:
         logger.info("crew_products_pool_empty", brand_id=brand_dir.name)
         return {}
 
-    used = recently_used_keys(path=usage_path)
+    # Scoped to SOURCE_DRAFT: the backfill sweep's history describes
+    # already-published posts and must not gate a new one (see
+    # `recently_used_keys`).
+    used = recently_used_keys(path=usage_path, sources={SOURCE_DRAFT})
     candidates = {key: entry for key, entry in pool.items() if key not in used}
     if len(candidates) < MAX_PRODUCTS:
         logger.info(
