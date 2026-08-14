@@ -11,6 +11,7 @@ validation runs.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from lib.crew.products.pool import load_candidate_pool
@@ -117,3 +118,72 @@ def test_load_candidate_pool_invalid_recipe_catalog_is_flat_only(tmp_path: Path)
 
 def test_load_candidate_pool_both_missing_returns_empty(tmp_path: Path) -> None:
     assert load_candidate_pool(tmp_path) == {}
+
+
+def _write_discovered(brand_dir: Path, entries: list[dict[str, str]]) -> None:
+    _write_json(brand_dir / "data" / "cache" / "discovered_products.json", entries)
+
+
+def test_load_candidate_pool_includes_discovered_products(tmp_path: Path) -> None:
+    """The regression: the drafting path writes `[AFFILIATE:<discovered-key>]`
+    placeholders (selector runs with `discover=True`), then resolves them
+    against this pool. A pool that omits the discovery cache made every post
+    on an uncurated topic die at assembly with AffiliateResolverError.
+    """
+    _write_flat(tmp_path, _FLAT_CATALOG)
+    _write_discovered(
+        tmp_path,
+        [
+            {
+                "key": "dog-pulling-harness-b0dzhpyhgs",
+                "asin": "B0DZHPYHGS",
+                "display": "Dog Pulling Harness",
+                "category": None,
+                "notes": None,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        ],
+    )
+    pool = load_candidate_pool(tmp_path)
+    assert "dog-pulling-harness-b0dzhpyhgs" in pool
+    assert pool["dog-pulling-harness-b0dzhpyhgs"].asin == "B0DZHPYHGS"
+
+
+def test_load_candidate_pool_curated_entry_beats_discovered_one(tmp_path: Path) -> None:
+    _write_flat(tmp_path, _FLAT_CATALOG)
+    _write_discovered(
+        tmp_path,
+        [
+            {
+                "key": "fi-collar",
+                "asin": "B000000000",
+                "display": "SERP-Side Fi Collar",
+                "category": None,
+                "notes": None,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        ],
+    )
+    pool = load_candidate_pool(tmp_path)
+    assert pool["fi-collar"].asin == "B0FH8HQS3V"
+    assert pool["fi-collar"].display == "Fi Series 3+ Smart Dog Collar"
+
+
+def test_load_candidate_pool_ignores_expired_discoveries(tmp_path: Path) -> None:
+    """Discovery's own 30-day TTL still governs: a stale cache entry must not
+    resurrect a key the selector can no longer justify picking."""
+    _write_flat(tmp_path, _FLAT_CATALOG)
+    _write_discovered(
+        tmp_path,
+        [
+            {
+                "key": "stale-find-b0aaaaaaaa",
+                "asin": "B0AAAAAAAA",
+                "display": "Stale Find",
+                "category": None,
+                "notes": None,
+                "ts": (datetime.now(UTC) - timedelta(days=31)).isoformat(),
+            }
+        ],
+    )
+    assert set(load_candidate_pool(tmp_path).keys()) == {"fi-collar", "apple-airtag"}

@@ -200,6 +200,19 @@ def _write_cache(brand_dir: Path, entries: dict[str, ProductEntry]) -> None:
         logger.warning("crew_products_discovery_cache_write_failed", error=str(exc))
 
 
+def load_discovered_products(brand_dir: Path) -> dict[str, ProductEntry]:
+    """Non-expired entries from the discovery cache.
+
+    The read-only counterpart to `discover_products`, for callers that need
+    to RESOLVE a previously discovered key rather than find new products --
+    `lib.crew.products.pool.load_candidate_pool` merges this behind the
+    curated catalogs so `[AFFILIATE:<discovered-key>]` placeholders written
+    into a draft are still resolvable at assembly time. `{}` on any read
+    problem, same tolerant contract as `discover_products`.
+    """
+    return _read_cache(brand_dir)
+
+
 def discover_products(
     brand_dir: Path,
     queries: list[str],

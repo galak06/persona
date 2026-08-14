@@ -300,23 +300,29 @@ def list_ideas(
     brand_id: str | None = None,
     limit: int = 500,
 ) -> list[dict[str, Any]]:
-    """Return ideas filtered by status and/or brand, newest first."""
-    try:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if status:
-            clauses.append("status = %s")
-            params.append(status)
-        if brand_id:
-            clauses.append("brand_id = %s")
-            params.append(brand_id)
-        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(max(1, min(limit, 5000)))
-        query = f"SELECT * FROM content_ideas{where} ORDER BY created_at DESC LIMIT %s"
-        return db.fetch_all(query, tuple(params))
-    except Exception as exc:
-        _log.warning("ideas_db.list_ideas failed: %s", exc)
-        return []
+    """Return ideas filtered by status and/or brand, newest first.
+
+    Raises (unlike the write helpers, which degrade to a False return) --
+    an empty list here is a factual claim that the brand has no matching
+    ideas, and callers act on it: `worker_wp_ideas.py` logs
+    "no_approved_ideas_to_draft" and exits 0. Swallowing a DB failure into
+    `[]` therefore reports a healthy no-op run while the queue silently
+    backs up: that ran 4x/day from 2026-08-10 to 2026-08-14 on a launchd
+    job with no DATABASE_URL, every run stamped [success], never once
+    seeing an approved idea.
+    """
+    clauses: list[str] = []
+    params: list[Any] = []
+    if status:
+        clauses.append("status = %s")
+        params.append(status)
+    if brand_id:
+        clauses.append("brand_id = %s")
+        params.append(brand_id)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(max(1, min(limit, 5000)))
+    query = f"SELECT * FROM content_ideas{where} ORDER BY created_at DESC LIMIT %s"
+    return db.fetch_all(query, tuple(params))
 
 
 def existing_topics(*, brand_id: str | None = None) -> set[str]:
