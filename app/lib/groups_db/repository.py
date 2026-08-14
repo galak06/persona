@@ -126,25 +126,6 @@ class GroupsRepository:
     def set_posting_mode(self, group_url: str, mode: str) -> bool:
         return self._update_column(group_url, "posting_mode", mode)
 
-    def set_first_comment_flagged(self, group_url: str, at_iso: str) -> bool:
-        """Write-once flag for the fb-engager first-comment gate.
-
-        Only transitions an unset column (`''`/NULL) to ``at_iso``. Returns
-        True iff THIS call did the flagging — callers use that to notify
-        (Telegram) exactly once per group, ever.
-        """
-        rowcount = execute(
-            "UPDATE fb_groups SET first_comment_flagged_at = %s "
-            "WHERE group_url = %s "
-            "AND (first_comment_flagged_at IS NULL OR first_comment_flagged_at = '')",
-            (at_iso, group_url),
-        )
-        return rowcount > 0
-
-    def set_first_comment_approved(self, group_url: str, at_iso: str) -> bool:
-        """Approve inline comments for a group (plain update, overwrite allowed)."""
-        return self._update_column(group_url, "first_comment_approved_at", at_iso)
-
     def append_note(self, group_url: str, note: dict[str, str]) -> bool:
         """Append one {at, text} note to a group's notes list (never clobbers)."""
         row = fetch_one("SELECT notes FROM fb_groups WHERE group_url = %s", (group_url,))

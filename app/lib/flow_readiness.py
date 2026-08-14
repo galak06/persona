@@ -3,10 +3,12 @@
 Answers the operator question "how do I know fb-group-scout needs to run
 (and its candidates approved) before fb-engager has anything to scan" --
 today that's silent (0 groups joined -> fb-engager just finds nothing, with
-no UI signal explaining why). `flow_status()` surfaces, per managed flow:
-whether it's enabled, its last `worker_runs` status, and a flow-specific
-readiness count (joined-group count for the two Facebook flows, hashtag
-count for ig-engager).
+no UI signal explaining why). `flow_status()` surfaces, per panel-visible
+flow: whether it's enabled, its last `worker_runs` status, and a
+flow-specific readiness count (joined-group count for the two Facebook
+flows, hashtag count for ig-engager). fb-group-scout itself is gated and
+dispatched like any managed flow but renders no card -- see
+`_PANEL_HIDDEN_FLOWS`.
 
 Queries `fb_groups` directly (not via `lib.groups_db`'s repository, which
 resolves its brand implicitly from the CURRENT process's `BRAND_DIR` env
@@ -24,13 +26,28 @@ from typing import Any
 from lib import db, schedule_db, worker_db
 
 # Presentation order (onboarding order), not `MANAGED_FLOW_IDS`'s frozenset
-# iteration order.
+# iteration order. Stays the FULL managed set -- `tests/
+# test_managed_flow_ids_consistency.py` pins it against `MANAGED_FLOW_IDS`
+# so a newly gated flow can't go missing from the registry the way
+# `fb-engager` did. Hiding a card is `_PANEL_HIDDEN_FLOWS`'s job, below.
 _FLOW_ORDER: tuple[str, ...] = ("ig-engager", "fb-group-scout", "fb-engager")
 _FLOW_SCRIPTS: dict[str, str] = {
     "ig-engager": "scripts/ig_engager.py",
     "fb-group-scout": "scripts/fb_group_scout.py",
     "fb-engager": "scripts/fb_engager.py",
 }
+
+# Managed flows the Flow status panel does NOT render a card for. Purely a
+# display choice -- a hidden flow is still gated by `enabled_flows`, still
+# dispatched on its own cron, and still runnable via `POST .../flows/{id}/run`.
+# `fb-group-scout` is hidden because it is a background supplier: the operator
+# acts on its output in the Inbox (approving join candidates), not on the flow
+# itself, and its readiness signal (joined-group count) is already surfaced on
+# the `fb-engager` card that consumes it.
+_PANEL_HIDDEN_FLOWS: frozenset[str] = frozenset({"fb-group-scout"})
+
+# What `flow_status()` actually renders, in order.
+_PANEL_ORDER: tuple[str, ...] = tuple(f for f in _FLOW_ORDER if f not in _PANEL_HIDDEN_FLOWS)
 
 
 def _joined_group_count(brand_id: str) -> int:
@@ -100,7 +117,7 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
 def flow_status(
     *, brand_id: str, brand_dir: Path, enabled_flows: list[str]
 ) -> list[dict[str, Any]]:
-    """One entry per managed flow: enabled?, last-run status, readiness signal.
+    """One entry per panel-visible flow: enabled?, last-run, readiness signal.
 
     The `schedule_tasks.id` a flow was actually provisioned under is not a
     fixed, guessable format -- the one legacy brand's rows predate the
@@ -116,7 +133,7 @@ def flow_status(
         t["title"]: t["id"] for t in schedule_db.load_all() if t.get("brand_id") == brand_id
     }
     out: list[dict[str, Any]] = []
-    for flow_id in _FLOW_ORDER:
+    for flow_id in _PANEL_ORDER:
         schedule_task_id = tasks_by_flow.get(flow_id)
         last_run = (
             worker_db.get_one(brand_dir, schedule_task_id, brand_id) if schedule_task_id else None

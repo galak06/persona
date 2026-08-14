@@ -136,18 +136,29 @@ def test_readiness_for_fb_engager_ready_once_a_group_is_joined(brand: str, tmp_p
 @requires_postgres
 def test_flow_status_returns_entries_in_onboarding_order(brand: str, tmp_path: Path) -> None:
     entries = flow_status(brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager"])
-    assert [e["flow_id"] for e in entries] == ["ig-engager", "fb-group-scout", "fb-engager"]
+    assert [e["flow_id"] for e in entries] == ["ig-engager", "fb-engager"]
+
+
+@requires_postgres
+def test_flow_status_omits_panel_hidden_flows(brand: str, tmp_path: Path) -> None:
+    """`fb-group-scout` is gated and dispatched like any managed flow but
+    renders no card -- the operator acts on its output in the Inbox, and its
+    readiness signal already appears on the `fb-engager` card. Enabling it
+    must not make a card appear."""
+    entries = flow_status(
+        brand_id=brand,
+        brand_dir=tmp_path,
+        enabled_flows=["ig-engager", "fb-group-scout", "fb-engager"],
+    )
+    assert "fb-group-scout" not in {e["flow_id"] for e in entries}
 
 
 @requires_postgres
 def test_flow_status_reflects_enabled_flows(brand: str, tmp_path: Path) -> None:
-    entries = flow_status(
-        brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager", "fb-engager"]
-    )
+    entries = flow_status(brand_id=brand, brand_dir=tmp_path, enabled_flows=["ig-engager"])
     by_id = {e["flow_id"]: e for e in entries}
     assert by_id["ig-engager"]["enabled"] is True
-    assert by_id["fb-engager"]["enabled"] is True
-    assert by_id["fb-group-scout"]["enabled"] is False
+    assert by_id["fb-engager"]["enabled"] is False
 
 
 @requires_postgres

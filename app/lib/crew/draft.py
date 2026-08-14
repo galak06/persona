@@ -8,7 +8,10 @@ it, not how to judge one).
 POSTs to WordPress with `status: "draft"` hardcoded -- no parameter, env var,
 or flag anywhere in this module can override that; this pipeline never
 auto-publishes (hard constraint, not a default that happens to be draft
-today). Modeled directly on
+today). The byline, unlike the status, IS configurable: `WP_AUTHOR_ID` sets
+the `author` on the create POST (see `_configured_author_id`), because
+WordPress otherwise credits the authenticating service account and leaks its
+slug into the public `/author/<slug>/` URL. Modeled directly on
 `recipe-publisher/publishers/wordpress.py::publish_to_wordpress`'s request
 shape (`client.post("/wp-json/wp/v2/posts", json={...})`, the same
 `resp.status_code >= 400` failure check, the same `post["id"]`/`post["link"]`
@@ -42,6 +45,7 @@ so a human can later find "which ideas already became drafts" via
 from __future__ import annotations
 
 import mimetypes
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -155,6 +159,26 @@ def _read_reference_image(path: Path | None, idea_id: str) -> tuple[bytes | None
     return data, mime or "image/png"
 
 
+def _configured_author_id() -> int | None:
+    """Resolve the WP user id every generated draft is bylined to, from
+    `WP_AUTHOR_ID`.
+
+    WordPress assigns a new post to whichever user authenticated the request.
+    That user is the API service account (`WP_USER`), so without an explicit
+    `author` the byline URL becomes `/author/<service-account-slug>/` -- which
+    is how `/author/claude_user/` ended up publicly indexed on dogfoodandfun.
+    Setting `WP_AUTHOR_ID` decouples "who authenticates" from "who is credited".
+
+    Returns None when unset or non-numeric, preserving the previous
+    authenticating-user behaviour for brands that haven't configured it."""
+    raw = os.environ.get("WP_AUTHOR_ID", "").strip()
+    if not raw.isdigit():
+        if raw:
+            logger.warning("crew_draft_wp_author_id_invalid", value=raw)
+        return None
+    return int(raw)
+
+
 def create_wp_draft(
     *,
     idea_id: str,
@@ -233,6 +257,9 @@ def create_wp_draft(
         excerpt = derive_excerpt(body_html)
 
         payload: dict[str, Any] = {"title": title, "content": full_body, "status": "draft"}
+        author_id = _configured_author_id()
+        if author_id is not None:
+            payload["author"] = author_id
         if excerpt:
             payload["excerpt"] = excerpt
         if category_id:

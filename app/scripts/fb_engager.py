@@ -13,13 +13,18 @@ There is no Redis queue and no separate comment handoff. Iterate-once is
 enforced by `lib.scan_dedup.ScanDedup`, which marks every OPENED post so
 the next run skips it.
 
-Two group-level guards run inside the scan: `WarmFilteredAdapter` drops
+One group-level guard runs inside the scan: `WarmFilteredAdapter` drops
 groups still inside the comment warmup window (newly joined groups are
 never engaged immediately — same semantics the retired fb_scan.py
-enforced), and `FirstCommentApprovalGate` skips the comment step (never
-the like) in any group whose first comment has not been human-approved on
-the Groups page — flagging the group and sending one Telegram message the
-first time it is seen.
+enforced).
+
+There is no human approval gate on comments, deliberately — this mirrors
+`scripts/ig_engager.py`, which passes no `comment_gate` either. The
+engage/decline decision is the drafter's: `lib.draft_helper` returns
+`{engage, comment, reason}` and an `engage: false` yields an empty draft,
+which the pipeline treats as a skip. That agent adjudication IS the
+approval, and `reason` is logged either way so every post and every
+decline stays attributable.
 """
 
 from __future__ import annotations
@@ -44,10 +49,8 @@ WORKER_LABEL = worker_label_for_flow("fb-engager")
 import draft_helper
 import rate_limiter
 from comment_generator import score_relevance as _score_relevance
-from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
-from lib.engagement.first_comment_gate import FirstCommentApprovalGate
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
@@ -55,7 +58,7 @@ from lib.engagement.warm_sources import WarmFilteredAdapter
 from lib.io.jsonio import read_json, write_json
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.scan_dedup import ScanDedup
-from notifier import send, skill_finished, skill_skipped, skill_started
+from notifier import skill_finished, skill_skipped, skill_started
 from rate_limiter import can_act, daily_limit, print_status
 
 LAST_RUN_FILE = settings.paths.last_run
@@ -155,16 +158,6 @@ def run_fb_engager_scan(
     # adapters included — exactly as the retired fb_scan.py wrapped its
     # `_WarmFiltered`: newly joined groups sit out the comment warmup.
     active = WarmFilteredAdapter(adapter or FacebookGroupAdapter(config))
-    # One-time human approval for the FIRST comment in each group; the
-    # run's dry_run is passed through so a preview never flags or notifies.
-    gate = FirstCommentApprovalGate(
-        get_group=groups_db.get_by_url,
-        flag_group=groups_db.set_first_comment_flagged,
-        notify=send,
-        now_iso=lambda: datetime.now(UTC).isoformat(),
-        log=log,
-        dry_run=dry_run,
-    )
     try:
         report = run_outbound_scan(
             active,
@@ -180,7 +173,6 @@ def run_fb_engager_scan(
             score_relevance=_score_post,
             dry_run=dry_run,
             inline_comment=True,
-            comment_gate=gate,
         )
     except (RuntimeError, FileNotFoundError) as exc:
         msg = str(exc)

@@ -101,6 +101,56 @@ def test_create_wp_draft_always_posts_status_draft_hardcoded() -> None:
 
 
 @respx.mock
+def test_create_wp_draft_sets_author_from_wp_author_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`WP_AUTHOR_ID` must land on the create POST as `author`. Without it
+    WordPress credits the authenticating service account (`WP_USER`), which is
+    how `/author/claude_user/` became a public URL on the live site."""
+    monkeypatch.setenv("WP_AUTHOR_ID", "1")
+    route = respx.post(_POSTS_URL).mock(
+        return_value=httpx.Response(201, json={"id": 1, "link": "https://example.com/?p=1"})
+    )
+    fake_db = _FakeIdeasDb()
+
+    create_wp_draft(
+        idea_id="idea-1",
+        title="t",
+        body_html="<p>b</p>",
+        set_wp_result_fn=fake_db.set_wp_result,
+        update_status_fn=fake_db.update_status,
+    )
+
+    body = json.loads(route.calls.last.request.content)
+    assert body["author"] == 1
+
+
+@respx.mock
+@pytest.mark.parametrize("raw", ["", "   ", "nallas-dad", "1.5"])
+def test_create_wp_draft_omits_author_when_wp_author_id_unset_or_invalid(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    """Unset or non-numeric `WP_AUTHOR_ID` must omit `author` entirely rather
+    than send a bad value -- brands that haven't configured it keep the previous
+    authenticating-user behaviour."""
+    monkeypatch.setenv("WP_AUTHOR_ID", raw)
+    route = respx.post(_POSTS_URL).mock(
+        return_value=httpx.Response(201, json={"id": 1, "link": "https://example.com/?p=1"})
+    )
+    fake_db = _FakeIdeasDb()
+
+    create_wp_draft(
+        idea_id="idea-1",
+        title="t",
+        body_html="<p>b</p>",
+        set_wp_result_fn=fake_db.set_wp_result,
+        update_status_fn=fake_db.update_status,
+    )
+
+    assert "author" not in json.loads(route.calls.last.request.content)
+
+
+@respx.mock
 def test_create_wp_draft_raises_on_wp_error_and_never_touches_ideas_db() -> None:
     respx.post(_POSTS_URL).mock(return_value=httpx.Response(500, text="server error"))
     fake_db = _FakeIdeasDb()

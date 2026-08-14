@@ -106,7 +106,6 @@ from api.brands_api import router as _brands_router
 from api.campaigns_api import router as _campaigns_router
 from api.engagements_api import router as _engagements_router
 from api.flow_templates_api import router as _flow_templates_router
-from api.groups_api import router as _groups_router
 from api.ideas_api import router as _ideas_router
 from api.ideas_generate_api import router as _ideas_generate_router
 from api.oauth_api import router as _oauth_router
@@ -117,6 +116,7 @@ from api.reels_compose_api import router as _reels_compose_router
 from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
 from api.social_posts_api import router as _social_posts_router
+from api.social_posts_compose_api import router as _social_posts_compose_router
 from api.tiktok_candidates_api import router as _tiktok_router
 from croniter import croniter
 from lib import activity_log, groups_db, groups_queue, schedule_db
@@ -150,6 +150,7 @@ app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
+app.include_router(_social_posts_compose_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_reels_compose_router, prefix="/api/v1", tags=["reels"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
@@ -159,7 +160,6 @@ app.include_router(_brands_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_settings_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_brand_flows_router, prefix="/api/v1", tags=["brands"])
 app.include_router(_flow_templates_router, prefix="/api/v1", tags=["flow-templates"])
-app.include_router(_groups_router, prefix="/api/v1", tags=["groups"])
 app.include_router(_session_status_router, prefix="/api/v1", tags=["sessions"])
 
 

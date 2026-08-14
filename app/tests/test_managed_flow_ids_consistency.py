@@ -21,7 +21,7 @@ from pathlib import Path
 
 from lib.brand_provisioning import _STAGE1_FLOWS
 from lib.brands_db.models import MANAGED_FLOW_IDS
-from lib.flow_readiness import _FLOW_ORDER, _FLOW_SCRIPTS
+from lib.flow_readiness import _FLOW_ORDER, _FLOW_SCRIPTS, _PANEL_HIDDEN_FLOWS, _PANEL_ORDER
 
 _APP_ROOT = Path(__file__).resolve().parent.parent
 _BRANDS_TS = _APP_ROOT / "frontend" / "src" / "api" / "brands.ts"
@@ -51,6 +51,16 @@ def test_flow_readiness_registry_matches_managed_flow_ids() -> None:
     path from `_FLOW_SCRIPTS`; a flow missing from either is invisible."""
     assert set(_FLOW_ORDER) == set(MANAGED_FLOW_IDS)
     assert set(_FLOW_SCRIPTS) == set(MANAGED_FLOW_IDS)
+
+
+def test_panel_hidden_flows_are_still_gated_flows() -> None:
+    """Hiding a card is display-only: a hidden flow stays in `MANAGED_FLOW_IDS`
+    (so `enabled_flows` still gates it), keeps its `_FLOW_SCRIPTS` entry, and
+    is merely dropped from what `flow_status()` renders. Hiding a flow that
+    isn't managed would silently un-gate it instead."""
+    assert _PANEL_HIDDEN_FLOWS <= set(MANAGED_FLOW_IDS)
+    assert set(_PANEL_ORDER) == set(_FLOW_ORDER) - _PANEL_HIDDEN_FLOWS
+    assert _PANEL_ORDER == tuple(f for f in _FLOW_ORDER if f in _PANEL_ORDER)
 
 
 def test_frontend_managed_flow_ids_matches_python() -> None:
