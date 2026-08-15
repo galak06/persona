@@ -212,6 +212,20 @@ class ActivityResponse(BaseModel):
     as_of: str
 
 
+class ActivitySummaryResponse(BaseModel):
+    """Envelope for ``GET /api/v1/activity/summary`` — one day's action tally.
+
+    ``counts`` carries every action in ``lib.activity_log.VALID_ACTIONS``
+    (zeros included) so the UI can index it without guarding. ``total``
+    excludes ``trace``, which is a system heartbeat rather than activity.
+    """
+
+    date: str
+    counts: dict[str, int]
+    total: int
+    as_of: str
+
+
 class ApproveBody(BaseModel):
     """Body for ``POST /items/{id}/approve``.
 
@@ -260,8 +274,10 @@ class ErrorResponse(BaseModel):
     detail: str
     code: str
 
+
 class FacebookGroup(BaseModel):
     """A Facebook group from groups_tracker.json."""
+
     model_config = ConfigDict(extra="allow")
     group_name: str
     group_url: str
@@ -287,14 +303,18 @@ class FacebookGroup(BaseModel):
             return str(v)
         return v
 
+
 class FacebookGroupsResponse(BaseModel):
     """Envelope for GET /api/v1/facebook/groups."""
+
     groups: list[FacebookGroup]
     total: int
     as_of: str
 
+
 class FacebookGroupUpdateBody(BaseModel):
     """Body for PUT /api/v1/facebook/groups/{group_name}."""
+
     status: str | None = None
     posting_mode: str | None = None
 
@@ -303,7 +323,7 @@ class WorkerStatus(BaseModel):
     label: str
     title: str
     description: str
-    status: str          # "never" | "running" | "success" | "error"
+    status: str  # "never" | "running" | "success" | "error"
     last_run: str | None = None
     message: str | None = None
     is_instance: bool = False  # True for individual slots of a multi-instance trigger

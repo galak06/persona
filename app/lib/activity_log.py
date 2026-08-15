@@ -35,7 +35,13 @@ from lib.config import settings
 assert settings.paths is not None
 ENGAGEMENT_LOG_PATH: Path = settings.paths.logs_dir / "engagement_log.jsonl"
 
-__all__ = ["ENGAGEMENT_LOG_PATH", "VALID_ACTIONS", "log_trace", "read_recent"]
+__all__ = [
+    "ENGAGEMENT_LOG_PATH",
+    "VALID_ACTIONS",
+    "log_trace",
+    "read_recent",
+    "summarize_day",
+]
 
 # Must mirror ``api.schemas.ActionLiteral``. Listed here so the reader
 # can drop unknown rows cheaply without importing pydantic.
@@ -157,6 +163,30 @@ def read_recent(
     # then slice. ``list.reverse`` is O(n); on 88 rows this is trivial.
     rows = list(reversed(rows))[:limit]
     return rows, _CACHE_TOTAL
+
+
+def summarize_day(date: str) -> tuple[dict[str, int], int]:
+    """Return ``(counts_by_action, non_trace_total)`` for a single ``YYYY-MM-DD``.
+
+    Counts the *whole* log, not a tail slice. The Dashboard used to tail 200
+    rows and tally client-side, but hourly ``trace`` heartbeats flood that
+    window (187 of the last 200 on 2026-08-14), so real comments/likes/joins
+    fell off the end and silently under-reported. Summing server-side over
+    the already-cached file removes the window entirely.
+
+    Every action in :data:`VALID_ACTIONS` is present in the returned dict,
+    zeros included, so callers never branch on a missing key. The second
+    element excludes ``trace`` — heartbeats are not activity.
+    """
+    _ensure_cache()
+    counts: dict[str, int] = dict.fromkeys(VALID_ACTIONS, 0)
+    for entry in _CACHE_ENTRIES:
+        if entry.get("date") != date:
+            continue
+        action = entry.get("action")
+        if isinstance(action, str) and action in counts:
+            counts[action] += 1
+    return counts, sum(n for a, n in counts.items() if a != "trace")
 
 
 def log_trace(

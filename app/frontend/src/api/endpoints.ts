@@ -6,6 +6,7 @@
  * Mirrors the FastAPI routes declared in `api/approval_api.py`:
  *   GET  /api/v1/pending
  *   GET  /api/v1/activity[?limit=&platform=&action=]
+ *   GET  /api/v1/activity/summary[?date=YYYY-MM-DD]
  *   GET  /api/v1/items/{id}
  *   POST /api/v1/items/{id}/approve[?channel=both|fb_only|ig_only]
  *   POST /api/v1/items/{id}/reject
@@ -52,6 +53,17 @@ export const endpoints = {
 
   /** GET — recent engagement-log entries with optional filters. */
   activity: (params?: ActivityParams): string => buildActivity(params),
+
+  /**
+   * GET — one day's per-action tally, summed server-side over the whole log.
+   *
+   * Pass the *viewer's* local date so "today" means their calendar day, not
+   * the container's UTC one. Tallying client-side off `/activity` is not an
+   * option: hourly `trace` heartbeats crowd real actions out of any tail
+   * window, which is how this tile came to read zero on active days.
+   */
+  activitySummary: (date?: string): string =>
+    date ? `/activity/summary?date=${enc(date)}` : "/activity/summary",
 
   /** GET — fetch a single item by id. */
   item: (id: string): string => `/items/${enc(id)}`,

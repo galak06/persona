@@ -50,6 +50,7 @@ from api import state
 from api.schemas import (
     ActivityEntry,
     ActivityResponse,
+    ActivitySummaryResponse,
     ApproveBody,
     BlogPostItem,
     CampaignVerifyItem,
@@ -182,7 +183,9 @@ def list_pending() -> PendingResponse:
     ideas_raw = rh.pending_only(state.read_queue(rh.IDEATOR_QUEUE_PATH))
     campaigns_raw = rh.pending_only(state.read_queue(rh.CAMPAIGN_VERIFY_QUEUE_PATH))
 
-    items: list[CommentItem | BlogPostItem | GroupItem | IdeaItem | SeedItem | CampaignVerifyItem] = []
+    items: list[
+        CommentItem | BlogPostItem | GroupItem | IdeaItem | SeedItem | CampaignVerifyItem
+    ] = []
 
     for raw in comments_raw:
         try:
@@ -234,7 +237,9 @@ def list_activity(
 ) -> ActivityResponse:
     """Tail of ``logs/engagement_log.jsonl``, most recent first."""
     raw_entries, total = activity_log.read_recent(
-        limit=limit, platform=platform, action=action,
+        limit=limit,
+        platform=platform,
+        action=action,
     )
     entries: list[ActivityEntry] = []
     for raw in raw_entries:
@@ -243,6 +248,24 @@ def list_activity(
         except (ValueError, TypeError) as exc:
             _log.warning("skipping malformed activity row: %s", exc)
     return ActivityResponse(entries=entries, total=total, as_of=rh.now_iso())
+
+
+@app.get("/api/v1/activity/summary", response_model=ActivitySummaryResponse)
+def activity_summary(
+    date: str | None = Query(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Day to tally, YYYY-MM-DD. Defaults to today (UTC).",
+    ),
+) -> ActivitySummaryResponse:
+    """Per-action tally for one day, computed over the whole log.
+
+    The caller passes its own local ``date`` so the Dashboard's "today"
+    matches the viewer's calendar day rather than the container's.
+    """
+    day = date or datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
+    counts, total = activity_log.summarize_day(day)
+    return ActivitySummaryResponse(date=day, counts=counts, total=total, as_of=rh.now_iso())
 
 
 @app.get("/api/v1/items/{item_id}")
@@ -280,15 +303,17 @@ def approve_item(
     if kind == "comment":
         assert path is not None  # noqa: S101
         payload = body or ApproveBody()
-        return rh.approve_comment(
-            path, item_id, decision_status="approved", text=payload.text
-        )
+        return rh.approve_comment(path, item_id, decision_status="approved", text=payload.text)
     if kind == "blog_post":
         assert path is not None  # noqa: S101
         payload = body or ApproveBody()
         return rh.approve_blog_post(
-            path, item_id, channel=channel, text=payload.text,
-            fb_caption=payload.fb_caption, ig_caption=payload.ig_caption,
+            path,
+            item_id,
+            channel=channel,
+            text=payload.text,
+            fb_caption=payload.fb_caption,
+            ig_caption=payload.ig_caption,
             decision_status="approved",
         )
     if kind in ("idea", "seed", "campaign_verify"):
@@ -312,20 +337,25 @@ def reject_item(
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
         assert path is not None  # noqa: S101
-        return rh.approve_comment(
-            path, item_id, decision_status="USER_SKIPPED", text=None
-        )
+        return rh.approve_comment(path, item_id, decision_status="USER_SKIPPED", text=None)
     if kind == "blog_post":
         assert path is not None  # noqa: S101
         return rh.approve_blog_post(
-            path, item_id, channel=None, text=None,
-            fb_caption=None, ig_caption=None, decision_status="USER_SKIPPED",
+            path,
+            item_id,
+            channel=None,
+            text=None,
+            fb_caption=None,
+            ig_caption=None,
+            decision_status="USER_SKIPPED",
         )
     if kind in ("idea", "seed", "campaign_verify"):
         assert path is not None  # noqa: S101
         return rh.approve_generic(path, item_id, decision_status="USER_SKIPPED")
     return rh.approve_group(
-        raw, status_value="USER_SKIPPED", background_tasks=background_tasks,
+        raw,
+        status_value="USER_SKIPPED",
+        background_tasks=background_tasks,
     )
 
 
@@ -348,12 +378,14 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
         )
     assert path is not None  # noqa: S101
     if kind == "comment":
-        return rh.approve_comment(
-            path, item_id, decision_status="edited", text=body.text
-        )
+        return rh.approve_comment(path, item_id, decision_status="edited", text=body.text)
     return rh.approve_blog_post(
-        path, item_id, channel=None, text=body.text,
-        fb_caption=body.fb_caption, ig_caption=body.ig_caption,
+        path,
+        item_id,
+        channel=None,
+        text=body.text,
+        fb_caption=body.fb_caption,
+        ig_caption=body.ig_caption,
         decision_status="edited",
     )
 
@@ -387,13 +419,15 @@ def list_facebook_groups() -> FacebookGroupsResponse:
                     continue
                 mc = p.get("member_count")
                 priv = p.get("privacy")
-                groups.append(FacebookGroup(
-                    group_name=str(p.get("name", "")),
-                    group_url=str(p.get("url", "")),
-                    status="not_joined_yet",
-                    privacy=str(priv) if priv is not None else None,
-                    member_count=str(mc) if mc is not None else None,
-                ))
+                groups.append(
+                    FacebookGroup(
+                        group_name=str(p.get("name", "")),
+                        group_url=str(p.get("url", "")),
+                        status="not_joined_yet",
+                        privacy=str(priv) if priv is not None else None,
+                        member_count=str(mc) if mc is not None else None,
+                    )
+                )
     except FileNotFoundError:
         pass
     except Exception as exc:
@@ -441,6 +475,7 @@ def _normalize_label(label: str) -> str:
     mapped = label_for_task_id(label)
     return mapped if mapped else f"{_LABEL_PREFIX}{label}"
 
+
 _BRAND_DIR = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
 _BRAND = _BRAND_DIR.name
 
@@ -458,8 +493,11 @@ def list_workers() -> list[WorkerStatus]:
     # Separate base rows from per-instance rows (label format: "{base}--{slot}")
     _instance_pat = re.compile(r"^(.+)--(\d+)$")
     base_rows = {k: v for k, v in all_rows.items() if not _instance_pat.match(k)}
-    instance_rows = [v | {"_base": m.group(1), "_slot": int(m.group(2))}
-                     for k, v in all_rows.items() if (m := _instance_pat.match(k))]
+    instance_rows = [
+        v | {"_base": m.group(1), "_slot": int(m.group(2))}
+        for k, v in all_rows.items()
+        if (m := _instance_pat.match(k))
+    ]
 
     task_meta: dict[str, dict] = {}
     results: list[WorkerStatus] = []
@@ -468,16 +506,20 @@ def list_workers() -> list[WorkerStatus]:
         label = task.id
         task_meta[label] = extra
         row = base_rows.get(label)
-        results.append(WorkerStatus(
-            label=label,
-            title=extra.get("title") or label,
-            description=extra.get("description") or "",
-            status=row["status"] if row else "never",
-            last_run=row["last_run"] if row else None,
-            message=row.get("message") if row else None,
-            re_run_guard=int(task.model_extra.get("re_run_guard", 1) if task.model_extra else 1),
-            cron=_cron_of(extra),
-        ))
+        results.append(
+            WorkerStatus(
+                label=label,
+                title=extra.get("title") or label,
+                description=extra.get("description") or "",
+                status=row["status"] if row else "never",
+                last_run=row["last_run"] if row else None,
+                message=row.get("message") if row else None,
+                re_run_guard=int(
+                    task.model_extra.get("re_run_guard", 1) if task.model_extra else 1
+                ),
+                cron=_cron_of(extra),
+            )
+        )
 
     # Append running/recent per-instance rows so the Running tab shows each slot
     _recent_cutoff = 60  # seconds
@@ -498,16 +540,18 @@ def list_workers() -> list[WorkerStatus]:
         slot = row["_slot"]
         meta = task_meta.get(base, {})
         base_title = meta.get("title") or base
-        results.append(WorkerStatus(
-            label=row["worker_label"],
-            title=f"{base_title} #{slot + 1}",
-            description=meta.get("description") or "",
-            status=status,
-            last_run=last_run_str or None,
-            message=row.get("message"),
-            is_instance=True,
-            cron=_cron_of(meta),
-        ))
+        results.append(
+            WorkerStatus(
+                label=row["worker_label"],
+                title=f"{base_title} #{slot + 1}",
+                description=meta.get("description") or "",
+                status=status,
+                last_run=last_run_str or None,
+                message=row.get("message"),
+                is_instance=True,
+                cron=_cron_of(meta),
+            )
+        )
 
     return results
 
@@ -558,7 +602,7 @@ def update_worker_schedule(label: str, body: ScheduleUpdateRequest) -> WorkerSta
 
 
 class _TriggerBody(BaseModel):
-    count: int = 1      # number of parallel worker instances (1-3)
+    count: int = 1  # number of parallel worker instances (1-3)
     force: bool = False  # skip the "already ran today" guard
     recipe_ids: list[str] = []
     headless: bool | None = None  # override PLAYWRIGHT_HEADLESS; None = defer to brand.json
@@ -659,7 +703,12 @@ def _spawn_worker_instance(
 
 
 def _reap_worker(
-    proc: subprocess.Popen, pid_path: Path, timeout_s: int, brand_dir: Path, label: str, log_path: Path
+    proc: subprocess.Popen,
+    pid_path: Path,
+    timeout_s: int,
+    brand_dir: Path,
+    label: str,
+    log_path: Path,
 ) -> None:
     """Wait for a spawned worker to exit (or kill it on timeout), recording the outcome."""
     timed_out = False
@@ -698,7 +747,9 @@ def _at_limit_rate_summary(extra: dict, task: Any) -> dict[str, dict[str, int]]:
         else:
             relevant_prefix = ""
         for key, status in get_daily_status().items():
-            if status["remaining"] == 0 and (not relevant_prefix or key.startswith(relevant_prefix)):
+            if status["remaining"] == 0 and (
+                not relevant_prefix or key.startswith(relevant_prefix)
+            ):
                 at_limit[key] = status
     except Exception as exc:  # noqa: BLE001
         _log.debug("rate_limiter check failed, skipping: %s", exc)
@@ -727,7 +778,7 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
         raise HTTPException(status_code=404, detail=f"No task for label: {label}")
 
     extra: dict = task.model_extra or {}
-    suffix = label[len("com.persona."):]
+    suffix = label[len("com.persona.") :]
     base = suffix.replace("-", "_")
     brand_dir = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
 
@@ -750,7 +801,8 @@ def trigger_worker(label: str, body: _TriggerBody = _TriggerBody()) -> TriggerRe
     if alive:
         raise HTTPException(
             status_code=409,
-            detail=f"Already running (pid={alive[0]})" + (f" +{len(alive)-1} more" if len(alive) > 1 else ""),
+            detail=f"Already running (pid={alive[0]})"
+            + (f" +{len(alive) - 1} more" if len(alive) > 1 else ""),
         )
 
     timeout_s = int(extra.get("timeout_minutes") or 30) * 60
@@ -798,7 +850,7 @@ def get_schedule_log(
         label = _normalize_label(label)
         if not _LABEL_RE.fullmatch(label):
             raise HTTPException(status_code=400, detail="Invalid label format")
-        suffix = label[len("com.persona."):]
+        suffix = label[len("com.persona.") :]
 
     log_name = f"cron_{suffix.replace('-', '_')}.log"
     brand_dir = Path(os.environ.get("BRAND_DIR", str(default_brand_dir())))
