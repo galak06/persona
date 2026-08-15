@@ -75,8 +75,7 @@ def test_no_bare_lib_imports() -> None:
             offenders.append(f"{py.relative_to(APP)}:{lineno}: {stmt}")
     assert not offenders, (
         "bare imports of lib modules found -- these create a second module object "
-        "for the same file (see docs/adr/0006-single-import-root.md):\n  "
-        + "\n  ".join(offenders)
+        "for the same file (see docs/adr/0006-single-import-root.md):\n  " + "\n  ".join(offenders)
     )
 
 

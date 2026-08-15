@@ -16,6 +16,7 @@ container's writable layer and every rebuild wiped it -- silently disarming
 the template-recycling guard this module exists to provide. See
 ``lib.deduplication`` for the same fix and the migration script.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -102,8 +103,9 @@ def was_text_recently_used(text: str) -> bool:
     return _hash(text) in _load_recent_hashes()
 
 
-def record_draft(text: str, *, platform: Platform = "facebook",
-                 post_id: str = "", target: str = "") -> None:
+def record_draft(
+    text: str, *, platform: Platform = "facebook", post_id: str = "", target: str = ""
+) -> None:
     """Append a draft event so future drafts can detect repeats."""
     _history_path().parent.mkdir(parents=True, exist_ok=True)
     event = {
@@ -141,6 +143,7 @@ def cli_stats() -> None:
     if _history_path().exists():
         # Per-day counts
         from collections import Counter
+
         counts: Counter[str] = Counter()
         with _history_path().open() as f:
             for line in f:

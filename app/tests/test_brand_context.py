@@ -111,9 +111,7 @@ def test_paths_derive_from_brand_dir(tmp_path: Path) -> None:
     assert paths.brand_voice_guide == tmp_path / "data" / "config" / "brand_voice_guide.md"
 
 
-def test_context_paths_match_resolve_paths(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_context_paths_match_resolve_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("BRAND_DIR", str(tmp_path))
     assert BrandContext.from_env().paths == resolve_paths(tmp_path.resolve())
 

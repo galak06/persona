@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import re
-import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
