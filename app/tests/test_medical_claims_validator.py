@@ -4,17 +4,13 @@ scanner + hard-fail gate for wp-post-creator blog drafts. Pure, no network."""
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import medical_claims_validator as mcv
+from lib import medical_claims_validator as mcv
 
 # ── Known-bad claims: one per category ──────────────────────────────────────
 
@@ -30,7 +26,7 @@ import medical_claims_validator as mcv
         ("This supplement treats arthritis in large breeds.", "treatment_claim"),
         ("Our quiz diagnoses your dog's allergy in minutes.", "diagnosis_claim"),
         ("Follow the recommended dosage printed on the label.", "dosage_claim"),
-        ("This chew is prescription strength for joint support.", "prescription_claim"),
+        ("Our prescription strength chew fixes joint support.", "prescription_claim"),
         ("This food is completely safe for all dogs, guaranteed.", "absolute_efficacy_claim"),
     ],
 )
@@ -83,6 +79,55 @@ def test_self_referential_vet_credential_claims_still_flagged() -> None:
     # already-covered self-referential phrasings.
     hits = mcv.find_banned_claims("Our veterinary team designed this recipe.")
     assert "veterinarian_credential" in hits
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Live-reproduced false positive (idea c145740d, 2026-08-14, "The
+        # 7-Day Elimination Diet Trial"): bare "prescribed" fired on prose
+        # deferring to a REAL vet, and on an Amazon product title injected by
+        # the affiliate resolver. Neither is the brand directing medication,
+        # which is all DOSAGE_CLAIM_TERMS is meant to catch. The idea was
+        # dropped to validation_failed with no reviewer and no stored reason.
+        "When our vet prescribed a hydrolyzed protein dry food for Nalla, "
+        "I thought I could handle it.",
+        # Hyphen counts as a word boundary in _build_pattern, so this matched
+        # the bare term too.
+        "Blue Buffalo Natural Veterinary Diet HF Hydrolyzed — "
+        "VETERINARY-PRESCRIBED FORMULA: digestible hydrolyzed (Pack of 24)",
+        "These are usually prescription diets, like Royal Canin Hydrolyzed.",
+        "For a week, Nalla got only her prescription kibble and water.",
+        # "prescription strength"/"prescription grade" got the same possessive
+        # treatment pre-emptively: bare adjective phrases with no subject fire
+        # on third-party products and on affiliate-injected vendor titles.
+        "Hill's Prescription Diet is a prescription-grade formula from your vet.",
+        "PRESCRIPTION STRENGTH JOINT FORMULA for dogs (Pack of 2)",
+        "Some clinics stock a prescription grade version of this chew.",
+    ],
+)
+def test_third_party_prescription_mentions_not_flagged(text: str) -> None:
+    assert mcv.find_banned_claims(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We prescribed a hydrolyzed diet for your dog.",
+        "We've prescribed this rotation for years.",
+        "I prescribe a 20 mg chew for dogs her size.",
+        "I prescribed a new kibble after the trial.",
+        "We prescribe this for every itchy dog we meet.",
+        "Our prescription strength chew is the one we reach for.",
+        "Try our prescription-strength joint blend.",
+        "Ask for our prescription grade formula.",
+        "Ask for our prescription-grade formula.",
+    ],
+)
+def test_first_person_prescription_claims_still_flagged(text: str) -> None:
+    # Dropping bare "prescribed" must not weaken the actual banned case:
+    # the brand itself directing medication.
+    assert "prescription_claim" in mcv.find_banned_claims(text)
 
 
 def test_clean_blog_paragraph_has_no_flags() -> None:

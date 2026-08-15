@@ -31,175 +31,40 @@ Tradeoffs: biased toward FALSE POSITIVES over false negatives, same as the
 recipe safety scanner — a human reviews every `wp-post-creator` draft in
 this slice, so a false flag costs a re-read while a missed real claim
 ships. E.g. "cure" also matches colloquial "the cure for a slow Monday".
+That tradeoff assumes a human is actually looking: on the
+`crewai_content_pipeline` path a hit sets `validation_failed` and the idea
+is dropped with no reviewer and no persisted reason, so a false positive
+there costs a whole discarded draft. Hence the self-reference rule in
+`lib.medical_claims_terms` — keep bare, non-self-referential terms out.
+
+The term vocabulary itself lives in `lib.medical_claims_terms` and is
+re-exported below, so `from lib.medical_claims_validator import
+CLAIM_CATEGORIES` (and friends) keeps working.
 """
 
 from __future__ import annotations
 
 import re
 
-# ── Term lists, grouped by claim category ──────────────────────────────────
+from lib.medical_claims_terms import (
+    ABSOLUTE_HEALTH_CLAIM_TERMS,
+    ALL_CLAIM_TERMS,
+    CLAIM_CATEGORIES,
+    CREDENTIAL_CLAIM_TERMS,
+    DISEASE_CLAIM_TERMS,
+    DOSAGE_CLAIM_TERMS,
+)
 
-# Implied professional credentials this brand does not hold. Self-referential
-# phrasing only (see module docstring) — recommending a REAL vet is fine.
-# "veterinary-grade"/"veterinary grade"/"vet-approved"/"vet approved" were
-# removed from here: they're bare, non-self-referential phrases that fire on
-# any mention regardless of who's being described, violating this section's
-# own stated intent. Live-reproduced false positive: a draft describing a
-# generic third-party "vet-approved recipe" (not a brand credential claim at
-# all) was rejected on this term, silently killing a `crewai_content_pipeline`
-# idea with no human ever reviewing why (see git history on this comment for
-# the exact idea/date if needed).
-CREDENTIAL_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
-    "veterinarian_credential": (
-        "as a veterinarian",
-        "as your veterinarian",
-        "as a licensed veterinarian",
-        "as a board-certified veterinarian",
-        "we are veterinarians",
-        "we're veterinarians",
-        "our veterinarian",
-        "our veterinarians",
-        "our vet team",
-        "our veterinary team",
-        "our in-house veterinarian",
-        "our staff veterinarian",
-        "licensed veterinarian",
-        "board-certified veterinarian",
-        "practicing veterinarian",
-        "veterinarian on staff",
-    ),
-    "nutritionist_credential": (
-        "as a nutritionist",
-        "as a dog nutritionist",
-        "as a canine nutritionist",
-        "as a certified nutritionist",
-        "as a nutrition expert",
-        "as a dog nutrition expert",
-        "we are nutritionists",
-        "our nutritionist",
-        "our nutritionists",
-        "certified canine nutritionist",
-        "certified dog nutritionist",
-        "certified nutritionist",
-        "board-certified nutritionist",
-    ),
-    "medical_professional_credential": (
-        "as a doctor",
-        "as a physician",
-        "our medical team",
-        "our medical staff",
-        "our doctors",
-        "medically reviewed",
-        "medically approved",
-        "clinically reviewed",
-        "clinically approved",
-        "reviewed by our veterinarian",
-        "reviewed by our doctors",
-        "doctor of veterinary medicine",
-    ),
-    "medical_advice_claim": (
-        "medical advice",
-        "veterinary advice",
-        "professional medical advice",
-        "official medical guidance",
-    ),
-}
-
-# Disease cure / treatment / diagnosis assertions.
-DISEASE_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
-    "cure_claim": (
-        "cure",
-        "cures",
-        "cured",
-        "curing",
-        "cure for",
-        "cure for cancer",
-        "will cure",
-        "guaranteed to cure",
-        "guaranteed cure",
-        "proven to cure",
-        "miracle cure",
-        "natural cure",
-        "reverses cancer",
-        "reverses diabetes",
-        "reverses the disease",
-        "eliminates the disease",
-        "eliminates cancer",
-    ),
-    "treatment_claim": (
-        "treats disease",
-        "treats cancer",
-        "treats arthritis",
-        "treats diabetes",
-        "treatment for cancer",
-        "treatment for arthritis",
-        "treats this condition",
-        "treats the condition",
-    ),
-    "diagnosis_claim": (
-        "diagnoses",
-        "diagnose your dog",
-        "diagnosed with",
-        "this will diagnose",
-    ),
-}
-
-# Dosage / prescription language — implies the brand is directing medication.
-DOSAGE_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
-    "dosage_claim": (
-        "recommended dosage",
-        "safe dosage",
-        "correct dosage",
-        "proper dosage",
-        "dosing chart",
-        "dosing schedule",
-        "mg per pound",
-        "mg per kg",
-        "mg/kg",
-    ),
-    "prescription_claim": (
-        "prescribed",
-        "prescription strength",
-        "prescription-grade",
-        "prescription grade",
-        "we prescribe",
-    ),
-}
-
-# Absolute-health-claim language — extends the social-comment "never make
-# absolute health claims" rule (app/CLAUDE.md Universal DON'T) to blog posts.
-ABSOLUTE_HEALTH_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
-    "absolute_efficacy_claim": (
-        "guaranteed to work",
-        "guaranteed results",
-        "100% effective",
-        "completely safe for all dogs",
-        "totally safe for all dogs",
-        "risk-free",
-        "no side effects",
-        "always works",
-        "never fails",
-        "works every time",
-    ),
-}
-
-_ALL_CLAIM_TERMS: dict[str, tuple[str, ...]] = {
-    **CREDENTIAL_CLAIM_TERMS,
-    **DISEASE_CLAIM_TERMS,
-    **DOSAGE_CLAIM_TERMS,
-    **ABSOLUTE_HEALTH_CLAIM_TERMS,
-}
-
-CLAIM_CATEGORIES: dict[str, str] = {
-    canonical: category
-    for category, terms in (
-        ("implied_credential", CREDENTIAL_CLAIM_TERMS),
-        ("disease_cure_or_treatment", DISEASE_CLAIM_TERMS),
-        ("dosage_or_prescription", DOSAGE_CLAIM_TERMS),
-        ("absolute_health_claim", ABSOLUTE_HEALTH_CLAIM_TERMS),
-    )
-    for canonical in terms
-}
+__all__ = [
+    "ABSOLUTE_HEALTH_CLAIM_TERMS",
+    "ALL_CLAIM_TERMS",
+    "CLAIM_CATEGORIES",
+    "CREDENTIAL_CLAIM_TERMS",
+    "DISEASE_CLAIM_TERMS",
+    "DOSAGE_CLAIM_TERMS",
+    "find_banned_claims",
+    "validate_blog_post",
+]
 
 
 def _build_pattern(variants: tuple[str, ...]) -> re.Pattern[str]:
@@ -219,7 +84,7 @@ def _build_pattern(variants: tuple[str, ...]) -> re.Pattern[str]:
 
 
 _CLAIM_PATTERNS: dict[str, re.Pattern[str]] = {
-    canonical: _build_pattern(variants) for canonical, variants in _ALL_CLAIM_TERMS.items()
+    canonical: _build_pattern(variants) for canonical, variants in ALL_CLAIM_TERMS.items()
 }
 
 # Negation cues — checked in a short window immediately before a match, scoped
