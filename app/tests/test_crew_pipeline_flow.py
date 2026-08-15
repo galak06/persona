@@ -46,14 +46,14 @@ def _wp_env(monkeypatch: pytest.MonkeyPatch) -> None:
 class _FakeIdeasDb:
     def __init__(self) -> None:
         self.set_wp_result_calls: list[tuple[str, str, str]] = []
-        self.update_status_calls: list[tuple[str, str]] = []
+        self.update_status_calls: list[tuple[str, str, str | None]] = []
 
     def set_wp_result(self, idea_id: str, wp_post_id: str, wp_url: str) -> bool:
         self.set_wp_result_calls.append((idea_id, wp_post_id, wp_url))
         return True
 
-    def update_status(self, idea_id: str, status: str) -> bool:
-        self.update_status_calls.append((idea_id, status))
+    def update_status(self, idea_id: str, status: str, failure_reason: str | None = None) -> bool:
+        self.update_status_calls.append((idea_id, status, failure_reason))
         return True
 
 
@@ -70,15 +70,17 @@ def _run_pipeline_glue(
     """Mirrors `scripts/crewai_content_pipeline.py::_run_full_pipeline`'s
     "validate, then only draft on pass" control flow exactly -- including the
     validation-failure branch's `ideas_db.update_status(idea_id,
-    "validation_failed")` call, guarded by `not dry_run` (a --dry-run run is
-    an explicitly side-effect-free preview and must never mutate the idea's
-    real lifecycle state)."""
+    "validation_failed", "; ".join(result.reasons))` call, guarded by `not
+    dry_run` (a --dry-run run is an explicitly side-effect-free preview and
+    must never mutate the idea's real lifecycle state)."""
     result = validate_draft(
         brand_dir, title=title, body_html=body_html, editor_execute_fn=editor_execute_fn
     )
     if not result.passed:
         if not dry_run:
-            ideas_db.update_status(idea_id, "validation_failed")
+            ideas_db.update_status(
+                idea_id, "validation_failed", "; ".join(result.reasons) or "validation failed"
+            )
         return False, None
     draft_result = create_wp_draft(
         idea_id=idea_id,
@@ -112,7 +114,7 @@ def test_passing_validation_proceeds_to_real_draft_creation(brand_dir: Path) -> 
     assert drafted is True
     assert post_id == 99
     assert fake_db.set_wp_result_calls == [("idea-1", "99", "https://example.com/?p=99")]
-    assert fake_db.update_status_calls == [("idea-1", "wp_draft")]
+    assert fake_db.update_status_calls == [("idea-1", "wp_draft", None)]
 
 
 @respx.mock
@@ -138,7 +140,14 @@ def test_failing_validation_never_posts_to_wordpress(brand_dir: Path) -> None:
     assert post_id is None
     assert not route.called
     assert fake_db.set_wp_result_calls == []
-    assert fake_db.update_status_calls == [("idea-1", "validation_failed")]
+    # The reason must reach the row, not just stdout: these two statuses are
+    # terminal, so this string is the ONLY surviving record of why the idea
+    # died once the drafting container's log is gone.
+    assert len(fake_db.update_status_calls) == 1
+    idea, status, reason = fake_db.update_status_calls[0]
+    assert (idea, status) == ("idea-1", "validation_failed")
+    assert reason is not None
+    assert "20.0" in reason and "80.0" in reason
 
 
 @respx.mock

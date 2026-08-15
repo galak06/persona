@@ -17,6 +17,8 @@ export interface ContentIdea {
   reel_fb_caption: string | null;
   reel_source: string | null;
   reel_validation_flags: string[] | null;
+  /** Why a write_failed/validation_failed idea died. Null for every other status. */
+  failure_reason: string | null;
 }
 
 export interface IdeasResponse {

@@ -1,7 +1,22 @@
-"""
-Deduplication cache for DogFoodAndFun social media automation.
-Tracks post IDs already engaged with, with a 60-day rolling TTL.
-Persists state to .claude/state/dedup_cache.json
+"""Deduplication cache: post IDs already engaged with, 60-day rolling TTL.
+
+Persists to ``<BRAND_DIR>/state/dedup_cache.json`` — the brand's own state
+directory, resolved through :mod:`lib.brand_context`.
+
+It used to persist to an engine-relative ``app/.claude/state/dedup_cache.json``,
+which was wrong three ways at once:
+
+* **It was ephemeral in production.** ``docker-compose.yml`` mounts only
+  ``brands/`` into the worker, so ``/app/.claude/`` lived in the container's
+  writable layer. Every rebuild silently reset the like/comment history, and
+  the file did not exist in the running container at all.
+* **It was invisible to the dashboard.** ``scripts/status.py`` reads
+  ``settings.paths.dedup_cache`` — the brand-scoped path — so it reported on a
+  file this module had stopped writing in June 2026.
+* **It was shared across brands.** One engine-level cache for every brand,
+  keyed only by platform and post id.
+
+``scripts/migrate_dedup_cache.py`` merges the old engine-level file forward.
 """
 
 from __future__ import annotations
@@ -13,28 +28,43 @@ from typing import Literal
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CACHE_FILE = _PROJECT_ROOT / ".claude" / "state" / "dedup_cache.json"
+# Set to a Path to override the location (tests do this). Left as None, the
+# path follows the active brand, resolved on each call so a mid-process brand
+# change is honoured rather than baked in at import.
+CACHE_FILE: Path | None = None
 TTL_DAYS = 60
 
 
+def _cache_path() -> Path:
+    if CACHE_FILE is not None:
+        return CACHE_FILE
+    from lib.config import settings
+
+    paths = settings.paths
+    if paths is None:  # pragma: no cover - load_config always sets it
+        raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")
+    return paths.dedup_cache
+
+
 def _load_cache() -> dict:
-    if CACHE_FILE.exists():
+    cache_file = _cache_path()
+    if cache_file.exists():
         try:
-            with CACHE_FILE.open() as f:
+            with cache_file.open() as f:
                 data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("Cache not a dict")
             return data
         except Exception:
             # Corrupted — reset and continue
-            CACHE_FILE.write_text("{}")
+            cache_file.write_text("{}")
     return {}
 
 
 def _save_cache(cache: dict) -> None:
-    CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with CACHE_FILE.open("w") as f:
+    cache_file = _cache_path()
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    with cache_file.open("w") as f:
         json.dump(cache, f, indent=2)
 
 

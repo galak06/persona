@@ -171,6 +171,12 @@ def brand_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[o
     for sub in ("data/config", "data/trackers", "data/cache", "state", "logs"):
         (tmp_path / sub).mkdir(parents=True, exist_ok=True)
 
+    # A brand without a config.json is not a brand `lib.config` can load, so
+    # seed one from the engine's own template — the same file `onboard_brand`
+    # copies. Tests get a fully-resolvable `settings`, not just a directory.
+    template = Path(__file__).resolve().parent.parent / "config.example.json"
+    (tmp_path / "config.json").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+
     monkeypatch.setenv("BRAND_DIR", str(tmp_path))
     monkeypatch.setenv("PERSONA_BRAND", tmp_path.name)
     config.reset_settings_cache()

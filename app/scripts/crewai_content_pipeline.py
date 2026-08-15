@@ -179,7 +179,9 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     brief = build_content_brief(brand_dir, idea)
     if brief is None:
         print("\nstrategist produced no structured brief (see logs) -- aborting")
-        ideas_db.update_status(idea_id, "write_failed")
+        ideas_db.update_status(
+            idea_id, "write_failed", "strategist produced no structured brief"
+        )
         return 1
     print(f"brief    : {brief.suggested_title} ({len(brief.outline)} sections)")
 
@@ -189,7 +191,7 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     written_post = write_post_from_brief(brand_dir, brief, discover=True)
     if written_post is None:
         print("\nwriter produced no structured post (see logs) -- aborting")
-        ideas_db.update_status(idea_id, "write_failed")
+        ideas_db.update_status(idea_id, "write_failed", "writer produced no structured post")
         return 1
     print(f"title    : {written_post.title}")
     print(f"words    : {written_post.word_count}")
@@ -211,7 +213,7 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
         # key, and threw away another full draft, invisibly and forever.
         # Not on --dry-run: that mode never mutates idea lifecycle state.
         if not args.dry_run:
-            ideas_db.update_status(idea_id, "write_failed")
+            ideas_db.update_status(idea_id, "write_failed", f"affiliate resolution failed: {exc}")
         return 1
 
     output_path = args.output or (brand_dir / "state" / "crew_drafts" / f"{idea_id}.html")
@@ -234,7 +236,12 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
         # preview (see module docstring) and must never mutate the idea's
         # real lifecycle state.
         if not args.dry_run:
-            ideas_db.update_status(idea_id, "validation_failed")
+            # result.reasons is the only place the medical-claims term or the
+            # editor's score ever appears; without it on the row the cause is
+            # unrecoverable once the container log rotates.
+            ideas_db.update_status(
+                idea_id, "validation_failed", "; ".join(result.reasons) or "validation failed"
+            )
         return 2
 
     if args.dry_run:

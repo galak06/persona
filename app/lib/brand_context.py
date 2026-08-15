@@ -75,6 +75,7 @@ class BrandPaths(BaseModel):
     ideator_queue: Path
     campaign_verify_queue: Path
     dedup_cache: Path
+    recent_drafts: Path
     rate_limit_tracker: Path
     last_run: Path
     facebook_session: Path
@@ -133,6 +134,7 @@ def resolve_paths(brand_dir: Path) -> BrandPaths:
         ideator_queue=state_dir / "ideator_queue.json",
         campaign_verify_queue=state_dir / "campaign_verify_queue.json",
         dedup_cache=state_dir / "dedup_cache.json",
+        recent_drafts=state_dir / "recent_drafts.jsonl",
         rate_limit_tracker=state_dir / "rate_limit_tracker.json",
         last_run=state_dir / "last_run.json",
         facebook_session=state_dir / "facebook_session.json",
