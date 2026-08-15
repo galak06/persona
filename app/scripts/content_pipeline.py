@@ -419,7 +419,7 @@ def stage_publish() -> bool:
     save_json(WP_POSTS_CACHE, wp_cache)
 
     # Log
-    with open(PROJECT_ROOT / "logs/engagement_log.jsonl", "a") as f:
+    with open(settings.paths.logs_dir / "engagement_log.jsonl", "a") as f:
         for entry in published:
             f.write(
                 json.dumps(

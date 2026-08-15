@@ -57,7 +57,7 @@ from lib.notifier import (
 if settings.paths is None:
     raise RuntimeError("Brand paths not resolved — check config.json")
 QUEUE_FILE = settings.paths.comment_queue
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 SESSION_FB = settings.paths.facebook_session
 SESSION_IG = settings.paths.instagram_session
 CHECKPOINT_DB = PROJECT_ROOT / ".claude/state/comment_graph_checkpoints.db"

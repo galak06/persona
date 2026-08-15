@@ -54,7 +54,7 @@ from lib.queue_state import (  # type: ignore[unused-ignore,import-not-found]
 # absent (or `--platform wordpress`) drains the legacy shared queue.
 PLATFORM = parse_platform_arg(sys.argv)
 QUEUE_FILE = queue_path_for(PLATFORM)
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 
 
 def load_json(path: Path, default: Any) -> Any:

@@ -47,7 +47,7 @@ GUARD_KEY = guard_key_for(PLATFORM)
 
 QUEUE_FILE = queue_path_for(PLATFORM)
 LAST_RUN_FILE = settings.paths.last_run
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 ERROR_LOG = (settings.paths.logs_dir / "errors.log")
 
 
