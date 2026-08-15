@@ -40,10 +40,12 @@ def _brand(explicit: str | None) -> str:
 
     Resolved per call, never at import: a module-level default is bound once,
     before `BRAND_DIR` is necessarily set, and cannot be corrected afterwards.
-    Until 2026-08-15 this module hardcoded the literal `"persona"` — a brand
-    that does not exist — while every other module derived the real slug, so
-    every row was written out of scope. `scripts/backfill_dedup_brand.py`
-    copies those rows forward.
+    Until 2026-08-15 this module hardcoded the literal `"persona"`, which is
+    the engine's own name — the OS, not a brand — while every other module
+    derived the real brand slug. `completed_tasks.brand` has no foreign key to
+    `brands`, so nothing rejected it and every row landed out of scope: 878
+    rows, all under `"persona"`, none under the one registered brand.
+    `scripts/backfill_dedup_brand.py` copies them forward.
     """
     return explicit or current_brand_id()
 
