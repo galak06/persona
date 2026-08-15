@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
-from lib.worker_db import record_complete, record_start
 from lib.worker_labels import worker_label_for_flow
 
 settings, log = init_script(__name__)
@@ -40,7 +39,7 @@ from lib.engagement.post import Post
 from lib.io.jsonio import read_json, write_json
 from lib.notifier import skill_finished, skill_skipped, skill_started
 from lib.rate_limiter import can_act, daily_limit, print_status
-from lib.runtime.singleton import LockAcquisitionError, SingletonLock
+from lib.runtime.flow import run_flow, session_file_check
 from lib.scan_dedup import ScanDedup
 
 LAST_RUN_FILE = settings.paths.last_run
@@ -180,38 +179,12 @@ def run_ig_scan(
     return report
 
 
-def _health_check() -> int:
-    """Verify the IG Playwright session file exists and is non-empty.
-
-    No browser launch, no network call — mirrors
-    scripts/fb_group_post.py::_health_check()'s exact pattern (a `> 2` byte
-    threshold rejects empty JSON files a torn-down context may write).
-    """
-    if SESSION_FILE.exists() and SESSION_FILE.stat().st_size > 2:
-        print(f"IG session OK (storage: {SESSION_FILE})")
-        return 0
-    print(f"SESSION_EXPIRED: {SESSION_FILE} missing or empty", file=sys.stderr)
-    return 1
-
-
 if __name__ == "__main__":
-    if "--health-check" in sys.argv:
-        sys.exit(_health_check())
-
-    _brand_dir = settings.paths.brand_dir
-    _brand = _brand_dir.name
-    # GAP-4: singleton lock — a cron tick overlapping a still-running scan
-    # exits cleanly WITHOUT writing worker rows (record_start is inside the
-    # lock), mirroring lib/engagement/commenter.py's runner pattern.
-    try:
-        with SingletonLock("ig-engager"):
-            record_start(_brand_dir, WORKER_LABEL, _brand)
-            try:
-                run_ig_scan()
-                record_complete(_brand_dir, WORKER_LABEL, _brand, "success")
-            except Exception as _exc:
-                record_complete(_brand_dir, WORKER_LABEL, _brand, "error", str(_exc))
-                raise
-    except LockAcquisitionError as _lock_exc:
-        print(f"another instance of 'ig-engager' is running: {_lock_exc}", file=sys.stderr)
-        sys.exit(0)
+    raise SystemExit(
+        run_flow(
+            "ig-engager",
+            run_ig_scan,
+            health_check=lambda: session_file_check(SESSION_FILE, "IG"),
+            worker_label=WORKER_LABEL,
+        )
+    )

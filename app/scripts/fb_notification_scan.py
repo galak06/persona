@@ -32,7 +32,7 @@ settings, log = init_script(__name__)
 from lib.fb.session import FbSession, build_fb_session
 from lib.logger import log_step
 from lib.notifier import skill_error, skill_finished, skill_started
-from lib.runtime.singleton import LockAcquisitionError, SingletonLock
+from lib.runtime.flow import run_flow
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -212,12 +212,10 @@ if __name__ == "__main__":
     args = _parse_args()
     fb_session = build_fb_session()
 
-    if args.health_check:
-        sys.exit(_health_check(fb_session))
-
-    try:
-        with SingletonLock(SKILL_NAME):
-            sys.exit(main(fb_session, dry_run=args.dry_run))
-    except LockAcquisitionError as exc:
-        print(f"another instance of {SKILL_NAME!r} is running: {exc}", file=sys.stderr)
-        sys.exit(0)
+    raise SystemExit(
+        run_flow(
+            SKILL_NAME,
+            lambda: main(fb_session, dry_run=args.dry_run),
+            health_check=lambda: _health_check(fb_session),
+        )
+    )

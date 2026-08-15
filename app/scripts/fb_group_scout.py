@@ -49,7 +49,7 @@ from lib.group_discovery.state import (
 from lib.group_discovery.status_classifier import classify_admission_likelihood
 from lib.local_env import get_group_join_limit, get_group_join_limit_per_week
 from lib.notifier import skill_finished, skill_skipped, skill_started
-from lib.runtime.singleton import SingletonLock
+from lib.runtime.flow import run_flow
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -421,19 +421,26 @@ if __name__ == "__main__":
     args = _build_argparser().parse_args()
     fb_session = build_fb_session()
 
-    if args.health_check:
+    def _session_health() -> int:
+        """FbSession owns its own auth probe, so this can't use
+        `session_file_check` — the shape `run_flow` accepts is any `() -> int`."""
         if fb_session.is_authenticated():
             print(f"FB session OK (storage: {fb_session.storage_path})")
-            sys.exit(0)
+            return 0
         print(f"SESSION_EXPIRED: {fb_session.storage_path} missing or empty", file=sys.stderr)
-        sys.exit(1)
+        return 1
 
-    with SingletonLock("fb_group_scout"):
-        main(
-            fb_session,
-            dry_run=args.dry_run,
-            # Approval gate removed: with no explicit --approve, auto-approve all
-            # discovered groups up to the daily/weekly cap (the remaining limit).
-            preselected=args.approve if args.approve is not None else "all",
-            bypass_daily=args.bypass_daily_cap,
+    raise SystemExit(
+        run_flow(
+            "fb-group-scout",
+            lambda: main(
+                fb_session,
+                dry_run=args.dry_run,
+                # Approval gate removed: with no explicit --approve, auto-approve all
+                # discovered groups up to the daily/weekly cap (the remaining limit).
+                preselected=args.approve if args.approve is not None else "all",
+                bypass_daily=args.bypass_daily_cap,
+            ),
+            health_check=_session_health,
         )
+    )
