@@ -50,9 +50,7 @@ def _already_referenced(body_html: str, catalog: dict[str, ProductEntry]) -> lis
     placeholders = {m.group(1).lower() for m in _PLACEHOLDER_RE.finditer(body_html)}
     asins = {m.group(1) for m in _ASIN_IN_BODY_RE.finditer(body_html)}
     return [
-        key
-        for key, entry in catalog.items()
-        if key.lower() in placeholders or entry.asin in asins
+        key for key, entry in catalog.items() if key.lower() in placeholders or entry.asin in asins
     ]
 
 

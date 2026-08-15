@@ -347,7 +347,10 @@ def test_discovery_failure_is_not_fatal_for_selection(brand_dir: Path) -> None:
         raise RuntimeError("serper down")
 
     result = select_products_for_post(
-        brand_dir, _brief(), execute_fn=_FakeSelector(_selection("gps-tracker")), discover=True,
+        brand_dir,
+        _brief(),
+        execute_fn=_FakeSelector(_selection("gps-tracker")),
+        discover=True,
         discovery_fn=_boom,
     )
 

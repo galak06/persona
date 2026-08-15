@@ -265,9 +265,7 @@ def _pool(*keys: str) -> dict[str, ProductEntry]:
 
 def _picker(*keys: str):
     def _run(_agent: object, _task: object) -> ProductSelection:
-        return ProductSelection(
-            products=[SelectedProduct(key=k, reason="fits") for k in keys]
-        )
+        return ProductSelection(products=[SelectedProduct(key=k, reason="fits") for k in keys])
 
     return _run
 

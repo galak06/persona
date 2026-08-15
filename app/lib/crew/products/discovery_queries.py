@@ -152,7 +152,9 @@ def shopping_queries_for_brief(
 ) -> list[str]:
     """Buyer-intent searches for one post. `[]` (logged) on any failure."""
     agent = build_query_agent()
-    task = build_query_task(agent, build_query_task_description(brief=brief, max_queries=max_queries))
+    task = build_query_task(
+        agent, build_query_task_description(brief=brief, max_queries=max_queries)
+    )
     run = execute_fn if callable(execute_fn) else execute_query_crew
     result = run(agent, task)
     if result is None:

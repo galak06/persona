@@ -29,9 +29,9 @@ _DEFAULT_WINDOW_DAYS = 30
 
 # Which path placed a product. Recorded per event so a reader can scope
 # the exclusion to its own history (see `recently_used_keys`).
-SOURCE_DRAFT = "draft"      # the drafting pipeline, writing a new post
+SOURCE_DRAFT = "draft"  # the drafting pipeline, writing a new post
 SOURCE_BACKFILL = "backfill"  # the sweep repairing already-published posts
-SOURCE_LEGACY = "legacy"    # written before `source` existed
+SOURCE_LEGACY = "legacy"  # written before `source` existed
 
 
 def _default_usage_path() -> Path | None:
