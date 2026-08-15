@@ -26,7 +26,7 @@ def worker_state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     state: dict[str, Any] = {"row": None, "pushed": []}
 
     monkeypatch.setattr("api.brand_context.brands_db.get", lambda _b: {"brand_dir": _BRAND_DIR})
-    monkeypatch.setattr("lib.oauth.openart_store.resolve_brand_id", lambda: _BRAND)
+    monkeypatch.setattr("api.brand_context.current_brand_id", lambda: _BRAND)
     monkeypatch.setattr(ideas_generate_api.worker_db, "get_one", lambda _d, _l, _b: state["row"])
 
     def _record_start(_dir: str, label: str, brand: str) -> None:

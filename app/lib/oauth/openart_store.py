@@ -35,6 +35,7 @@ from typing import Any
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from lib import brand_secrets
+from lib.brand_context import current_brand_id
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -48,15 +49,14 @@ _EXPIRY_SKEW_SECONDS = 60
 
 
 def resolve_brand_id() -> str:
-    """Brand scope for the secrets rows: PERSONA_BRAND, else the BRAND_DIR
-    folder name (how brands are registered everywhere else), else 'default'."""
-    explicit = os.environ.get("PERSONA_BRAND", "").strip()
-    if explicit:
-        return explicit
-    brand_dir = os.environ.get("BRAND_DIR", "").strip()
-    if brand_dir:
-        return Path(brand_dir).name
-    return "default"
+    """Brand scope for the secrets rows.
+
+    Kept as a named alias because callers inside the OAuth stack already import
+    it from here; the rule itself lives in `lib.brand_context`. Nothing outside
+    OAuth should reach into this module for brand identity — see
+    `api/brand_context.py`, which used to.
+    """
+    return current_brand_id()
 
 
 def _legacy_dir() -> Path:

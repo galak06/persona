@@ -41,11 +41,12 @@ from typing import Any
 
 import redis
 
+from lib.brand_context import current_brand_id
+
 _client: redis.Redis | None = None
 
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _NAMESPACE = "persona"
-_BRAND = os.environ.get("PERSONA_BRAND", "default")
 
 
 def _get_client() -> redis.Redis:
@@ -59,7 +60,11 @@ def _get_client() -> redis.Redis:
 class TaskQueue:
     def __init__(self, worker: str, brand: str | None = None) -> None:
         self.worker = worker
-        _brand = brand or _BRAND
+        # Resolved per instance, not at import: a module-level default binds
+        # before PERSONA_BRAND is necessarily set, and the API and worker build
+        # these keys in separate processes — they must agree or work is
+        # enqueued to a key nobody pops.
+        _brand = brand or current_brand_id()
         self._key = f"{_NAMESPACE}:{_brand}:{worker}:tasks"
         self._dead_key = f"{_NAMESPACE}:{_brand}:{worker}:dead"
         self._r = _get_client()

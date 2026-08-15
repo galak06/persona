@@ -109,34 +109,29 @@ def test_is_not_db_key(key: str) -> None:
     assert not local_env._is_db_key(key)
 
 
-def _ambient_settings_carry_dsn() -> bool:
-    """Whether this checkout's own settings.local.json holds a DSN.
+def test_importing_lib_config_injects_nothing_even_outside_pytest() -> None:
+    """Importing `lib.config` must not merge env, pytest loaded or not.
 
-    The bootstrap reads a fixed path and the file is gitignored, so CI has
-    nothing to inject and the control below would assert against an absence.
+    Replaces an earlier *control* case which asserted the opposite -- that
+    outside pytest the import-time bootstrap DID supply the DSN, proving the
+    pytest guard was what suppressed it. That bootstrap was removed on
+    2026-08-15: `lib/config.py` no longer calls `load_brand_env_into_environ()`
+    / `load_local_env()` at module scope, the merge moved behind
+    `BrandContext.load_env()`, and `settings` resolves lazily.
+
+    So the property is now unconditional and strictly stronger, and this test
+    pins the stronger one: merely importing `lib.config` touches no environment
+    variable at all. `lib.local_env`'s pytest DSN refusal remains as
+    defence-in-depth for the paths that DO merge (entrypoints, and python-dotenv
+    via CrewAI, which conftest still pins against).
     """
-    path = local_env._SETTINGS_FILE
-    if not path.is_file():
-        return False
-    try:
-        return "DATABASE_URL" in json.loads(path.read_text()).get("env", {})
-    except (json.JSONDecodeError, OSError):
-        return False
-
-
-def test_importing_lib_config_injects_dsn_without_pytest() -> None:
-    """Control: outside pytest the import-time bootstrap still supplies the DSN.
-
-    Proves the guard -- not a broken bootstrap -- is what keeps the DSN out of
-    the test process in `test_import_under_pytest_does_not_inject_dsn`.
-    """
-    if not _ambient_settings_carry_dsn():
-        pytest.skip("no settings.local.json carrying a DSN in this checkout (e.g. CI)")
-
-    result = _run_python("import os, lib.config; print('DATABASE_URL' in os.environ)")
+    result = _run_python(
+        "import os; before = set(os.environ); import lib.config; "
+        "print(sorted(set(os.environ) - before))"
+    )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "True"
+    assert result.stdout.strip() == "[]"
 
 
 def test_import_under_pytest_does_not_inject_dsn() -> None:

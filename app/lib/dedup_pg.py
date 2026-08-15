@@ -28,19 +28,31 @@ from typing import Any, Literal
 
 import psycopg
 
+from lib.brand_context import current_brand_id
 from lib.db import execute, fetch_all, fetch_one
 
 TaskType = Literal["like", "comment", "follow", "publish", "scan"]
 Platform = Literal["facebook", "instagram", "wordpress"]
 
-_BRAND = "persona"
+
+def _brand(explicit: str | None) -> str:
+    """Resolve the brand scope for a dedup row.
+
+    Resolved per call, never at import: a module-level default is bound once,
+    before `BRAND_DIR` is necessarily set, and cannot be corrected afterwards.
+    Until 2026-08-15 this module hardcoded the literal `"persona"` — a brand
+    that does not exist — while every other module derived the real slug, so
+    every row was written out of scope. `scripts/backfill_dedup_brand.py`
+    copies those rows forward.
+    """
+    return explicit or current_brand_id()
 
 
 def already_done(
     task_type: TaskType,
     platform: Platform,
     entity_id: str,
-    brand: str = _BRAND,
+    brand: str | None = None,
 ) -> bool:
     """Returns True if this exact action was already recorded."""
     row = fetch_one(
@@ -50,7 +62,7 @@ def already_done(
           AND entity_id = %s AND brand = %s
         LIMIT 1
         """,
-        (task_type, platform, entity_id, brand),
+        (task_type, platform, entity_id, _brand(brand)),
     )
     return row is not None
 
@@ -58,7 +70,7 @@ def already_done(
 def completed_entity_ids(
     task_type: TaskType,
     platform: Platform,
-    brand: str = _BRAND,
+    brand: str | None = None,
 ) -> set[str]:
     """Every entity_id already recorded for this (task_type, platform, brand).
 
@@ -73,7 +85,7 @@ def completed_entity_ids(
         SELECT entity_id FROM completed_tasks
         WHERE task_type = %s AND platform = %s AND brand = %s
         """,
-        (task_type, platform, brand),
+        (task_type, platform, _brand(brand)),
     )
     return {r["entity_id"] for r in rows}
 
@@ -82,7 +94,7 @@ def record_done(
     task_type: TaskType,
     platform: Platform,
     entity_id: str,
-    brand: str = _BRAND,
+    brand: str | None = None,
     worker_label: str = "",
     meta: dict[str, Any] | None = None,
 ) -> bool:
@@ -102,7 +114,7 @@ def record_done(
                 task_type,
                 platform,
                 entity_id,
-                brand,
+                _brand(brand),
                 worker_label,
                 json.dumps(meta or {}),
             ),
@@ -112,7 +124,7 @@ def record_done(
         return False
 
 
-def stats(brand: str = _BRAND) -> dict[str, int]:
+def stats(brand: str | None = None) -> dict[str, int]:
     """Return count per (task_type, platform) pair."""
     rows = fetch_all(
         """
@@ -122,6 +134,6 @@ def stats(brand: str = _BRAND) -> dict[str, int]:
         GROUP BY task_type, platform
         ORDER BY task_type, platform
         """,
-        (brand,),
+        (_brand(brand),),
     )
     return {f"{r['task_type']}:{r['platform']}": r["cnt"] for r in rows}
