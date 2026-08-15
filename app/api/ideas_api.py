@@ -193,6 +193,9 @@ class ContentIdea(BaseModel):
     reel_fb_caption: str | None = None
     reel_source: str | None = None
     reel_validation_flags: list[str] | None = None
+    # Only ever non-null for write_failed/validation_failed (ideas_db clears it
+    # on any other transition), so the UI can key off it directly.
+    failure_reason: str | None = None
 
 
 class IdeasResponse(BaseModel):
@@ -260,6 +263,7 @@ def list_ideas(
             reel_fb_caption=r.get("reel_fb_caption"),
             reel_source=r.get("reel_source"),
             reel_validation_flags=r.get("reel_validation_flags"),
+            failure_reason=r.get("failure_reason"),
         )
         for r in rows
     ]

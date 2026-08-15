@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, LETTER
+from reportlab.lib.pagesizes import LETTER, landscape
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics

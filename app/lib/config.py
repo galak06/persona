@@ -1,9 +1,13 @@
 import json
-import os
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
+
+from lib.brand_context import BrandContext, BrandPaths, default_brand_dir
+
+# Re-exported: callers already import these two from `lib.config`
+# (`api/schedule_config.py`, `api/approval_api.py`, `lib/local_env.py`, ...).
+__all__ = ["AppSettings", "BrandPaths", "default_brand_dir", "load_config", "settings"]
 
 
 class SiteConfig(BaseModel):
@@ -142,42 +146,6 @@ class RecipeCardConfig(BaseModel):
     black_and_white: bool = False
 
 
-class BrandPaths(BaseModel):
-    brand_dir: Path
-    data_dir: Path
-    state_dir: Path
-    logs_dir: Path
-    backups_dir: Path
-    campaigns_dir: Path
-    schedule_file: Path
-
-    # Specific file paths within brand
-    brand_voice_guide: Path
-    campaigns: Path
-    citation_sources: Path
-    competitors: Path
-    content_rules: Path
-    groups_tracker: Path
-    instagram_accounts: Path
-    keyword_clusters: Path
-    post_templates: Path
-    recipe_products: Path
-
-    # State paths
-    comment_queue: Path  # legacy shared queue — retained for migration/back-compat
-    instagram_comment_queue: Path  # IG loop owns its own queue
-    facebook_comment_queue: Path  # FB loop owns its own queue
-    ideator_queue: Path
-    campaign_verify_queue: Path
-    dedup_cache: Path
-    rate_limit_tracker: Path
-    last_run: Path
-    facebook_session: Path
-    instagram_session: Path
-    tiktok_session: Path
-    pending_groups: Path
-
-
 class AppSettings(BaseModel):
     site: SiteConfig
     social_channels: SocialChannelsConfig
@@ -191,105 +159,75 @@ class AppSettings(BaseModel):
     paths: BrandPaths | None = None
 
 
-def default_brand_dir() -> Path:
-    """Fallback BRAND_DIR default: `app/brands/<brand>`.
+def load_config(ctx: BrandContext | None = None) -> AppSettings:
+    """Parse `<brand_dir>/config.json` into `AppSettings`.
 
-    Brand data lives under `app/brands/` (it used to sit beside the engine
-    directory, which is why older callers pointed one level up). Prefers
-    `PERSONA_BRAND`; otherwise, if exactly one brand folder is present, uses
-    it. Best-effort and never raises — some callers evaluate this at import
-    time — so `load_config()` stays strict and always requires the env var.
+    `ctx=None` means "this process's brand" and keeps the original failure mode:
+    a clear error when `BRAND_DIR` is unset. The env/secrets merge that used to
+    fire at module import now happens here, behind the context — deferred to the
+    moment a caller actually needs configuration.
     """
-    brands_root = Path(__file__).resolve().parent.parent / "brands"
-    brand = os.environ.get("PERSONA_BRAND")
-    if brand:
-        return brands_root / brand
-    candidates = sorted(
-        d
-        for d in brands_root.glob("*")
-        if d.is_dir() and not d.name.startswith((".", "_")) and ".bak" not in d.name
-    )
-    return candidates[0] if len(candidates) == 1 else brands_root
+    ctx = ctx or BrandContext.from_env()
+    try:
+        ctx.load_env(apply_secrets=False)
+    except ImportError:  # pragma: no cover - lib.local_env is always present
+        pass
 
-
-def _resolve_paths(brand_dir: Path) -> BrandPaths:
-    data_dir = brand_dir / "data"
-    state_dir = brand_dir / "state"
-    logs_dir = brand_dir / "logs"
-
-    return BrandPaths(
-        brand_dir=brand_dir,
-        data_dir=data_dir,
-        state_dir=state_dir,
-        logs_dir=logs_dir,
-        backups_dir=brand_dir / "backups",
-        campaigns_dir=brand_dir / "campaigns",
-        schedule_file=brand_dir / "schedule.json",
-        brand_voice_guide=data_dir / "config" / "brand_voice_guide.md",
-        campaigns=data_dir / "config" / "campaigns.json",
-        citation_sources=data_dir / "config" / "citation_sources.json",
-        competitors=data_dir / "config" / "competitors.json",
-        content_rules=data_dir / "config" / "content_rules.json",
-        groups_tracker=data_dir / "trackers" / "groups_tracker.json",
-        instagram_accounts=data_dir / "config" / "instagram_accounts.csv",
-        keyword_clusters=data_dir / "config" / "keyword_clusters.json",
-        post_templates=data_dir / "config" / "post_templates.json",
-        recipe_products=data_dir / "config" / "recipe_products.json",
-        comment_queue=state_dir / "comment_queue.json",
-        instagram_comment_queue=state_dir / "instagram_comment_queue.json",
-        facebook_comment_queue=state_dir / "facebook_comment_queue.json",
-        ideator_queue=state_dir / "ideator_queue.json",
-        campaign_verify_queue=state_dir / "campaign_verify_queue.json",
-        dedup_cache=state_dir / "dedup_cache.json",
-        rate_limit_tracker=state_dir / "rate_limit_tracker.json",
-        last_run=state_dir / "last_run.json",
-        facebook_session=state_dir / "facebook_session.json",
-        instagram_session=state_dir / "instagram_session.json",
-        tiktok_session=state_dir / "tiktok_session.json",
-        pending_groups=state_dir / "pending_groups.json",
-    )
-
-
-def load_config() -> AppSettings:
-    brand_dir_str = os.environ.get("BRAND_DIR")
-    if not brand_dir_str:
-        raise ValueError(
-            "BRAND_DIR environment variable is not set. "
-            "Please set it to the path of the brand configuration directory."
-        )
-
-    brand_dir = Path(brand_dir_str).resolve()
-    config_file = brand_dir / "config.json"
-
+    config_file = ctx.brand_dir / "config.json"
     if not config_file.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
     with config_file.open("r", encoding="utf-8") as f:
         data = json.load(f)
 
-    settings = AppSettings(**data)
-    settings.paths = _resolve_paths(brand_dir)
-    return settings
+    parsed = AppSettings(**data)
+    parsed.paths = ctx.paths
+    return parsed
 
 
-try:
-    from lib.local_env import load_brand_env_into_environ, load_local_env
+_cached: AppSettings | None = None
 
-    # apply_secrets=False: this runs at IMPORT time of a module ~everything
-    # imports. The encrypted-secrets overlay opens a DB connection; wiring
-    # that into `import lib.config` costs seconds per process (a ~10s pool
-    # timeout when Postgres is unreachable). Entrypoints that publish call
-    # load_brand_env_into_environ() themselves and get the overlay there.
-    #
-    # Both calls below merge env at import time, i.e. DURING pytest collection,
-    # which is after conftest's live-DB guard has run. That is how the live DB
-    # was wiped on 2026-08-12; `lib.local_env._is_db_key` now refuses to inject
-    # any DSN under pytest, so this bootstrap can no longer smuggle one past the
-    # guard. Test runs must pass a disposable DSN on the command line instead.
-    load_brand_env_into_environ(apply_secrets=False)
-    load_local_env()
-except ImportError:
-    pass
 
-# Singleton instance
-settings = load_config()
+def get_settings() -> AppSettings:
+    """The process's `AppSettings`, loaded once on first use."""
+    global _cached
+    if _cached is None:
+        _cached = load_config()
+    return _cached
+
+
+def reset_settings_cache() -> None:
+    """Drop the cached settings. For tests that change `BRAND_DIR` mid-run."""
+    global _cached
+    _cached = None
+
+
+class _LazySettings:
+    """Defers `load_config()` to the first attribute touch.
+
+    Why an object and not PEP 562's module `__getattr__`: `from lib.config
+    import settings` appears at 31 sites and `import lib.config` at none, and a
+    module-level `__getattr__` fires on `from X import name` at the *importing*
+    module's import time. Several of those imports are module top-level
+    (`lib/bootstrap.py`, `lib/rate_limiter.py`, `lib/groups_queue.py`), so a
+    module hook would leave resolution exactly as eager as it was. Binding a
+    forwarding object is cheap; resolution waits for `settings.<anything>`.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_settings(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Tests monkeypatch through this; forward so they mutate the real model.
+        setattr(get_settings(), name, value)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return f"<lazy {get_settings()!r}>"
+
+
+if TYPE_CHECKING:
+    # Type checkers see the real model, so all 31 call sites keep full attribute
+    # checking. The runtime object forwards every access to exactly that model.
+    settings: AppSettings
+else:
+    settings = _LazySettings()

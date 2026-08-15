@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-from logger import StepTimer, log, log_error, log_progress, log_step, log_warn
+from lib.logger import StepTimer, log, log_error, log_progress, log_step, log_warn
 
 
 class TestLogOutput:

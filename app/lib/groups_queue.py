@@ -38,6 +38,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from api.schemas import GroupItem
+
 from lib.config import settings
 
 __all__ = [

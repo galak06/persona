@@ -31,7 +31,6 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 from lib.worker_db import record_complete, record_start
@@ -41,12 +40,12 @@ WORKER_LABEL = worker_label_for_flow("ig-comment")
 
 settings, log = init_script(__name__)
 
-import draft_helper
+from lib import draft_helper
 from lib.comment_queue_routing import guard_key_for
 from lib.engagement.commenter import CommenterSpec, main_for
 from lib.ig.comment_post import post_comment_ig
+from lib.notifier import skill_skipped
 from lib.task_queue import TaskQueue
-from notifier import skill_skipped
 
 PLATFORM = "instagram"
 

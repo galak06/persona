@@ -23,19 +23,13 @@ sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
-from comment_generator import (
+from lib.comment_generator import (
     build_claude_prompt,
     draft_comment_from_template,
     validate_voice,
 )
-from comment_poster import (
-    log_engagement,
-    post_comment_fb,
-    post_comment_ig,
-    post_comment_wp,
-)
-from deduplication import is_duplicate, mark_engaged
-from rate_limiter import can_act, record_action, wait_random_delay
+from lib.deduplication import is_duplicate, mark_engaged
+from lib.rate_limiter import can_act, record_action, wait_random_delay
 
 MAX_RETRIES = 2
 
@@ -164,6 +158,13 @@ def n_await_approval(state: State, config) -> dict:
 
 
 def n_post(state: State, config) -> dict:
+    # Deferred, and a layering inversion: `lib` reaching into `scripts`. It was
+    # invisible while `app/lib` sat on sys.path (a bare `import comment_poster`
+    # resolved from `scripts/` by accident of path order); removing that made it
+    # explicit. Kept deferred rather than promoted to a module-level
+    # `from scripts...` so importing this module stays free of `scripts`.
+    from scripts.comment_poster import post_comment_fb, post_comment_ig, post_comment_wp
+
     ctx: Context = config["configurable"]["context"]
     if ctx.dry_run:
         return {"decision": "posted"}
@@ -185,6 +186,8 @@ def n_post(state: State, config) -> dict:
 
 
 def n_record(state: State, config) -> dict:
+    from scripts.comment_poster import log_engagement  # see n_post: lib -> scripts
+
     ctx: Context = config["configurable"]["context"]
     if ctx.dry_run or state.get("decision") != "posted":
         return {}

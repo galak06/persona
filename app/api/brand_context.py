@@ -16,6 +16,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 
 from lib import brands_db
+from lib.brand_context import current_brand_id
 
 
 def resolve_api_brand() -> tuple[str, str]:
@@ -25,11 +26,7 @@ def resolve_api_brand() -> tuple[str, str]:
     carries no `brand_dir` (a provisioning bug -- the worker would have no
     directory to run against).
     """
-    # Deferred import: `lib.oauth.openart_store` pulls the OAuth stack, which
-    # this module has no other reason to load at import time.
-    from lib.oauth.openart_store import resolve_brand_id
-
-    brand_id = resolve_brand_id()
+    brand_id = current_brand_id()
     row = brands_db.get(brand_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"brand '{brand_id}' is not registered")

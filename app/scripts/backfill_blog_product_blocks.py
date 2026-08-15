@@ -39,12 +39,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.affiliate_resolver import ProductEntry
 from lib.crew.products.blog_backfill import (

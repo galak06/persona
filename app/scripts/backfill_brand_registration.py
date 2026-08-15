@@ -72,8 +72,9 @@ def enabled_flows_for(brand_dir: Path, only: list[str] | None = None) -> list[st
 def _container_brand_dir(brand_dir: Path) -> str:
     """The `brands.brand_dir` value every consumer of that column actually
     needs: it's read exclusively by code running inside the api/dispatcher/
-    worker containers (api/brand_flows_api.py, lib/brand_resolver.py,
-    scripts/task_dispatcher.py, scripts/task_worker.py), which mount brands
+    worker containers (api/brand_flows_api.py, lib/brand_context.py's
+    `BrandContext.for_brand`, scripts/task_dispatcher.py,
+    scripts/task_worker.py), which mount brands
     at `/app/brands/<slug>` regardless of where this script itself runs.
     Storing this script's own (host) resolved path here once produced a
     row a container-run flow could never actually read from -- task_worker.py
@@ -140,7 +141,7 @@ def build_schedule_rows(brand_dir: Path, brand_id: str) -> list[dict[str, Any]]:
         # already-registered row -- the stale Postgres value would silently outlive
         # the JSON it came from. Explicitly null every known column this task's JSON
         # doesn't set, so the upsert is a true sync, not an additive merge.
-        for col in schedule_db._KNOWN_COLUMNS:  # noqa: SLF001 - intentional cross-module sync
+        for col in schedule_db._KNOWN_COLUMNS:
             row.setdefault(col, None)
         rows.append(row)
     return rows

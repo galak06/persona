@@ -33,18 +33,18 @@ from pathlib import Path
 import httpx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-import draft_helper
-from comment_generator import score_relevance
-from deduplication import is_duplicate, mark_engaged
+from lib import draft_helper
+from lib.comment_generator import score_relevance
+from lib.deduplication import is_duplicate, mark_engaged
 from lib.logger import log_progress
-from notifier import skill_finished, skill_skipped, skill_started
-from rate_limiter import print_status
+from lib.notifier import skill_finished, skill_skipped, skill_started
+from lib.rate_limiter import print_status
 
 # Bound at import: the system prompt comes from .claude/skills/
 # wp-comment-handler/SKILL.md, so a broken or missing skill file

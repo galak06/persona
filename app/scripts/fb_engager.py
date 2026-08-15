@@ -35,7 +35,6 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
@@ -46,9 +45,8 @@ settings, log = init_script(__name__)
 
 WORKER_LABEL = worker_label_for_flow("fb-engager")
 
-import draft_helper
-import rate_limiter
-from comment_generator import score_relevance as _score_relevance
+from lib import draft_helper, rate_limiter
+from lib.comment_generator import score_relevance as _score_relevance
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
@@ -56,10 +54,10 @@ from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.engagement.warm_sources import WarmFilteredAdapter
 from lib.io.jsonio import read_json, write_json
+from lib.notifier import skill_finished, skill_skipped, skill_started
+from lib.rate_limiter import can_act, daily_limit, print_status
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.scan_dedup import ScanDedup
-from notifier import skill_finished, skill_skipped, skill_started
-from rate_limiter import can_act, daily_limit, print_status
 
 LAST_RUN_FILE = settings.paths.last_run
 SESSION_FILE = settings.paths.facebook_session

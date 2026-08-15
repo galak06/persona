@@ -62,6 +62,11 @@ STATUSES = (
     "composing_reel",
 )
 
+# The terminal failure statuses -- the only ones that carry a `failure_reason`
+# (see update_status). Kept as a set here rather than inline so the pipeline
+# and the API agree on what "failed" means without restating the pair.
+FAILURE_STATUSES = frozenset({"write_failed", "validation_failed"})
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Write
@@ -107,12 +112,23 @@ def insert_idea(
         return None
 
 
-def update_status(idea_id: str, status: str) -> bool:
-    """Update the status of an existing idea. Returns True on success."""
+def update_status(idea_id: str, status: str, failure_reason: str | None = None) -> bool:
+    """Update the status of an existing idea. Returns True on success.
+
+    `failure_reason` is persisted only for the terminal failure statuses
+    (`write_failed`/`validation_failed`); for any other status it is forced
+    to NULL. That clearing is the point, not a side effect: requeuing a
+    failed idea back to `approved` must not leave last run's reason on the
+    row, or the UI would show a stale cause for an idea that is now healthy.
+    Callers that pass a reason with a non-failure status are ignored rather
+    than errored -- this is a diagnostics field, never a control path.
+    """
+    reason = failure_reason if status in FAILURE_STATUSES else None
     try:
         db.execute(
-            "UPDATE content_ideas SET status = %s, updated_at = NOW() WHERE id = %s",
-            (status, idea_id),
+            "UPDATE content_ideas SET status = %s, failure_reason = %s, "
+            "updated_at = NOW() WHERE id = %s",
+            (status, reason, idea_id),
         )
         return True
     except Exception as exc:

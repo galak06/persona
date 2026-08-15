@@ -8,20 +8,18 @@ the local-Postgres successor to ``lib.supabase_client.get_client()``.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from lib import db
+from lib.brand_context import current_brand_id
 from lib.engagements_db.models import ENGAGEMENT_COLUMNS, dedup_id
 
 logger = logging.getLogger(__name__)
 
 
 def _brand_id() -> str:
-    brand_dir = os.environ.get("BRAND_DIR")
-    return Path(brand_dir).name if brand_dir else "default"
+    return current_brand_id()
 
 
 class EngagementsRepository:

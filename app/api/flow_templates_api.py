@@ -48,5 +48,5 @@ def update_flow_template(flow_id: str, body: FlowTemplateUpdateRequest) -> FlowT
     flow_templates_db.save(existing)
 
     saved = flow_templates_db.get(flow_id)
-    assert saved is not None  # noqa: S101 -- just wrote it, must exist
+    assert saved is not None
     return FlowTemplate(**saved)

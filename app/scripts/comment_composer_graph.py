@@ -33,24 +33,21 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(PROJECT_ROOT / "lib") not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from lib.local_env import get_runtime_headless
-
-from local_env import load_local_env
+from lib.local_env import get_runtime_headless, load_local_env
 
 # Load env early so PHOENIX_ENABLED etc. are visible before tracing setup.
 load_local_env()
 
 from langgraph.types import Command
 
-from comment_graph import Context, build_graph
+from lib.comment_graph import Context, build_graph
 from lib.engagement import posted_targets
-from notifier import (
+from lib.notifier import (
     poll_for_reply,
     send_approval_request,
     skill_finished,

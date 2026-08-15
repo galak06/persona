@@ -40,7 +40,7 @@ def worker_state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     state["candidates"] = [{"id": "idea-1"}]
 
     monkeypatch.setattr("api.brand_context.brands_db.get", lambda _b: {"brand_dir": _BRAND_DIR})
-    monkeypatch.setattr("lib.oauth.openart_store.resolve_brand_id", lambda: _BRAND)
+    monkeypatch.setattr("api.brand_context.current_brand_id", lambda: _BRAND)
     monkeypatch.setattr(compose_api.schedule_db, "load_all", lambda: state["tasks"])
     monkeypatch.setattr(compose_api.worker_db, "get_one", lambda _d, _l, _b: state["row"])
     monkeypatch.setattr(

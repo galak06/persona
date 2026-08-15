@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-from notifier import _parse_reply
+from lib.notifier import _parse_reply
 
 DRAFT = "We tried this with Nalla and it worked great. What protein do you use?"
 

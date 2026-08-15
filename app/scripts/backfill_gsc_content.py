@@ -70,12 +70,15 @@ logger = get_logger(__name__)
 def _infer_brand_dir() -> Path:
     """`$BRAND_DIR`, else the sole folder under `brands/` if exactly one exists.
 
-    Deliberately reimplemented rather than imported from
-    `lib.config.default_brand_dir` -- importing `lib.config` at all runs its
-    module-level `settings = load_config()` singleton immediately, which
-    requires `BRAND_DIR` to already be set AND that brand's `config.json` to
-    satisfy the full `AppSettings` schema. This script needs neither just to
-    locate the brand folder, so it avoids that import-time landmine.
+    Kept local for its failure mode, not to dodge an import: it exits with a
+    usage message naming `--brand-dir`, whereas `lib.brand_context`'s
+    `default_brand_dir()` is best-effort and never raises.
+
+    (Until 2026-08-15 this was also avoiding an import-time landmine --
+    `lib.config` resolved `settings = load_config()` at module scope, so merely
+    importing it demanded a provisioned `BRAND_DIR`. `settings` is now lazy, so
+    importing `lib.config` is cheap and safe; only the error semantics keep
+    these two apart.)
     """
     brand_dir_env = os.environ.get("BRAND_DIR")
     if brand_dir_env:

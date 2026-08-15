@@ -1,8 +1,8 @@
 """Structural protocols for `run_outbound_scan`'s collaborators.
 
 Deliberately structural (`Protocol`, not ABC) so the production singleton
-modules satisfy the shape without wrapping: `rate_limiter`, `deduplication`
-and `draft_helper` are passed as bare modules.
+modules satisfy the shape without wrapping: `lib.rate_limiter`,
+`lib.deduplication` and `lib.draft_helper` are passed as modules.
 
 Split out of `pipeline.py` to keep every engagement module under the
 300-line cap. The pipeline re-exports these under their historical

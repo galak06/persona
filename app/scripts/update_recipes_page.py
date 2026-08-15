@@ -25,7 +25,7 @@ from typing import TypedDict
 # Make app/ importable so lib.sessions can be resolved.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.sessions.wp_client import wp_client  # noqa: E402
+from lib.sessions.wp_client import wp_client
 
 _SETTINGS_PATH = Path(__file__).parent.parent.parent / ".claude" / "settings.local.json"
 _PAGE_ID = 3314

@@ -7,11 +7,11 @@ Starts:
 3. Vite Frontend - http://localhost:5173
 """
 
+import os
 import signal
 import subprocess
 import sys
 import time
-import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

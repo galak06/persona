@@ -336,6 +336,18 @@ ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS ig_post_url                  
 CREATE INDEX IF NOT EXISTS idx_content_ideas_social_post_status
     ON content_ideas(social_post_status);
 
+-- Why a `write_failed`/`validation_failed` idea died, in human-readable form.
+-- Those two statuses are terminal by design (see lib/ideas_db.py) so nothing
+-- retries them, but until this column existed the reason lived ONLY in the
+-- drafting subprocess's stdout -- which is the API container's docker log,
+-- wiped on every recreate. Live case: four ideas failed 2026-08-13/14 and by
+-- the time anyone looked, the only recoverable evidence was the assembled
+-- HTML the pipeline happens to write to disk BEFORE validating.
+-- Written by lib/ideas_db.py::update_status; NULL for every non-failure
+-- status (it is cleared on transition, so a requeued idea shows no stale
+-- reason) and NULL for rows that failed before this column existed.
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- brand_secrets (lib/brand_secrets.py)
 --

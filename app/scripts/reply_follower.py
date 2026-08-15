@@ -31,23 +31,21 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
+from lib.comment_generator import validate_voice
 from lib.local_env import get_runtime_headless
-
-from comment_generator import validate_voice
 from lib.logger import log_step
-from notifier import request_approval, skill_error, skill_finished, skill_started
-from rate_limiter import can_act, record_action
-from reply_drafter import draft_reply as draft_reply_contextual
-from thread_scraper import (
+from lib.notifier import request_approval, skill_error, skill_finished, skill_started
+from lib.rate_limiter import can_act, record_action
+from lib.reply_drafter import draft_reply as draft_reply_contextual
+from lib.thread_scraper import (
     find_replies_to_my_comment,
     post_threaded_reply_fb,
 )
-
 
 SESSION_FILE = settings.paths.facebook_session
 QUEUE_FILE = settings.paths.comment_queue

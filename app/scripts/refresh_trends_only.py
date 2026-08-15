@@ -20,14 +20,14 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "lib"))
+sys.path.insert(0, str(ROOT))
 
-from local_env import load_local_env
 from lib.config import settings
+from lib.local_env import load_local_env
 
 load_local_env()
 
-from keyword_research import get_google_trends
+from lib.keyword_research import get_google_trends
 
 
 def find_latest_ideas_file() -> Path | None:

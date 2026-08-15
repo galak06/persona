@@ -7,13 +7,15 @@ follow the same recipe: build a tmp brand-dir layout, point ``AppSettings``
 the pipeline calls (Telegram notifier, random delays, log writers, the
 groups-db-backed first-comment gate).
 
-Why the bare-module patching dance:
-    ``pyproject.toml`` sets ``pythonpath = ["lib"]``, so the engagers import
-    collaborators as bare top-level modules (``import rate_limiter``) — NOT
-    via the ``lib.`` namespace. Python creates two distinct module objects
-    for the same source file, so patching ``lib.rate_limiter.STATE_FILE``
-    would silently miss what the engager reads. We patch the bare-name
-    modules instead. This is the "dual-module-identity footgun" — slice 5.
+Historical note: this file used to carry a "bare-module patching dance"
+because ``pyproject.toml`` set ``pythonpath = ["lib"]``, so the engagers
+imported collaborators as bare top-level modules (``import rate_limiter``)
+rather than through the ``lib.`` namespace. Python built two distinct module
+objects for one source file, and patching ``lib.rate_limiter.STATE_FILE``
+silently missed what the engager actually read. That was the
+"dual-module-identity footgun"; it was removed on 2026-08-15, and there is
+now exactly one module object per file. The helpers below are ordinary
+path-redirection and collaborator stubs — patch ``lib.<name>`` and it works.
 """
 from __future__ import annotations
 
@@ -51,50 +53,46 @@ def seed_empty_state(*paths: Path) -> None:
         p.write_text("{}")
 
 
-def patch_bare_path_modules(
+def redirect_state_paths(
     monkeypatch: pytest.MonkeyPatch,
     *,
     dedup_file: Path | None = None,
     rate_limit_file: Path | None = None,
     engagement_log_path: Path | None = None,
 ) -> None:
-    """Redirect module-level path constants on the BARE-name modules.
+    """Point the state-file constants at tmp paths for the duration of a test.
 
-    Engagers + the shared pipeline both reach for these as bare
-    modules (``import deduplication``); ``lib.<name>`` would miss.
+    These are module-level constants (``deduplication.CACHE_FILE``,
+    ``rate_limiter.STATE_FILE``, ``activity_log.ENGAGEMENT_LOG_PATH``) read at
+    call time, so redirecting them on the module object is enough.
     """
     if dedup_file is not None:
-        import deduplication as bare_dedup
+        from lib import deduplication
 
-        monkeypatch.setattr(bare_dedup, "CACHE_FILE", dedup_file)
+        monkeypatch.setattr(deduplication, "CACHE_FILE", dedup_file)
     if rate_limit_file is not None:
-        import rate_limiter as bare_rate_limiter
+        from lib import rate_limiter
 
-        monkeypatch.setattr(bare_rate_limiter, "STATE_FILE", rate_limit_file)
+        monkeypatch.setattr(rate_limiter, "STATE_FILE", rate_limit_file)
     if engagement_log_path is not None:
-        import activity_log as bare_activity_log
+        from lib import activity_log
 
-        monkeypatch.setattr(
-            bare_activity_log, "ENGAGEMENT_LOG_PATH", engagement_log_path
-        )
+        monkeypatch.setattr(activity_log, "ENGAGEMENT_LOG_PATH", engagement_log_path)
 
 
 def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the bare-module collaborators the pipeline injects.
+    """Stub the collaborator modules the pipeline is handed.
 
-    The engagers pass the ``rate_limiter`` / ``deduplication`` modules into
-    ``run_outbound_scan``, so patching must happen on the bare modules. The
-    real ``can_act`` is used unchanged — quotas resolve against the tmp
-    state file redirected by ``patch_bare_path_modules``. Drafting is NOT
-    stubbed here: both engagers inject a ``draft_helper.SkillDrafter``
-    instance bound at import, so tests patch that instance (see
-    ``test_ig_engager_with_fake`` / ``test_fb_engager_with_fake``).
+    The engagers pass the ``lib.rate_limiter`` / ``lib.deduplication`` modules
+    into ``run_outbound_scan``. The real ``can_act`` is used unchanged — quotas
+    resolve against the tmp state file redirected by ``redirect_state_paths``.
+    Drafting is NOT stubbed here: both engagers inject a
+    ``draft_helper.SkillDrafter`` instance bound at import, so tests patch that
+    instance (see ``test_ig_engager_with_fake`` / ``test_fb_engager_with_fake``).
     """
-    import rate_limiter as bare_rate_limiter
+    from lib import rate_limiter
 
-    monkeypatch.setattr(
-        bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr(rate_limiter, "wait_random_delay", lambda *_a, **_k: None)
 
 
 def stub_skill_notifications(
@@ -114,7 +112,7 @@ def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     Postgres calls ``scan_dedup`` binds by name are stubbed: reads return an
     empty set, writes are no-ops. Iterate-once still works WITHIN a run via
     ScanDedup's in-memory ``_seen_ids`` set; the JSON ``deduplication`` side
-    keeps using the tmp cache (via ``patch_bare_path_modules``).
+    keeps using the tmp cache (via ``redirect_state_paths``).
 
     The inline-comment persistence sinks (``log_engagement`` JSONL +
     ``engagements_db.record_publish``) are already no-oped for every test in
@@ -176,7 +174,7 @@ def build_fb_environment(
     monkeypatch.setattr(fb_engager, "LAST_RUN_FILE", last_run_file)
     monkeypatch.setattr(fb_engager, "CONFIG_FILE", config_file)
     monkeypatch.setattr(fb_engager, "SESSION_FILE", fb_session_file)
-    patch_bare_path_modules(
+    redirect_state_paths(
         monkeypatch,
         dedup_file=dedup_file,
         rate_limit_file=rate_limit_file,
@@ -192,7 +190,7 @@ def build_fb_environment(
     # fb_engager sends no Telegram of its own since the first-comment gate
     # was removed (2026-08-13), but `notifier.send` stays stubbed so any
     # future notify path can't reach the real bot from a test.
-    import notifier
+    from lib import notifier
 
     monkeypatch.setattr(notifier, "send", lambda *_a, **_k: True)
 
@@ -250,7 +248,7 @@ def build_ig_environment(
     monkeypatch.setattr(ig_engager, "CONFIG_FILE", config_path)
     # `log_trace` writes to the real brand engagement log; no-op it in tests.
     monkeypatch.setattr(ig_engager, "log_trace", lambda *_a, **_k: None)
-    patch_bare_path_modules(
+    redirect_state_paths(
         monkeypatch,
         dedup_file=dedup_path,
         rate_limit_file=rate_path,
@@ -262,7 +260,7 @@ def build_ig_environment(
     # to the pipeline, which calls them via the rate_tracker protocol.
     # Drafting is left alone: the scan injects its own ``SkillDrafter``
     # instance, so tests patch that instance (see ``test_ig_engager_with_fake``).
-    import rate_limiter as bare_rate_limiter
+    from lib import rate_limiter as bare_rate_limiter
 
     monkeypatch.setattr(
         bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None

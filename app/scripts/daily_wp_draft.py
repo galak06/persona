@@ -26,15 +26,14 @@ from pathlib import Path
 UTC = UTC
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
 from lib.logger import log_step
-
-
-from notifier import send as send_telegram
+from lib.notifier import send as send_telegram
 
 ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 DAILY_MARKER = PROJECT_ROOT / ".claude/state/daily_wp_draft_marker.json"

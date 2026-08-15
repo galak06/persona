@@ -21,7 +21,7 @@ import httpx
 import pytest
 from scripts import ig_engager
 
-import draft_helper
+from lib import draft_helper
 
 # Passes lib.comment_generator.validate_voice (same string test_skill_drafter uses).
 _VALID = (

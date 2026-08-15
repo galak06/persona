@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
 
@@ -35,8 +35,8 @@ settings, log = init_script(__name__)
 from lib.fb.session import FbSession, build_fb_session
 from lib.groups.notes import append_group_note
 from lib.logger import log_step
+from lib.notifier import skill_error, skill_finished, skill_started
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
-from notifier import skill_error, skill_finished, skill_started
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

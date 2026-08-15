@@ -19,7 +19,6 @@ import json
 import logging
 import os
 import re
-import sys
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
@@ -29,9 +28,8 @@ from typing import Any, Final
 import httpx
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from skill_loader import load_skill_prompt
+from lib.skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 

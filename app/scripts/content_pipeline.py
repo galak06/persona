@@ -31,16 +31,15 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-import blog_post_queue
+from lib import blog_post_queue
 from lib.logger import log_step
-from lib.worker_db import record_complete, record_start
-from notifier import (
+from lib.notifier import (
     send,
     send_and_wait,
     send_video,
@@ -48,6 +47,7 @@ from notifier import (
     skill_finished,
     skill_started,
 )
+from lib.worker_db import record_complete, record_start
 
 ENRICHMENT_CACHE = PROJECT_ROOT / ".claude/state/enrichment_cache.json"
 WP_POSTS_CACHE = PROJECT_ROOT / ".claude/state/wp_posts_cache.json"
@@ -665,8 +665,7 @@ def stage_campaign(
             skill_error("campaign", msg)
             return False
 
-    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
-    import affiliate_resolver as ar
+    from lib import affiliate_resolver as ar
 
     tag = os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
     if not tag:

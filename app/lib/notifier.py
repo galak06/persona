@@ -1,5 +1,4 @@
 # pyright: reportMissingImports=false
-# ruff: noqa: T201
 # Pre-existing print()-based logging throughout; structured-log migration is
 # deferred to the same refactor as the file-size split (see TODO below).
 # TODO(file-size): 652 lines, exceeds the project's 300-line cap. Pre-existing
@@ -32,7 +31,7 @@ from typing import Any
 
 import requests
 
-from queue_state import commit_telegram_decision, read_decision
+from lib.queue_state import commit_telegram_decision, read_decision
 
 
 # ── Credentials ────────────────────────────────────────────────────────────────
@@ -179,7 +178,7 @@ def _get_updates(token: str, offset: int = 0, timeout: int = 30) -> list[dict]:
         )
         if resp.ok:
             return resp.json().get("result", [])
-    except Exception:  # noqa: S110 - long-poll best-effort; caller treats [] as no updates
+    except Exception:
         pass
     return []
 
@@ -206,7 +205,7 @@ def _log_web_ui_win(item_id: str, status: str) -> None:
 
 def _emit_json_log(payload: dict[str, Any]) -> None:
     """Single sink for structured logs; isolated so callers stay readable."""
-    print(json.dumps(payload, sort_keys=True))  # noqa: T201
+    print(json.dumps(payload, sort_keys=True))
 
 
 def _build_web_ui_result(

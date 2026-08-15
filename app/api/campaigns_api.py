@@ -178,7 +178,7 @@ def publish_campaign(
     campaign_dir = _campaigns_dir() / name
     if _load_config(campaign_dir / "campaign_config.json") is None:
         raise HTTPException(status_code=404, detail=f"campaign not found: {name}")
-    proc = subprocess.Popen(  # noqa: S603 - args are list-form, name is regex-validated
+    proc = subprocess.Popen(
         [sys.executable, "-m", "scripts.publish_campaign", "--campaign", name],
         cwd=str(_PROJECT_ROOT),
         env={**os.environ},

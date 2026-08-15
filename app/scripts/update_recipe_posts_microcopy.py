@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from lib.sessions.wp_client import wp_client  # noqa: E402
+from lib.sessions.wp_client import wp_client
 
 _SETTINGS_PATH = Path(__file__).parent.parent.parent / ".claude" / "settings.local.json"
 _RECIPES_CATEGORY_ID = 41

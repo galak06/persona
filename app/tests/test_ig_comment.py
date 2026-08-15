@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from scripts import ig_comment
 
-import draft_helper
+from lib import draft_helper
 
 
 def test_spec_is_instagram() -> None:

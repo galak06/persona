@@ -27,6 +27,9 @@ import json
 import sys
 from pathlib import Path
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_PROJECT_ROOT))
+
 from api.campaign_schemas import CampaignConfig
 
 from lib.campaigns import LockHeldError, run_campaign
@@ -36,8 +39,6 @@ from lib.observability import get_logger
 EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_LOCKED = 2
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _parse_args() -> argparse.Namespace:

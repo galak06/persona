@@ -88,7 +88,31 @@ def test_update_status_builds_correct_update(mock_execute: MagicMock) -> None:
     query, params = mock_execute.call_args[0]
     assert "UPDATE content_ideas SET status = %s" in query
     assert "WHERE id = %s" in query
-    assert params == ("approved", "idea-1")
+    assert params == ("approved", None, "idea-1")
+
+
+@pytest.mark.parametrize("status", ["write_failed", "validation_failed"])
+@patch("lib.ideas_db.db.execute")
+def test_update_status_persists_reason_on_failure_statuses(
+    mock_execute: MagicMock, status: str
+) -> None:
+    ideas_db.update_status("idea-1", status, "quality score 20.0 is below the 80.0 threshold")
+    _query, params = mock_execute.call_args[0]
+    assert params == (status, "quality score 20.0 is below the 80.0 threshold", "idea-1")
+
+
+@patch("lib.ideas_db.db.execute")
+def test_update_status_clears_reason_when_requeued(mock_execute: MagicMock) -> None:
+    # Requeuing a failed idea must wipe last run's reason, or the UI would
+    # keep showing a stale cause for an idea that is healthy again. Passing a
+    # reason with a non-failure status is ignored, not an error.
+    ideas_db.update_status("idea-1", "approved", "stale reason from the previous run")
+    _query, params = mock_execute.call_args[0]
+    assert params == ("approved", None, "idea-1")
+
+
+def test_failure_statuses_are_a_subset_of_statuses() -> None:
+    assert ideas_db.FAILURE_STATUSES <= set(ideas_db.STATUSES)
 
 
 @patch("lib.ideas_db.db.execute")

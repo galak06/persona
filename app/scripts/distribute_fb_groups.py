@@ -39,13 +39,12 @@ from typing import Any, Final
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-import notifier
+from lib import notifier
 from lib.local_env import get_brand_campaign, load_local_env
 
 logger = logging.getLogger("distribute_fb_groups")

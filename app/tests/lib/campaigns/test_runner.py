@@ -21,7 +21,6 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.campaigns import CampaignRunResult, LockHeldError, run_campaign
 
@@ -199,7 +198,6 @@ def _hold_lock_worker(campaign_dir_str: str, project_root_str: str) -> None:
     import sys as _sys
 
     _sys.path.insert(0, project_root_str)
-    _sys.path.insert(0, str(Path(project_root_str) / "lib"))
     from lib.campaigns import run_campaign as _run
 
     _run(Path(campaign_dir_str), stage="publish")

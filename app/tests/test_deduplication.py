@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import json
-import sys
 from datetime import date, timedelta
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import deduplication
+from lib import deduplication
 
 
 @pytest.fixture
@@ -134,3 +130,54 @@ class TestTTLPurge:
     def test_corrupted_cache_resets(self, tmp_cache):
         tmp_cache.write_text("not valid json [[[")
         assert deduplication.is_duplicate("facebook", "test") is False
+
+
+# ── brand-scoped location (2026-08-15) ────────────────────────────────────
+
+
+def test_cache_resolves_inside_the_brand_state_dir(brand_context: object) -> None:
+    """The cache must live under BRAND_DIR, not an engine-relative path.
+
+    Regression guard. Until 2026-08-15 this module wrote to
+    ``app/.claude/state/dedup_cache.json``. Only ``brands/`` is mounted into
+    the worker container, so that file sat in the container's writable layer:
+    every rebuild reset the like/comment history, and the running container
+    had no such file at all. It was also shared by every brand, and
+    ``scripts/status.py`` reported on the brand-scoped path this module had
+    stopped writing.
+    """
+    from lib import deduplication
+    from lib.config import settings
+
+    assert deduplication.CACHE_FILE is None, "module default must follow the brand"
+    resolved = deduplication._cache_path()
+    assert settings.paths is not None
+    assert resolved == settings.paths.dedup_cache
+    assert settings.paths.brand_dir in resolved.parents
+    assert ".claude" not in resolved.parts
+
+
+def test_draft_history_resolves_inside_the_brand_state_dir(brand_context: object) -> None:
+    """Same fix for the template-recycling guard's backing file."""
+    from lib import draft_history
+    from lib.config import settings
+
+    assert draft_history.HISTORY_FILE is None
+    resolved = draft_history._history_path()
+    assert settings.paths is not None
+    assert resolved == settings.paths.recent_drafts
+    assert settings.paths.brand_dir in resolved.parents
+    assert ".claude" not in resolved.parts
+
+
+def test_marks_are_written_under_the_brand_dir(brand_context: object) -> None:
+    """An end-to-end write must land in the brand's state dir."""
+    from lib import deduplication
+    from lib.config import settings
+
+    deduplication.mark_engaged("instagram", "post_abc", "comment")
+
+    assert settings.paths is not None
+    written = settings.paths.dedup_cache
+    assert written.exists(), f"expected a cache at {written}"
+    assert deduplication.already_commented("instagram", "post_abc")

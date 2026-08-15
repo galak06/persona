@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from group_discovery.fb_search import pace_between_joins, try_join
-from group_discovery.state import (
+from lib.group_discovery.fb_search import pace_between_joins, try_join
+from lib.group_discovery.state import (
     append_to_tracker,
     log_error,
     log_join_request,

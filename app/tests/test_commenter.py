@@ -1,4 +1,3 @@
-# pyright: reportMissingImports=false
 """Tests for the shared engagement-commenter core (lib.engagement.commenter).
 
 Covers the platform-agnostic ``_pending_items`` filter + dedup stamping against
@@ -8,17 +7,11 @@ a synthetic spec — the FB and IG commenters reuse this verbatim.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
 
-_LIB = Path(__file__).resolve().parent.parent / "lib"
-if str(_LIB) not in sys.path:
-    sys.path.insert(0, str(_LIB))
-
-import deduplication
-from lib import engagements_db
+from lib import deduplication, engagements_db
 from lib.engagement.commenter import CommenterSpec, _pending_items
 
 

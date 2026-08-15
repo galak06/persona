@@ -23,22 +23,22 @@ from pathlib import Path
 import httpx
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-from deduplication import is_duplicate, mark_engaged
 from lib.comment_queue_routing import guard_key_for, parse_platform_arg, queue_path_for
+from lib.deduplication import is_duplicate, mark_engaged
 from lib.logger import log_progress, log_step
-from notifier import (
+from lib.notifier import (
     skill_finished,
     skill_skipped,
     skill_started,
 )
-from rate_limiter import can_act, print_status, record_action
+from lib.rate_limiter import can_act, print_status, record_action
 
 # Per-platform loop: `--platform instagram|facebook` drains only that queue;
 # absent (or `--platform wordpress`) drains the legacy shared queue.

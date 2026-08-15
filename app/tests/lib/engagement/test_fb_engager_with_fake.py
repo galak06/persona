@@ -31,7 +31,7 @@ from scripts.fb_engager import run_fb_engager_scan
 
 import lib.group_warmup as group_warmup
 import lib.groups_db as groups_db
-import notifier
+from lib import notifier
 from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.post import Post
 

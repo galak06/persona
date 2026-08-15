@@ -48,7 +48,6 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 
@@ -57,11 +56,11 @@ settings, log = init_script(__name__)
 from lib.fb.session import FbSession, build_fb_session
 from lib.group_discovery.fb_search import pace_between_joins
 from lib.group_discovery.join_recheck import process_entry, rejoin_entry
+from lib.notifier import skill_error, skill_finished, skill_started
+from lib.rate_limiter import can_act, record_action
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.worker_db import record_complete, record_start
 from lib.worker_labels import worker_label_for_flow
-from notifier import skill_error, skill_finished, skill_started
-from rate_limiter import can_act, record_action
 
 SKILL_NAME = "fb-pending-joins-check"
 WORKER_LABEL = worker_label_for_flow(SKILL_NAME)

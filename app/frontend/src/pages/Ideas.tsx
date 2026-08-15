@@ -37,19 +37,38 @@ const GOAL_LABEL: Record<string, string> = {
   convert: "💰 Convert",
 };
 
-function statusBadge(status: string): React.JSX.Element {
+const FAILURE_STATUSES = new Set(["write_failed", "validation_failed"]);
+
+function statusBadge(status: string, failureReason: string | null): React.JSX.Element {
+  const isFailure = FAILURE_STATUSES.has(status);
   const cls =
     status === "approved" ? "bg-emerald-50 text-emerald-700" :
     status === "skipped" ? "bg-slate-100 text-slate-500" :
     status === "publish" ? "bg-amber-50 text-amber-700" :
     status === "social_done" ? "bg-violet-50 text-violet-700" :
     status === "wp_published" ? "bg-blue-50 text-blue-700" :
+    isFailure ? "bg-rose-50 text-rose-700" :
     "bg-stone-100 text-stone-600";
   const label = status === "publish" ? "pending" : status.replace(/_/g, " ");
+  // Failures are terminal and nothing retries them, so the cause is the only
+  // actionable thing in this cell. Full text on hover (reasons run long --
+  // they carry the editor's score or the exact banned claim term), truncated
+  // inline so the table stays scannable. Rows that failed before
+  // failure_reason existed have no reason and just show the badge.
   return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${cls}`}>
-      {label}
-    </span>
+    <div className="flex flex-col gap-0.5 max-w-[190px]">
+      <span
+        className={`self-start rounded px-2 py-0.5 text-xs font-medium capitalize ${cls}`}
+        title={failureReason ?? undefined}
+      >
+        {label}
+      </span>
+      {isFailure && failureReason && (
+        <span className="line-clamp-2 text-[11px] leading-tight text-rose-600/80" title={failureReason}>
+          {failureReason}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -134,7 +153,7 @@ function IdeaRow({ idea, rowNumber, onDecision, busy, expanded, onToggle }: RowP
         <td className="py-2.5 pr-3 whitespace-nowrap text-right text-xs font-semibold tabular-nums text-slate-600">
           {idea.match_score !== null ? idea.match_score.toFixed(0) : "—"}
         </td>
-        <td className="py-2.5 pr-3 whitespace-nowrap">{statusBadge(idea.status)}</td>
+        <td className="py-2.5 pr-3 align-top">{statusBadge(idea.status, idea.failure_reason)}</td>
         <td className="py-2.5 whitespace-nowrap">
           <div className="flex items-center gap-1.5">
             {isPending && (

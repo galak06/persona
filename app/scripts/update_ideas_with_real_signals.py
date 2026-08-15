@@ -20,8 +20,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 ENGINE_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ENGINE_ROOT / "lib"))
+sys.path.insert(0, str(ENGINE_ROOT))
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
 def _relative_to_engine(path: Path) -> str:

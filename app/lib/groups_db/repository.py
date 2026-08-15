@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from lib import brands_db
+from lib.brand_context import current_brand_id
 from lib.db import execute, fetch_all, fetch_one
 from lib.groups_db.models import (
     _ALWAYS_KEYS,
@@ -34,8 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _brand_identity() -> tuple[str, str, str, str]:
     """(id, name, persona, site_url) for the current brand."""
-    brand_dir = os.environ.get("BRAND_DIR")
-    bid = Path(brand_dir).name if brand_dir else "default"
+    bid = current_brand_id()
     name, persona, url = bid, "", ""
     try:
         from lib.config import settings

@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import ClassVar
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-from comment_generator import build_claude_prompt, score_relevance, validate_voice
+from lib.comment_generator import build_claude_prompt, score_relevance, validate_voice
 from lib.config import settings
 
 # ── score_relevance ──────────────────────────────────────────────────────────

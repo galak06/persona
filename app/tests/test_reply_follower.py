@@ -11,7 +11,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 
 import reply_follower
 
@@ -64,7 +63,7 @@ def test_draft_reply_is_voice_valid(monkeypatch) -> None:
     # Force the fallback template path so the test is deterministic
     # (no network, no GEMINI_API_KEY dependency).
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    from comment_generator import validate_voice
+    from lib.comment_generator import validate_voice
 
     text = reply_follower.draft_reply(
         their_text="How long before we saw results?",

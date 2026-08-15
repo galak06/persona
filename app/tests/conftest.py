@@ -25,6 +25,8 @@ Anything else aborts the session before a single test runs.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
 import pytest
@@ -87,19 +89,23 @@ def _restore_startup_dsn(when: str) -> str | None:
 
     The suite must target exactly the database named on the command line --
     never one an import happened to introduce. Two independent import paths
-    inject the live DSN on a developer machine:
+    injected the live DSN on a developer machine:
 
       * `lib/config.py`'s import-time `load_local_env()` merging
-        `.claude/settings.local.json` (now refused at source by
-        `lib.local_env._is_db_key`), and
+        `.claude/settings.local.json`. **Closed at source on 2026-08-15**: that
+        module-level bootstrap moved behind `BrandContext.load_env()`, so
+        importing `lib.config` no longer touches `os.environ` at all. (It was
+        already refused for DSN keys by `lib.local_env._is_db_key`.)
       * `app/.env`, auto-loaded by python-dotenv when CrewAI is imported
         (`lib.crew` -> `crewai`). That file is also docker-compose's env file,
         so the DSN cannot simply be deleted from it.
 
-    Both defeated the `pytest_configure` check, which runs before collection;
-    the second one wiped the live database on 2026-08-12. Pinning the value
-    closes the whole class of injection regardless of mechanism, instead of
-    chasing each new import that reintroduces it.
+    **The second path is still live and is why this pin remains.** `app/.env`
+    carries the real `.../persona` DSN, `crewai` imports `dotenv`, and none of
+    that is under this repo's control -- removing the pin because the first
+    injector is gone would reopen the hole that wiped the live database on
+    2026-08-12. Pinning closes the whole class of injection regardless of
+    mechanism, instead of chasing each new import that reintroduces it.
 
     Returns the DSN that was displaced, or None when nothing changed.
     """
@@ -125,18 +131,19 @@ def _pin_database_url() -> None:
 def pytest_collection_finish(session: pytest.Session) -> None:
     """Undo any DSN injected by collection, before a single test executes.
 
-    The configure-time check above is defeated by import side effects:
-    `lib/config.py` calls `load_local_env()` at IMPORT time, which merges
-    `.claude/settings.local.json`'s `env` dict -- including a live
-    `DATABASE_URL` -- into `os.environ`. Collection imports test modules,
-    nearly all of which transitively import `lib.config`, so a run started
-    WITHOUT `DATABASE_URL` acquires the live DSN mid-collection; every
-    pg-gated module imported after that point computes its
-    `requires_postgres` guard as True and the suite TRUNCATEs the live
-    database. This exact sequence wiped the live docker `persona` DB on
-    2026-08-12 (recovered from the nightly dump). Until the import-time
-    injection itself is removed, the only safe full-suite invocation on a
-    machine with live credentials is an EXPLICIT disposable DSN, e.g.
+    The configure-time check is defeated by import side effects. Collection
+    imports test modules; anything one of them pulls in transitively can merge
+    a live `DATABASE_URL` into `os.environ` mid-collection. Every pg-gated
+    module imported after that point then computes its `requires_postgres`
+    guard as True and the suite TRUNCATEs the live database. This exact
+    sequence wiped the live docker `persona` DB on 2026-08-12 (recovered from
+    the nightly dump).
+
+    `lib/config.py` was one such importer and no longer is (see
+    `_restore_startup_dsn`), but `app/.env` -> python-dotenv -> `crewai`
+    remains, so this hook is still load-bearing. The only safe full-suite
+    invocation on a machine with live credentials is an EXPLICIT disposable
+    DSN, e.g.
     `DATABASE_URL=postgresql://persona:persona@localhost:5434/persona_test`.
 
     Resetting rather than aborting keeps the documented degraded-but-safe run
@@ -146,6 +153,37 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     if it was not disposable.
     """
     _restore_startup_dsn("during collection")
+
+
+@pytest.fixture
+def brand_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[object]:
+    """A throwaway `BrandContext` over `tmp_path`, with the env pointed at it.
+
+    The first domain fixture this file has offered. Tests that need "a brand"
+    previously had to know the on-disk layout and monkeypatch eight attributes
+    onto the live `lib.config.settings` singleton -- see
+    `tests/lib/engagement/_env_builders.py`. Now that brand identity has an
+    owning module, a test can construct one instead of patching a global.
+    """
+    from lib import config
+    from lib.brand_context import BrandContext
+
+    for sub in ("data/config", "data/trackers", "data/cache", "state", "logs"):
+        (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+
+    # A brand without a config.json is not a brand `lib.config` can load, so
+    # seed one from the engine's own template — the same file `onboard_brand`
+    # copies. Tests get a fully-resolvable `settings`, not just a directory.
+    template = Path(__file__).resolve().parent.parent / "config.example.json"
+    (tmp_path / "config.json").write_text(template.read_text(encoding="utf-8"), encoding="utf-8")
+
+    monkeypatch.setenv("BRAND_DIR", str(tmp_path))
+    monkeypatch.setenv("PERSONA_BRAND", tmp_path.name)
+    config.reset_settings_cache()
+    try:
+        yield BrandContext.from_env()
+    finally:
+        config.reset_settings_cache()
 
 
 def _refusal_message(name: str, parsed: ParseResult) -> str:

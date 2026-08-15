@@ -10,14 +10,9 @@ business any more -- see tests/test_llm_client.py and tests/test_draft_helper.py
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import gemini_client as gc
+from lib import gemini_client as gc
 
 
 @pytest.fixture(autouse=True)

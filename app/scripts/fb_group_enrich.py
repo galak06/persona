@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
 
@@ -35,7 +35,7 @@ settings, log = init_script(__name__)
 
 from lib.local_env import get_runtime_headless
 from lib.logger import log_step
-from notifier import skill_error, skill_finished, skill_started
+from lib.notifier import skill_error, skill_finished, skill_started
 
 SESSION_FILE = settings.paths.facebook_session
 from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)

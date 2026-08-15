@@ -11,10 +11,10 @@ import logging
 from collections.abc import Callable
 from typing import cast
 
-import deduplication
-from deduplication import Platform as _DedupPlatform
+from lib import deduplication
 from lib.dedup_pg import Platform as _PgPlatform
 from lib.dedup_pg import completed_entity_ids, record_done
+from lib.deduplication import Platform as _DedupPlatform
 
 _log = logging.getLogger(__name__)
 

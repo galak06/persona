@@ -19,10 +19,13 @@ prerequisite, so a run without it is a plain success.
 from __future__ import annotations
 
 import functools
+import sys
 from pathlib import Path
 from typing import NamedTuple
 
 import anyio
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import generate_image

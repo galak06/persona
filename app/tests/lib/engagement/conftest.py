@@ -4,8 +4,6 @@ Thin shim over ``_env_builders``: this module exposes the public
 ``@pytest.fixture`` declarations; the heavy tmp-path wiring lives in
 ``_env_builders.py`` to keep both files under the 300-line cap.
 
-See ``_env_builders`` for the bare-module-patching rationale (the
-"dual-module-identity footgun" that slice 5 will fix).
 """
 from __future__ import annotations
 

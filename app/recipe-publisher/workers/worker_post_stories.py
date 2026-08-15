@@ -32,9 +32,8 @@ from workers._base import run_worker
 logger = logging.getLogger("workers.post_stories")
 
 _SA_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_SA_ROOT / "lib"))
-from bootstrap import init_script as _init_script  # noqa: E402
-import notifier as _notifier  # noqa: E402
+from lib.bootstrap import init_script as _init_script  # noqa: E402
+from lib import notifier as _notifier  # noqa: E402
 _settings, _ = _init_script(__name__)
 
 _BADGE_PATH = str(_SA_ROOT.parent / "app/images/badge.png")
