@@ -41,6 +41,7 @@ python -m api.approval_api
 | Method | Path | Parameters | Purpose |
 |--------|------|------------|---------|
 | GET | `/api/v1/activity` | `limit` (1–500, default 50), `platform` (facebook/instagram/wordpress), `action` (string filter) | Tail of engagement_log.jsonl, most recent first |
+| GET | `/api/v1/activity/summary` | `date` (YYYY-MM-DD, default today UTC) | Per-action tally for one day over the **whole** log. Use this for counts — tallying a `/activity` tail client-side under-reports, because hourly `trace` heartbeats crowd real actions out of any window |
 
 ### Configuration
 
