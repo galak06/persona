@@ -124,7 +124,22 @@ def _parse_structured_output(raw: str | None, model: type[ModelT], *, event: str
         return None
 
 
+class KickoffError(Exception):
+    """The Crew call itself failed -- network, auth, LiteLLM, quota.
+
+    Distinct from "the model answered, but the answer was unusable". Retrying
+    the former just multiplies the wait against a failure that will not fix
+    itself (a revoked API key retried three times is three 401s and triple the
+    time-to-diagnose); retrying the latter is the whole point, since malformed
+    or schema-short output is non-deterministic drift.
+    """
+
+
 def _kickoff_and_parse(agent: Agent, task: Task) -> SocialPostPlan | None:
+    """`None` when the model answered unusably (retryable by the caller).
+
+    Raises `KickoffError` when the call never produced an answer at all.
+    """
     from crewai import Crew  # local import: keeps Crew construction next to its one use
 
     try:
@@ -132,7 +147,7 @@ def _kickoff_and_parse(agent: Agent, task: Task) -> SocialPostPlan | None:
         crew.kickoff()
     except Exception as exc:  # CrewAI/LiteLLM/network errors
         logger.warning("crew_socialpost_kickoff_failed", error=str(exc))
-        return None
+        raise KickoffError(str(exc)) from exc
 
     raw = task.output.raw if task.output else None
     return _parse_structured_output(raw, SocialPostPlan, event="crew_socialpost")
@@ -169,9 +184,25 @@ def execute_social_post_crew(
     plan: SocialPostPlan | None = None
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        plan = _kickoff_and_parse(agent, task)
-        if plan is None:
+        try:
+            plan = _kickoff_and_parse(agent, task)
+        except KickoffError:
+            # The call never landed. Already logged with its cause; retrying
+            # would only multiply the wait against the same failure.
             return None
+        if plan is None:
+            # The model answered, but the answer was empty / not JSON / missing
+            # required fields. That is drift, and drift is what retries are for
+            # -- it used to abandon the idea on attempt 1 while a WORSE outcome
+            # (captions breaking hard rules) got all MAX_ATTEMPTS below.
+            # There is no draft to hand back, so the description is reset to the
+            # original brief rather than carrying correction feedback.
+            if attempt == MAX_ATTEMPTS:
+                logger.warning("crew_socialpost_unparseable_exhausted", attempts=attempt)
+                return None
+            logger.warning("crew_socialpost_unparseable_retrying", attempt=attempt)
+            task.description = base_description
+            continue
         violations = find_caption_violations(plan, target_keyword=target_keyword)
         if not violations:
             return plan

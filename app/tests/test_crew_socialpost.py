@@ -356,3 +356,55 @@ def test_execute_none_when_kickoff_raises(mock_crew: MagicMock) -> None:
     mock_crew.side_effect = RuntimeError("network down")
     result = execute_social_post_crew(MagicMock(), _make_task_with_output(""), target_keyword=_KW)
     assert result is None
+
+
+# ── unparseable output retries (the asymmetry fixed 2026-08-15) ────────────
+
+
+@patch("crewai.Crew")
+def test_execute_retries_when_output_fails_schema_validation(mock_crew: MagicMock) -> None:
+    """Live failure: the model returned a plan missing 5 required fields
+    (overlay_headline, overlay_subcopy, image_brief, cta_ribbon_text,
+    image_alt_text). That abandoned the idea on attempt 1, while captions
+    breaking hard rules got all MAX_ATTEMPTS. Drift is exactly what a retry
+    fixes, so schema-short output now retries too."""
+    task = _make_task_with_output('{"target_question": "Which?", "ig_caption": "..."}')
+
+    def valid_on_second_kickoff(*_args: object, **_kwargs: object) -> MagicMock:
+        crew_instance = MagicMock()
+        if mock_crew.call_count == 2:
+            task.output.raw = _plan_json(_good_plan())
+        return crew_instance
+
+    mock_crew.side_effect = valid_on_second_kickoff
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+    assert result is not None
+    assert mock_crew.call_count == 2
+
+
+@patch("crewai.Crew")
+def test_execute_retries_on_unparseable_output_then_gives_up(mock_crew: MagicMock) -> None:
+    task = _make_task_with_output("not json at all")
+    result = execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+    assert result is None
+    assert mock_crew.call_count == MAX_ATTEMPTS
+
+
+@patch("crewai.Crew")
+def test_unparseable_retry_resets_to_the_original_prompt(mock_crew: MagicMock) -> None:
+    """There is no rejected draft to hand back, so the retry must re-ask the
+    ORIGINAL brief rather than carry stale correction feedback."""
+    task = _make_task_with_output("not json at all")
+    execute_social_post_crew(MagicMock(), task, target_keyword=_KW)
+    assert task.description == "base description"
+
+
+@patch("crewai.Crew")
+def test_kickoff_failure_still_bails_immediately(mock_crew: MagicMock) -> None:
+    """A revoked API key retried MAX_ATTEMPTS times is just three 401s and
+    triple the time-to-diagnose -- the call never landed, so retrying cannot
+    help. Only UNUSABLE ANSWERS retry."""
+    mock_crew.side_effect = RuntimeError("401 Authentication Fails")
+    result = execute_social_post_crew(MagicMock(), _make_task_with_output(""), target_keyword=_KW)
+    assert result is None
+    assert mock_crew.call_count == 1
