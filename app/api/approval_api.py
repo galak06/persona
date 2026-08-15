@@ -260,8 +260,12 @@ def activity_summary(
 ) -> ActivitySummaryResponse:
     """Per-action tally for one day, computed over the whole log.
 
-    The caller passes its own local ``date`` so the Dashboard's "today"
-    matches the viewer's calendar day rather than the container's.
+    Defaults to the UTC day, which is the day everything else that meters
+    the estate already counts — the rate limiter, the daily re-run guard,
+    and the ``date`` stamp the log writers put on each row. The Dashboard
+    relies on that default and echoes back the ``date`` it was given rather
+    than deciding the day from the browser clock; the explicit param is for
+    looking at any other day.
     """
     day = date or datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
     counts, total = activity_log.summarize_day(day)
