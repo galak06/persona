@@ -35,7 +35,7 @@ from lib.notifier import send, skill_error
 
 def _take_screenshot() -> Path | None:
     """Try to capture a macOS screenshot for debugging."""
-    shot_dir = PROJECT_ROOT / "logs" / "screenshots"
+    shot_dir = settings.paths.logs_dir / "screenshots"
     shot_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = shot_dir / f"watchdog_{ts}.png"

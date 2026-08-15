@@ -64,7 +64,7 @@ from lib import (
     groups_db,  # FB groups live in groups.db (was groups_tracker.json)
 )
 
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 
 # Daily cap on group posts is enforced via lib.rate_limiter.can_act —
 # the actual cap value lives in lib/rate_limiter.py:DAILY_LIMITS["facebook:group_post"].

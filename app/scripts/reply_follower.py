@@ -50,7 +50,7 @@ from lib.thread_scraper import (
 SESSION_FILE = settings.paths.facebook_session
 QUEUE_FILE = settings.paths.comment_queue
 TRACKER_FILE = PROJECT_ROOT / ".claude/state/thread_tracker.json"
-LOG_FILE = PROJECT_ROOT / "logs/engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 
 
 def load_json(path: Path, default):

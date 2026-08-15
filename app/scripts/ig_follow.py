@@ -56,7 +56,7 @@ from lib.sessions.browser import ig_session
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
-LOG_FILE = PROJECT_ROOT / "logs" / "engagement_log.jsonl"
+LOG_FILE = settings.paths.logs_dir / "engagement_log.jsonl"
 SESSION_FILE = PROJECT_ROOT / ".claude" / "state" / "instagram_session.json"
 SKILL_NAME = "ig-follow-scout"
 

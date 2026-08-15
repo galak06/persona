@@ -59,8 +59,8 @@ from lib.reply_drafter import draft_reply
 
 SEEN_FILE = PROJECT_ROOT / ".claude" / "state" / "own_post_comments_seen.json"
 LOCK_FILE = PROJECT_ROOT / ".claude" / "state" / "ig_own_comments.lock"
-ENGAGEMENT_LOG = PROJECT_ROOT / "logs" / "engagement_log.jsonl"
-ERROR_LOG = PROJECT_ROOT / "logs" / "errors.log"
+ENGAGEMENT_LOG = settings.paths.logs_dir / "engagement_log.jsonl"
+ERROR_LOG = settings.paths.logs_dir / "errors.log"
 
 MAX_MEDIA_LOOKBACK = 10
 MEDIA_AGE_DAYS = 14
