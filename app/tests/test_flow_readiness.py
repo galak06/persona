@@ -22,17 +22,7 @@ _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 _BRAND = "flow-readiness-brand"
 
 
-def _postgres_reachable() -> bool:
-    try:
-        return db.health_check()
-    except Exception:
-        return False
-
-
-_PG_AVAILABLE = _postgres_reachable()
-requires_postgres = pytest.mark.skipif(
-    not _PG_AVAILABLE, reason="No reachable Postgres at DATABASE_URL"
-)
+from tests._pg import requires_postgres
 
 
 @pytest.fixture
