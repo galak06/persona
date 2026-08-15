@@ -13,18 +13,14 @@ all lru_caches cleared around each test per the skill_loader hygiene rules.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import reply_drafter as rd
-import skill_loader
-from skill_loader import BrandVars
+from lib import reply_drafter as rd
+from lib import skill_loader
+from lib.skill_loader import BrandVars
 
 _BRAND = BrandVars(
     name="Acme Dogs",

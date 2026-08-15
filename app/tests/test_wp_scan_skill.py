@@ -20,11 +20,10 @@ import httpx
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-import draft_helper
 import wp_scan
+from lib import draft_helper
 
 # Passes lib.comment_generator.validate_voice (same string test_skill_drafter uses).
 _VALID = (

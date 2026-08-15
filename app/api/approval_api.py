@@ -43,8 +43,8 @@ from fastapi import (
     Response,
     status,
 )
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from api import state
 from api.schemas import (
@@ -100,6 +100,8 @@ _load_secrets()
 
 # Import the new lib + helper modules *after* secrets load so any
 # module-level config-driven paths resolve correctly.
+from croniter import croniter
+
 from api import routes_helpers as rh
 from api.brand_flows_api import router as _brand_flows_router
 from api.brand_settings_api import router as _brand_settings_router
@@ -119,15 +121,20 @@ from api.session_status_api import router as _session_status_router
 from api.social_posts_api import router as _social_posts_router
 from api.social_posts_compose_api import router as _social_posts_compose_router
 from api.tiktok_candidates_api import router as _tiktok_router
-from croniter import croniter
 from lib import activity_log, groups_db, groups_queue, schedule_db
 from lib.config import default_brand_dir, settings
 from lib.io.jsonio import read_json
 from lib.rate_limiter import get_daily_status
 from lib.worker_db import (
     get_all as worker_db_get_all,
+)
+from lib.worker_db import (
     get_one as worker_db_get_one,
+)
+from lib.worker_db import (
     record_complete as worker_db_record_complete,
+)
+from lib.worker_db import (
     record_start as worker_db_record_start,
 )
 
@@ -305,11 +312,11 @@ def approve_item(
         raise HTTPException(status_code=404, detail=f"item {item_id} not found")
     kind, path, raw = located
     if kind == "comment":
-        assert path is not None  # noqa: S101
+        assert path is not None
         payload = body or ApproveBody()
         return rh.approve_comment(path, item_id, decision_status="approved", text=payload.text)
     if kind == "blog_post":
-        assert path is not None  # noqa: S101
+        assert path is not None
         payload = body or ApproveBody()
         return rh.approve_blog_post(
             path,
@@ -321,7 +328,7 @@ def approve_item(
             decision_status="approved",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_generic(path, item_id, decision_status="approved")
     return rh.approve_group(raw, status_value="approved", background_tasks=background_tasks)
 
@@ -340,10 +347,10 @@ def reject_item(
     if body and body.reason:
         _log.info("reject reason for %s: %s", item_id, body.reason)
     if kind == "comment":
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_comment(path, item_id, decision_status="USER_SKIPPED", text=None)
     if kind == "blog_post":
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_blog_post(
             path,
             item_id,
@@ -354,7 +361,7 @@ def reject_item(
             decision_status="USER_SKIPPED",
         )
     if kind in ("idea", "seed", "campaign_verify"):
-        assert path is not None  # noqa: S101
+        assert path is not None
         return rh.approve_generic(path, item_id, decision_status="USER_SKIPPED")
     return rh.approve_group(
         raw,
@@ -380,7 +387,7 @@ def edit_item(item_id: str, body: EditBody) -> DecisionResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="group items have no editable text",
         )
-    assert path is not None  # noqa: S101
+    assert path is not None
     if kind == "comment":
         return rh.approve_comment(path, item_id, decision_status="edited", text=body.text)
     return rh.approve_blog_post(
@@ -402,7 +409,7 @@ def list_facebook_groups() -> FacebookGroupsResponse:
       - groups_tracker.json -> status in {joined, join_requested, rejected}
       - pending_groups.json -> projected with synthetic status="not_joined_yet"
     """
-    assert settings.paths is not None  # noqa: S101
+    assert settings.paths is not None
     groups: list[FacebookGroup] = []
 
     try:
@@ -537,7 +544,7 @@ def list_workers() -> list[WorkerStatus]:
                 age = time.time() - datetime.datetime.fromisoformat(last_run_str).timestamp()
                 if age > _recent_cutoff:
                     continue
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _log.debug("skipping instance row with unparseable last_run: %s", exc)
                 continue
         base = row["_base"]
@@ -692,7 +699,7 @@ def _spawn_worker_instance(
         log_fh = open(log_path, "a")  # noqa: WPS515
     except OSError:
         pass
-    proc = subprocess.Popen(  # noqa: S603
+    proc = subprocess.Popen(
         cmd,
         cwd=cwd,
         env=env,
@@ -755,7 +762,7 @@ def _at_limit_rate_summary(extra: dict, task: Any) -> dict[str, dict[str, int]]:
                 not relevant_prefix or key.startswith(relevant_prefix)
             ):
                 at_limit[key] = status
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _log.debug("rate_limiter check failed, skipping: %s", exc)
     return at_limit
 

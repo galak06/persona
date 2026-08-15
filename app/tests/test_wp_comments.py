@@ -16,7 +16,6 @@ import respx
 from httpx import Response
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
 import wp_scan

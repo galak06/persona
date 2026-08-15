@@ -542,8 +542,8 @@ def get_story_card(recipe_id: str) -> Response:
     if row is None:
         raise HTTPException(status_code=404, detail=f"no recipe with id '{recipe_id}'")
 
-    from workers.worker_post_stories import _resolve_image_url
     import httpx as _httpx
+    from workers.worker_post_stories import _resolve_image_url
 
     image_url = _resolve_image_url(row)
     if not image_url:

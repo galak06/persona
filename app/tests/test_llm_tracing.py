@@ -10,14 +10,10 @@ regardless of whether/how tracing succeeds or fails.
 from __future__ import annotations
 
 import importlib.util
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-
-import llm_tracing as lt
+from lib import llm_tracing as lt
 
 # langfuse is an OPTIONAL dependency. Only the test that monkeypatches
 # `langfuse.get_client` actually imports the package (monkeypatch.setattr on a

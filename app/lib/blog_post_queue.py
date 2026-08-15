@@ -21,11 +21,12 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
-from lib.config import settings
 import os
 import sys
 from pathlib import Path
 from typing import Any
+
+from lib.config import settings
 
 # Mirror the sys.path tweak from ``lib/queue_state.py`` so ``api.*`` resolves
 # when this module is loaded from scripts that only prepend ``lib/``.
@@ -33,7 +34,7 @@ _API_PARENT = Path(__file__).resolve().parent.parent
 if str(_API_PARENT) not in sys.path:
     sys.path.insert(0, str(_API_PARENT))
 
-from lib.queue_state import (  # noqa: E402  (sys.path tweak must precede)
+from lib.queue_state import (
     read_decision,
     utc_now_iso,
     write_pending,

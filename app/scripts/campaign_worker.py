@@ -21,13 +21,13 @@ from croniter import croniter
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
 
 settings, logger = init_script(__name__)
 
 from api.campaign_schemas import CampaignConfig, CampaignState
+
 from lib.campaigns import LockHeldError, run_campaign
 from lib.worker_db import record_complete, record_start
 
@@ -56,7 +56,7 @@ def _should_run(cron_expr: str, last_run_iso: str | None, now: datetime) -> bool
 
 def _notify_telegram_failure(campaign_name: str, error: str) -> None:
     try:
-        import notifier
+        from lib import notifier
         notifier.send(
             f"❌ Campaign worker failed for <b>{campaign_name}</b>.\n{error}",
             silent=False,

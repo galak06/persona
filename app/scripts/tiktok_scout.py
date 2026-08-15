@@ -20,13 +20,17 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from lib.bootstrap import init_script
 
 settings, _bootstrap_log = init_script(__name__)
-sys.path.insert(0, str(PROJECT_ROOT))
 
+from lib.local_env import load_local_env
+from lib.notifier import skill_error, skill_finished, skill_skipped, skill_started
+from lib.observability.correlation_id import new_correlation_id
+from lib.observability.logger import configure_logging, get_logger
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
 from lib.tiktok_scout import (
     DAILY_SCOUT_CEILING,
     FOLLOWER_MAX,
@@ -37,11 +41,6 @@ from lib.tiktok_scout import (
     is_north_america_likely,
     load_candidates,
 )
-from local_env import load_local_env
-from notifier import skill_error, skill_finished, skill_skipped, skill_started
-from observability.correlation_id import new_correlation_id
-from observability.logger import configure_logging, get_logger
-from runtime.singleton import LockAcquisitionError, SingletonLock
 
 SKILL_NAME = "tiktok-scout"
 

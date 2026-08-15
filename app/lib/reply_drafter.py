@@ -44,9 +44,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-from comment_generator import validate_voice
-from llm_client import LLMRequest, get_llm
-from skill_loader import load_skill_prompt
+from lib.comment_generator import validate_voice
+from lib.llm_client import LLMRequest, get_llm
+from lib.skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -32,7 +32,7 @@ from typing import Any
 
 import httpx
 
-from llm_tracing import atrace_llm_call, trace_llm_call
+from lib.llm_tracing import atrace_llm_call, trace_llm_call
 
 logger = logging.getLogger(__name__)
 

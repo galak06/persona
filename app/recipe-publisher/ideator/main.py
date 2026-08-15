@@ -30,9 +30,8 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from local_env import load_local_env  # noqa: E402
+from lib.local_env import load_local_env  # noqa: E402
 
 from .approval import approve_idea, approve_seed
 from .enricher import enrich_to_seed

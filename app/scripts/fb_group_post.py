@@ -34,15 +34,14 @@ if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "recipe-publisher"))
+sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "recipe-publisher"))
 
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-from comment_generator import validate_voice
-from group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
+from lib.comment_generator import validate_voice
 from lib.fb.session import FbSession, build_fb_session
 from lib.fb_composer_reel import (
     _attach_reel_in_composer,
@@ -51,11 +50,12 @@ from lib.fb_composer_reel import (
     reel_target_categories,
 )
 from lib.fb_group_publish import assert_create_post_dialog, publish_to_group
+from lib.group_warmup import LINK_POST_WARMUP_HOURS, hours_until_warm, is_group_warm
 from lib.groups.notes import append_group_note
 from lib.local_env import get_brand_campaign
 from lib.logger import log_step
-from notifier import request_publish_approval, skill_finished, skill_started
-from rate_limiter import can_act, record_action
+from lib.notifier import request_publish_approval, skill_finished, skill_started
+from lib.rate_limiter import can_act, record_action
 
 if settings.paths is None:
     raise RuntimeError("settings.paths is unset; lib.config failed to resolve BRAND_DIR")

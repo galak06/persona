@@ -26,7 +26,6 @@ Public surface (re-exported):
 """
 
 from lib.errors.auth import AuthError, TokenExpiredError
-from lib.errors.platforms import classify_fb_error, classify_ig_error, parse_graph_error
 from lib.errors.base import (
     BugError,
     PermanentError,
@@ -35,6 +34,7 @@ from lib.errors.base import (
 )
 from lib.errors.configuration import ConfigurationError
 from lib.errors.network import NetworkError
+from lib.errors.platforms import classify_fb_error, classify_ig_error, parse_graph_error
 from lib.errors.posting import NotFoundError, PostFailedError
 from lib.errors.rate_limit import RateLimitedError
 from lib.errors.validation import ValidationFailedError

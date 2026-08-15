@@ -29,17 +29,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(PROJECT_ROOT / "lib") not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from comment_generator import generate_comment, validate_voice
+from lib.comment_generator import generate_comment, validate_voice
 from lib.logger import log_step
-from notifier import skill_error, skill_finished, skill_started
-from reply_drafter import draft_comment as draft_comment_contextual
-
+from lib.notifier import skill_error, skill_finished, skill_started
+from lib.reply_drafter import draft_comment as draft_comment_contextual
 
 QUEUE_FILE = settings.paths.comment_queue
 

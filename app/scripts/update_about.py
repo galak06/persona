@@ -16,8 +16,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from lib.sessions.wp_client import wp_client  # noqa: E402
-from about_template import build_html  # noqa: E402
+from about_template import build_html
+from lib.sessions.wp_client import wp_client
 
 _SETTINGS_PATH = Path(__file__).parent.parent.parent / ".claude" / "settings.local.json"
 _PAGE_SLUG = "about-me"

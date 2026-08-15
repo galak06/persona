@@ -18,13 +18,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "lib"))
+sys.path.insert(0, str(ROOT))
 
-from local_env import load_local_env
+from lib.local_env import load_local_env
 
 load_local_env()
 
-from keyword_research import (
+from lib.keyword_research import (
     get_facebook_topic_performance,
     get_google_trends_north_america,
     get_instagram_hashtag_data,

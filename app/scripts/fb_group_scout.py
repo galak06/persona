@@ -19,22 +19,22 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
 
 from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
-from group_discovery.approval import (
+from lib.fb.session import FbSession, build_fb_session
+from lib.group_discovery.approval import (
     get_user_approval,
     print_candidate,
     send_join_requests,
 )
-from group_discovery.competitor_signals import active_queries as competitor_queries
-from group_discovery.competitor_signals import annotate_with_mentions, load_competitors
-from group_discovery.fb_search import pace_between_queries, search_groups
-from group_discovery.scoring import parse_member_count, score_group
-from group_discovery.state import (
+from lib.group_discovery.competitor_signals import active_queries as competitor_queries
+from lib.group_discovery.competitor_signals import annotate_with_mentions, load_competitors
+from lib.group_discovery.fb_search import pace_between_queries, search_groups
+from lib.group_discovery.scoring import parse_member_count, score_group
+from lib.group_discovery.state import (
     add_to_pending,
     join_requests_this_week,
     join_requests_today,
@@ -46,11 +46,10 @@ from group_discovery.state import (
     save_last_run,
     save_pending,
 )
-from group_discovery.status_classifier import classify_admission_likelihood
-from lib.fb.session import FbSession, build_fb_session
+from lib.group_discovery.status_classifier import classify_admission_likelihood
 from lib.local_env import get_group_join_limit, get_group_join_limit_per_week
+from lib.notifier import skill_finished, skill_skipped, skill_started
 from lib.runtime.singleton import SingletonLock
-from notifier import skill_finished, skill_skipped, skill_started
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

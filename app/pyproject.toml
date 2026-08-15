@@ -65,7 +65,11 @@ known-first-party = ["lib"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["lib"]
+# `pythonpath = ["lib"]` was removed on 2026-08-15. It put `app/lib` on
+# sys.path, so `import rate_limiter` and `import lib.rate_limiter` loaded the
+# same file as two distinct module objects -- patching one silently missed what
+# the code under test actually read. Everything imports through the `lib.`
+# namespace now; `app` itself is on the path via rootdir.
 addopts = "-v --tb=short -q"
 
 [tool.mypy]

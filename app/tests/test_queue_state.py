@@ -20,9 +20,8 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from queue_state import (  # noqa: E402
+from lib.queue_state import (  # noqa: E402
     commit_telegram_decision,
     read_decision,
     write_pending,
@@ -103,8 +102,7 @@ def _race_worker(
 
     _here = _Path(__file__).resolve().parent.parent
     _sys.path.insert(0, str(_here))
-    _sys.path.insert(0, str(_here / "lib"))
-    from queue_state import (  # noqa: E402 — sys.path tweak in subprocess
+    from lib.queue_state import (  # noqa: E402 — sys.path tweak in subprocess
         commit_telegram_decision as _commit,
     )
 

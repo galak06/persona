@@ -82,7 +82,7 @@ def _brand_site_domain() -> str:
         from lib.config import settings
 
         host = _host_from_url(settings.site.url)
-    except Exception:  # noqa: BLE001 — fail safe, never disable the gate
+    except Exception:
         return _FALLBACK_SITE_DOMAIN
     return host or _FALLBACK_SITE_DOMAIN
 

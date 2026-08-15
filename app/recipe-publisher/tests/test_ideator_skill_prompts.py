@@ -36,7 +36,7 @@ from ideator import enricher, research
 from ideator.research import Candidate
 from ideator.schema import ALLOWED_CATEGORIES
 
-import skill_loader
+from lib import skill_loader
 
 # <engine>/tests/fixtures/ci_brand — the generic placeholder brand CI uses.
 _CI_BRAND = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "ci_brand"

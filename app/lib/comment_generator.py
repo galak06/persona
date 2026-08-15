@@ -9,17 +9,17 @@ from __future__ import annotations
 import json
 import re
 
-from comment_generator_defaults import (
+from lib.comment_generator_defaults import (
     DEFAULT_COMPETITOR_MENTIONS,
     DEFAULT_PRIMARY_KEYWORDS,
     DEFAULT_SECONDARY_KEYWORDS,
 )
-from draft_history import (
+from lib.config import settings
+from lib.draft_history import (
     filter_unused,
     record_draft,
     was_post_commented,
 )
-from lib.config import settings
 
 DATA_DIR = settings.paths.data_dir
 TEMPLATES_FILE = DATA_DIR / "post_templates.json"

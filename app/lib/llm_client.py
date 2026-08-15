@@ -116,16 +116,18 @@ def get_llm(provider: str | None = None) -> TextLLM:
 
 
 def _gemini_transport() -> ModuleType:
-    """Import the Gemini transport lazily, tolerating both sys.path layouts in
-    use here (``app`` on the path → ``lib.gemini_client``; ``app/lib`` on the
-    path → bare, the way ``scripts/`` bootstrap). Deferred so this module stays
-    importable — and free of ``httpx`` — for callers that only want
-    ``resolve_provider``.
+    """Import the Gemini transport lazily.
+
+    Deferred so this module stays importable — and free of ``httpx`` — for
+    callers that only want ``resolve_provider``.
+
+    Until 2026-08-15 this carried a try/except fallback to a bare
+    ``import gemini_client``, tolerating the second sys.path layout that
+    ``scripts/`` bootstrapped. There is one layout now — ``app`` on the path,
+    everything under the ``lib.`` namespace — so the fallback is gone.
     """
-    try:
-        from lib import gemini_client
-    except ImportError:  # pragma: no cover — depends on the caller's sys.path
-        import gemini_client  # type: ignore[no-redef]
+    from lib import gemini_client
+
     return gemini_client
 
 

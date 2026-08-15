@@ -8,9 +8,10 @@ cutover retired ``scripts/fb_comment.py``) builds a :class:`CommenterSpec`
 already-commented posts), draft-at-post-time, Playwright post, dedup + rate +
 engagements.db recording, pacing — lives here, not in the wrapper.
 
-Bare ``import deduplication`` / ``import rate_limiter`` match the worker modules'
-identity so tests that monkeypatch those bare modules still bite (the project's
-dual-module-identity convention).
+``deduplication`` and ``rate_limiter`` are imported through the ``lib.``
+namespace, like everything else. (They used to be imported bare, to match the
+worker modules' second module identity under the old ``pythonpath = ["lib"]``
+setting; that ambiguity was removed on 2026-08-15 — see ADR 0006.)
 """
 
 from __future__ import annotations
@@ -25,14 +26,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-import deduplication
-import rate_limiter
-from lib import engagements_db
+from lib import deduplication, engagements_db, rate_limiter
 from lib.activity_log import log_trace
+from lib.deduplication import Platform
 from lib.local_env import get_runtime_headless
 from lib.logger import log_progress, log_step
+from lib.notifier import skill_error, skill_finished, skill_skipped, skill_started
 from lib.runtime.singleton import LockAcquisitionError, SingletonLock
-from notifier import skill_error, skill_finished, skill_skipped, skill_started
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -44,7 +44,12 @@ _UA = (
 class CommenterSpec:
     """Everything platform-specific about one comment action."""
 
-    platform: str  # "facebook" | "instagram"
+    # Typed as the literal, not `str`: every collaborator this spec is handed to
+    # (`rate_limiter.can_act`, `deduplication.mark_engaged`, `dedup_pg.record_done`)
+    # declares `Platform`. While `lib` was importable under two names those calls
+    # resolved to `Any` and the mismatch was invisible; it surfaced when the
+    # namespace was unified (ADR 0006).
+    platform: Platform  # "facebook" | "instagram"
     skill_name: str  # "ig-comment" (sole queue-based platform post-cutover)
     label: str  # short tag for logs/CLI, e.g. "FB" | "IG"
     guard_key: str  # per-platform re-run-guard key
@@ -149,7 +154,7 @@ def _pending_items_pg(spec: CommenterSpec, items: list[dict[str, Any]]) -> list[
     return [
         item
         for item in items
-        if not already_done("comment", spec.platform, str(item.get("post_id") or ""))  # type: ignore[arg-type]
+        if not already_done("comment", spec.platform, str(item.get("post_id") or ""))
     ]
 
 

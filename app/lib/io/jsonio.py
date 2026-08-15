@@ -10,11 +10,11 @@ Production rule: never use `json.dump(open(...))` directly. Use these.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
 import tempfile
-import fcntl
-import contextlib
 from pathlib import Path
 from typing import Generator, TypeVar
 

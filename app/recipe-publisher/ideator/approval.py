@@ -28,9 +28,8 @@ from pathlib import Path
 from typing import Any, Final, Literal
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-import notifier  # noqa: E402
+from lib import notifier  # noqa: E402
 
 from .research import Candidate
 

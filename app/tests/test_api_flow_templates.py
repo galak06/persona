@@ -16,10 +16,10 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
-
 from api import flow_templates_api
 from api.flow_template_schemas import FlowTemplateUpdateRequest
+from fastapi import HTTPException
+
 from lib import db, flow_templates_db
 
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"

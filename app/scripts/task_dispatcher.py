@@ -43,7 +43,6 @@ from typing import Any, Protocol
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 import redis
 
@@ -98,7 +97,7 @@ def _get_redis_client() -> redis.Redis:
 def _notify_telegram_failure(task_id: str, error: str) -> None:
     """Mirrors `campaign_worker.py`'s `_notify_telegram_failure`."""
     try:
-        import notifier
+        from lib import notifier
 
         notifier.send(f"❌ Task dispatcher failed for <b>{task_id}</b>.\n{error}", silent=False)
     except Exception as exc:

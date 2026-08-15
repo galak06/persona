@@ -14,11 +14,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
-from deduplication import is_duplicate
+from lib.deduplication import is_duplicate
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 

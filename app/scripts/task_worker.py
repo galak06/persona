@@ -35,7 +35,6 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib import brands_db, worker_db
 from lib.brands_db.models import BrandStatus
@@ -60,7 +59,7 @@ _DISPATCHABLE_STATUSES = frozenset({BrandStatus.PROVISIONED, BrandStatus.ACTIVE}
 def _notify_telegram_failure(task_id: str, error: str) -> None:
     """Mirrors `task_dispatcher.py`'s own `_notify_telegram_failure`."""
     try:
-        import notifier
+        from lib import notifier
 
         notifier.send(f"❌ Task worker failed for <b>{task_id}</b>.\n{error}", silent=False)
     except Exception as exc:

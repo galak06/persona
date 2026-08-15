@@ -33,10 +33,11 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from lib.groups.notes import append_group_note
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
 from lib import groups_db  # FB groups live in groups.db (was groups_tracker.json)
+from lib.groups.notes import append_group_note
 
 _VALID_MODES = {
     "direct",

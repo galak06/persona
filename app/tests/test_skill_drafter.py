@@ -19,8 +19,7 @@ from typing import Any
 import httpx
 import pytest
 
-import draft_helper
-from lib import skill_loader
+from lib import draft_helper, skill_loader
 from lib.skill_loader import BrandVars
 
 # Passes lib.comment_generator.validate_voice (same string test_draft_helper uses).

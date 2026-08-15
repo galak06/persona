@@ -33,23 +33,22 @@ UTC = UTC
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-if str(PROJECT_ROOT / "lib") not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
 from lib.activity_log import log_trace
 from lib.bootstrap import init_script
+
 settings, log = init_script(__name__)
 
-from lib.logger import enable_unbuffered, log  # type: ignore[unused-ignore,import-not-found]
-
-
-from lib.notifier import skill_finished, skill_started  # type: ignore[unused-ignore,import-not-found]
+from lib.comment_queue_routing import parse_platform_arg, queue_path_for
+from lib.logger import log  # type: ignore[unused-ignore,import-not-found]
+from lib.notifier import (  # type: ignore[unused-ignore,import-not-found]
+    skill_finished,
+    skill_started,
+)
 from lib.queue_state import (  # type: ignore[unused-ignore,import-not-found]
     commit_telegram_decision,
     write_pending,
 )
-
-from lib.comment_queue_routing import parse_platform_arg, queue_path_for
 
 # Per-platform loop: `--platform instagram|facebook` drains only that queue;
 # absent (or `--platform wordpress`) drains the legacy shared queue.

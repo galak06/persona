@@ -40,10 +40,8 @@ if TYPE_CHECKING:
 # Make the project-level lib/ importable so we can attach the affiliate
 # "Our Pick: Tools Used in This Recipe" block before publishing.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_PROJECT_ROOT / "lib") not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT / "lib"))
 
-from recipe_products import (
+from lib.recipe_products import (
     insert_or_replace_block,
     load_catalog,
     pick_products,

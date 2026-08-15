@@ -31,27 +31,27 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
-
-from lib.bootstrap import init_script
-settings, log = init_script(__name__)
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from ig_follow.candidate import Candidate
-from ig_follow.constants import DAILY_FOLLOW_CEILING, FOLLOW_JITTER_SECONDS
-from ig_follow.exceptions import IGActionBlockedError, IGUserNotFoundError
-from ig_follow.follower import FollowOutcome, follow_user
-from ig_follow.geo_filter import is_north_america_likely
-from ig_follow.scout_engagers import scout_engagers
-from ig_follow.scout_followers import scout_followers
-from ig_follow.state import follows_today, is_already_followed, record_follow
-from ig_follow.targets import ig_sources
-from local_env import load_local_env
-from notifier import skill_error, skill_finished, skill_skipped, skill_started
-from observability.correlation_id import new_correlation_id
-from observability.logger import configure_logging, get_logger
-from runtime.singleton import LockAcquisitionError, SingletonLock
-from sessions.browser import ig_session
+from lib.bootstrap import init_script
+
+settings, log = init_script(__name__)
+
+from lib.ig_follow.candidate import Candidate
+from lib.ig_follow.constants import DAILY_FOLLOW_CEILING, FOLLOW_JITTER_SECONDS
+from lib.ig_follow.exceptions import IGActionBlockedError, IGUserNotFoundError
+from lib.ig_follow.follower import FollowOutcome, follow_user
+from lib.ig_follow.geo_filter import is_north_america_likely
+from lib.ig_follow.scout_engagers import scout_engagers
+from lib.ig_follow.scout_followers import scout_followers
+from lib.ig_follow.state import follows_today, is_already_followed, record_follow
+from lib.ig_follow.targets import ig_sources
+from lib.local_env import load_local_env
+from lib.notifier import skill_error, skill_finished, skill_skipped, skill_started
+from lib.observability.correlation_id import new_correlation_id
+from lib.observability.logger import configure_logging, get_logger
+from lib.runtime.singleton import LockAcquisitionError, SingletonLock
+from lib.sessions.browser import ig_session
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

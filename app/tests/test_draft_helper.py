@@ -18,7 +18,7 @@ import logging
 
 import pytest
 
-import draft_helper
+from lib import draft_helper
 
 # A reply that satisfies validate_voice: has a "?", >=40 chars, mentions Nalla,
 # a timeframe ("week"), and first-person ("we"); no medical/salesy/generic opener.

@@ -29,9 +29,8 @@ from typing import Any, Final
 import httpx
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "lib"))
 
-from skill_loader import load_skill_prompt
+from lib.skill_loader import load_skill_prompt
 
 logger = logging.getLogger(__name__)
 
