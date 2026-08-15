@@ -178,7 +178,14 @@ def run_task(task: dict[str, Any]) -> None:
         logger.info("task_executed", task_id=task_id, status="success")
         return
 
-    message = f"exit={result.returncode}: {(result.stderr or '').strip()[-500:]}"
+    # Fall back to stdout when stderr is empty. Every flow logs through
+    # `lib.observability.logger`, which writes structlog AND stdlib logging to
+    # STDOUT -- so a script that fails after logging its reason leaves stderr
+    # empty, and recording stderr alone stored a bare "exit=1: ". That is the
+    # one moment the operator needs the output most: the Social Posts page then
+    # renders the PREVIOUS run's error, which reads as a fresh failure.
+    detail = (result.stderr or "").strip() or (result.stdout or "").strip()
+    message = f"exit={result.returncode}: {detail[-500:]}"
     worker_db.record_complete(brand_dir, task_id, brand, "error", message)
     raise RuntimeError(message)
 

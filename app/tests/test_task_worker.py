@@ -283,3 +283,45 @@ def test_drain_once_returns_zero_when_queue_is_empty(monkeypatch: pytest.MonkeyP
 
     assert count == 0
     assert processed == []
+
+
+@requires_postgres
+def test_run_task_falls_back_to_stdout_when_stderr_is_empty(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every flow logs through `lib.observability.logger`, which writes to
+    STDOUT. Recording stderr alone stored a bare "exit=1: " for any script
+    that failed after explaining itself -- and the UI then rendered the
+    PREVIOUS run's error, which reads as a fresh failure."""
+    fake_run = _fake_run(
+        returncode=1,
+        stdout='summary: {"composed_gemini": 2, "error": 1}',
+        stderr="",
+    )
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError):
+        task_worker.run_task(_queue_item("t1", tmp_path))
+
+    row = worker_db.get_one(tmp_path, "t1", _BRAND)
+    assert row is not None
+    assert row["status"] == "error"
+    assert "composed_gemini" in row["message"]
+
+
+@requires_postgres
+def test_run_task_prefers_stderr_when_both_streams_have_output(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """stdout is the fallback, not a replacement: a real traceback on stderr
+    stays the headline."""
+    fake_run = _fake_run(returncode=1, stdout="chatty progress log", stderr="Traceback: boom")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    with pytest.raises(RuntimeError):
+        task_worker.run_task(_queue_item("t1", tmp_path))
+
+    row = worker_db.get_one(tmp_path, "t1", _BRAND)
+    assert row is not None
+    assert "Traceback: boom" in row["message"]
+    assert "chatty progress log" not in row["message"]

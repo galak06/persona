@@ -288,6 +288,25 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _exit_code(results: dict[str, int]) -> int:
+    """Non-zero only when the run accomplished NOTHING.
+
+    A per-idea failure used to fail the whole run: `{"composed_gemini": 2,
+    "error": 1}` exited 1, the worker recorded the run as `error`, and the
+    Social Posts page said "Compose failed" while two posts sat queued for
+    review. Partial success is the normal shape of a batch over independent
+    ideas, so it exits 0 and the per-idea failures stay visible in the
+    `summary:` line (and in the worker message, which now keeps stdout).
+
+    Every non-`error` key is a success: `composed_gemini` / `composed_fallback`
+    from compose, `fb_published` / `ig_published` from release.
+    """
+    succeeded = sum(count for key, count in results.items() if key != "error")
+    if results.get("error", 0) and not succeeded:
+        return 1
+    return 0
+
+
 def main() -> int:
     args = _parse_args()
     brand_dir = (args.brand_dir or _infer_brand_dir()).resolve()
@@ -332,7 +351,7 @@ def main() -> int:
             results[key] = results.get(key, 0) + count
 
     print(f"summary: {json.dumps(results)}")
-    return 0 if results.get("error", 0) == 0 else 1
+    return _exit_code(results)
 
 
 if __name__ == "__main__":

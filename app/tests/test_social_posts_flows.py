@@ -108,3 +108,40 @@ def test_cli_refuses_both_modes_at_once() -> None:
     )
     assert result.returncode == 2, result.stderr
     assert "not allowed with argument" in result.stderr
+
+
+# ── exit code: partial success is success (fixed 2026-08-15) ──────────────
+
+
+def test_partial_success_exits_zero() -> None:
+    """The live failure: `{"composed_gemini": 2, "error": 1}` exited 1, the
+    worker recorded the run as `error`, and the Social Posts page said
+    "Compose failed" while two posts sat queued for review. A batch over
+    independent ideas is partially successful all the time."""
+    from scripts.crewai_social_posts_pipeline import _exit_code
+
+    assert _exit_code({"composed_gemini": 2, "error": 1}) == 0
+
+
+def test_total_failure_still_exits_nonzero() -> None:
+    from scripts.crewai_social_posts_pipeline import _exit_code
+
+    assert _exit_code({"error": 3}) == 1
+
+
+def test_clean_and_empty_runs_exit_zero() -> None:
+    """No candidates is not a failure -- compose runs daily whether or not
+    anything was published since."""
+    from scripts.crewai_social_posts_pipeline import _exit_code
+
+    assert _exit_code({"composed_gemini": 2, "composed_fallback": 1}) == 0
+    assert _exit_code({}) == 0
+
+
+def test_release_successes_also_count() -> None:
+    """Every non-`error` key is a success: release contributes fb_published /
+    ig_published, so a release sweep that publishes one and fails one is not
+    a failed run either."""
+    from scripts.crewai_social_posts_pipeline import _exit_code
+
+    assert _exit_code({"fb_published": 1, "error": 1}) == 0
