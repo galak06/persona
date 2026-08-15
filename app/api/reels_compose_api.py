@@ -33,7 +33,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from lib import brands_db, worker_db
+from api.brand_context import resolve_api_brand
+from lib import worker_db
 from lib.task_queue import TaskQueue
 
 # Per idea: crew + image generation + two ffmpeg renders. A five-idea batch
@@ -96,25 +97,6 @@ def _image_counts(message: str) -> tuple[int | None, int | None]:
     return None, None
 
 
-def _brand() -> tuple[str, str]:
-    """(brand_id, brand_dir) for the brand this API serves.
-
-    `brand_dir` comes from the brands table, not this process's own
-    `BRAND_DIR`: the worker resolves the path inside ITS container, and the
-    registered value is the one both agree on.
-    """
-    from lib.oauth.openart_store import resolve_brand_id
-
-    brand_id = resolve_brand_id()
-    row = brands_db.get(brand_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail=f"brand '{brand_id}' is not registered")
-    brand_dir = str(row.get("brand_dir") or "")
-    if not brand_dir:
-        raise HTTPException(status_code=500, detail=f"brand '{brand_id}' has no brand_dir")
-    return brand_id, brand_dir
-
-
 def _label(brand_id: str) -> str:
     """`worker_runs.worker_label` for this flow.
 
@@ -135,7 +117,7 @@ def compose_reels() -> dict[str, str]:
     from the post's hero image (see `scripts.reels_images`), so refusing the
     run here would block a feature that works fine without it.
     """
-    brand_id, brand_dir = _brand()
+    brand_id, brand_dir = resolve_api_brand()
     label = _label(brand_id)
 
     with _dispatch_lock:
@@ -168,7 +150,7 @@ def compose_status() -> ComposeStatus:
     Read from the shared `worker_runs` row, so it reflects a run executing in
     the worker container (and survives an API restart mid-run).
     """
-    brand_id, brand_dir = _brand()
+    brand_id, brand_dir = resolve_api_brand()
     row = worker_db.get_one(brand_dir, _label(brand_id), brand_id)
     if row is None:
         return ComposeStatus(running=False)

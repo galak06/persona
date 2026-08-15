@@ -126,16 +126,6 @@ def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(scan_dedup, "record_done", lambda *_a, **_k: True)
 
 
-def _approved_group_row(group_url: str) -> dict[str, Any]:
-    """A groups-db row whose first comment is already human-approved."""
-    return {
-        "group_url": group_url,
-        "group_name": f"Group {group_url.rstrip('/').rsplit('/', 1)[-1]}",
-        "first_comment_approved_at": "2026-01-01T00:00:00+00:00",
-        "first_comment_flagged_at": "",
-    }
-
-
 def build_fb_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> dict[str, Path]:
@@ -146,11 +136,8 @@ def build_fb_environment(
     owns (``LAST_RUN_FILE``, ``CONFIG_FILE``, ``SESSION_FILE``), plus the
     bare dedup/rate/log path modules, then neutralizes what a run reaches
     for: ``ScanDedup``'s Postgres backend, the Telegram hooks (``skill_*``
-    no-oped; ``fb_engager.send`` — the first-comment gate's notifier —
-    stubbed to return True; gate tests re-patch it with a recorder), the
-    gate's groups-db seams (``get_by_url`` returns an APPROVED row for any
-    URL, ``set_first_comment_flagged`` returns False — gate tests re-patch
-    both), the warmup filter (``lib.group_warmup._load_tracker`` returns
+    no-oped, ``notifier.send`` stubbed to return True), the warmup filter
+    (``lib.group_warmup._load_tracker`` returns
     ``[]`` so the REAL ``is_group_warm`` logic says warm; warmup tests
     re-patch it with recent ``joined_at`` rows), ``log_trace`` and delays.
     Returns the tmp paths tests assert against.
@@ -202,20 +189,12 @@ def build_fb_environment(
     # log_trace`), so patch the bound name on the engager module.
     monkeypatch.setattr(fb_engager, "log_trace", lambda *_a, **_k: None)
     stub_skill_notifications(monkeypatch, fb_engager)
-    # The first-comment gate's notifier (bound name: `from notifier import
-    # send`). Default: swallow. Gate tests re-patch with a recorder.
-    monkeypatch.setattr(fb_engager, "send", lambda *_a, **_k: True)
+    # fb_engager sends no Telegram of its own since the first-comment gate
+    # was removed (2026-08-13), but `notifier.send` stays stubbed so any
+    # future notify path can't reach the real bot from a test.
+    import notifier
 
-    # First-comment gate seams: default every group to APPROVED so the
-    # happy-path tests comment inline. Gate tests override both.
-    import lib.groups_db as groups_db
-
-    monkeypatch.setattr(
-        groups_db, "get_by_url", lambda url: _approved_group_row(url)
-    )
-    monkeypatch.setattr(
-        groups_db, "set_first_comment_flagged", lambda *_a, **_k: False
-    )
+    monkeypatch.setattr(notifier, "send", lambda *_a, **_k: True)
 
     # Warmup filter: real `is_group_warm` logic over an empty tracker
     # (joined_at unknown -> warm). Warmup tests re-patch `_load_tracker`.

@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 BRAND_ENV_TEMPLATE: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("WordPress", ("WP_URL", "WP_USER", "WP_APP_PASSWORD")),
+    ("WordPress", ("WP_URL", "WP_USER", "WP_APP_PASSWORD", "WP_AUTHOR_ID")),
     (
         "Facebook / Instagram browser login",
         (

@@ -184,7 +184,9 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     print(f"brief    : {brief.suggested_title} ({len(brief.outline)} sections)")
 
     print("\nrunning writer crew (real DeepSeek call)...")
-    written_post = write_post_from_brief(brand_dir, brief)
+    # discover=True only here: the drafting path is the one place a post about
+    # a topic nobody curated products for must still find something linkable.
+    written_post = write_post_from_brief(brand_dir, brief, discover=True)
     if written_post is None:
         print("\nwriter produced no structured post (see logs) -- aborting")
         ideas_db.update_status(idea_id, "write_failed")
@@ -201,6 +203,15 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
             "(brief and draft above are still valid -- only final HTML assembly failed)",
             file=sys.stderr,
         )
+        # Terminal status, same as the strategist/writer aborts above: without
+        # it this exit path left the idea parked at 'drafting', which both
+        # `api.ideas_api._revert_stale_claim` and this worker's own
+        # `_revert_if_still_drafting` bounce straight back to 'approved' --
+        # so the next sweep re-drafted the same idea, hit the same unknown
+        # key, and threw away another full draft, invisibly and forever.
+        # Not on --dry-run: that mode never mutates idea lifecycle state.
+        if not args.dry_run:
+            ideas_db.update_status(idea_id, "write_failed")
         return 1
 
     output_path = args.output or (brand_dir / "state" / "crew_drafts" / f"{idea_id}.html")

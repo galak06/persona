@@ -73,11 +73,9 @@ jobs:
           scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
-          tests/test_api_first_comment_approval.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
           tests/lib/engagement/test_pipeline.py tests/lib/engagement/_pipeline_fakes.py
           tests/lib/engagement/test_fb_engager_with_fake.py
-          tests/lib/engagement/test_first_comment_gate.py
           tests/lib/engagement/test_pipeline_record_publish.py
           tests/lib/engagement/test_pipeline_like_only.py
           tests/lib/test_local_env_pytest_guard.py
@@ -128,7 +126,6 @@ jobs:
           scripts/ig_comment.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
-          tests/test_api_first_comment_approval.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
           tests/lib/engagement/_pipeline_fakes.py
           tests/lib/engagement/test_pipeline_record_publish.py
@@ -317,7 +314,6 @@ jobs:
             --timeout=90 --timeout-method=thread \
             tests/test_db.py \
             tests/test_groups_db.py \
-            tests/test_api_first_comment_approval.py \
             tests/test_engagements_db.py \
             tests/test_worker_db.py \
             tests/test_schedule_db.py \
@@ -348,7 +344,6 @@ jobs:
             tests/test_activity_log.py \
             tests/lib/engagement/test_pipeline.py \
             tests/lib/engagement/test_fb_engager_with_fake.py \
-            tests/lib/engagement/test_first_comment_gate.py \
             tests/lib/engagement/test_pipeline_record_publish.py \
             tests/lib/engagement/test_pipeline_like_only.py \
             tests/lib/test_local_env_pytest_guard.py \

@@ -51,6 +51,7 @@ from lib.crew.products.blog_backfill import (
     MODE_INSERT,
     MODE_SKIP_RECIPE,
     WpPost,
+    fetch_posts_by_id,
     fetch_published_posts,
     is_elementor,
     mode_for,
@@ -61,7 +62,8 @@ from lib.crew.products.blog_selection import select_products_for_existing_post
 from lib.crew.products.brief_from_post import synthesize_brief
 from lib.crew.products.pool import load_candidate_pool
 from lib.crew.products.selector import SelectorExecuteFn
-from lib.crew.products.usage import record_usage
+from lib.crew.products.usage import SOURCE_BACKFILL, recently_used_keys, record_usage
+from lib.crew.writer.models import ContentBrief
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import configure_logging, get_logger
 
@@ -93,8 +95,19 @@ class Sweep:
     include_recipe_blocks: bool = False
     execute_fn: SelectorExecuteFn | None = None
     usage_path: Path | None = None
-    #: How many times each product key has been placed in THIS sweep --
-    #: biases candidate ordering so one sweep spreads products around.
+    brand_dir: Path | None = None
+    #: Search live for products per post instead of ranking only the static
+    #: catalogs. Off by default: it costs a DeepSeek call plus Serper searches
+    #: per post, which a whole-site sweep multiplies.
+    discover: bool = False
+    #: How many times each product key has been placed -- biases candidate
+    #: ordering so products get spread around. SEEDED from the usage file
+    #: rather than starting empty: as a per-invocation counter it had no
+    #: memory across runs, so filling one post and then another in a separate
+    #: command reused the same products (live: B0CFBTQRD2 and B07WLDRLDY
+    #: landed in both post 4289 and post 4295). Note this only REORDERS
+    #: candidates (`lib.crew.products.blog_selection`), it never excludes --
+    #: a repeat stays possible when it is genuinely the best fit.
     usage: Counter[str] = field(default_factory=Counter)
 
 
@@ -125,8 +138,14 @@ def process_post(post: WpPost, sweep: Sweep) -> str:
         return MODE_SKIP_RECIPE
 
     brief = synthesize_brief(title=post.title, slug=post.slug, content_html=post.content)
+    pool = sweep.pool
+    if sweep.discover and sweep.brand_dir is not None:
+        # Curated entries spread LAST so they win any key collision -- they
+        # carry real editorial notes where a discovered entry has only a SERP
+        # snippet (same precedence as `selector.select_products_for_post`).
+        pool = {**_discover_for_post(sweep.brand_dir, brief), **sweep.pool}
     picked = select_products_for_existing_post(
-        sweep.pool, brief, usage_counts=sweep.usage, execute_fn=sweep.execute_fn
+        pool, brief, usage_counts=sweep.usage, execute_fn=sweep.execute_fn
     )
     if picked is None:
         return "skip-selector-failed"
@@ -151,7 +170,7 @@ def process_post(post: WpPost, sweep: Sweep) -> str:
     if resp.status_code >= 400:
         logger.error("blog_backfill_update_failed", post_id=post.id, status=resp.status_code)
         return f"FAILED {resp.status_code}: {resp.text[:160]}"
-    record_usage(post.slug, list(picked), path=sweep.usage_path)
+    record_usage(post.slug, list(picked), path=sweep.usage_path, source=SOURCE_BACKFILL)
     logger.info("blog_backfill_updated", post_id=post.id, slug=post.slug, keys=list(picked))
     return f"inserted (post {post.id})" if mode == MODE_INSERT else f"refreshed (post {post.id})"
 
@@ -166,15 +185,43 @@ def _resolve_backup_dir(raw: str | None) -> Path:
     return Path(brand_dir) / _BACKUP_RELATIVE / stamp
 
 
+def _discover_for_post(brand_dir: Path, brief: ContentBrief) -> dict[str, ProductEntry]:
+    """Live product search for one post. `{}` (logged) on any failure --
+    discovery is an enhancement, never a reason to skip repairing a post."""
+    from lib.crew.products.discovery import discover_products
+    from lib.crew.products.discovery_queries import shopping_queries_for_brief
+
+    try:
+        return discover_products(brand_dir, shopping_queries_for_brief(brief))
+    except Exception as exc:
+        logger.warning("blog_backfill_discovery_failed", slug=brief.suggested_title, error=str(exc))
+        return {}
+
+
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Backfill blog affiliate product blocks.")
     parser.add_argument("--dry-run", action="store_true", help="report changes, write nothing")
     parser.add_argument("--only", help="process a single post slug")
+    parser.add_argument(
+        "--post-id",
+        type=int,
+        action="append",
+        dest="post_ids",
+        help="process these post ids at ANY status (drafts included); repeatable. "
+        "The sweep is publish-only by design -- this is how a not-yet-published "
+        "draft gets its product block before it faces readers.",
+    )
     parser.add_argument("--limit", type=int, help="process at most N posts")
     parser.add_argument(
         "--include-recipe-blocks",
         action="store_true",
         help="also refresh posts that already carry a recipe block (in place)",
+    )
+    parser.add_argument(
+        "--discover",
+        action="store_true",
+        help="search Amazon live per post (Serper) instead of ranking only the "
+        "static catalogs -- widens a 31-product pool that otherwise repeats itself",
     )
     parser.add_argument("--backup-dir", help="where original post HTML is saved before writes")
     parser.add_argument("--log-level", default="INFO", help="DEBUG | INFO | WARNING | ERROR")
@@ -199,11 +246,18 @@ def main(argv: list[str] | None = None, *, execute_fn: SelectorExecuteFn | None 
 
     counts: Counter[str] = Counter()
     with _client() as client:
-        posts = fetch_published_posts(client, slug=args.only)
+        if args.post_ids:
+            posts = fetch_posts_by_id(client, args.post_ids)
+        else:
+            posts = fetch_published_posts(client, slug=args.only)
         if args.limit:
             posts = posts[: args.limit]
-        print(f"{'DRY-RUN: ' if args.dry_run else ''}processing {len(posts)} published post(s)\n")
+        scope = "post(s) by id" if args.post_ids else "published post(s)"
+        print(f"{'DRY-RUN: ' if args.dry_run else ''}processing {len(posts)} {scope}\n")
         sweep = Sweep(
+            brand_dir=brand_dir,
+            discover=args.discover,
+            usage=Counter(dict.fromkeys(recently_used_keys(), 1)),
             client=client,
             pool=pool,
             tag=tag,

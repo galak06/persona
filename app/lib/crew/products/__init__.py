@@ -29,6 +29,7 @@ from lib.crew.products.block import (
 )
 from lib.crew.products.blog_selection import select_products_for_existing_post
 from lib.crew.products.brief_from_post import synthesize_brief
+from lib.crew.products.discovery import load_discovered_products
 from lib.crew.products.models import ProductSelection, SelectedProduct
 from lib.crew.products.pool import load_candidate_pool
 from lib.crew.products.selector import (
@@ -48,6 +49,7 @@ __all__ = [
     "has_blog_block",
     "insert_or_replace_blog_block",
     "load_candidate_pool",
+    "load_discovered_products",
     "recently_used_keys",
     "record_usage",
     "render_blog_block",

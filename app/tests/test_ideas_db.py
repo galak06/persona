@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from lib import ideas_db
 
 
@@ -139,9 +141,19 @@ def test_list_ideas_unfiltered(mock_fetch_all: MagicMock) -> None:
 
 
 @patch("lib.ideas_db.db.fetch_all")
-def test_list_ideas_catches_exception_and_returns_empty(mock_fetch_all: MagicMock) -> None:
-    mock_fetch_all.side_effect = Exception("boom")
-    assert ideas_db.list_ideas() == []
+def test_list_ideas_propagates_db_failure_instead_of_returning_empty(
+    mock_fetch_all: MagicMock,
+) -> None:
+    """A DB outage must not read as "this brand has no ideas".
+
+    `worker_wp_ideas.py` treats `[]` as "nothing to draft" and exits 0, so
+    swallowing the failure turned a dead launchd job (no DATABASE_URL, so
+    every `db` call raised) into 4 successful-looking no-op runs a day for
+    5 days while approved ideas piled up.
+    """
+    mock_fetch_all.side_effect = RuntimeError("DATABASE_URL is not set")
+    with pytest.raises(RuntimeError, match="DATABASE_URL is not set"):
+        ideas_db.list_ideas()
 
 
 @patch("lib.ideas_db.db.fetch_all")

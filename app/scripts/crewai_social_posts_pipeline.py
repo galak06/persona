@@ -23,7 +23,16 @@ Three phases, run together on every invocation:
    so this phase is what actually posts: FB rows whose slot has arrived, then
    IG halves whose FB<->IG gap has elapsed. Runs on every invocation, so any
    run flushes whatever became due; `--release-only` runs just this, which is
-   the mode a daily cron wants. Skipped under `--dry-run`.
+   the mode the hourly `social-posts-release` cron flow runs. Skipped under
+   `--dry-run` and under `--compose-only`.
+
+The two cron flows are deliberately disjoint modes of this one script:
+`social-posts-compose` (daily, `--compose-only`) fills the review queue and
+never publishes, `social-posts-release` (hourly, `--release-only`) publishes
+what review approved and never composes. Publishing stays owned by exactly
+one flow because `worker_wp_ideas_social_post`'s status guard is a
+read-then-check, not an atomic claim -- two release sweeps overlapping on the
+same due row could both post it.
 
 Image fallback: if Gemini generation fails for any reason, the WP post's own
 hero image is used instead (`social_post_source='fallback'`), overlays still
@@ -35,6 +44,7 @@ Usage::
     python -m scripts.crewai_social_posts_pipeline --dry-run
     python -m scripts.crewai_social_posts_pipeline
     python -m scripts.crewai_social_posts_pipeline --idea-id <content_ideas id>
+    python -m scripts.crewai_social_posts_pipeline --compose-only
     python -m scripts.crewai_social_posts_pipeline --release-only
 """
 
@@ -261,11 +271,19 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--idea-id", type=str, default=None)
     p.add_argument("--limit", type=int, default=5)
     p.add_argument("--dry-run", action="store_true")
-    p.add_argument(
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument(
         "--release-only",
         action="store_true",
         help="skip composition entirely; only publish what is already due "
-        "(this is the mode a daily cron should run)",
+        "(this is the mode the hourly release cron runs)",
+    )
+    mode.add_argument(
+        "--compose-only",
+        action="store_true",
+        help="skip the release sweep entirely; only compose new posts into the "
+        "review queue (this is the mode the daily compose cron runs, so that "
+        "publishing stays owned by the hourly release flow alone)",
     )
     return p.parse_args()
 
@@ -309,7 +327,7 @@ def main() -> int:
             outcome = _process_idea(row, dry_run=args.dry_run, brand_dir=brand_dir)
             results[outcome] = results.get(outcome, 0) + 1
 
-    if not args.dry_run:
+    if not args.dry_run and not args.compose_only:
         for key, count in _release_due(brand_id=brand_id, brand_dir=brand_dir).items():
             results[key] = results.get(key, 0) + count
 

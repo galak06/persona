@@ -126,11 +126,17 @@ def main() -> int:
     )
 
     if not results:
+        # Non-zero on purpose. `run_crew_scout` swallows a crew failure and
+        # returns `[]` (its "never crash the run" contract), so exiting 0 here
+        # made a dead run indistinguishable from a successful one: the worker
+        # recorded `success` and the Ideas page reported "New ideas generated."
+        # over a run that wrote nothing. Nothing was created either way -- say so.
         print(
             "\nno ideas returned (see logs -- either the crew kickoff failed, or it "
-            "returned zero candidates)"
+            "returned zero candidates)",
+            file=sys.stderr,
         )
-        return 0
+        return 1
 
     inserted = sum(1 for _, idea_id in results if idea_id)
     skipped = len(results) - inserted

@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 from crewai import Agent, Task
 
+from lib.affiliate_resolver import ProductEntry
 from lib.crew.products.models import ProductSelection, SelectedProduct
 from lib.crew.products.selector import MAX_PRODUCTS, select_products_for_post
 from lib.crew.products.usage import record_usage
@@ -231,14 +232,29 @@ def test_write_post_from_brief_feeds_writer_only_selected_products_and_records_u
     usage_file = brand_dir / "state" / "product_usage.jsonl"
     rows = [json.loads(line) for line in usage_file.read_text(encoding="utf-8").splitlines()]
     assert rows == [
-        {"ts": rows[0]["ts"], "idea_id": _brief().suggested_title, "keys": ["gps-tracker"]}
+        {
+            "ts": rows[0]["ts"],
+            "idea_id": _brief().suggested_title,
+            "keys": ["gps-tracker"],
+            # Attributed to the drafting path, so the backfill sweep's own
+            # history can be scoped out of this path's exclusion.
+            "source": "draft",
+        }
     ]
 
 
-def test_write_post_from_brief_records_no_usage_when_no_keys_used(
+def test_a_writer_that_used_no_keys_still_gets_the_picks_into_the_post(
     brand_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Regression for the post that shipped with a disclosure and no products.
+
+    The writer is handed the selector's picks as suggestions and may ignore
+    them -- and did, live, on post 4289. Placement no longer depends on its
+    cooperation: the block is appended and the usage recorded reflects what
+    actually ended up in the post, not what the writer claimed.
+    """
     monkeypatch.setenv("BRAND_DIR", str(brand_dir))
+    monkeypatch.setenv("AMAZON_ASSOCIATES_TAG", "dogfoodandfun01-20")
     fake_selector = _FakeSelector(_selection("gps-tracker"))
     fake_writer = _FakeWriter(
         _written_post(body_html=f"<p>{_DISCLOSURE}</p>", affiliate_keys_used=[])
@@ -249,4 +265,93 @@ def test_write_post_from_brief_records_no_usage_when_no_keys_used(
     )
 
     assert post is not None
+    assert "blog-picks-block:v1" in post.body_html
+    assert post.affiliate_keys_used == ["gps-tracker"]
+    assert (brand_dir / "state" / "product_usage.jsonl").exists()
+
+
+def test_no_usage_is_recorded_when_the_selector_picked_nothing(
+    brand_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post nothing genuinely fits stays product-free -- no forced block."""
+    monkeypatch.setenv("BRAND_DIR", str(brand_dir))
+    monkeypatch.setenv("AMAZON_ASSOCIATES_TAG", "dogfoodandfun01-20")
+    fake_writer = _FakeWriter(
+        _written_post(body_html=f"<p>{_DISCLOSURE}</p>", affiliate_keys_used=[])
+    )
+
+    post = write_post_from_brief(
+        brand_dir,
+        _brief(),
+        execute_fn=fake_writer,
+        product_execute_fn=_FakeSelector(_selection()),
+    )
+
+    assert post is not None
+    assert "blog-picks-block:v1" not in post.body_html
     assert not (brand_dir / "state" / "product_usage.jsonl").exists()
+
+
+# ── dynamic discovery (opt-in) ───────────────────────────────────────────────
+
+
+def test_discovery_is_off_unless_asked_for(brand_dir: Path) -> None:
+    """Only the drafting path pays for searches; backfill and tests don't."""
+    called: list[str] = []
+
+    def _discovery(_dir: Path, _brief: object) -> dict[str, ProductEntry]:
+        called.append("x")
+        return {}
+
+    select_products_for_post(
+        brand_dir, _brief(), execute_fn=_FakeSelector(_selection()), discovery_fn=_discovery
+    )
+
+    assert called == []
+
+
+def test_discovered_products_join_the_candidate_pool(brand_dir: Path) -> None:
+    """A post on an uncurated topic must still find something to link."""
+    found = ProductEntry(key="storage-bin-b0bw3w3glb", asin="B0BW3W3GLB", display="Storage Bin")
+
+    result = select_products_for_post(
+        brand_dir,
+        _brief(),
+        execute_fn=_FakeSelector(_selection("storage-bin-b0bw3w3glb")),
+        discover=True,
+        discovery_fn=lambda _d, _b: {found.key: found},
+    )
+
+    assert result[found.key].asin == "B0BW3W3GLB"
+
+
+def test_a_curated_entry_beats_a_discovered_one_on_key_collision(brand_dir: Path) -> None:
+    """Curated entries carry real editorial notes; SERP snippets don't."""
+    collide = ProductEntry(key="gps-tracker", asin="XXXXXXXXXX", display="SERP title")
+
+    result = select_products_for_post(
+        brand_dir,
+        _brief(),
+        execute_fn=_FakeSelector(_selection("gps-tracker")),
+        discover=True,
+        discovery_fn=lambda _d, _b: {"gps-tracker": collide},
+    )
+
+    assert result["gps-tracker"].asin != "XXXXXXXXXX"
+
+
+def test_discovery_failure_is_not_fatal_for_selection(brand_dir: Path) -> None:
+    """A Serper outage degrades to catalog-only, never a failed draft."""
+
+    def _boom(_dir: Path, _brief: object) -> dict[str, ProductEntry]:
+        raise RuntimeError("serper down")
+
+    result = select_products_for_post(
+        brand_dir,
+        _brief(),
+        execute_fn=_FakeSelector(_selection("gps-tracker")),
+        discover=True,
+        discovery_fn=_boom,
+    )
+
+    assert "gps-tracker" in result

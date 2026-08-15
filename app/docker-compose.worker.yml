@@ -69,24 +69,26 @@ services:
       context: .
       dockerfile: Dockerfile.worker
     restart: unless-stopped
+    # Same rule as the api service: secrets come from `.env`, never from a
+    # `- VAR=${VAR}` passthrough (the shell outranks those, so one stale
+    # `export` poisons the container). Entries left under `environment:` are
+    # the ones that MUST beat the file -- `environment:` outranks `env_file`,
+    # and `.env`'s DATABASE_URL/REDIS_URL/BRAND_DIR point at the host.
+    env_file:
+      - .env
     environment:
       - BRAND_DIR=/app/brands/_shared
       - REDIS_URL=redis://redis:6379/0
       - DATABASE_URL=postgresql://${POSTGRES_USER:-persona}:${POSTGRES_PASSWORD:-persona}@postgres:5432/${POSTGRES_DB:-persona}
-      - PERSONA_SECRET_KEY=${PERSONA_SECRET_KEY}
       - PLAYWRIGHT_HEADLESS=1
-      # Engine-wide LLM key. Brand-owned credentials arrive via each brand's
-      # own $BRAND_DIR/.env through the ./brands mount below, but engine-wide
-      # secrets live in .claude/settings.local.json, which is NOT mounted into
-      # the container -- so they must be passed through here. Without this the
-      # worker drafts nothing: gemini_client logs "GEMINI_API_KEY not set" and
-      # every comment is recorded as agent_declined_or_empty_draft.
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      # GEMINI_API_KEY / SERPER_API_KEY / DEEPSEEK_API_KEY now arrive via
+      # `env_file` above. They are still REQUIRED -- without GEMINI_API_KEY the
+      # worker drafts nothing (gemini_client logs "GEMINI_API_KEY not set" and
+      # every comment records as agent_declined_or_empty_draft), and the reels
+      # pipeline's Beats Agent refuses to start without DEEPSEEK_API_KEY -- but
+      # they must NOT be passthroughs: that is precisely what let a revoked
+      # DeepSeek key exported in ~/.zshrc override the working key in `.env`.
       - GEMINI_REPLY_MODEL=${GEMINI_REPLY_MODEL:-gemini-3.6-flash}
-      - SERPER_API_KEY=${SERPER_API_KEY}
-      # Engine-wide too, and required by the reels pipeline's Beats Agent
-      # (scripts/crewai_reels_pipeline.py refuses to start without it).
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       # Reel text overlays. recipe-publisher/generators/text_overlay.py
       # defaults to macOS host paths (/System/Library/Fonts/...), which do
       # not exist in this Linux image -- PIL then dies with "cannot open

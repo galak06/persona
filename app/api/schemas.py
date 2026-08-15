@@ -276,10 +276,6 @@ class FacebookGroup(BaseModel):
     notes: list[dict[str, str]] | None = None
     last_post_status: str | None = None
     last_post_caption: str | None = None
-    # fb-engager first-comment gate (declared explicitly for the contract;
-    # extra="allow" would pass them through anyway).
-    first_comment_flagged_at: str | None = None
-    first_comment_approved_at: str | None = None
 
     @field_validator("member_count", mode="before")
     @classmethod

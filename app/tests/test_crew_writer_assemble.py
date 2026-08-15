@@ -9,6 +9,7 @@ always a plain injected callable, no real CrewAI/DeepSeek/Postgres calls.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,42 @@ def test_assemble_final_html_propagates_affiliate_resolver_error_on_unknown_key(
     )
     with pytest.raises(AffiliateResolverError):
         assemble_final_html(brand_dir, post, catalog={})
+
+
+def test_assemble_final_html_resolves_a_discovered_key_from_the_default_pool(
+    brand_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drafting path's end-to-end contract, live-broken until 2026-08-14.
+
+    `_run_full_pipeline` writes with `discover=True`, so the body can carry a
+    placeholder for a product found live rather than one curated in
+    `affiliate_products.json` -- and then calls `assemble_final_html` with NO
+    catalog, i.e. the default `load_candidate_pool`. If that pool doesn't
+    include the discovery cache, this raises and the whole draft is thrown
+    away (it did, on five approved ideas in a row).
+    """
+    monkeypatch.setenv("AMAZON_ASSOCIATES_TAG", "test-tag-20")
+    _write_json(
+        brand_dir / "data" / "cache" / "discovered_products.json",
+        [
+            {
+                "key": "dog-pulling-harness-b0dzhpyhgs",
+                "asin": "B0DZHPYHGS",
+                "display": "Dog Pulling Harness",
+                "category": None,
+                "notes": None,
+                "ts": datetime.now(UTC).isoformat(),
+            }
+        ],
+    )
+    post = _written_post(
+        body_html=f"<p>{_DISCLOSURE}</p><p>[AFFILIATE:dog-pulling-harness-b0dzhpyhgs]</p>",
+        affiliate_keys_used=["dog-pulling-harness-b0dzhpyhgs"],
+    )
+    final_html = assemble_final_html(brand_dir, post)
+    assert "[AFFILIATE:" not in final_html
+    assert "https://www.amazon.com/dp/B0DZHPYHGS" in final_html
+    assert "tag=test-tag-20" in final_html
 
 
 def test_assemble_final_html_propagates_affiliate_resolver_error_on_missing_tag(

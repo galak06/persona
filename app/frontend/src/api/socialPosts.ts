@@ -50,3 +50,30 @@ export async function unscheduleSocialPost(id: string): Promise<void> {
 export async function rejectSocialPost(id: string): Promise<void> {
   await apiClient.post(`/social-posts/${encodeURIComponent(id)}/reject`);
 }
+
+export interface ComposeStatus {
+  running: boolean;
+  started_at: string | null;
+  finished_at: string | null;
+  ok: boolean | null;
+  detail: string | null;
+  /** Posts this run added to the review queue. */
+  composed: number | null;
+  /** Published articles with no posts yet — what a run right now would use. */
+  candidates: number;
+}
+
+/**
+ * Runs the same `social-posts-compose` flow the daily cron runs (compose only
+ * — it can never publish). 409 if a run is already in flight, cron's included.
+ */
+export async function composeSocialPosts(): Promise<void> {
+  await apiClient.post("/social-posts/compose");
+}
+
+export async function fetchComposeStatus(): Promise<ComposeStatus> {
+  const { data } = await apiClient.get<ComposeStatus>(
+    "/social-posts/compose/status",
+  );
+  return data;
+}

@@ -23,8 +23,8 @@
       "depends_on": [
         "site-analyzer"
       ],
-      "description": "Scan joined Facebook dog groups for relevant posts, queue for commenting",
-      "id": "fb-scanner",
+      "description": "Scan joined Facebook groups, like qualifying posts, draft and post a comment inline (single-pass)",
+      "id": "fb-engager",
       "inputs": [
         {
           "max_age_hours": 26,
@@ -33,11 +33,10 @@
           "produced_by": "site-analyzer"
         }
       ],
-      "order": 20,
-      "output_file": "state/facebook_comment_queue.json",
+      "order": 25,
       "rate_limits": {
-        "comments_per_day": 15,
-        "group_visits_per_day": 15
+        "comments_per_day": 5,
+        "likes_per_day": 5
       },
       "re_run_guard": true,
       "requires_approval": false,
@@ -46,32 +45,10 @@
         "cadence": "daily",
         "cron": "33 15 * * *"
       },
-      "script": "scripts/fb_scan.py",
-      "skill": "fb-scanner",
-      "telegram_notify": true
-    },
-    {
-      "depends_on": [
-        "fb-scanner"
-      ],
-      "description": "FB loop: draft one short reply per queued post and post it (max 5/day) from the Facebook queue",
-      "id": "fb-comment",
-      "inputs": [],
-      "order": 21,
-      "output_file": "logs/engagement_log.jsonl",
-      "rate_limits": {
-        "comments_per_day": 15
-      },
-      "re_run_guard": true,
-      "requires_approval": false,
-      "requires_browser": true,
-      "schedule": {
-        "cadence": "daily",
-        "cron": "0 10 * * *"
-      },
-      "script": "scripts/fb_comment.py",
-      "skill": "fb-comment",
-      "telegram_notify": true
+      "script": "scripts/fb_engager.py",
+      "skill": "fb-engager",
+      "telegram_notify": true,
+      "timeout_minutes": 30
     },
     {
       "depends_on": [
@@ -261,6 +238,28 @@
       "telegram_notify": true
     },
     {
+      "args": [
+        "--compose-only"
+      ],
+      "depends_on": [],
+      "description": "Daily social-post composition \u2014 drafts FB+IG captions and a hook image for newly published articles and queues them for review (never publishes; social-posts-release does that)",
+      "id": "social-posts-compose",
+      "inputs": [],
+      "order": 84,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": false,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "20 16 * * *"
+      },
+      "script": "scripts/crewai_social_posts_pipeline.py",
+      "skill": "fb-post-creator",
+      "telegram_notify": false,
+      "timeout_minutes": 30
+    },
+    {
       "approval_channel": "telegram",
       "depends_on": [],
       "description": "Weekly recipe ideator \u2014 surfaces 4 approved recipe candidates",
@@ -383,7 +382,7 @@
         "cron": "0 9 * * 0"
       },
       "script": "scripts/fb_notification_scan.py",
-      "skill": "fb-scanner",
+      "skill": "fb-notification-scan",
       "telegram_notify": true
     },
     {

@@ -11,6 +11,10 @@ __pycache__
 .pytest_cache
 .mypy_cache
 .ruff_cache
+# 1.5 GB of macOS-native wheels that no Linux image can use, re-sent to the
+# daemon on every build and then COPY'd in by `COPY . .`. Excluding it is what
+# takes a worker rebuild from tens of minutes down to a couple.
+.venv/
 node_modules
 frontend/node_modules
 frontend/dist

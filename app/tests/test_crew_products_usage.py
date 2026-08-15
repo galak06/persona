@@ -12,7 +12,13 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from lib.crew.products.usage import recently_used_keys, record_usage
+from lib.crew.products.usage import (
+    SOURCE_BACKFILL,
+    SOURCE_DRAFT,
+    SOURCE_LEGACY,
+    recently_used_keys,
+    record_usage,
+)
 
 
 def _write_line(path: Path, ts: datetime, idea_id: str, keys: list[str]) -> None:
@@ -56,3 +62,46 @@ def test_corrupt_lines_are_skipped(tmp_path: Path) -> None:
         handle.write("{not valid json\n")
         handle.write('"a bare string, not an object"\n')
     assert recently_used_keys(path=path) == {"good-key"}
+
+
+# ── source scoping ───────────────────────────────────────────────────────────
+
+
+def test_a_backfill_sweep_does_not_gate_the_drafting_path(tmp_path: Path) -> None:
+    """The live failure: a sweep stamped 59 products as used, and the next
+    drafted post could not feature the very product it was about."""
+    path = tmp_path / "product_usage.jsonl"
+    record_usage("old-published-post", ["fi-collar"], path=path, source=SOURCE_BACKFILL)
+
+    assert recently_used_keys(path=path, sources={SOURCE_DRAFT}) == set()
+    assert recently_used_keys(path=path) == {"fi-collar"}  # unscoped still sees it
+
+
+def test_the_drafting_path_still_dedupes_against_itself(tmp_path: Path) -> None:
+    """Scoping must not disable dedupe -- only narrow whose history counts."""
+    path = tmp_path / "product_usage.jsonl"
+    record_usage("a-drafted-post", ["fi-collar"], path=path)
+
+    assert recently_used_keys(path=path, sources={SOURCE_DRAFT}) == {"fi-collar"}
+
+
+def test_records_written_before_source_existed_are_legacy(tmp_path: Path) -> None:
+    """The 63 pre-existing events carry no `source`; unattributable bulk
+    history must not gate new work."""
+    path = tmp_path / "product_usage.jsonl"
+    path.write_text(
+        json.dumps({"ts": datetime.now(UTC).isoformat(), "idea_id": "x", "keys": ["fi-collar"]})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert recently_used_keys(path=path, sources={SOURCE_DRAFT}) == set()
+    assert recently_used_keys(path=path, sources={SOURCE_LEGACY}) == {"fi-collar"}
+
+
+def test_source_defaults_to_draft(tmp_path: Path) -> None:
+    path = tmp_path / "product_usage.jsonl"
+    record_usage("a-post", ["fi-collar"], path=path)
+
+    row = json.loads(path.read_text().splitlines()[0])
+    assert row["source"] == SOURCE_DRAFT

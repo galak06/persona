@@ -85,8 +85,9 @@ re-establish it with `scripts/login.py fb`.
 - Random delays between group visits and between actions — no back-to-back
   navigation.
 - The `engage`/`comment`/`reason` decision from the LLM Prompt below is the
-  approval gate for the comment — no separate Telegram confirmation, except
-  the one-time first-comment-per-group approval (Groups page) above.
+  ONLY approval gate for the comment — no Telegram confirmation, and no
+  per-group first-comment approval (that gate was removed 2026-08-13 so this
+  flow matches ig-engager).
 
 ---
 

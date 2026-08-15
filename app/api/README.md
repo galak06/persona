@@ -55,7 +55,6 @@ python -m api.approval_api
 |--------|------|---------|
 | GET | `/api/v1/facebook/groups` | List all FB groups (joined, pending, rejected, not_joined_yet) |
 | PUT | `/api/v1/facebook/groups/{group_name}` | Update group status and posting_mode |
-| POST | `/api/v1/facebook/groups/{group_name}/approve-first-comment` | One-time approval of a group's first comment (fb-engager flags the group via Telegram and skips commenting there until approved) |
 
 ### Campaigns (`/api/v1/campaigns/`)
 

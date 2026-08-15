@@ -165,35 +165,27 @@ def test_get_by_name(repo: GroupsRepository) -> None:
     assert repo.get_by_name("No Such Group") is None
 
 
-# ------------------------------------------- first-comment gate (fb-engager)
+# --------------------------------------- retired first-comment gate columns
+#
+# The fb-engager first-comment approval gate was removed on 2026-08-13 (FB now
+# matches ig-engager: the drafter's engage/decline decision is the only gate),
+# along with its two setters. The COLUMNS stay -- they hold the historical
+# stamps of groups that were flagged/approved while the gate existed -- so the
+# round-trip guard below still has a job: every tracker writer does a
+# load_all -> save_all, which must not reset those stored values or smuggle
+# them into `extra`. Seeded with raw SQL now that the setters are gone.
 
 _FLAGGED_AT = "2026-08-01T10:00:00+00:00"
 _APPROVED_AT = "2026-08-01T11:00:00+00:00"
 
 
-@requires_postgres
-def test_set_first_comment_flagged_is_write_once(repo: GroupsRepository) -> None:
-    """True iff THIS call did the flagging -- that return value drives the
-    notify-exactly-once Telegram message, so a second call must be a no-op."""
-    repo.save_all([dict(_SAMPLE[0])])
-    assert repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT) is True
-    assert repo.set_first_comment_flagged(_TREATS_URL, "2026-08-02T09:00:00+00:00") is False
-    g = repo.get_by_url(_TREATS_URL)
-    assert g is not None
-    assert g["first_comment_flagged_at"] == _FLAGGED_AT  # original stamp survives
-    assert repo.set_first_comment_flagged("https://nope/", _FLAGGED_AT) is False
-
-
-@requires_postgres
-def test_set_first_comment_approved_sets_and_overwrites(repo: GroupsRepository) -> None:
-    """Approval is a plain update (re-approving refreshes the stamp)."""
-    repo.save_all([dict(_SAMPLE[0])])
-    assert repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT) is True
-    assert repo.set_first_comment_approved(_TREATS_URL, "2026-08-03T12:00:00+00:00") is True
-    g = repo.get_by_url(_TREATS_URL)
-    assert g is not None
-    assert g["first_comment_approved_at"] == "2026-08-03T12:00:00+00:00"
-    assert repo.set_first_comment_approved("https://nope/", _APPROVED_AT) is False
+def _seed_gate_columns(group_url: str) -> None:
+    """Stamp both retired gate columns directly (no setters exist anymore)."""
+    db.execute(
+        "UPDATE fb_groups SET first_comment_flagged_at = %s, "
+        "first_comment_approved_at = %s WHERE group_url = %s",
+        (_FLAGGED_AT, _APPROVED_AT, group_url),
+    )
 
 
 @requires_postgres
@@ -201,8 +193,7 @@ def test_gate_columns_emitted_only_when_set(repo: GroupsRepository) -> None:
     """load_all/_row_to_dict emit the gate columns when set, and never as
     spurious empty keys on untouched groups (same rule as GROUP_COLUMNS)."""
     repo.save_all([dict(g) for g in _SAMPLE])
-    repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT)
-    repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT)
+    _seed_gate_columns(_TREATS_URL)
 
     out = {g["group_url"]: g for g in repo.load_all()}
     treats = out[_TREATS_URL]
@@ -220,8 +211,7 @@ def test_gate_columns_survive_a_save_all_round_trip(repo: GroupsRepository) -> N
     deliberately absent from GROUP_COLUMNS -- nor smuggle them into `extra`,
     where a later upsert would resurrect stale values past the setters."""
     repo.save_all([dict(_SAMPLE[0])])
-    repo.set_first_comment_flagged(_TREATS_URL, _FLAGGED_AT)
-    repo.set_first_comment_approved(_TREATS_URL, _APPROVED_AT)
+    _seed_gate_columns(_TREATS_URL)
 
     repo.save_all(repo.load_all())  # round-trip the stored records verbatim
 
