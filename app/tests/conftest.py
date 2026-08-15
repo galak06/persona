@@ -1,6 +1,6 @@
-"""Suite-wide safety guard: never let destructive tests hit a real database.
+"""Suite-wide safety: the tests can only ever touch a database they own.
 
-Twelve test modules TRUNCATE shared tables on fixture teardown::
+Twenty-four test modules TRUNCATE shared tables on fixture teardown::
 
     db.execute("TRUNCATE TABLE fb_groups, schedule_tasks, brands CASCADE")
 
@@ -8,18 +8,22 @@ Nothing distinguished the target database, so pointing `DATABASE_URL` at the
 live Postgres and running the suite silently destroyed brand registration, the
 schedule, the FB groups table and the publish history. That happened on
 2026-07-28 while following the project's own documented "run pytest with
-DATABASE_URL=..." instruction, and there are no pg_dump backups to restore from.
+DATABASE_URL=..." instruction, and again on 2026-08-12 through a different
+import path.
 
-This module refuses to start such a run. A database is considered disposable
-when ANY of:
+The fix is structural rather than advisory. This module no longer inspects the
+supplied DSN and refuse when it looks dangerous -- it **derives** one it owns,
+appending `_test` to the database name and creating that database if absent.
+`postgresql://.../persona` becomes `postgresql://.../persona_test`. There is
+therefore no supplied value that can aim the TRUNCATEs at production, and the
+two escape hatches the old heuristic needed (`CI=1`, `PERSONA_ALLOW_PROD_DB=1`)
+are gone with it -- both existed only to permit the dangerous case, and CI,
+whose service database is literally named `persona`, depended on the first.
 
-  * `CI` is set -- GitHub Actions provisions a throwaway postgres service
-    container per job, so its `persona` database is safe by construction.
-  * the database name ends with `_test` (e.g. `persona_test`) -- the intended
-    local workflow.
-  * `PERSONA_ALLOW_PROD_DB=1` -- explicit, deliberate override.
-
-Anything else aborts the session before a single test runs.
+An unset or unreachable DATABASE_URL degrades to a run with no database, where
+the pg-gated modules skip themselves. `pytest_report_header` states which of
+these happened, so a silently-degraded run is visible rather than looking like
+a clean pass.
 """
 
 from __future__ import annotations
@@ -27,15 +31,16 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import urlparse, urlunparse
 
 import pytest
 
-_OVERRIDE_VAR = "PERSONA_ALLOW_PROD_DB"
 _TEST_DB_SUFFIX = "_test"
+_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
 _DSN_VAR = "DATABASE_URL"
 _startup_dsn = ""
+_derivation_note = ""
 
 
 def _database_name(dsn: str) -> str:
@@ -43,45 +48,129 @@ def _database_name(dsn: str) -> str:
     return urlparse(dsn).path.lstrip("/")
 
 
-def _is_disposable(dsn: str) -> bool:
-    if os.environ.get("CI"):
-        return True
-    if os.environ.get(_OVERRIDE_VAR) == "1":
-        return True
-    return _database_name(dsn).endswith(_TEST_DB_SUFFIX)
+def _with_database(dsn: str, name: str) -> str:
+    return urlunparse(urlparse(dsn)._replace(path=f"/{name}"))
+
+
+def derive_test_dsn(dsn: str) -> str:
+    """Same server, same credentials, a database this suite OWNS.
+
+    The suite TRUNCATEs; it must therefore never be pointed at a database it
+    did not create. Rather than asking the operator to supply a safe name and
+    refusing when they don't, the name is derived here: `persona` becomes
+    `persona_test`. A DSN already naming a `_test` database is passed through.
+
+    This replaces a disposability heuristic that trusted the supplied value and
+    carried two escape hatches -- `CI=1` and `PERSONA_ALLOW_PROD_DB=1` -- both
+    of which existed only to permit the dangerous case. CI's own service
+    database is literally named `persona`, so it depended entirely on the first
+    hatch. Deriving the name removes the question.
+    """
+    name = _database_name(dsn)
+    if not name:
+        return ""
+    if name.endswith(_TEST_DB_SUFFIX):
+        return dsn
+    return _with_database(dsn, f"{name}{_TEST_DB_SUFFIX}")
+
+
+def _ensure_database(dsn: str) -> None:
+    """CREATE DATABASE if absent, then apply `db/schema.sql`.
+
+    Connects to the server's own `postgres` database to issue CREATE, which
+    cannot run inside a transaction -- hence autocommit.
+    """
+    import psycopg
+
+    name = _database_name(dsn)
+    with psycopg.connect(_with_database(dsn, "postgres"), autocommit=True) as conn:
+        row = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone()
+        if row is None:
+            conn.execute(f'CREATE DATABASE "{name}"')
+
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(_SCHEMA_PATH.read_text(encoding="utf-8"))
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Abort the session when DATABASE_URL names a non-disposable database.
+    """Point the session at a derived, suite-owned test database.
 
     Runs before collection, so no fixture -- and therefore no TRUNCATE -- can
-    execute against the wrong database. An unset DATABASE_URL is fine: the DB
+    execute against anything else. An unset DATABASE_URL stays unset: the DB
     tests skip themselves, which is the documented degraded-but-safe run.
 
-    Also OCCUPIES the variable for the rest of the session -- setting it to the
-    empty string when the invoking command left it unset. Both known injectors
-    (python-dotenv's `load_dotenv`, `lib.local_env`'s merge) skip a key that is
-    already present in `os.environ`, so holding the slot stops the live DSN
-    from ever entering a test process. `lib.db_pool._dsn` treats an empty value
-    as unset and raises, which is exactly what the pg-gated modules probe for,
-    so they skip -- the documented degraded-but-safe run.
+    Also OCCUPIES the variable for the rest of the session. `app/.env` carries
+    the live DSN and python-dotenv loads it when CrewAI is imported; that
+    injector skips a key already present in `os.environ`, so holding the slot
+    stops it from reaching a test process.
 
     Occupying is what makes this safe; resetting the value later is not enough.
     `_PG_AVAILABLE` is computed at module import (i.e. during collection) and
     opens the shared pool, which caches the DSN it saw. A DSN injected during
-    collection therefore binds the pool to the live database, and the fixtures'
+    collection therefore binds the pool to whatever it names, and the fixtures'
     TRUNCATEs follow that cached pool no matter what `os.environ` says by the
     time tests run. That is how the live database was wiped a second time on
-    2026-08-12 while this guard was being written.
+    2026-08-12.
     """
-    global _startup_dsn
-    _startup_dsn = os.environ.get(_DSN_VAR, "")
+    global _startup_dsn, _derivation_note
+    supplied = os.environ.get(_DSN_VAR, "")
 
-    if _startup_dsn and not _is_disposable(_startup_dsn):
-        name = _database_name(_startup_dsn) or "<none>"
-        raise pytest.UsageError(_refusal_message(name, urlparse(_startup_dsn)))
+    if not supplied:
+        _startup_dsn = ""
+        os.environ[_DSN_VAR] = ""
+        return
 
-    os.environ[_DSN_VAR] = _startup_dsn
+    derived = derive_test_dsn(supplied)
+    if not derived:
+        _derivation_note = f"{_DSN_VAR} names no database; running without one"
+        _startup_dsn = ""
+        os.environ[_DSN_VAR] = ""
+        return
+
+    try:
+        _ensure_database(derived)
+    except Exception as exc:  # server down, no CREATEDB right, bad credentials
+        _derivation_note = (
+            f"could not prepare {_database_name(derived)!r} ({exc}); running without a database"
+        )
+        _startup_dsn = ""
+        os.environ[_DSN_VAR] = ""
+        return
+
+    if derived != supplied:
+        _derivation_note = (
+            f"redirected {_database_name(supplied)!r} -> {_database_name(derived)!r} "
+            "(this suite TRUNCATEs; it only ever touches a database it owns)"
+        )
+    _startup_dsn = derived
+    os.environ[_DSN_VAR] = derived
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Mark every database-backed test `integration`, without touching 20 files.
+
+    A module that imports `tests._pg` binds `requires_postgres` at module
+    scope; that is exactly the set of modules which TRUNCATE. Deriving the
+    marker from that import keeps the two in sync automatically — a new
+    database-backed module gets marked the moment it uses the shared gate.
+
+    The point is being able to say `-m "not integration"` and mean it.
+    Previously the only way to exclude these was to leave `DATABASE_URL`
+    unset, which excluded them *silently* and looked identical to a pass.
+    """
+    for item in items:
+        module = getattr(item, "module", None)
+        if module is not None and hasattr(module, "requires_postgres"):
+            item.add_marker("integration")
+
+
+def pytest_report_header(config: pytest.Config) -> list[str]:
+    """Say which database the run is using, and why."""
+    if _derivation_note:
+        return [f"conftest: {_derivation_note}"]
+    if _startup_dsn:
+        return [f"conftest: database {_database_name(_startup_dsn)!r}"]
+    return ["conftest: no DATABASE_URL — database-backed tests will skip"]
 
 
 def _restore_startup_dsn(when: str) -> str | None:
@@ -184,17 +273,3 @@ def brand_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[o
         yield BrandContext.from_env()
     finally:
         config.reset_settings_cache()
-
-
-def _refusal_message(name: str, parsed: ParseResult) -> str:
-    return (
-        f"\nRefusing to run: DATABASE_URL points at database {name!r} on "
-        f"{parsed.hostname}:{parsed.port}, which is not disposable.\n"
-        f"\nThis suite TRUNCATEs brands, schedule_tasks, fb_groups, engagements, "
-        f"worker_runs and completed_tasks. Running it here would destroy live data.\n"
-        f"\nCreate a throwaway database instead:\n"
-        f"    createdb -h {parsed.hostname} -p {parsed.port} -U {parsed.username} {name}{_TEST_DB_SUFFIX}\n"
-        f"    psql <dsn-for-{name}{_TEST_DB_SUFFIX}> -f db/schema.sql\n"
-        f"then re-run with DATABASE_URL=...{name}{_TEST_DB_SUFFIX}\n"
-        f"\nIf you genuinely mean to target this database, set {_OVERRIDE_VAR}=1.\n"
-    )

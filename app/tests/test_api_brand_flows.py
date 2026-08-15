@@ -21,6 +21,7 @@ from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
 from lib import brand_provisioning, db, flow_templates_db
 from lib.task_queue import TaskQueue
+from tests._pg import requires_postgres
 
 _ROW: dict[str, Any] = {
     "id": "acme-dogs",
@@ -131,13 +132,6 @@ def test_run_now_enqueues_and_returns_response(monkeypatch: pytest.MonkeyPatch) 
 # --------------------------------------------------------------- live + HTTP
 
 
-def _postgres_reachable() -> bool:
-    try:
-        return db.health_check()
-    except Exception:
-        return False
-
-
 def _redis_reachable() -> bool:
     try:
         return TaskQueue(worker="healthcheck", brand="healthcheck").health_check()
@@ -145,9 +139,6 @@ def _redis_reachable() -> bool:
         return False
 
 
-requires_postgres = pytest.mark.skipif(
-    not _postgres_reachable(), reason="No reachable Postgres at DATABASE_URL"
-)
 requires_redis = pytest.mark.skipif(
     not _redis_reachable(), reason="No reachable Redis at REDIS_URL"
 )

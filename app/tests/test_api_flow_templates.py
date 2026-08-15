@@ -25,16 +25,7 @@ from lib import db, flow_templates_db
 _SCHEMA_PATH = Path(__file__).resolve().parents[1] / "db" / "schema.sql"
 
 
-def _postgres_reachable() -> bool:
-    try:
-        return db.health_check()
-    except Exception:
-        return False
-
-
-_PG_AVAILABLE = _postgres_reachable()
-_SKIP_REASON = "No reachable Postgres at DATABASE_URL (or lib.db_pool's local default)"
-requires_postgres = pytest.mark.skipif(not _PG_AVAILABLE, reason=_SKIP_REASON)
+from tests._pg import requires_postgres
 
 
 @pytest.fixture

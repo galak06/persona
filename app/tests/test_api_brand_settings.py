@@ -163,17 +163,7 @@ def test_settings_provisioning_failure_returns_502(monkeypatch: pytest.MonkeyPat
 # --------------------------------------------------------------- live + HTTP
 
 
-def _postgres_reachable() -> bool:
-    try:
-        return db.health_check()
-    except Exception:
-        return False
-
-
-_PG_AVAILABLE = _postgres_reachable()
-requires_postgres = pytest.mark.skipif(
-    not _PG_AVAILABLE, reason="No reachable Postgres at DATABASE_URL"
-)
+from tests._pg import requires_postgres
 
 
 @pytest.fixture

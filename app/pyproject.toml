@@ -70,7 +70,14 @@ testpaths = ["tests"]
 # same file as two distinct module objects -- patching one silently missed what
 # the code under test actually read. Everything imports through the `lib.`
 # namespace now; `app` itself is on the path via rootdir.
-addopts = "-v --tb=short -q"
+addopts = "-v --tb=short -q --strict-markers"
+markers = [
+    # Applied automatically by tests/conftest.py to every test in a module that
+    # imports `tests._pg` — i.e. everything that talks to Postgres. Lets a run
+    # exclude the database-backed suite explicitly (`-m "not integration"`)
+    # instead of excluding it accidentally by leaving DATABASE_URL unset.
+    "integration: exercises a real database",
+]
 
 [tool.mypy]
 python_version = "3.11"
