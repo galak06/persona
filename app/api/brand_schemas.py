@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from lib.worker_db import WorkerRunStatus
+
 
 class BrandCreateRequest(BaseModel):
     """Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1."""
@@ -117,7 +119,7 @@ class BrandProvisionResponse(BaseModel):
 class FlowLastRun(BaseModel):
     """One `worker_runs` row's shape, as surfaced to the flow-readiness panel."""
 
-    status: str
+    status: WorkerRunStatus
     last_run: str
     message: str = ""
 

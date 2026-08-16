@@ -7,7 +7,6 @@ import type {
   RunNowRequestBody,
   RunNowResponse,
 } from "../api/brands";
-import type { WorkerStatus } from "../api/workers";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "./ui/Toast";
@@ -15,19 +14,6 @@ import Alert from "./ui/Alert";
 import ErrorState from "./ui/ErrorState";
 import LoadingState from "./ui/LoadingState";
 import { LogPanel } from "./ui/WorkerCard";
-
-const _KNOWN_STATUSES: readonly WorkerStatus["status"][] = [
-  "never",
-  "running",
-  "success",
-  "error",
-];
-
-function toWorkerStatus(status: string | undefined): WorkerStatus["status"] {
-  return (_KNOWN_STATUSES as readonly string[]).includes(status ?? "")
-    ? (status as WorkerStatus["status"])
-    : "never";
-}
 
 /**
  * Flow-readiness panel — one card per managed flow (`ig-engager`/
@@ -143,7 +129,7 @@ function FlowCard({
       {flow.last_run && (
         <LogPanel
           label={`${brandId}-${flow.flow_id}`}
-          workerStatus={toWorkerStatus(flow.last_run.status)}
+          workerStatus={flow.last_run.status}
         />
       )}
 

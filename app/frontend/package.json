@@ -8,8 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "gen:api:fetch": "curl -sf http://127.0.0.1:5001/openapi.json -o openapi.json",
-    "gen:api": "openapi-typescript openapi.json -o src/types/openapi.ts"
+    "gen:api": "openapi-typescript openapi.json -o src/types/openapi.ts",
+    "gen:api:schema": "cd .. && python -m tools.dump_openapi -o frontend/openapi.json",
+    "check:api": "openapi-typescript openapi.json -o /tmp/openapi.check.ts && diff -q /tmp/openapi.check.ts src/types/openapi.ts"
   },
   "dependencies": {
     "axios": "^1.16.0",

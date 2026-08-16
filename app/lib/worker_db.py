@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from lib import db
 
@@ -26,6 +26,12 @@ _UPSERT_SQL = """
         last_run = EXCLUDED.last_run,
         message = EXCLUDED.message
 """
+
+
+# The only values `worker_runs.status` can hold. `record_start` writes
+# "running"; `record_complete` writes one of the terminal two. The API adds a
+# synthetic "never" for a flow with no row at all -- see `api.schemas`.
+WorkerRunStatus = Literal["running", "success", "error"]
 
 
 def record_start(brand_dir: str | Path, label: str, brand: str) -> None:
@@ -46,7 +52,7 @@ def record_complete(
     brand_dir: str | Path,
     label: str,
     brand: str,
-    status: str,
+    status: WorkerRunStatus,
     message: str = "",
 ) -> None:
     """Upsert final status + last_run=now UTC.
