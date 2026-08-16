@@ -17,13 +17,26 @@ links -- and lost all of it to::
 idea bounced back to `approved` as if nothing had been written. The model had
 almost certainly meant `\\n<h2>` and dropped two characters.
 
-Three recovery layers, tried in order, each strictly more invasive:
+Four recovery layers, tried in order, each strictly more invasive:
 
   1. Parse as-is.
   2. Repair illegal escapes (`repair_invalid_escapes`), then parse.
-  3. Extract the last brace-balanced object embedded in surrounding prose
+  3. Escape stray double quotes inside string values
+     (`repair_stray_quotes`), then parse.
+  4. Extract the last brace-balanced object embedded in surrounding prose
      (reasoning models narrate around their answer), with and without the
      escape repair.
+
+Layer 3 answers a second live loss, the same shape as the first. A writer
+run produced a complete 1,748-word post and lost all of it to prose that
+quoted a word::
+
+    ...most packaging treats "probiotic" like it's a magic word...
+                             ^ ends the JSON string 17KB early
+
+Unescaped `"` inside a value is not an illegal escape, so layer 2 cannot
+see it. The failure is intermittent in the worst way: it depends purely on
+whether the model happened to use quotation marks.
 
 Every function here is pure and total: nothing raises, nothing does I/O.
 Callers log which layer succeeded so a recovered result is distinguishable
@@ -45,8 +58,14 @@ _VALID_ESCAPE_CHARS: Final[frozenset[str]] = frozenset('"\\/bfnrtu')
 # How a payload was recovered, for the caller's log. `None` means "parsed
 # clean, no repair needed".
 REPAIR_ESCAPES: Final[str] = "escape_repair"
+REPAIR_STRAY_QUOTES: Final[str] = "stray_quote_repair"
 REPAIR_EMBEDDED: Final[str] = "embedded_object"
 REPAIR_EMBEDDED_ESCAPES: Final[str] = "embedded_object+escape_repair"
+
+# Characters that may legally follow a string's closing quote, ignoring
+# whitespace. If a `"` inside a string is followed by anything else, it did
+# not close the string -- the model wrote a quotation mark in its prose.
+_CLOSERS: Final[frozenset[str]] = frozenset(",:}]")
 
 
 def strip_code_fence(text: str) -> str:
@@ -89,6 +108,60 @@ def repair_invalid_escapes(text: str) -> str:
         else:
             out.append("\\\\")
             i += 1
+    return "".join(out)
+
+
+def repair_stray_quotes(text: str) -> str:
+    """Escape `"` characters that appear *inside* a JSON string value.
+
+    Scans with a tiny state machine. Inside a string, a `"` is treated as the
+    real closing quote only when the next non-whitespace character is one of
+    `_CLOSERS`; otherwise the model wrote a quotation mark in its prose and
+    the quote is escaped so the string survives intact. Backslash escapes are
+    consumed as a unit, so an already-correct `\\"` is left alone.
+
+    HEURISTIC, and deliberately the second-to-last resort. It is wrong for
+    prose that quotes a phrase immediately before a legal delimiter --
+    `he said "hello", then left` reads as a closing quote and stays broken.
+    That case simply falls through to the next layer and, failing that, to
+    `None`; the repair is only ever *returned* when the result actually
+    parses. The cost of a bad guess is therefore a parse failure the caller
+    already had, while the benefit is a complete post that would otherwise
+    be discarded -- which is why this runs at all rather than being ruled
+    out for being imperfect.
+
+    Quotation marks are PRESERVED as escaped quotes rather than dropped: the
+    prose reads as the model wrote it (`"probiotic"` stays quoted), matching
+    `repair_invalid_escapes`'s choice to keep characters over discarding them.
+    """
+    out: list[str] = []
+    i = 0
+    length = len(text)
+    in_string = False
+    while i < length:
+        char = text[i]
+        if not in_string:
+            out.append(char)
+            in_string = char == '"'
+            i += 1
+            continue
+        if char == "\\" and i + 1 < length:
+            out.append(text[i : i + 2])  # consume an escape pair whole
+            i += 2
+            continue
+        if char == '"':
+            probe = i + 1
+            while probe < length and text[probe] in " \t\r\n":
+                probe += 1
+            if probe >= length or text[probe] in _CLOSERS:
+                out.append(char)
+                in_string = False
+            else:
+                out.append('\\"')
+            i += 1
+            continue
+        out.append(char)
+        i += 1
     return "".join(out)
 
 
@@ -145,6 +218,16 @@ def loads_lenient(text: str) -> tuple[object | None, str | None]:
     if repaired != text:
         try:
             return json.loads(repaired), REPAIR_ESCAPES
+        except json.JSONDecodeError:
+            pass
+
+    # Stray quotes, applied on top of the escape repair rather than the raw
+    # text: a payload can carry both defects, and by here the escape-only
+    # attempt has already failed, so there is nothing to lose by stacking.
+    quoted = repair_stray_quotes(repaired)
+    if quoted != repaired:
+        try:
+            return json.loads(quoted), REPAIR_STRAY_QUOTES
         except json.JSONDecodeError:
             pass
 

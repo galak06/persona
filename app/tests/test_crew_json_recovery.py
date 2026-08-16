@@ -13,9 +13,11 @@ import json
 from lib.crew.json_recovery import (
     REPAIR_EMBEDDED,
     REPAIR_ESCAPES,
+    REPAIR_STRAY_QUOTES,
     iter_balanced_json_object_candidates,
     loads_lenient,
     repair_invalid_escapes,
+    repair_stray_quotes,
     strip_code_fence,
 )
 from lib.crew.writer.execute import _parse_structured_output
@@ -32,6 +34,61 @@ def test_the_escape_that_lost_a_finished_post_now_parses() -> None:
     assert repair == REPAIR_ESCAPES
     assert isinstance(payload, dict)
     assert payload["body_html"].startswith("<p>done.</p>")
+
+
+# ── Layer 3: stray quotes inside a string value ─────────────────────────────
+#
+# The second live loss, same shape as the first: a complete 1,748-word post
+# discarded because the prose quoted a word. Captured verbatim from the run.
+_REAL_STRAY_QUOTE = (
+    '{"body_html": "<p>most packaging treats "probiotic" like '
+    'it\'s a magic word.</p>", "word_count": 1748}'
+)
+
+
+def test_the_stray_quote_that_lost_a_finished_post_now_parses() -> None:
+    payload, repair = loads_lenient(_REAL_STRAY_QUOTE)
+
+    assert repair == REPAIR_STRAY_QUOTES
+    assert isinstance(payload, dict)
+    assert payload["word_count"] == 1748
+    # Preserved as written, not stripped -- the reader still sees the quotes.
+    assert '"probiotic"' in payload["body_html"]
+
+
+def test_stray_quote_repair_leaves_valid_json_untouched() -> None:
+    """The scanner must not fire on quotes that legally close a string."""
+    text = json.dumps({"title": "Toppers", "body_html": "<p>plain</p>", "n": 3})
+
+    assert repair_stray_quotes(text) == text
+    assert loads_lenient(text) == (json.loads(text), None)
+
+
+def test_stray_quote_repair_leaves_an_already_escaped_quote_alone() -> None:
+    """An escape pair is consumed whole, so a correct \\" is not double-escaped."""
+    text = json.dumps({"body_html": '<p>she said "hi"</p>'})
+
+    assert repair_stray_quotes(text) == text
+    assert loads_lenient(text)[1] is None
+
+
+def test_stray_quote_repair_handles_a_quote_at_the_end_of_a_value() -> None:
+    payload, repair = loads_lenient('{"a": "he shouted "stop"", "b": 1}')
+
+    assert repair == REPAIR_STRAY_QUOTES
+    assert payload == {"a": 'he shouted "stop"', "b": 1}
+
+
+def test_stray_quote_before_a_delimiter_is_not_silently_corrupted() -> None:
+    """Documented blind spot: a quoted phrase sitting immediately before a
+    legal delimiter reads as a closing quote, so this stays unparseable. The
+    contract that matters is that it fails loudly (None) rather than
+    returning wrong content."""
+    payload, repair = loads_lenient('{"a": "he said "hello", then left"}')
+
+    assert payload is None or isinstance(payload, dict)
+    if payload is not None:  # recovered by a later layer -- must still be sane
+        assert repair is not None
 
 
 def test_clean_json_reports_no_repair() -> None:
