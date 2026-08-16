@@ -58,7 +58,9 @@ def test_authorized_generates_images_via_openart(
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
         prompts.append(prompt)
-        assert kwargs["reference_image"] == _HERO  # mascot consistency
+        # `/brand` has no mascot asset, so the reference degrades to the hero
+        # -- the pre-existing behavior, kept for brands without the asset.
+        assert kwargs["reference_image"] == _HERO
         return f"ai-{prompt}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
@@ -98,6 +100,99 @@ def test_openart_is_retried_per_idea_not_cached_off(
     assert first.source == "fallback"
     assert second.source == "openart"  # attempted again, succeeded
     assert len(calls) == 3  # 2 exhausted attempts, then 1 success
+
+
+# ── the OpenArt reference is the brand mascot, not the post's hero ───────────
+#
+# Live-reported: generated reels didn't look like the brand's mascot. The hero
+# image was being passed as OpenArt's image2image reference, and a hero is
+# routinely a Pexels stock dog -- so every beat was grounded on a stranger's
+# dog. Reference and fallback are two different pictures.
+
+_MASCOT = b"mascot-reference-bytes"
+
+
+@pytest.fixture()
+def with_mascot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    asset = tmp_path / "persona_mascot_reference.png"
+    asset.write_bytes(_MASCOT)
+    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: asset)
+    return asset
+
+
+def test_generation_is_grounded_on_the_mascot_not_the_hero(
+    authorized: None, with_mascot: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[object] = []
+
+    async def _generate(prompt: str, **kwargs: object) -> bytes:
+        seen.append(kwargs["reference_image"])
+        return f"ai-{prompt}".encode()
+
+    monkeypatch.setattr(reels_images, "generate_image", _generate)
+
+    resolved = _resolve(_plan(beats=3))
+
+    assert seen == [_MASCOT] * 3  # every beat grounded on the mascot
+    assert _HERO not in seen  # the hero is NOT the reference
+    assert resolved.source == "openart"
+
+
+def test_a_failed_beat_still_falls_back_to_the_hero_not_the_mascot(
+    authorized: None, with_mascot: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback is what the reader SEES, so it stays the post's own hero;
+    the mascot photo is direction for the generator, not a slide."""
+
+    async def _generate(prompt: str, **_kw: object) -> bytes:
+        raise RuntimeError("beat failed")
+
+    monkeypatch.setattr(reels_images, "generate_image", _generate)
+
+    resolved = _resolve(_plan(beats=2))
+
+    assert resolved.images == [_HERO, _HERO]
+    assert _MASCOT not in resolved.images
+    assert resolved.source == "fallback"
+
+
+def test_a_brand_without_the_asset_keeps_using_the_hero_as_reference(
+    authorized: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Brand-agnostic: most brands have no mascot asset, and for them nothing
+    about this pipeline changes."""
+    seen: list[object] = []
+
+    async def _generate(prompt: str, **kwargs: object) -> bytes:
+        seen.append(kwargs["reference_image"])
+        return b"ai"
+
+    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: None)
+    monkeypatch.setattr(reels_images, "generate_image", _generate)
+
+    _resolve(_plan(beats=2))
+
+    assert seen == [_HERO, _HERO]
+
+
+def test_an_unreadable_mascot_asset_degrades_instead_of_raising(
+    authorized: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A path that resolves but can't be read must not abort the reel."""
+    missing = tmp_path / "gone.png"  # resolver returns it; the file isn't there
+    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: missing)
+    seen: list[object] = []
+
+    async def _generate(prompt: str, **kwargs: object) -> bytes:
+        seen.append(kwargs["reference_image"])
+        return b"ai"
+
+    monkeypatch.setattr(reels_images, "generate_image", _generate)
+
+    resolved = _resolve(_plan(beats=1))
+
+    assert seen == [_HERO]
+    assert resolved.source == "openart"
 
 
 # ── unavailable: hero fallback, never an exception ────────────────────────────
