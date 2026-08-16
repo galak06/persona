@@ -23,7 +23,7 @@ Testability: `fetch_search_analytics` never imports `googleapiclient` /
 protocol (one `query()` method). Tests inject a fake; production code gets
 `GoogleSearchAnalyticsApi`, which does the real auth + HTTP call and is the
 only place those heavy imports happen (lazy, inside `_build_service`, same
-pattern as `lib.supabase_client.get_client()`).
+pattern as `lib.db_pool.get_pool()`).
 """
 
 from __future__ import annotations

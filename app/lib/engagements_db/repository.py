@@ -2,7 +2,7 @@
 
 Same public API as the earlier Supabase/SQLite versions — swap is transparent
 to callers. Reads/writes go through ``lib.db`` (pooled psycopg connections),
-the local-Postgres successor to ``lib.supabase_client.get_client()``.
+the local-Postgres successor to the removed ``supabase_client.get_client()``.
 """
 
 from __future__ import annotations

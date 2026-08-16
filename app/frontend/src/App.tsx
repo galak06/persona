@@ -14,7 +14,6 @@ import HumanMimic from "./pages/HumanMimic";
 import Onboarding from "./pages/Onboarding";
 import BrandSettings from "./pages/BrandSettings";
 import Published from "./pages/Published";
-import Recipes from "./pages/Recipes";
 import TikTokCandidates from "./pages/TikTokCandidates";
 import Connect from "./pages/Connect";
 import Explorer from "./pages/Explorer";
@@ -44,7 +43,6 @@ export default function App() {
               <Route path="/onboarding/:id/settings" element={<BrandSettings />} />
               <Route path="/onboarding/:id/connect" element={<Connect />} />
               <Route path="/tiktok" element={<TikTokCandidates />} />
-              <Route path="/recipes" element={<Recipes />} />
               <Route path="/connect" element={<Connect />} />
               <Route path="/explorer" element={<Explorer />} />
               <Route path="/operations" element={<Operations />} />

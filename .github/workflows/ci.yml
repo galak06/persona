@@ -91,7 +91,6 @@ jobs:
           tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
-          recipe-publisher/tests/test_ideator_skill_prompts.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
@@ -146,7 +145,6 @@ jobs:
           tests/test_reply_drafter.py tests/test_draft_helper.py tests/test_skill_drafter.py tests/test_skill_prompts.py tests/test_llm_client.py tests/test_llm_tracing.py tests/test_gemini_client.py
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
-          recipe-publisher/tests/test_ideator_skill_prompts.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
