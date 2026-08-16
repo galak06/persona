@@ -21,46 +21,24 @@ parsed manually below.
 
 from __future__ import annotations
 
-import json
-import re
-
 from crewai import Agent, Task
-from pydantic import ValidationError
 
 from lib.crew.editor.models import QualityVerdict
+from lib.crew.structured_output import parse_structured_output
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-
-
-def _strip_code_fence(text: str) -> str:
-    """Strip a wrapping ` ```json ... ``` ` fence, if present -- same
-    defensive posture as `lib.crew.writer.execute._strip_code_fence`."""
-    match = _FENCE_RE.match(text.strip())
-    return match.group(1) if match else text.strip()
-
 
 def _parse_verdict(raw: str | None) -> QualityVerdict | None:
-    """Parse+validate one editor task's raw text output against
-    `QualityVerdict`. `None` (logged) on missing output, invalid JSON, or a
-    schema mismatch -- never raises, matching this module's "never crash the
-    run" contract."""
-    if not raw or not raw.strip():
-        logger.warning("crew_editor_empty_output")
-        return None
-    text = _strip_code_fence(raw)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        logger.warning("crew_editor_json_decode_failed", error=str(exc), raw_excerpt=text[:200])
-        return None
-    try:
-        return QualityVerdict.model_validate(payload)
-    except ValidationError as exc:
-        logger.warning("crew_editor_schema_validation_failed", error=str(exc))
-        return None
+    """Parse+validate one editor task's raw output against `QualityVerdict`.
+
+    `None` (logged) on missing output, unrecoverable JSON, or a schema
+    mismatch -- never raises. Was plain `json.loads` after fence-stripping;
+    it now goes through the one crew parser, so this stage finally gets the
+    same recovery `writer` has always had.
+    """
+    return parse_structured_output(raw, QualityVerdict, event="crew_editor", log=logger)
 
 
 def execute_editor_crew(agent: Agent, task: Task) -> QualityVerdict | None:

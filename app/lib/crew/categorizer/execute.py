@@ -16,46 +16,24 @@ writer pair, and `lib.crew.editor.execute` documents independently for
 
 from __future__ import annotations
 
-import json
-import re
-
 from crewai import Agent, Task
-from pydantic import ValidationError
 
 from lib.crew.categorizer.models import CategoryChoice
+from lib.crew.structured_output import parse_structured_output
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-
-
-def _strip_code_fence(text: str) -> str:
-    """Strip a wrapping ` ```json ... ``` ` fence, if present -- same
-    defensive posture as `lib.crew.writer.execute._strip_code_fence`."""
-    match = _FENCE_RE.match(text.strip())
-    return match.group(1) if match else text.strip()
-
 
 def _parse_choice(raw: str | None) -> CategoryChoice | None:
-    """Parse+validate one categorizer task's raw text output against
-    `CategoryChoice`. `None` (logged) on missing output, invalid JSON, or a
-    schema mismatch -- never raises, matching this module's "never crash the
-    run" contract."""
-    if not raw or not raw.strip():
-        logger.warning("crew_categorizer_empty_output")
-        return None
-    text = _strip_code_fence(raw)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        logger.warning("crew_categorizer_json_decode_failed", error=str(exc), raw_output=text)
-        return None
-    try:
-        return CategoryChoice.model_validate(payload)
-    except ValidationError as exc:
-        logger.warning("crew_categorizer_schema_validation_failed", error=str(exc))
-        return None
+    """Parse+validate one categorizer task's raw output against `CategoryChoice`.
+
+    `None` (logged) on missing output, unrecoverable JSON, or a schema
+    mismatch -- never raises. Was plain `json.loads` after fence-stripping;
+    it now goes through the one crew parser, so this stage finally gets the
+    same recovery `writer` has always had.
+    """
+    return parse_structured_output(raw, CategoryChoice, event="crew_categorizer", log=logger)
 
 
 def execute_categorizer_crew(agent: Agent, task: Task) -> CategoryChoice | None:

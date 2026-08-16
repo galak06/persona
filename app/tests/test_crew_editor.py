@@ -14,9 +14,13 @@ from __future__ import annotations
 import json
 
 from lib.crew.editor.agent import build_editor_agent, build_editor_task
-from lib.crew.editor.execute import _parse_verdict, _strip_code_fence
+from lib.crew.editor.execute import _parse_verdict
 from lib.crew.editor.models import QualityVerdict
 from lib.crew.editor.prompts import build_editor_task_description
+
+# `_strip_code_fence` was a private copy in `editor.execute`; collapsing the
+# eight per-stage parsers left one implementation, public, in `json_recovery`.
+from lib.crew.json_recovery import strip_code_fence as _strip_code_fence
 from lib.crew.writer.models import OutlineSection
 
 # ── QualityVerdict model ─────────────────────────────────────────────────────
