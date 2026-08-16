@@ -4,6 +4,205 @@
  */
 
 export interface paths {
+    "/api/v1/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Activity
+         * @description Tail of ``logs/engagement_log.jsonl``, most recent first.
+         */
+        get: operations["list_activity_api_v1_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/activity/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Activity Summary
+         * @description Per-action tally for one day, computed over the whole log.
+         *
+         *     Defaults to the UTC day, which is the day everything else that meters
+         *     the estate already counts — the rate limiter, the daily re-run guard,
+         *     and the ``date`` stamp the log writers put on each row. The Dashboard
+         *     relies on that default and echoes back the ``date`` it was given rather
+         *     than deciding the day from the browser clock; the explicit param is for
+         *     looking at any other day.
+         */
+        get: operations["activity_summary_api_v1_activity_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Brands Endpoint
+         * @description List brands, optionally filtered by `?status=`.
+         */
+        get: operations["list_brands_endpoint_api_v1_brands_get"];
+        put?: never;
+        /**
+         * Create Brand
+         * @description Insert the brand row (status=draft), then provision its folder + schedule rows.
+         *
+         *     409 on duplicate slug, 422 on a missing/blank required field (name,
+         *     site_url, niche -- or a name that slugifies to nothing), 502 if
+         *     provisioning itself fails (row is kept at draft for a later retry).
+         */
+        post: operations["create_brand_api_v1_brands_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands/{brand_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Brand
+         * @description Full row lookup. 404 if no brand with this id exists.
+         */
+        get: operations["get_brand_api_v1_brands__brand_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands/{brand_id}/flows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Flow Status
+         * @description Per-managed-flow enabled state, last-run status, and readiness signal.
+         *
+         *     404 if the brand row doesn't exist.
+         */
+        get: operations["get_flow_status_api_v1_brands__brand_id__flows_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands/{brand_id}/flows/{flow_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Flow Now
+         * @description Enqueue one flow's `schedule_tasks` row onto the `flow-run` queue now.
+         *
+         *     404 if the brand row doesn't exist, or if `flow_id` has no provisioned
+         *     `schedule_tasks` row for this brand (e.g. `fb-group-scout` was never
+         *     enabled). 409 if the flow is a managed flow currently disabled in
+         *     `enabled_flows` -- re-enable it in settings first, same rule
+         *     `scripts/task_dispatcher.py`'s own gate enforces for scheduled runs.
+         *
+         *     `body.headless` (optional) overrides the worker's own `PLAYWRIGHT_HEADLESS`
+         *     for this one run only -- see `RunNowRequest`.
+         */
+        post: operations["run_flow_now_api_v1_brands__brand_id__flows__flow_id__run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands/{brand_id}/provision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reprovision Brand
+         * @description Idempotent re-run: rebuilds a `BrandSpec` from the stored row and re-provisions.
+         *
+         *     The retry/recovery path for a `POST /brands` that returned 502, and the
+         *     general "re-run onboarding for this brand" path (e.g. after editing
+         *     keywords directly in the DB, or the dogfoodandfun reset). 404 if the
+         *     brand row doesn't exist.
+         */
+        post: operations["reprovision_brand_api_v1_brands__brand_id__provision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brands/{brand_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Brand Settings
+         * @description Partial settings edit: `headless` + the 4 keyword/competitor lists.
+         *
+         *     Every body field is optional and independent. Persists via
+         *     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
+         *     from-row + `provision_brand()` path `POST .../provision` uses -- this is
+         *     what makes a headless toggle or keyword edit actually take effect on the
+         *     next scanner run (`brand.json`/`config.json`/`instagram_accounts.csv`
+         *     all get rewritten), not just stored inertly in Postgres. 404 if the
+         *     brand row doesn't exist.
+         */
+        patch: operations["update_brand_settings_api_v1_brands__brand_id__settings_patch"];
+        trace?: never;
+    };
     "/api/v1/campaigns": {
         parameters: {
             query?: never;
@@ -73,27 +272,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/webhooks/recipe-card": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Recipe Card Webhook
-         * @description Accept a WordPress publish event and queue PDF generation.
-         */
-        post: operations["recipe_card_webhook_api_v1_webhooks_recipe_card_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes": {
+    "/api/v1/config": {
         parameters: {
             query?: never;
             header?: never;
@@ -101,247 +280,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Recipes
-         * @description List stored recipes (alphabetical) with optional filters.
+         * Get Config
+         * @description Returns the current site configuration.
          */
-        get: operations["list_recipes_api_v1_recipes_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/analytics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Recipes Analytics
-         * @description Aggregated publish outcomes across all recipes (phase 10, local log).
-         */
-        get: operations["recipes_analytics_api_v1_recipes_analytics_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/approve": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Approve Recipe
-         * @description Promote a pending recipe to approved (the human gate, phase 5).
-         */
-        post: operations["approve_recipe_api_v1_recipes__recipe_id__approve_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject Recipe
-         * @description Reject a pending recipe so it is never published (phase 5).
-         */
-        post: operations["reject_recipe_api_v1_recipes__recipe_id__reject_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Recipe
-         * @description Full detail for one recipe, including ingredients and steps.
-         */
-        get: operations["get_recipe_api_v1_recipes__recipe_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/page": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Recipe Page
-         * @description Render the recipe as a standalone HTML page (DB fields + image artifacts).
-         *
-         *     Image refs point at the artifact endpoint so photos resolve inside an
-         *     ``<iframe>`` preview. Re-rendered per call to reflect current DB state — the
-         *     same markup the publisher emits, viewable before anything goes live.
-         */
-        get: operations["recipe_page_api_v1_recipes__recipe_id__page_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/image-preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Recipe Image Preview
-         * @description Render the post_image.html recipe card with base64-embedded assets.
-         *
-         *     The card shows: food photo | dog avatar | recipe name | ingredients | timing.
-         *     All assets are inlined as base64 data URIs so the page is fully self-contained.
-         *     Returns a green placeholder when ``post_image.jpg`` has not yet been generated.
-         */
-        get: operations["recipe_image_preview_api_v1_recipes__recipe_id__image_preview_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/sync-publish": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Sync Publish
-         * @description Refresh each recipe's publish status from the publish records.
-         *
-         *     Reads the brand's ``campaigns/**\/metadata.json`` and
-         *     ``published_recipes.json`` and writes per-channel status onto matching
-         *     recipe rows. Idempotent and safe to call repeatedly.
-         */
-        post: operations["sync_publish_api_v1_recipes_sync_publish_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/artifacts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Artifacts
-         * @description List every file in the recipe's artifact folder, for the UI viewer.
-         */
-        get: operations["list_artifacts_api_v1_recipes__recipe_id__artifacts_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/artifact": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Artifact
-         * @description Serve a single artifact file (path-traversal guarded).
-         */
-        get: operations["get_artifact_api_v1_recipes__recipe_id__artifact_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/media-file": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Media File
-         * @description Serve a media file referenced by a recipe's media manifest.
-         *
-         *     Paths are BRAND_DIR-relative and may live under either the live
-         *     ``recipe_artifacts`` folder or the ``_migrated_backup`` folder, so this
-         *     guards to *both* of the recipe's own media dirs (path-traversal safe) rather
-         *     than the single artifacts dir used by ``get_artifact``.
-         */
-        get: operations["get_media_file_api_v1_recipes__recipe_id__media_file_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/recipes/{recipe_id}/story-card": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Story Card
-         * @description Generate and return a story card JPEG for the given recipe.
-         */
-        get: operations["get_story_card_api_v1_recipes__recipe_id__story_card_get"];
+        get: operations["get_config_api_v1_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -370,6 +312,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/facebook/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Facebook Groups
+         * @description List all Facebook groups bucketed by status.
+         *
+         *     Merges two sources:
+         *       - groups_tracker.json -> status in {joined, join_requested, rejected}
+         *       - pending_groups.json -> projected with synthetic status="not_joined_yet"
+         */
+        get: operations["list_facebook_groups_api_v1_facebook_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/facebook/groups/{group_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Facebook Group
+         * @description Update a Facebook group's status / posting_mode in the groups DB.
+         */
+        put: operations["update_facebook_group_api_v1_facebook_groups__group_name__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flow-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Flow Templates
+         * @description Every flow template, ordered by platform then order_num.
+         */
+        get: operations["list_flow_templates_api_v1_flow_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/flow-templates/{flow_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Flow Template
+         * @description Update one flow template's editable fields.
+         */
+        patch: operations["update_flow_template_api_v1_flow_templates__flow_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health
+         * @description Liveness probe for launchd / curl. 204 = OK, no body needed.
+         */
+        get: operations["health_api_v1_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ideas": {
         parameters: {
             query?: never;
@@ -382,6 +428,74 @@ export interface paths {
          * @description List content ideas, newest first. Defaults to all statuses.
          */
         get: operations["list_ideas_api_v1_ideas_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate Ideas
+         * @description Dispatch one scout run to the worker. 202 immediately; poll
+         *     /ideas/generate/status.
+         */
+        post: operations["generate_ideas_api_v1_ideas_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/generate/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Generate Status
+         * @description State of the current/last run, for the frontend's polling loop.
+         *
+         *     Read from the shared `worker_runs` row, so it reflects a run executing in
+         *     the worker container (and survives an API restart mid-run).
+         */
+        get: operations["generate_status_api_v1_ideas_generate_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ideas/{idea_id}/reel-video/{platform}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Reel Video
+         * @description Serve a composed reel mp4 for the `Reels.tsx` review page's preview
+         *     player. `platform` is `ig` or `fb` -- always two distinct files (each
+         *     platform gets its own safe-zone-tuned overlay render), regardless of
+         *     whether `reel_source` is `'openart'` (5 distinct per-beat AI images) or
+         *     `'fallback'` (the WP post's hero image reused for all 5 beats).
+         */
+        get: operations["get_reel_video_api_v1_ideas__idea_id__reel_video__platform__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -446,108 +560,18 @@ export interface paths {
         /**
          * Update Idea Status
          * @description Update the status of a single idea.
+         *
+         *     Reel-review transitions (Approve/Reject on `Reels.tsx`) are special-
+         *     cased rather than going through a blind status write: Approve
+         *     (`social_queued` -> `social_done`) needs to trigger the actual publish
+         *     subprocess, not just flip a column -- the row only really reaches
+         *     `social_done` once `worker_wp_ideas_reel_publish.py`/`set_reel_result`
+         *     confirms both platforms are live. Reject (`social_queued` ->
+         *     `wp_published`) needs to clear the pending-review columns and delete
+         *     the local mp4(s) too, not just flip status -- `ideas_db.reject_reel`
+         *     handles the DB half, this handler does the file cleanup.
          */
         patch: operations["update_idea_status_api_v1_ideas__idea_id__status_patch"];
-        trace?: never;
-    };
-    "/api/v1/tiktok-candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Candidates
-         * @description List TikTok follow candidates.
-         */
-        get: operations["list_candidates_api_v1_tiktok_candidates_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/tiktok-candidates/{handle}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Update Candidate Status
-         * @description Update the status of a TikTok candidate.
-         */
-        patch: operations["update_candidate_status_api_v1_tiktok_candidates__handle__status_patch"];
-        trace?: never;
-    };
-    "/api/v1/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Config
-         * @description Returns the current site configuration.
-         */
-        get: operations["get_config_api_v1_config_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/pending": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Pending
-         * @description All blog-post pairs, group-join candidates, ideas, seeds, campaign-verify items, and comments awaiting a decision.
-         */
-        get: operations["list_pending_api_v1_pending_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/activity": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Activity
-         * @description Tail of ``logs/engagement_log.jsonl``, most recent first.
-         */
-        get: operations["list_activity_api_v1_activity_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/items/{item_id}": {
@@ -590,26 +614,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/items/{item_id}/reject": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reject Item
-         * @description Reject an item. Dispatches on type. Logs ``body.reason`` (free-form).
-         */
-        post: operations["reject_item_api_v1_items__item_id__reject_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/items/{item_id}/edit": {
         parameters: {
             query?: never;
@@ -630,31 +634,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/facebook/groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Facebook Groups
-         * @description List all Facebook groups bucketed by status.
-         *
-         *     Merges two sources:
-         *       - groups_tracker.json -> status in {joined, join_requested, rejected}
-         *       - pending_groups.json -> projected with synthetic status="not_joined_yet"
-         */
-        get: operations["list_facebook_groups_api_v1_facebook_groups_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/facebook/groups/{group_name}": {
+    "/api/v1/items/{item_id}/reject": {
         parameters: {
             query?: never;
             header?: never;
@@ -662,19 +642,19 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
         /**
-         * Update Facebook Group
-         * @description Update a Facebook group's status / posting_mode in the groups DB.
+         * Reject Item
+         * @description Reject an item. Dispatches on type. Logs ``body.reason`` (free-form).
          */
-        put: operations["update_facebook_group_api_v1_facebook_groups__group_name__put"];
-        post?: never;
+        post: operations["reject_item_api_v1_items__item_id__reject_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/health": {
+    "/api/v1/oauth/facebook": {
         parameters: {
             query?: never;
             header?: never;
@@ -682,12 +662,728 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Health
-         * @description Liveness probe for launchd / curl. 204 = OK, no body needed.
+         * Start Facebook OAuth flow
+         * @description Redirect the user to the Facebook consent screen.
          */
-        get: operations["health_api_v1_health_get"];
+        get: operations["start_facebook_oauth_api_v1_oauth_facebook_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/facebook/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Facebook OAuth callback
+         * @description Handle the Facebook OAuth redirect. Exchange code → token and save.
+         */
+        get: operations["facebook_callback_api_v1_oauth_facebook_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/facebook/debug": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inspect a stored token's validity
+         * @description Call the FB /debug_token endpoint to inspect permissions and expiry.
+         */
+        get: operations["debug_facebook_token_api_v1_oauth_facebook_debug_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/facebook/page/{page_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exchange user token → page token
+         * @description Exchange the stored user token for a (non-expiring) page access token.
+         */
+        get: operations["get_page_token_api_v1_oauth_facebook_page__page_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/facebook/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh expiring Facebook user token
+         * @description Extend the 60-day user token window. Safe to call any time before expiry.
+         */
+        post: operations["refresh_facebook_token_api_v1_oauth_facebook_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/openart/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OpenArt OAuth callback
+         * @description Exchange the code with our saved PKCE verifier, save the token, and
+         *     send the browser back to the Reels page with a status query param.
+         */
+        get: operations["openart_callback_api_v1_oauth_openart_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/openart/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start OpenArt OAuth flow
+         * @description Redirect the operator to OpenArt's consent screen.
+         */
+        get: operations["start_openart_oauth_api_v1_oauth_openart_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List stored tokens (access_token redacted)
+         * @description Return a summary of all stored tokens without exposing access_token values.
+         */
+        get: operations["list_tokens_api_v1_oauth_tokens_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/oauth/{platform}/{token_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a stored token
+         * @description Remove a stored token. Does NOT revoke it on the platform side.
+         */
+        delete: operations["delete_token_api_v1_oauth__platform___token_type__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Pending
+         * @description All blog-post pairs, group-join candidates, ideas, seeds, campaign-verify items, and comments awaiting a decision.
+         */
+        get: operations["list_pending_api_v1_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Recipes
+         * @description List stored recipes (alphabetical) with optional filters.
+         */
+        get: operations["list_recipes_api_v1_recipes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recipes Analytics
+         * @description Aggregated publish outcomes across all recipes (phase 10, local log).
+         */
+        get: operations["recipes_analytics_api_v1_recipes_analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/sync-publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Publish
+         * @description Refresh each recipe's publish status from the publish records.
+         *
+         *     Reads the brand's ``campaigns/**\/metadata.json`` and
+         *     ``published_recipes.json`` and writes per-channel status onto matching
+         *     recipe rows. Idempotent and safe to call repeatedly.
+         */
+        post: operations["sync_publish_api_v1_recipes_sync_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Recipe
+         * @description Full detail for one recipe, including ingredients and steps.
+         */
+        get: operations["get_recipe_api_v1_recipes__recipe_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Recipe
+         * @description Promote a pending recipe to approved (the human gate, phase 5).
+         */
+        post: operations["approve_recipe_api_v1_recipes__recipe_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Artifact
+         * @description Serve a single artifact file (path-traversal guarded).
+         */
+        get: operations["get_artifact_api_v1_recipes__recipe_id__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Artifacts
+         * @description List every file in the recipe's artifact folder, for the UI viewer.
+         */
+        get: operations["list_artifacts_api_v1_recipes__recipe_id__artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/image-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recipe Image Preview
+         * @description Render the post_image.html recipe card with base64-embedded assets.
+         *
+         *     The card shows: food photo | dog avatar | recipe name | ingredients | timing.
+         *     All assets are inlined as base64 data URIs so the page is fully self-contained.
+         *     Returns a green placeholder when ``post_image.jpg`` has not yet been generated.
+         */
+        get: operations["recipe_image_preview_api_v1_recipes__recipe_id__image_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/media-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Media File
+         * @description Serve a media file referenced by a recipe's media manifest.
+         *
+         *     Paths are BRAND_DIR-relative and may live under either the live
+         *     ``recipe_artifacts`` folder or the ``_migrated_backup`` folder, so this
+         *     guards to *both* of the recipe's own media dirs (path-traversal safe) rather
+         *     than the single artifacts dir used by ``get_artifact``.
+         */
+        get: operations["get_media_file_api_v1_recipes__recipe_id__media_file_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recipe Page
+         * @description Render the recipe as a standalone HTML page (DB fields + image artifacts).
+         *
+         *     Image refs point at the artifact endpoint so photos resolve inside an
+         *     ``<iframe>`` preview. Re-rendered per call to reflect current DB state — the
+         *     same markup the publisher emits, viewable before anything goes live.
+         */
+        get: operations["recipe_page_api_v1_recipes__recipe_id__page_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Recipe
+         * @description Reject a pending recipe so it is never published (phase 5).
+         */
+        post: operations["reject_recipe_api_v1_recipes__recipe_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/{recipe_id}/story-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Story Card
+         * @description Generate and return a story card JPEG for the given recipe.
+         */
+        get: operations["get_story_card_api_v1_recipes__recipe_id__story_card_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reels/compose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compose Reels
+         * @description Dispatch one pipeline run to the worker. 202 immediately; poll
+         *     /reels/compose/status.
+         *
+         *     Deliberately no OpenArt pre-flight. OpenArt is an optional upgrade, not a
+         *     prerequisite: an unconfigured or unauthorized brand still composes reels
+         *     from the post's hero image (see `scripts.reels_images`), so refusing the
+         *     run here would block a feature that works fine without it.
+         */
+        post: operations["compose_reels_api_v1_reels_compose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reels/compose/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compose Status
+         * @description State of the current/last run, for the frontend's polling loop.
+         *
+         *     Read from the shared `worker_runs` row, so it reflects a run executing in
+         *     the worker container (and survives an API restart mid-run).
+         */
+        get: operations["compose_status_api_v1_reels_compose_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** FB/IG browser-session (login) status */
+        get: operations["get_session_status_api_v1_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Social Posts
+         * @description Rows on the social-post track, `'queued'` (awaiting review) by default.
+         */
+        get: operations["list_social_posts_api_v1_social_posts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/compose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compose Social Posts
+         * @description Dispatch one composition run to the worker. 202 immediately; poll
+         *     /social-posts/compose/status.
+         */
+        post: operations["compose_social_posts_api_v1_social_posts_compose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/compose/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compose Status
+         * @description State of the current/last run (cron's or the button's -- same row).
+         */
+        get: operations["compose_status_api_v1_social_posts_compose_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Social Post
+         * @description Approve a queued social post by claiming the next free FB slot.
+         *
+         *     Nothing publishes here. The slot is the next preferred-hour window at
+         *     least one gap after whatever this brand already has scheduled, so
+         *     approving a batch spreads it across the following days
+         *     (``lib.social_post_slots``). The release sweep in
+         *     ``scripts/crewai_social_posts_pipeline.py`` does the actual publishing
+         *     when each slot arrives.
+         */
+        post: operations["approve_social_post_api_v1_social_posts__idea_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Social Post Image
+         * @description Serve the composed hook image for the review page.
+         */
+        get: operations["get_social_post_image_api_v1_social_posts__idea_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Social Post
+         * @description Reject a queued social post: terminal 'rejected' + delete the image.
+         *
+         *     Terminal on purpose — see ``lib.social_post_db.reject``: a NULL reset
+         *     would put the row straight back into the composition pipeline's candidate
+         *     query and it would be regenerated (LLM + image spend) on every run.
+         */
+        post: operations["reject_social_post_api_v1_social_posts__idea_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/unschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unschedule Social Post
+         * @description Release a scheduled post's slot and put it back in the review queue.
+         */
+        post: operations["unschedule_social_post_api_v1_social_posts__idea_id__unschedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tiktok-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Candidates
+         * @description List TikTok follow candidates.
+         */
+        get: operations["list_candidates_api_v1_tiktok_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tiktok-candidates/{handle}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Candidate Status
+         * @description Update the status of a TikTok candidate.
+         */
+        patch: operations["update_candidate_status_api_v1_tiktok_candidates__handle__status_patch"];
+        trace?: never;
+    };
+    "/api/v1/webhooks/recipe-card": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recipe Card Webhook
+         * @description Accept a WordPress publish event and queue PDF generation.
+         */
+        post: operations["recipe_card_webhook_api_v1_webhooks_recipe_card_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -712,6 +1408,70 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workers/{label}/artifact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Schedule Artifact
+         * @description Return the JSON content of the output_file for a scheduled job.
+         */
+        get: operations["get_schedule_artifact_api_v1_workers__label__artifact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workers/{label}/log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Schedule Log
+         * @description Return the last N lines of the log file for a scheduled job.
+         */
+        get: operations["get_schedule_log_api_v1_workers__label__log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workers/{label}/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Worker Schedule
+         * @description Change a worker's cron timing.
+         *
+         *     Only affects when `scripts/task_dispatcher.py`'s croniter due-check next
+         *     fires this flow -- it does not trigger a run. Manual runs stay on the
+         *     brand-scoped Human Mimic path (`POST /brands/{id}/flows/{flow}/run`).
+         */
+        patch: operations["update_worker_schedule_api_v1_workers__label__schedule_patch"];
         trace?: never;
     };
     "/api/v1/workers/{label}/status": {
@@ -760,66 +1520,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/schedule/missing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Missing Flows
-         * @description Return scheduled flows defined in schedule.json that aren't loaded in launchctl.
-         */
-        get: operations["list_missing_flows_api_v1_schedule_missing_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workers/{label}/log": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Schedule Log
-         * @description Return the last N lines of the log file for a scheduled job.
-         */
-        get: operations["get_schedule_log_api_v1_workers__label__log_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workers/{label}/artifact": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Schedule Artifact
-         * @description Return the JSON content of the output_file for a scheduled job.
-         */
-        get: operations["get_schedule_artifact_api_v1_workers__label__artifact_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -835,28 +1535,28 @@ export interface components {
          *     it from ``timestamp`` so the UI can rely on both being present.
          */
         ActivityEntry: {
-            /** Date */
-            date: string;
-            /** Timestamp */
-            timestamp: string;
             /**
              * Action
              * @enum {string}
              */
             action: "comment" | "like" | "group_post" | "reply" | "own_reply" | "page_post" | "feed_post" | "group_join" | "trace";
+            /** Content */
+            content?: string | null;
+            /** Date */
+            date: string;
             /**
              * Platform
              * @enum {string}
              */
             platform: "facebook" | "instagram" | "wordpress" | "system";
+            /** Reply Url */
+            reply_url?: string | null;
             /** Target Name */
             target_name?: string | null;
             /** Target Url */
             target_url?: string | null;
-            /** Content */
-            content?: string | null;
-            /** Reply Url */
-            reply_url?: string | null;
+            /** Timestamp */
+            timestamp: string;
         } & {
             [key: string]: unknown;
         };
@@ -865,32 +1565,50 @@ export interface components {
          * @description Envelope for ``GET /api/v1/activity``.
          */
         ActivityResponse: {
+            /** As Of */
+            as_of: string;
             /** Entries */
             entries: components["schemas"]["ActivityEntry"][];
             /** Total */
             total: number;
+        };
+        /**
+         * ActivitySummaryResponse
+         * @description Envelope for ``GET /api/v1/activity/summary`` — one day's action tally.
+         *
+         *     ``counts`` carries every action in ``lib.activity_log.VALID_ACTIONS``
+         *     (zeros included) so the UI can index it without guarding. ``total``
+         *     excludes ``trace``, which is a system heartbeat rather than activity.
+         */
+        ActivitySummaryResponse: {
             /** As Of */
             as_of: string;
+            /** Counts */
+            counts: {
+                [key: string]: number;
+            };
+            /** Date */
+            date: string;
+            /** Total */
+            total: number;
         };
         /**
          * AffiliateProduct
          * @description One matched Amazon-Associates product (from the affiliate-matching phase).
          */
         AffiliateProduct: {
-            /** Key */
-            key: string;
             /** Asin */
             asin: string;
             /** Display */
             display: string;
+            /** Key */
+            key: string;
         };
         /**
          * AnalyticsResponse
          * @description Aggregated publish outcomes (phase 10, local outcome log).
          */
         AnalyticsResponse: {
-            /** Recipes */
-            recipes: number;
             /** Attempts */
             attempts: number;
             /** By Platform */
@@ -903,6 +1621,8 @@ export interface components {
             by_status?: {
                 [key: string]: number;
             };
+            /** Recipes */
+            recipes: number;
         };
         /**
          * ApproveBody
@@ -913,24 +1633,24 @@ export interface components {
          *     to override a blog post pair before approval.
          */
         ApproveBody: {
-            /** Text */
-            text?: string | null;
             /** Fb Caption */
             fb_caption?: string | null;
             /** Ig Caption */
             ig_caption?: string | null;
+            /** Text */
+            text?: string | null;
         };
         /**
          * ArtifactItem
          * @description One file in a recipe's artifact folder, listed for the UI.
          */
         ArtifactItem: {
+            /** Kind */
+            kind: string;
             /** Name */
             name: string;
             /** Path */
             path: string;
-            /** Kind */
-            kind: string;
             /**
              * Size
              * @default 0
@@ -942,10 +1662,10 @@ export interface components {
          * @description Envelope for ``GET /api/v1/recipes/{id}/artifacts``.
          */
         ArtifactsResponse: {
-            /** Recipe Id */
-            recipe_id: string;
             /** Artifacts */
             artifacts?: components["schemas"]["ArtifactItem"][];
+            /** Recipe Id */
+            recipe_id: string;
             /**
              * Total
              * @default 0
@@ -969,24 +1689,33 @@ export interface components {
          *     or was skipped.
          */
         BlogPostItem: {
+            /** Channel */
+            channel?: ("both" | "fb_only" | "ig_only") | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /**
+             * Fb Caption
+             * @default
+             */
+            fb_caption: string;
             /** Id */
             id: string;
             /**
-             * Status
-             * @default pending
+             * Ig Caption
+             * @default
              */
-            status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
-            /** Created At */
-            created_at?: string | null;
+            ig_caption: string;
+            /** Image Url */
+            image_url?: string | null;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
+             * Post Id
+             * @default 0
              */
-            type: "blog_post";
+            post_id: number;
             /**
              * Post Title
              * @default
@@ -998,26 +1727,315 @@ export interface components {
              */
             post_url: string;
             /**
-             * Post Id
-             * @default 0
+             * Status
+             * @default pending
              */
-            post_id: number;
+            status: string;
             /**
-             * Fb Caption
-             * @default
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            fb_caption: string;
-            /**
-             * Ig Caption
-             * @default
-             */
-            ig_caption: string;
-            /** Image Url */
-            image_url?: string | null;
-            /** Channel */
-            channel?: ("both" | "fb_only" | "ig_only") | null;
+            type: "blog_post";
         } & {
             [key: string]: unknown;
+        };
+        /**
+         * BrandCreateRequest
+         * @description Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.
+         */
+        BrandCreateRequest: {
+            /**
+             * Brand Persona
+             * @default
+             */
+            brand_persona: string;
+            /**
+             * Competitor Accounts
+             * @default []
+             */
+            competitor_accounts: string[];
+            /**
+             * Competitor Mentions
+             * @default []
+             */
+            competitor_mentions: string[];
+            /**
+             * Facebook Page Url
+             * @default
+             */
+            facebook_page_url: string;
+            /**
+             * Instagram Profile Url
+             * @default
+             */
+            instagram_profile_url: string;
+            /**
+             * Mascot Name
+             * @default
+             */
+            mascot_name: string;
+            /** Name */
+            name: string;
+            /** Niche */
+            niche: string;
+            /**
+             * Primary Keywords
+             * @default []
+             */
+            primary_keywords: string[];
+            /**
+             * Secondary Keywords
+             * @default []
+             */
+            secondary_keywords: string[];
+            /** Site Url */
+            site_url: string;
+            /**
+             * Target Audience
+             * @default
+             */
+            target_audience: string;
+        };
+        /**
+         * BrandDetail
+         * @description Full row shape (`GET /brands/{id}`).
+         */
+        BrandDetail: {
+            /**
+             * Brand Dir
+             * @default
+             */
+            brand_dir: string;
+            /**
+             * Competitor Accounts
+             * @default []
+             */
+            competitor_accounts: string[];
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Enabled Flows
+             * @default []
+             */
+            enabled_flows: string[];
+            /**
+             * Extra
+             * @default {}
+             */
+            extra: {
+                [key: string]: unknown;
+            };
+            /**
+             * Group Join Limit
+             * @default 10
+             */
+            group_join_limit: number;
+            /**
+             * Headless
+             * @default true
+             */
+            headless: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Keywords
+             * @default {}
+             */
+            keywords: {
+                [key: string]: unknown;
+            };
+            /**
+             * Mascot Name
+             * @default
+             */
+            mascot_name: string;
+            /** Name */
+            name: string;
+            /**
+             * Niche
+             * @default
+             */
+            niche: string;
+            /**
+             * Persona
+             * @default
+             */
+            persona: string;
+            /**
+             * Site Url
+             * @default
+             */
+            site_url: string;
+            /** Status */
+            status: string;
+            /**
+             * Target Audience
+             * @default
+             */
+            target_audience: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
+        /** BrandListResponse */
+        BrandListResponse: {
+            /** Brands */
+            brands: components["schemas"]["BrandSummary"][];
+            /** Total */
+            total: number;
+        };
+        /**
+         * BrandProvisionResponse
+         * @description Shared success shape for `POST /brands` (201) and `POST /brands/{id}/provision` (200).
+         *
+         *     The full `BrandDetail` row shape plus what provisioning did -- matches
+         *     the frontend's `Brand & ProvisionResult` intersection type
+         *     (`frontend/src/api/brands.ts::BrandCreateResponse`) field-for-field.
+         */
+        BrandProvisionResponse: {
+            /** Brand Dir */
+            brand_dir: string;
+            /**
+             * Competitor Accounts
+             * @default []
+             */
+            competitor_accounts: string[];
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Enabled Flows
+             * @default []
+             */
+            enabled_flows: string[];
+            /**
+             * Extra
+             * @default {}
+             */
+            extra: {
+                [key: string]: unknown;
+            };
+            /** Fb Login Command */
+            fb_login_command: string;
+            /** Files Written */
+            files_written: string[];
+            /**
+             * Group Join Limit
+             * @default 10
+             */
+            group_join_limit: number;
+            /**
+             * Headless
+             * @default true
+             */
+            headless: boolean;
+            /** Id */
+            id: string;
+            /** Ig Login Command */
+            ig_login_command: string;
+            /**
+             * Keywords
+             * @default {}
+             */
+            keywords: {
+                [key: string]: unknown;
+            };
+            /**
+             * Mascot Name
+             * @default
+             */
+            mascot_name: string;
+            /** Name */
+            name: string;
+            /**
+             * Niche
+             * @default
+             */
+            niche: string;
+            /**
+             * Persona
+             * @default
+             */
+            persona: string;
+            /** Schedule Tasks Created */
+            schedule_tasks_created: string[];
+            /**
+             * Site Url
+             * @default
+             */
+            site_url: string;
+            /** Status */
+            status: string;
+            /**
+             * Target Audience
+             * @default
+             */
+            target_audience: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * BrandSettingsRequest
+         * @description `PATCH /brands/{id}/settings` body. Every field optional and independent --
+         *     an unset field is left untouched (see `BrandsRepository.update`'s own
+         *     `None` = "leave alone" contract, which this mirrors 1:1).
+         */
+        BrandSettingsRequest: {
+            /** Competitor Accounts */
+            competitor_accounts?: string[] | null;
+            /** Competitor Mentions */
+            competitor_mentions?: string[] | null;
+            /** Enabled Flows */
+            enabled_flows?: string[] | null;
+            /** Group Join Limit */
+            group_join_limit?: number | null;
+            /** Headless */
+            headless?: boolean | null;
+            /** Primary Keywords */
+            primary_keywords?: string[] | null;
+            /** Secondary Keywords */
+            secondary_keywords?: string[] | null;
+        };
+        /**
+         * BrandSummary
+         * @description One row's list-view shape (`GET /brands`).
+         */
+        BrandSummary: {
+            /**
+             * Brand Dir
+             * @default
+             */
+            brand_dir: string;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Enabled Flows
+             * @default []
+             */
+            enabled_flows: string[];
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Niche */
+            niche: string;
+            /** Status */
+            status: string;
         };
         /**
          * CampaignDetail
@@ -1027,31 +2045,11 @@ export interface components {
          *     can render the timeline view without a second round-trip.
          */
         CampaignDetail: {
-            /** Name */
-            name: string;
-            /** Last Run */
-            last_run?: string | null;
             /**
              * Current Task Index
              * @default 0
              */
             current_task_index: number;
-            /**
-             * Last Status
-             * @default never
-             * @enum {string}
-             */
-            last_status: "success" | "error" | "never";
-            /**
-             * Ready Count
-             * @default 0
-             */
-            ready_count: number;
-            /**
-             * Published Count
-             * @default 0
-             */
-            published_count: number;
             /**
              * Has Prepare Tasks
              * @default false
@@ -1069,6 +2067,26 @@ export interface components {
             history: {
                 [key: string]: unknown;
             }[];
+            /** Last Run */
+            last_run?: string | null;
+            /**
+             * Last Status
+             * @default never
+             * @enum {string}
+             */
+            last_status: "success" | "error" | "never";
+            /** Name */
+            name: string;
+            /**
+             * Published Count
+             * @default 0
+             */
+            published_count: number;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
         };
         /**
          * CampaignListResponse
@@ -1088,31 +2106,11 @@ export interface components {
          *     when the campaign has no run history yet.
          */
         CampaignSummary: {
-            /** Name */
-            name: string;
-            /** Last Run */
-            last_run?: string | null;
             /**
              * Current Task Index
              * @default 0
              */
             current_task_index: number;
-            /**
-             * Last Status
-             * @default never
-             * @enum {string}
-             */
-            last_status: "success" | "error" | "never";
-            /**
-             * Ready Count
-             * @default 0
-             */
-            ready_count: number;
-            /**
-             * Published Count
-             * @default 0
-             */
-            published_count: number;
             /**
              * Has Prepare Tasks
              * @default false
@@ -1123,49 +2121,69 @@ export interface components {
              * @default false
              */
             has_publish_tasks: boolean;
+            /** Last Run */
+            last_run?: string | null;
+            /**
+             * Last Status
+             * @default never
+             * @enum {string}
+             */
+            last_status: "success" | "error" | "never";
+            /** Name */
+            name: string;
+            /**
+             * Published Count
+             * @default 0
+             */
+            published_count: number;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
         };
         /**
          * CampaignVerifyItem
          * @description A campaign awaiting final human verification before publish.
          */
         CampaignVerifyItem: {
-            /** Id */
-            id: string;
-            /**
-             * Status
-             * @default pending
-             */
-            status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
+            /** Audio Size Kb */
+            audio_size_kb?: number | null;
             /** Created At */
             created_at?: string | null;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "campaign_verify";
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Id */
+            id: string;
             /**
              * Seed Id
              * @default
              */
             seed_id: string;
+            /** Slide Count */
+            slide_count?: number | null;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
             /**
              * Title
              * @default
              */
             title: string;
             /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "campaign_verify";
+            /**
              * Wp Draft Url
              * @default
              */
             wp_draft_url: string;
-            /** Audio Size Kb */
-            audio_size_kb?: number | null;
-            /** Slide Count */
-            slide_count?: number | null;
         } & {
             [key: string]: unknown;
         };
@@ -1173,12 +2191,12 @@ export interface components {
         CandidatesResponse: {
             /** Candidates */
             candidates: components["schemas"]["TikTokCandidateItem"][];
-            /** Total */
-            total: number;
             /** Counts */
             counts: {
                 [key: string]: number;
             };
+            /** Total */
+            total: number;
         };
         /**
          * CommentItem
@@ -1189,91 +2207,103 @@ export interface components {
          *     and legacy items in ``comment_queue.json`` can still validate.
          */
         CommentItem: {
-            /** Id */
-            id: string;
-            /**
-             * Status
-             * @default pending
-             */
-            status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
             /** Created At */
             created_at?: string | null;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "comment";
-            /**
-             * Platform
-             * @enum {string}
-             */
-            platform: "facebook" | "instagram" | "wordpress" | "system";
-            /** Group Or Hashtag */
-            group_or_hashtag?: string | null;
-            /** Post Url */
-            post_url?: string | null;
-            /**
-             * Post Text
-             * @default
-             */
-            post_text: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
             /**
              * Draft Comment
              * @default
              */
             draft_comment: string;
+            /** Group Or Hashtag */
+            group_or_hashtag?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Platform
+             * @enum {string}
+             */
+            platform: "facebook" | "instagram" | "wordpress" | "system";
+            /**
+             * Post Text
+             * @default
+             */
+            post_text: string;
+            /** Post Url */
+            post_url?: string | null;
             /** Relevance Score */
             relevance_score?: number | null;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "comment";
         } & {
             [key: string]: unknown;
         };
         /** ContentIdea */
         ContentIdea: {
-            /** Id */
-            id: string;
-            /** Category */
-            category: string;
-            /** Topic */
-            topic: string;
-            /** Target Keyword */
-            target_keyword?: string | null;
-            /** Nalla Context */
-            nalla_context?: string | null;
-            /** Post Goal */
-            post_goal?: string | null;
-            /** Status */
-            status: string;
-            /** Input */
-            input?: string | null;
             /** Brand Id */
             brand_id?: string | null;
             /** Brand Name */
             brand_name?: string | null;
+            /** Category */
+            category: string;
             /** Created At */
             created_at?: string | null;
+            /** Failure Reason */
+            failure_reason?: string | null;
+            /** Id */
+            id: string;
+            /** Input */
+            input?: string | null;
+            /** Match Score */
+            match_score?: number | null;
+            /** Nalla Context */
+            nalla_context?: string | null;
+            /** Post Goal */
+            post_goal?: string | null;
+            /** Reel Fb Caption */
+            reel_fb_caption?: string | null;
+            /** Reel Ig Caption */
+            reel_ig_caption?: string | null;
+            /** Reel Source */
+            reel_source?: string | null;
+            /** Reel Validation Flags */
+            reel_validation_flags?: string[] | null;
+            /** Status */
+            status: string;
+            /** Target Keyword */
+            target_keyword?: string | null;
+            /** Topic */
+            topic: string;
         };
         /**
          * DecisionResponse
          * @description Returned on every commit endpoint.
          */
         DecisionResponse: {
-            /** Id */
-            id: string;
-            /** Status */
-            status: string;
+            /** Decided At */
+            decided_at: string;
             /**
              * Decided By
              * @enum {string}
              */
             decided_by: "telegram" | "web_ui" | "auto";
-            /** Decided At */
-            decided_at: string;
+            /** Id */
+            id: string;
             /** Join Status */
             join_status?: "queued" | null;
+            /** Status */
+            status: string;
         };
         /**
          * EditBody
@@ -1284,24 +2314,49 @@ export interface components {
          *     handler so the response is a clean 422 instead of an opaque ValidationError.
          */
         EditBody: {
-            /** Text */
-            text?: string | null;
             /** Fb Caption */
             fb_caption?: string | null;
             /** Ig Caption */
             ig_caption?: string | null;
+            /** Text */
+            text?: string | null;
         };
         /**
          * Engagement
          * @description One published post or comment.
          */
         Engagement: {
+            /**
+             * Content
+             * @default
+             */
+            content: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
             /** Id */
             id: string;
-            /** Platform */
-            platform: string;
             /** Kind */
             kind: string;
+            /**
+             * Permalink
+             * @default
+             */
+            permalink: string;
+            /** Platform */
+            platform: string;
+            /**
+             * Posted At
+             * @default
+             */
+            posted_at: string;
+            /**
+             * Source Ref
+             * @default
+             */
+            source_ref: string;
             /** Status */
             status: string;
             /**
@@ -1314,42 +2369,17 @@ export interface components {
              * @default
              */
             target_url: string;
-            /**
-             * Permalink
-             * @default
-             */
-            permalink: string;
-            /**
-             * Content
-             * @default
-             */
-            content: string;
-            /**
-             * Source Ref
-             * @default
-             */
-            source_ref: string;
-            /**
-             * Error
-             * @default
-             */
-            error: string;
-            /**
-             * Posted At
-             * @default
-             */
-            posted_at: string;
         };
         /** EngagementsResponse */
         EngagementsResponse: {
-            /** Engagements */
-            engagements: components["schemas"]["Engagement"][];
-            /** Total */
-            total: number;
             /** Counts */
             counts: {
                 [key: string]: number;
             };
+            /** Engagements */
+            engagements: components["schemas"]["Engagement"][];
+            /** Total */
+            total: number;
         };
         /**
          * FacebookGroup
@@ -1360,30 +2390,30 @@ export interface components {
             group_name: string;
             /** Group Url */
             group_url: string;
-            /** Status */
-            status: string;
             /** Joined At */
             joined_at?: string | null;
-            /** Rules */
-            rules?: string | null;
             /** Last Post At */
             last_post_at?: string | null;
-            /** Source Notification */
-            source_notification?: string | null;
-            /** Privacy */
-            privacy?: string | null;
+            /** Last Post Caption */
+            last_post_caption?: string | null;
+            /** Last Post Status */
+            last_post_status?: string | null;
             /** Member Count */
             member_count?: string | null;
-            /** Posting Mode */
-            posting_mode?: string | null;
             /** Notes */
             notes?: {
                 [key: string]: string;
             }[] | null;
-            /** Last Post Status */
-            last_post_status?: string | null;
-            /** Last Post Caption */
-            last_post_caption?: string | null;
+            /** Posting Mode */
+            posting_mode?: string | null;
+            /** Privacy */
+            privacy?: string | null;
+            /** Rules */
+            rules?: string | null;
+            /** Source Notification */
+            source_notification?: string | null;
+            /** Status */
+            status: string;
         } & {
             [key: string]: unknown;
         };
@@ -1392,22 +2422,199 @@ export interface components {
          * @description Body for PUT /api/v1/facebook/groups/{group_name}.
          */
         FacebookGroupUpdateBody: {
-            /** Status */
-            status?: string | null;
             /** Posting Mode */
             posting_mode?: string | null;
+            /** Status */
+            status?: string | null;
         };
         /**
          * FacebookGroupsResponse
          * @description Envelope for GET /api/v1/facebook/groups.
          */
         FacebookGroupsResponse: {
+            /** As Of */
+            as_of: string;
             /** Groups */
             groups: components["schemas"]["FacebookGroup"][];
             /** Total */
             total: number;
-            /** As Of */
-            as_of: string;
+        };
+        /**
+         * FlowLastRun
+         * @description One `worker_runs` row's shape, as surfaced to the flow-readiness panel.
+         */
+        FlowLastRun: {
+            /** Last Run */
+            last_run: string;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "success" | "error";
+        };
+        /**
+         * FlowReadiness
+         * @description A flow-specific "is there anything for this flow to do yet" signal.
+         */
+        FlowReadiness: {
+            /** Count */
+            count?: number | null;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
+            /**
+             * Ready
+             * @default true
+             */
+            ready: boolean;
+            /** Signal */
+            signal?: string | null;
+        };
+        /**
+         * FlowStatus
+         * @description One managed flow's full readiness-panel entry (`GET /brands/{id}/flows`).
+         */
+        FlowStatus: {
+            /** Enabled */
+            enabled: boolean;
+            /** Flow Id */
+            flow_id: string;
+            last_run?: components["schemas"]["FlowLastRun"] | null;
+            readiness: components["schemas"]["FlowReadiness"];
+            /** Script */
+            script: string;
+        };
+        /** FlowStatusResponse */
+        FlowStatusResponse: {
+            /** Brand Id */
+            brand_id: string;
+            /** Flows */
+            flows: components["schemas"]["FlowStatus"][];
+        };
+        /**
+         * FlowTemplate
+         * @description One row of the pre-brand flow catalog (`flow_templates` table).
+         *
+         *     Seeded from `profiles/*.json` by `scripts/backfill_flow_templates.py`;
+         *     `lib/brand_provisioning.py` reads this when onboarding a new brand.
+         *     Editing a row here only affects brands provisioned AFTER the edit --
+         *     an already-provisioned brand's own `schedule_tasks` row is an
+         *     independent copy (see `lib/schedule_db.py`), never retroactively
+         *     touched by a template change.
+         */
+        FlowTemplate: {
+            /** Approval Channel */
+            approval_channel?: string | null;
+            /**
+             * Args
+             * @default []
+             */
+            args: string[];
+            /**
+             * Depends On
+             * @default []
+             */
+            depends_on: string[];
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /**
+             * Inputs
+             * @default []
+             */
+            inputs: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Order Num
+             * @default 0
+             */
+            order_num: number;
+            /** Output File */
+            output_file?: string | null;
+            /** Platform */
+            platform: string;
+            /**
+             * Re Run Guard
+             * @default true
+             */
+            re_run_guard: boolean;
+            /**
+             * Requires Approval
+             * @default false
+             */
+            requires_approval: boolean;
+            /**
+             * Requires Browser
+             * @default false
+             */
+            requires_browser: boolean;
+            /**
+             * Schedule
+             * @default {}
+             */
+            schedule: {
+                [key: string]: unknown;
+            };
+            /** Script */
+            script?: string | null;
+            /** Skill */
+            skill?: string | null;
+            /**
+             * Telegram Notify
+             * @default true
+             */
+            telegram_notify: boolean;
+            /** Title */
+            title: string;
+        };
+        /**
+         * FlowTemplateUpdateRequest
+         * @description Partial update body for `PATCH /flow-templates/{id}`.
+         *
+         *     Only fields actually present in the request body are changed
+         *     (`model_dump(exclude_unset=True)`) -- omitting a field leaves it as-is,
+         *     matching `lib.schedule_db.save_task`'s partial-upsert convention.
+         */
+        FlowTemplateUpdateRequest: {
+            /** Cron */
+            cron?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Re Run Guard */
+            re_run_guard?: boolean | null;
+            /** Requires Approval */
+            requires_approval?: boolean | null;
+            /** Requires Browser */
+            requires_browser?: boolean | null;
+            /** Script */
+            script?: string | null;
+            /** Telegram Notify */
+            telegram_notify?: boolean | null;
+        };
+        /** GenerateStatus */
+        GenerateStatus: {
+            /** Detail */
+            detail?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at?: string | null;
         };
         /**
          * GroupItem
@@ -1422,40 +2629,40 @@ export interface components {
          *     ``description``) intact for the UI even though they aren't declared.
          */
         GroupItem: {
+            /** Added To Pending */
+            added_to_pending: string;
+            /** Competitor Mentions */
+            competitor_mentions?: number | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /** Found Via Query */
+            found_via_query?: string | null;
             /** Id */
             id: string;
+            /** Member Count */
+            member_count?: number | null;
+            /** Name */
+            name: string;
+            /** Privacy */
+            privacy?: ("public" | "private") | null;
+            /** Score */
+            score?: number | null;
             /**
              * Status
              * @default pending
              */
             status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
-            /** Created At */
-            created_at?: string | null;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
             type: "group_to_join";
-            /** Name */
-            name: string;
             /** Url */
             url: string;
-            /** Member Count */
-            member_count?: number | null;
-            /** Score */
-            score?: number | null;
-            /** Privacy */
-            privacy?: ("public" | "private") | null;
-            /** Found Via Query */
-            found_via_query?: string | null;
-            /** Competitor Mentions */
-            competitor_mentions?: number | null;
-            /** Added To Pending */
-            added_to_pending: string;
         } & {
             [key: string]: unknown;
         };
@@ -1469,64 +2676,64 @@ export interface components {
          * @description A recipe/content idea from the ideator queue awaiting approval.
          */
         IdeaItem: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /** Created At */
+            created_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
+            /**
+             * Evidence
+             * @default
+             */
+            evidence: string;
             /** Id */
             id: string;
+            /**
+             * Search Demand Estimate
+             * @default
+             */
+            search_demand_estimate: string;
+            /** Seasonal Relevance */
+            seasonal_relevance?: number | null;
             /**
              * Status
              * @default pending
              */
             status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
-            /** Created At */
-            created_at?: string | null;
-            /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "idea";
             /**
              * Title
              * @default
              */
             title: string;
             /**
-             * Category
-             * @default
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
-            category: string;
+            type: "idea";
             /**
              * Why Now
              * @default
              */
             why_now: string;
-            /**
-             * Evidence
-             * @default
-             */
-            evidence: string;
-            /** Seasonal Relevance */
-            seasonal_relevance?: number | null;
-            /**
-             * Search Demand Estimate
-             * @default
-             */
-            search_demand_estimate: string;
         } & {
             [key: string]: unknown;
         };
         /** IdeasResponse */
         IdeasResponse: {
-            /** Ideas */
-            ideas: components["schemas"]["ContentIdea"][];
-            /** Total */
-            total: number;
             /** Counts */
             counts: {
                 [key: string]: number;
             };
+            /** Ideas */
+            ideas: components["schemas"]["ContentIdea"][];
+            /** Total */
+            total: number;
         };
         /**
          * LogTailResponse
@@ -1535,48 +2742,26 @@ export interface components {
         LogTailResponse: {
             /** Label */
             label: string;
-            /** Path */
-            path: string | null;
             /** Lines */
             lines: string[];
+            /** Path */
+            path: string | null;
             /** Truncated */
             truncated: boolean;
-        };
-        /**
-         * MissingFlowEntry
-         * @description One scheduled flow that's defined in schedule.json but not loaded in launchctl.
-         */
-        MissingFlowEntry: {
-            /** Label */
-            label: string;
-            /** Plist Path */
-            plist_path?: string | null;
-            /** Command */
-            command: string;
-        };
-        /**
-         * MissingFlowsResponse
-         * @description Envelope for ``GET /api/v1/schedule/missing``.
-         */
-        MissingFlowsResponse: {
-            /** Missing */
-            missing: components["schemas"]["MissingFlowEntry"][];
-            /** As Of */
-            as_of: string;
         };
         /**
          * PendingResponse
          * @description Envelope for ``GET /api/v1/pending``.
          */
         PendingResponse: {
-            /** Items */
-            items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"])[];
+            /** As Of */
+            as_of: string;
             /** Counts */
             counts: {
                 [key: string]: number;
             };
-            /** As Of */
-            as_of: string;
+            /** Items */
+            items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"])[];
         };
         /**
          * PublishChannel
@@ -1588,21 +2773,6 @@ export interface components {
          */
         PublishChannel: {
             /**
-             * State
-             * @default
-             */
-            state: string;
-            /**
-             * Url
-             * @default
-             */
-            url: string;
-            /**
-             * Ref
-             * @default
-             */
-            ref: string;
-            /**
              * At
              * @default
              */
@@ -1613,15 +2783,30 @@ export interface components {
              */
             caption: string;
             /**
+             * Post Url
+             * @default
+             */
+            post_url: string;
+            /**
              * Reel Url
              * @default
              */
             reel_url: string;
             /**
-             * Post Url
+             * Ref
              * @default
              */
-            post_url: string;
+            ref: string;
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
         };
         /** RecipeCardWebhookPayload */
         RecipeCardWebhookPayload: {
@@ -1640,133 +2825,133 @@ export interface components {
          * @description Full recipe payload for ``GET /api/v1/recipes/{id}``.
          */
         RecipeDetail: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
+            /** Affiliate Products */
+            affiliate_products?: components["schemas"]["AffiliateProduct"][];
             /**
              * Artifacts Path
              * @default
              */
             artifacts_path: string;
             /**
-             * Card Path
-             * @default
-             */
-            card_path: string;
-            /**
              * Card Created At
              * @default
              */
             card_created_at: string;
-            /**
-             * Card Html Path
-             * @default
-             */
-            card_html_path: string;
             /**
              * Card Html Created At
              * @default
              */
             card_html_created_at: string;
             /**
-             * Wp Url
+             * Card Html Path
              * @default
              */
-            wp_url: string;
+            card_html_path: string;
             /**
-             * Ig Url
+             * Card Path
              * @default
              */
-            ig_url: string;
-            /**
-             * Fb Url
-             * @default
-             */
-            fb_url: string;
-            /**
-             * Published At
-             * @default
-             */
-            published_at: string;
+            card_path: string;
             /**
              * Category
              * @default
              */
             category: string;
             /**
-             * Dog Safe
-             * @default false
-             */
-            dog_safe: boolean;
-            /** Toxic Flags */
-            toxic_flags?: string[];
-            /** Season Tags */
-            season_tags?: string[];
-            /** Affiliate Products */
-            affiliate_products?: components["schemas"]["AffiliateProduct"][];
-            /**
              * Content Status
              * @default none
              */
             content_status: string;
-            /** Status */
-            status: string;
-            /**
-             * Source Url
-             * @default
-             */
-            source_url: string;
-            /**
-             * Source Name
-             * @default
-             */
-            source_name: string;
-            /**
-             * Prep Minutes
-             * @default 0
-             */
-            prep_minutes: number;
             /**
              * Cook Minutes
              * @default 0
              */
             cook_minutes: number;
             /**
-             * Total Minutes
-             * @default 0
-             */
-            total_minutes: number;
-            /**
-             * Servings
+             * Display Name
              * @default
              */
-            servings: string;
-            /** Publish Status */
-            publish_status?: {
-                [key: string]: components["schemas"]["PublishChannel"];
-            };
-            /** Ingredients */
-            ingredients?: components["schemas"]["RecipeIngredient"][];
-            /** Steps */
-            steps?: string[];
-            /** Nutrition */
-            nutrition?: {
-                [key: string]: string;
-            };
-            /** Tags */
-            tags?: string[];
+            display_name: string;
+            /**
+             * Dog Safe
+             * @default false
+             */
+            dog_safe: boolean;
+            /**
+             * Fb Url
+             * @default
+             */
+            fb_url: string;
             /**
              * Hero Image Url
              * @default
              */
             hero_image_url: string;
+            /** Id */
+            id: string;
+            /**
+             * Ig Url
+             * @default
+             */
+            ig_url: string;
+            /** Ingredients */
+            ingredients?: components["schemas"]["RecipeIngredient"][];
             media?: components["schemas"]["RecipeMedia"] | null;
+            /** Name */
+            name: string;
+            /** Nutrition */
+            nutrition?: {
+                [key: string]: string;
+            };
+            /**
+             * Prep Minutes
+             * @default 0
+             */
+            prep_minutes: number;
+            /** Publish Status */
+            publish_status?: {
+                [key: string]: components["schemas"]["PublishChannel"];
+            };
+            /**
+             * Published At
+             * @default
+             */
+            published_at: string;
+            /** Season Tags */
+            season_tags?: string[];
+            /**
+             * Servings
+             * @default
+             */
+            servings: string;
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * Source Url
+             * @default
+             */
+            source_url: string;
+            /** Status */
+            status: string;
+            /** Steps */
+            steps?: string[];
+            /** Tags */
+            tags?: string[];
+            /**
+             * Total Minutes
+             * @default 0
+             */
+            total_minutes: number;
+            /** Toxic Flags */
+            toxic_flags?: string[];
+            /**
+             * Wp Url
+             * @default
+             */
+            wp_url: string;
         };
         /**
          * RecipeIngredient
@@ -1775,6 +2960,11 @@ export interface components {
         RecipeIngredient: {
             /** Item */
             item: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
             /**
              * Qty
              * @default
@@ -1785,11 +2975,6 @@ export interface components {
              * @default
              */
             unit: string;
-            /**
-             * Notes
-             * @default
-             */
-            notes: string;
         };
         /**
          * RecipeMedia
@@ -1800,131 +2985,131 @@ export interface components {
          *     ``/recipes/{id}/media-file`` endpoint.
          */
         RecipeMedia: {
-            /** Images */
-            images?: string[];
-            /** Reels */
-            reels?: string[];
             /** Audio */
             audio?: string[];
             /** Featured Image */
             featured_image?: string | null;
+            /** Images */
+            images?: string[];
+            /** Reels */
+            reels?: string[];
         };
         /**
          * RecipeSummary
          * @description List-row view of a stored recipe (no ingredients/steps).
          */
         RecipeSummary: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /**
-             * Display Name
-             * @default
-             */
-            display_name: string;
+            /** Affiliate Products */
+            affiliate_products?: components["schemas"]["AffiliateProduct"][];
             /**
              * Artifacts Path
              * @default
              */
             artifacts_path: string;
             /**
-             * Card Path
-             * @default
-             */
-            card_path: string;
-            /**
              * Card Created At
              * @default
              */
             card_created_at: string;
-            /**
-             * Card Html Path
-             * @default
-             */
-            card_html_path: string;
             /**
              * Card Html Created At
              * @default
              */
             card_html_created_at: string;
             /**
-             * Wp Url
+             * Card Html Path
              * @default
              */
-            wp_url: string;
+            card_html_path: string;
             /**
-             * Ig Url
+             * Card Path
              * @default
              */
-            ig_url: string;
-            /**
-             * Fb Url
-             * @default
-             */
-            fb_url: string;
-            /**
-             * Published At
-             * @default
-             */
-            published_at: string;
+            card_path: string;
             /**
              * Category
              * @default
              */
             category: string;
             /**
-             * Dog Safe
-             * @default false
-             */
-            dog_safe: boolean;
-            /** Toxic Flags */
-            toxic_flags?: string[];
-            /** Season Tags */
-            season_tags?: string[];
-            /** Affiliate Products */
-            affiliate_products?: components["schemas"]["AffiliateProduct"][];
-            /**
              * Content Status
              * @default none
              */
             content_status: string;
-            /** Status */
-            status: string;
-            /**
-             * Source Url
-             * @default
-             */
-            source_url: string;
-            /**
-             * Source Name
-             * @default
-             */
-            source_name: string;
-            /**
-             * Prep Minutes
-             * @default 0
-             */
-            prep_minutes: number;
             /**
              * Cook Minutes
              * @default 0
              */
             cook_minutes: number;
             /**
-             * Total Minutes
+             * Display Name
+             * @default
+             */
+            display_name: string;
+            /**
+             * Dog Safe
+             * @default false
+             */
+            dog_safe: boolean;
+            /**
+             * Fb Url
+             * @default
+             */
+            fb_url: string;
+            /** Id */
+            id: string;
+            /**
+             * Ig Url
+             * @default
+             */
+            ig_url: string;
+            /** Name */
+            name: string;
+            /**
+             * Prep Minutes
              * @default 0
              */
-            total_minutes: number;
+            prep_minutes: number;
+            /** Publish Status */
+            publish_status?: {
+                [key: string]: components["schemas"]["PublishChannel"];
+            };
+            /**
+             * Published At
+             * @default
+             */
+            published_at: string;
+            /** Season Tags */
+            season_tags?: string[];
             /**
              * Servings
              * @default
              */
             servings: string;
-            /** Publish Status */
-            publish_status?: {
-                [key: string]: components["schemas"]["PublishChannel"];
-            };
+            /**
+             * Source Name
+             * @default
+             */
+            source_name: string;
+            /**
+             * Source Url
+             * @default
+             */
+            source_url: string;
+            /** Status */
+            status: string;
+            /**
+             * Total Minutes
+             * @default 0
+             */
+            total_minutes: number;
+            /** Toxic Flags */
+            toxic_flags?: string[];
+            /**
+             * Wp Url
+             * @default
+             */
+            wp_url: string;
         };
         /**
          * RecipesResponse
@@ -1936,6 +3121,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** RefreshResponse */
+        RefreshResponse: {
+            /** New Expires At */
+            new_expires_at: string | null;
+            /** Platform */
+            platform: string;
+            /** Refreshed */
+            refreshed: boolean;
+            /** Token Type */
+            token_type: string;
+        };
         /**
          * RejectBody
          * @description Body for ``POST /items/{id}/reject``. ``reason`` is free-form.
@@ -1945,38 +3141,69 @@ export interface components {
             reason?: string | null;
         };
         /**
+         * RunNowRequest
+         * @description Optional body for `POST /brands/{id}/flows/{flow_id}/run`.
+         *
+         *     `headless=None` (the default -- omit the field entirely) leaves the
+         *     worker container's own `PLAYWRIGHT_HEADLESS` env var in effect.
+         *     Explicitly `False` requests a visible browser for this one run only --
+         *     only meaningful where the worker process actually has a display (e.g.
+         *     local dev); a bare Docker container has none, so Playwright will raise
+         *     a clear "Missing X server" error, visible via the flow's log, rather
+         *     than silently doing nothing.
+         */
+        RunNowRequest: {
+            /** Headless */
+            headless?: boolean | null;
+        };
+        /**
+         * RunNowResponse
+         * @description `POST /brands/{id}/flows/{flow_id}/run` — always enqueues; no cron-due
+         *     or lock check (the equivalent guards `scripts/task_dispatcher.py`
+         *     applies for its own scheduled passes don't apply to an explicit,
+         *     operator-initiated run).
+         */
+        RunNowResponse: {
+            /** Brand Id */
+            brand_id: string;
+            /**
+             * Enqueued
+             * @default true
+             */
+            enqueued: boolean;
+            /** Flow Id */
+            flow_id: string;
+            /** Schedule Task Id */
+            schedule_task_id: string;
+        };
+        /**
+         * ScheduleUpdateRequest
+         * @description Body for `PATCH /workers/{label}/schedule` — a new cron expression.
+         */
+        ScheduleUpdateRequest: {
+            /** Cron */
+            cron: string;
+        };
+        /**
          * SeedItem
          * @description A recipe seed awaiting approval before full campaign generation.
          */
         SeedItem: {
-            /** Id */
-            id: string;
-            /**
-             * Status
-             * @default pending
-             */
-            status: string;
-            /** Decided By */
-            decided_by?: ("telegram" | "web_ui" | "auto") | null;
-            /** Decided At */
-            decided_at?: string | null;
+            /** Cook Minutes */
+            cook_minutes?: number | null;
             /** Created At */
             created_at?: string | null;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: ("telegram" | "web_ui" | "auto") | null;
             /**
-             * @description discriminator enum property added by openapi-typescript
-             * @enum {string}
-             */
-            type: "seed";
-            /**
-             * Seed Id
+             * Dog Safety Notes
              * @default
              */
-            seed_id: string;
-            /**
-             * Title
-             * @default
-             */
-            title: string;
+            dog_safety_notes: string;
+            /** Id */
+            id: string;
             /**
              * Ingredients
              * @default []
@@ -1984,25 +3211,90 @@ export interface components {
             ingredients: string[];
             /** Prep Minutes */
             prep_minutes?: number | null;
-            /** Cook Minutes */
-            cook_minutes?: number | null;
             /**
-             * Yield Servings
+             * Seed Id
              * @default
              */
-            yield_servings: string;
+            seed_id: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
             /**
              * Tags
              * @default []
              */
             tags: string[];
             /**
-             * Dog Safety Notes
+             * Title
              * @default
              */
-            dog_safety_notes: string;
+            title: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "seed";
+            /**
+             * Yield Servings
+             * @default
+             */
+            yield_servings: string;
         } & {
             [key: string]: unknown;
+        };
+        /** SessionStatus */
+        SessionStatus: {
+            /** Exists */
+            exists: boolean;
+            /** Last Saved */
+            last_saved: string | null;
+            /** Login Command */
+            login_command: string;
+            /** Platform */
+            platform: string;
+        };
+        /** SessionStatusResponse */
+        SessionStatusResponse: {
+            /** Sessions */
+            sessions: components["schemas"]["SessionStatus"][];
+        };
+        /** SocialPost */
+        SocialPost: {
+            /** Fb Caption */
+            fb_caption?: string | null;
+            /** Fb Due At */
+            fb_due_at?: string | null;
+            /** Fb Page Post Url */
+            fb_page_post_url?: string | null;
+            /** Id */
+            id: string;
+            /** Ig Caption */
+            ig_caption?: string | null;
+            /** Ig Due At */
+            ig_due_at?: string | null;
+            /** Ig Post Url */
+            ig_post_url?: string | null;
+            /** Image Alt */
+            image_alt?: string | null;
+            /** Social Post Status */
+            social_post_status: string;
+            /** Source */
+            source?: string | null;
+            /** Topic */
+            topic: string;
+            /** Validation Flags */
+            validation_flags?: string[] | null;
+            /** Wp Url */
+            wp_url?: string | null;
+        };
+        /** SocialPostsResponse */
+        SocialPostsResponse: {
+            /** Posts */
+            posts: components["schemas"]["SocialPost"][];
+            /** Total */
+            total: number;
         };
         /** StatusBody */
         StatusBody: {
@@ -2014,10 +3306,10 @@ export interface components {
          * @description Result of an approval/rejection transition.
          */
         StatusChangeResponse: {
-            /** Id */
-            id: string;
             /** Content Status */
             content_status: string;
+            /** Id */
+            id: string;
         };
         /** StatusUpdate */
         StatusUpdate: {
@@ -2032,25 +3324,25 @@ export interface components {
          * @description Result of POST /api/v1/recipes/sync-publish.
          */
         SyncResponse: {
-            /** Updated */
-            updated: number;
             /** Total */
             total: number;
+            /** Updated */
+            updated: number;
         };
         /** TikTokCandidateItem */
         TikTokCandidateItem: {
-            /** Handle */
-            handle: string;
-            /** Display Name */
-            display_name: string;
             /** Bio */
             bio: string;
-            /** Follower Count */
-            follower_count: number;
-            /** Source Hashtag */
-            source_hashtag: string;
             /** Discovered At */
             discovered_at: string;
+            /** Display Name */
+            display_name: string;
+            /** Follower Count */
+            follower_count: number;
+            /** Handle */
+            handle: string;
+            /** Source Hashtag */
+            source_hashtag: string;
             /** Status */
             status: string;
         };
@@ -2059,12 +3351,12 @@ export interface components {
          * @description Envelope for ``POST /api/v1/schedule/{label}/trigger``.
          */
         TriggerResponse: {
-            /** Ok */
-            ok: boolean;
-            /** Message */
-            message: string;
             /** Label */
             label: string;
+            /** Message */
+            message: string;
+            /** Ok */
+            ok: boolean;
             /** Rate Limits */
             rate_limits?: {
                 [key: string]: {
@@ -2074,41 +3366,46 @@ export interface components {
         };
         /** ValidationError */
         ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
             /** Location */
             loc: (string | number)[];
             /** Message */
             msg: string;
             /** Error Type */
             type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
         };
         /** WorkerStatus */
         WorkerStatus: {
-            /** Label */
-            label: string;
-            /** Title */
-            title: string;
+            /** Cron */
+            cron?: string | null;
             /** Description */
             description: string;
-            /** Status */
-            status: string;
-            /** Last Run */
-            last_run?: string | null;
-            /** Message */
-            message?: string | null;
             /**
              * Is Instance
              * @default false
              */
             is_instance: boolean;
+            /** Label */
+            label: string;
+            /** Last Run */
+            last_run?: string | null;
+            /** Message */
+            message?: string | null;
             /**
              * Re Run Guard
              * @default 1
              */
             re_run_guard: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "never" | "running" | "success" | "error";
+            /** Title */
+            title: string;
         };
         /** _TriggerBody */
         _TriggerBody: {
@@ -2122,13 +3419,52 @@ export interface components {
              * @default false
              */
             force: boolean;
+            /** Headless */
+            headless?: boolean | null;
             /**
              * Recipe Ids
              * @default []
              */
             recipe_ids: string[];
-            /** Headless */
-            headless?: boolean | null;
+        };
+        /** ComposeStatus */
+        api__reels_compose_api__ComposeStatus: {
+            /** Ai Images */
+            ai_images?: number | null;
+            /** Detail */
+            detail?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Hero Images */
+            hero_images?: number | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at?: string | null;
+            /** Used Openart */
+            used_openart?: boolean | null;
+        };
+        /** ComposeStatus */
+        api__social_posts_compose_api__ComposeStatus: {
+            /**
+             * Candidates
+             * @default 0
+             */
+            candidates: number;
+            /** Composed */
+            composed?: number | null;
+            /** Detail */
+            detail?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Running */
+            running: boolean;
+            /** Started At */
+            started_at?: string | null;
         };
     };
     responses: never;
@@ -2139,6 +3475,299 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_activity_api_v1_activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                platform?: ("facebook" | "instagram" | "wordpress") | null;
+                action?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_summary_api_v1_activity_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Day to tally, YYYY-MM-DD. Defaults to today (UTC). */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivitySummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_brands_endpoint_api_v1_brands_get: {
+        parameters: {
+            query?: {
+                status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_brand_api_v1_brands_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandProvisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brand_api_v1_brands__brand_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_flow_status_api_v1_brands__brand_id__flows_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_flow_now_api_v1_brands__brand_id__flows__flow_id__run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+                flow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunNowRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunNowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reprovision_brand_api_v1_brands__brand_id__provision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandProvisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_brand_settings_api_v1_brands__brand_id__settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandProvisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_campaigns_api_v1_campaigns_get: {
         parameters: {
             query?: never;
@@ -2221,315 +3850,11 @@ export interface operations {
             };
         };
     };
-    recipe_card_webhook_api_v1_webhooks_recipe_card_post: {
+    get_config_api_v1_config_get: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RecipeCardWebhookPayload"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_recipes_api_v1_recipes_get: {
-        parameters: {
-            query?: {
-                /** @description filter by pipeline status */
-                status?: string | null;
-                /** @description filter by safety verdict */
-                dog_safe?: boolean | null;
-                /** @description filter to recipes in-season for this season */
-                season?: string | null;
-                /** @description filter by publish-content lifecycle state */
-                content_status?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecipesResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recipes_analytics_api_v1_recipes_analytics_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AnalyticsResponse"];
-                };
-            };
-        };
-    };
-    approve_recipe_api_v1_recipes__recipe_id__approve_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusChangeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_recipe_api_v1_recipes__recipe_id__reject_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StatusChangeResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_recipe_api_v1_recipes__recipe_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RecipeDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recipe_page_api_v1_recipes__recipe_id__page_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": string;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recipe_image_preview_api_v1_recipes__recipe_id__image_preview_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/html": string;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    sync_publish_api_v1_recipes_sync_publish_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncResponse"];
-                };
-            };
-        };
-    };
-    list_artifacts_api_v1_recipes__recipe_id__artifacts_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ArtifactsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_artifact_api_v1_recipes__recipe_id__artifact_get: {
-        parameters: {
-            query: {
-                /** @description path relative to the artifact folder */
-                path: string;
-            };
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
             cookie?: never;
         };
         requestBody?: never;
@@ -2541,80 +3866,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_media_file_api_v1_recipes__recipe_id__media_file_get: {
-        parameters: {
-            query: {
-                /** @description BRAND_DIR-relative media path from the manifest */
-                path: string;
-            };
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_story_card_api_v1_recipes__recipe_id__story_card_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                recipe_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -2656,6 +3907,136 @@ export interface operations {
             };
         };
     };
+    list_facebook_groups_api_v1_facebook_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacebookGroupsResponse"];
+                };
+            };
+        };
+    };
+    update_facebook_group_api_v1_facebook_groups__group_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FacebookGroupUpdateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FacebookGroup"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_flow_templates_api_v1_flow_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTemplate"][];
+                };
+            };
+        };
+    };
+    update_flow_template_api_v1_flow_templates__flow_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                flow_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlowTemplateUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowTemplate"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_api_v1_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     list_ideas_api_v1_ideas_get: {
         parameters: {
             query?: {
@@ -2680,6 +4061,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IdeasResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_ideas_api_v1_ideas_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    generate_status_api_v1_ideas_generate_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateStatus"];
+                };
+            };
+        };
+    };
+    get_reel_video_api_v1_ideas__idea_id__reel_video__platform__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+                platform: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -2795,6 +4250,1102 @@ export interface operations {
             };
         };
     };
+    get_item_api_v1_items__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_item_api_v1_items__item_id__approve_post: {
+        parameters: {
+            query?: {
+                channel?: string | null;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_item_api_v1_items__item_id__edit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EditBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_item_api_v1_items__item_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RejectBody"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_facebook_oauth_api_v1_oauth_facebook_get: {
+        parameters: {
+            query: {
+                /** @description Brand this connection belongs to */
+                brand_id: string;
+                /** @description Comma-separated extra scopes to request */
+                scopes?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    facebook_callback_api_v1_oauth_facebook_callback_get: {
+        parameters: {
+            query: {
+                /** @description Authorization code from Facebook */
+                code: string;
+                /** @description CSRF state token */
+                state?: string;
+                /** @description Error from Facebook (if any) */
+                error?: string;
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    debug_facebook_token_api_v1_oauth_facebook_debug_get: {
+        parameters: {
+            query: {
+                /** @description Brand this connection belongs to */
+                brand_id: string;
+                token_type?: string;
+                token_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_page_token_api_v1_oauth_facebook_page__page_id__get: {
+        parameters: {
+            query: {
+                /** @description Brand this connection belongs to */
+                brand_id: string;
+            };
+            header?: never;
+            path: {
+                page_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_facebook_token_api_v1_oauth_facebook_refresh_post: {
+        parameters: {
+            query: {
+                /** @description Brand this connection belongs to */
+                brand_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    openart_callback_api_v1_oauth_openart_callback_get: {
+        parameters: {
+            query?: {
+                code?: string;
+                state?: string;
+                error?: string;
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_openart_oauth_api_v1_oauth_openart_start_get: {
+        parameters: {
+            query: {
+                /** @description Brand this authorization belongs to */
+                brand_id: string;
+                /** @description Frontend URL to land on after the callback (local origins only) */
+                return_to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_tokens_api_v1_oauth_tokens_get: {
+        parameters: {
+            query: {
+                /** @description Brand to list tokens for */
+                brand_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_token_api_v1_oauth__platform___token_type__delete: {
+        parameters: {
+            query: {
+                /** @description Brand this connection belongs to */
+                brand_id: string;
+                token_id?: string;
+            };
+            header?: never;
+            path: {
+                platform: string;
+                token_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_pending_api_v1_pending_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingResponse"];
+                };
+            };
+        };
+    };
+    list_recipes_api_v1_recipes_get: {
+        parameters: {
+            query?: {
+                /** @description filter by pipeline status */
+                status?: string | null;
+                /** @description filter by safety verdict */
+                dog_safe?: boolean | null;
+                /** @description filter to recipes in-season for this season */
+                season?: string | null;
+                /** @description filter by publish-content lifecycle state */
+                content_status?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recipes_analytics_api_v1_recipes_analytics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnalyticsResponse"];
+                };
+            };
+        };
+    };
+    sync_publish_api_v1_recipes_sync_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResponse"];
+                };
+            };
+        };
+    };
+    get_recipe_api_v1_recipes__recipe_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipeDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_recipe_api_v1_recipes__recipe_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChangeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artifact_api_v1_recipes__recipe_id__artifact_get: {
+        parameters: {
+            query: {
+                /** @description path relative to the artifact folder */
+                path: string;
+            };
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_artifacts_api_v1_recipes__recipe_id__artifacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recipe_image_preview_api_v1_recipes__recipe_id__image_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_media_file_api_v1_recipes__recipe_id__media_file_get: {
+        parameters: {
+            query: {
+                /** @description BRAND_DIR-relative media path from the manifest */
+                path: string;
+            };
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recipe_page_api_v1_recipes__recipe_id__page_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_recipe_api_v1_recipes__recipe_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusChangeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_story_card_api_v1_recipes__recipe_id__story_card_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                recipe_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compose_reels_api_v1_reels_compose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    compose_status_api_v1_reels_compose_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__reels_compose_api__ComposeStatus"];
+                };
+            };
+        };
+    };
+    get_session_status_api_v1_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionStatusResponse"];
+                };
+            };
+        };
+    };
+    list_social_posts_api_v1_social_posts_get: {
+        parameters: {
+            query?: {
+                /** @description social_post_status filter */
+                status?: string;
+                brand_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocialPostsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compose_social_posts_api_v1_social_posts_compose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    compose_status_api_v1_social_posts_compose_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["api__social_posts_compose_api__ComposeStatus"];
+                };
+            };
+        };
+    };
+    approve_social_post_api_v1_social_posts__idea_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_social_post_image_api_v1_social_posts__idea_id__image_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_social_post_api_v1_social_posts__idea_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unschedule_social_post_api_v1_social_posts__idea_id__unschedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_candidates_api_v1_tiktok_candidates_get: {
         parameters: {
             query?: {
@@ -2864,204 +5415,28 @@ export interface operations {
             };
         };
     };
-    get_config_api_v1_config_get: {
+    recipe_card_webhook_api_v1_webhooks_recipe_card_post: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-        };
-    };
-    list_pending_api_v1_pending_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PendingResponse"];
-                };
-            };
-        };
-    };
-    list_activity_api_v1_activity_get: {
-        parameters: {
-            query?: {
-                limit?: number;
-                platform?: ("facebook" | "instagram" | "wordpress") | null;
-                action?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActivityResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_item_api_v1_items__item_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    approve_item_api_v1_items__item_id__approve_post: {
-        parameters: {
-            query?: {
-                channel?: string | null;
-            };
-            header?: never;
-            path: {
-                item_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["ApproveBody"] | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DecisionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reject_item_api_v1_items__item_id__reject_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["RejectBody"] | null;
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DecisionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    edit_item_api_v1_items__item_id__edit_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                item_id: string;
-            };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["EditBody"];
+                "application/json": components["schemas"]["RecipeCardWebhookPayload"];
             };
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DecisionResponse"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -3071,81 +5446,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_facebook_groups_api_v1_facebook_groups_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FacebookGroupsResponse"];
-                };
-            };
-        };
-    };
-    update_facebook_group_api_v1_facebook_groups__group_name__put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                group_name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FacebookGroupUpdateBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FacebookGroup"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    health_api_v1_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -3166,6 +5466,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkerStatus"][];
+                };
+            };
+        };
+    };
+    get_schedule_artifact_api_v1_workers__label__artifact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_schedule_log_api_v1_workers__label__log_get: {
+        parameters: {
+            query?: {
+                lines?: number;
+            };
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogTailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_worker_schedule_api_v1_workers__label__schedule_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                label: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3223,92 +5624,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TriggerResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_missing_flows_api_v1_schedule_missing_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MissingFlowsResponse"];
-                };
-            };
-        };
-    };
-    get_schedule_log_api_v1_workers__label__log_get: {
-        parameters: {
-            query?: {
-                lines?: number;
-            };
-            header?: never;
-            path: {
-                label: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LogTailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_schedule_artifact_api_v1_workers__label__artifact_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                label: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */

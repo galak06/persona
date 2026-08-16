@@ -67,7 +67,7 @@ jobs:
           lib/brands_db/ lib/brand_context.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
-          lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py
+          lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py tools/dump_openapi.py
           scripts/backfill_dedup_brand.py scripts/migrate_dedup_cache.py
           tests/test_import_hygiene.py tests/test_deduplication.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
@@ -122,7 +122,7 @@ jobs:
           lib/brands_db/ lib/brand_context.py
           lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
-          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py
+          lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py tools/dump_openapi.py
           scripts/backfill_dedup_brand.py scripts/migrate_dedup_cache.py
           tests/test_import_hygiene.py tests/test_deduplication.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
@@ -177,6 +177,16 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
+
+      # The committed OpenAPI schema is a lockfile too: it is what the frontend
+      # job regenerates its typed client from, so a route or model change that
+      # never reaches it would leave the client silently behind the API.
+      - name: OpenAPI schema is up to date
+        env:
+          BRAND_DIR: brands/_shared
+        run: |
+          python -m tools.dump_openapi -o /tmp/openapi.check.json
+          diff -q /tmp/openapi.check.json frontend/openapi.json
 
       - name: Mypy
         run: >-
@@ -438,6 +448,13 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # The committed client is a lockfile: regenerating it from the committed
+      # schema must be a no-op. It previously sat 31 paths behind the API and
+      # nothing noticed, because `tsc` cannot see staleness in a file nothing
+      # imports.
+      - name: Generated API client is up to date
+        run: npm run check:api
 
       - name: Type check & build
         run: npm run build

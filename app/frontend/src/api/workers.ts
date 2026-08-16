@@ -1,16 +1,10 @@
 import apiClient from "./client";
+import type { components } from "../types/openapi";
 
-export interface WorkerStatus {
-  label: string;
-  title: string;
-  description: string;
-  status: "never" | "running" | "success" | "error";
-  last_run: string | null;
-  message: string | null;
-  is_instance?: boolean;
-  re_run_guard?: number; // 0 = no daily limit; 1 (default) = block after first daily success
-  cron?: string | null;
-}
+// Was hand-declared here, duplicating a Pydantic model already present in the
+// generated client. The duplicate drifted invisibly: `tsc` cannot notice that
+// the generated schema is stale while nothing imports it.
+export type WorkerStatus = components["schemas"]["WorkerStatus"];
 
 export async function fetchWorkers(): Promise<WorkerStatus[]> {
   const { data } = await apiClient.get<WorkerStatus[]>("/workers");

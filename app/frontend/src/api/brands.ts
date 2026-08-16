@@ -1,5 +1,6 @@
 import apiClient from "./client";
 import { endpoints } from "./endpoints";
+import type { components } from "../types/openapi";
 
 /**
  * Manual types: the brand registry (`brands` table via `lib/brands_db`).
@@ -136,11 +137,10 @@ export async function updateBrandSettings(
 }
 
 /** `GET /brands/{id}/flows` — mirrors `api.brand_schemas.FlowStatus` (Python side). */
-export interface FlowLastRun {
-  status: string;
-  last_run: string;
-  message: string;
-}
+// Generated, not hand-written: `status` carries the real union
+// ("running" | "success" | "error") straight from the Pydantic model, so
+// consumers no longer have to launder a bare `string` back into it.
+export type FlowLastRun = components["schemas"]["FlowLastRun"];
 
 export interface FlowReadiness {
   signal: string | null;
