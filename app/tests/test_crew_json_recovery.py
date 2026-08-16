@@ -14,11 +14,13 @@ from lib.crew.json_recovery import (
     REPAIR_EMBEDDED,
     REPAIR_ESCAPES,
     REPAIR_STRAY_QUOTES,
+    REPAIR_TRAILING_COMMAS,
     iter_balanced_json_object_candidates,
     loads_lenient,
     repair_invalid_escapes,
     repair_stray_quotes,
     strip_code_fence,
+    strip_trailing_commas,
 )
 from lib.crew.writer.execute import _parse_structured_output
 from lib.crew.writer.models import WrittenPost
@@ -36,7 +38,60 @@ def test_the_escape_that_lost_a_finished_post_now_parses() -> None:
     assert payload["body_html"].startswith("<p>done.</p>")
 
 
-# ── Layer 3: stray quotes inside a string value ─────────────────────────────
+# ── Layer 3: trailing commas ────────────────────────────────────────────────
+#
+# Third live loss, this one from the strategist: the brief was discarded and
+# the run aborted before the writer ever ran. Shape captured from that run.
+_REAL_TRAILING_COMMA = (
+    '{"outline": [{"heading": "Related Recipes", "level": "H2",\n'
+    '  "notes": "Link to internal recipes and resources.",\n'
+    "  },\n"
+    '  {"heading": "Our Pick", "level": "H2"}],\n'
+    ' "primary_keyword": "freeze dried raw dog food",\n}'
+)
+
+
+def test_the_trailing_comma_that_lost_a_strategist_brief_now_parses() -> None:
+    payload, repair = loads_lenient(_REAL_TRAILING_COMMA)
+
+    assert repair == REPAIR_TRAILING_COMMAS
+    assert isinstance(payload, dict)
+    assert len(payload["outline"]) == 2
+    assert payload["primary_keyword"] == "freeze dried raw dog food"
+
+
+def test_trailing_comma_strip_is_a_noop_on_valid_json() -> None:
+    """A valid document cannot contain a trailing comma, so this layer must
+    never alter one -- that is what makes it safer than the quote repair."""
+    text = json.dumps({"a": [1, 2], "b": {"c": 3}})
+
+    assert strip_trailing_commas(text) == text
+    assert loads_lenient(text) == (json.loads(text), None)
+
+
+def test_trailing_comma_strip_ignores_commas_inside_strings() -> None:
+    text = json.dumps({"body_html": "<p>carrots, celery, and beans]</p>", "n": 1})
+
+    assert strip_trailing_commas(text) == text
+
+
+def test_trailing_comma_strip_is_not_fooled_by_an_escaped_quote() -> None:
+    """An escape pair is consumed whole; otherwise a \\" would look like the
+    end of the string and a comma inside it could be eaten."""
+    text = json.dumps({"a": 'he said "x," and left', "b": [1]})
+
+    assert strip_trailing_commas(text) == text
+    assert loads_lenient(text)[1] is None
+
+
+def test_trailing_commas_in_both_object_and_array_are_removed() -> None:
+    payload, repair = loads_lenient('{"xs": [1, 2, 3, ], "y": 4, }')
+
+    assert repair == REPAIR_TRAILING_COMMAS
+    assert payload == {"xs": [1, 2, 3], "y": 4}
+
+
+# ── Layer 4: stray quotes inside a string value ─────────────────────────────
 #
 # The second live loss, same shape as the first: a complete 1,748-word post
 # discarded because the prose quoted a word. Captured verbatim from the run.

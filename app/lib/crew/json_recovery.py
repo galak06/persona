@@ -17,17 +17,31 @@ links -- and lost all of it to::
 idea bounced back to `approved` as if nothing had been written. The model had
 almost certainly meant `\\n<h2>` and dropped two characters.
 
-Four recovery layers, tried in order, each strictly more invasive:
+Five recovery layers, tried in order, each strictly more invasive:
 
   1. Parse as-is.
   2. Repair illegal escapes (`repair_invalid_escapes`), then parse.
-  3. Escape stray double quotes inside string values
+  3. Drop trailing commas (`strip_trailing_commas`), then parse.
+  4. Escape stray double quotes inside string values
      (`repair_stray_quotes`), then parse.
-  4. Extract the last brace-balanced object embedded in surrounding prose
+  5. Extract the last brace-balanced object embedded in surrounding prose
      (reasoning models narrate around their answer), with and without the
      escape repair.
 
-Layer 3 answers a second live loss, the same shape as the first. A writer
+Layer 3 answers a third live loss, this one from the strategist rather than
+the writer -- it aborted the run before the writer ever executed::
+
+    "notes": "Link to internal recipes and resources.",
+    },
+                                                     ^ comma before `}`
+
+JSON forbids a trailing comma; JavaScript and Python both allow one, so
+models emit them constantly. It runs BEFORE the quote repair because it is
+the safer of the two: a comma directly before `}` or `]` outside a string
+is *unambiguously* invalid, so removing it cannot change the meaning of a
+valid document. The quote repair, by contrast, guesses.
+
+Layer 4 answers a second live loss, the same shape as the first. A writer
 run produced a complete 1,748-word post and lost all of it to prose that
 quoted a word::
 
@@ -58,6 +72,7 @@ _VALID_ESCAPE_CHARS: Final[frozenset[str]] = frozenset('"\\/bfnrtu')
 # How a payload was recovered, for the caller's log. `None` means "parsed
 # clean, no repair needed".
 REPAIR_ESCAPES: Final[str] = "escape_repair"
+REPAIR_TRAILING_COMMAS: Final[str] = "trailing_comma_repair"
 REPAIR_STRAY_QUOTES: Final[str] = "stray_quote_repair"
 REPAIR_EMBEDDED: Final[str] = "embedded_object"
 REPAIR_EMBEDDED_ESCAPES: Final[str] = "embedded_object+escape_repair"
@@ -108,6 +123,52 @@ def repair_invalid_escapes(text: str) -> str:
         else:
             out.append("\\\\")
             i += 1
+    return "".join(out)
+
+
+def strip_trailing_commas(text: str) -> str:
+    """Drop commas that sit directly before a closing `}` or `]`.
+
+    Unlike `repair_stray_quotes` this is not a guess: RFC 8259 has no
+    trailing-comma production, so such a comma can only be model error.
+    Removing it from an ALREADY-VALID document is a no-op, because a valid
+    document cannot contain one -- which is why this layer runs first of
+    the two.
+
+    String-aware, so a comma inside a value (`"a, b]"`) is untouched, and
+    escape pairs are consumed whole so a `\\"` cannot fool the scanner into
+    thinking the string ended.
+    """
+    out: list[str] = []
+    i = 0
+    length = len(text)
+    in_string = False
+    while i < length:
+        char = text[i]
+        if in_string:
+            if char == "\\" and i + 1 < length:
+                out.append(text[i : i + 2])
+                i += 2
+                continue
+            if char == '"':
+                in_string = False
+            out.append(char)
+            i += 1
+            continue
+        if char == '"':
+            in_string = True
+            out.append(char)
+            i += 1
+            continue
+        if char == ",":
+            probe = i + 1
+            while probe < length and text[probe] in " \t\r\n":
+                probe += 1
+            if probe < length and text[probe] in "}]":
+                i += 1  # drop it, keeping the whitespace that follows
+                continue
+        out.append(char)
+        i += 1
     return "".join(out)
 
 
@@ -224,8 +285,20 @@ def loads_lenient(text: str) -> tuple[object | None, str | None]:
     # Stray quotes, applied on top of the escape repair rather than the raw
     # text: a payload can carry both defects, and by here the escape-only
     # attempt has already failed, so there is nothing to lose by stacking.
-    quoted = repair_stray_quotes(repaired)
-    if quoted != repaired:
+    # Each repair stacks on the previous one: a payload can carry several of
+    # these defects at once, and by the time we reach each layer the cheaper
+    # attempts have already failed, so there is nothing to lose by keeping
+    # the earlier fix applied. Trailing commas before stray quotes -- the
+    # comma rule is exact, the quote rule guesses.
+    decommaed = strip_trailing_commas(repaired)
+    if decommaed != repaired:
+        try:
+            return json.loads(decommaed), REPAIR_TRAILING_COMMAS
+        except json.JSONDecodeError:
+            pass
+
+    quoted = repair_stray_quotes(decommaed)
+    if quoted != decommaed:
         try:
             return json.loads(quoted), REPAIR_STRAY_QUOTES
         except json.JSONDecodeError:
