@@ -183,7 +183,9 @@ jobs:
       # never reaches it would leave the client silently behind the API.
       - name: OpenAPI schema is up to date
         env:
-          BRAND_DIR: brands/_shared
+          # The same tracked fixture the Tests job uses. `brands/` is gitignored,
+          # so a real brand dir does not exist on a CI runner.
+          BRAND_DIR: ${{ github.workspace }}/app/tests/fixtures/ci_brand
         run: |
           python -m tools.dump_openapi -o /tmp/openapi.check.json
           diff -q /tmp/openapi.check.json frontend/openapi.json
