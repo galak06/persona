@@ -21,10 +21,10 @@ for CrewAI `Agent`/`Task` construction, `lib.crew.writer.context` /
 `lib.crew.writer.models` for the structured output contracts.
 """
 
+from lib.crew.writer.assemble import assemble_final_html
 from lib.crew.writer.models import ContentBrief, WrittenPost
 from lib.crew.writer.orchestrator import (
     ContentDraftResult,
-    assemble_final_html,
     build_content_brief,
     select_idea,
     strategist_and_writer,

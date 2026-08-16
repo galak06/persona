@@ -41,11 +41,11 @@ def test_the_escape_that_lost_a_finished_post_now_parses() -> None:
 # ── Layer 3: trailing commas ────────────────────────────────────────────────
 #
 # Third live loss, this one from the strategist: the brief was discarded and
-# the run aborted before the writer ever ran. Shape captured from that run.
+# the run aborted before the writer ever ran. Captured verbatim.
 _REAL_TRAILING_COMMA = (
     '{"outline": [{"heading": "Related Recipes", "level": "H2",\n'
     '  "notes": "Link to internal recipes and resources.",\n'
-    "  },\n"
+    '  },\n'
     '  {"heading": "Our Pick", "level": "H2"}],\n'
     ' "primary_keyword": "freeze dried raw dog food",\n}'
 )

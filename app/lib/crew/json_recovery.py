@@ -28,19 +28,6 @@ Five recovery layers, tried in order, each strictly more invasive:
      (reasoning models narrate around their answer), with and without the
      escape repair.
 
-Layer 3 answers a third live loss, this one from the strategist rather than
-the writer -- it aborted the run before the writer ever executed::
-
-    "notes": "Link to internal recipes and resources.",
-    },
-                                                     ^ comma before `}`
-
-JSON forbids a trailing comma; JavaScript and Python both allow one, so
-models emit them constantly. It runs BEFORE the quote repair because it is
-the safer of the two: a comma directly before `}` or `]` outside a string
-is *unambiguously* invalid, so removing it cannot change the meaning of a
-valid document. The quote repair, by contrast, guesses.
-
 Layer 4 answers a second live loss, the same shape as the first. A writer
 run produced a complete 1,748-word post and lost all of it to prose that
 quoted a word::
@@ -51,6 +38,25 @@ quoted a word::
 Unescaped `"` inside a value is not an illegal escape, so layer 2 cannot
 see it. The failure is intermittent in the worst way: it depends purely on
 whether the model happened to use quotation marks.
+
+Layer 3 answers a third, from the strategist rather than the writer::
+
+    "notes": "Link to internal recipes and resources.",
+    },
+                                                     ^ comma before `}`
+
+JSON forbids a trailing comma; JavaScript and Python both allow one, so
+models emit them constantly. It runs BEFORE the quote repair despite being
+listed later in that layer's history, because it is the safer of the two:
+a comma directly before `}` or `]` outside a string is *unambiguously*
+invalid, so removing it cannot change the meaning of a valid document.
+The quote repair, by contrast, guesses (see its docstring).
+
+This module owns the POLICY -- which repairs to try, in what order, and what
+to call the one that won. The repairs themselves are pure `str -> str`
+transforms in `lib.crew.json_repairs`, split out when the combined module
+passed this repo's 300-line limit. All of them are re-exported here, so
+`from lib.crew.json_recovery import repair_invalid_escapes` still works.
 
 Every function here is pure and total: nothing raises, nothing does I/O.
 Callers log which layer succeeded so a recovered result is distinguishable
@@ -63,11 +69,28 @@ import json
 import re
 from typing import Final
 
+from lib.crew.json_repairs import (
+    repair_invalid_escapes,
+    repair_stray_quotes,
+    strip_trailing_commas,
+)
+
+__all__ = [
+    "REPAIR_EMBEDDED",
+    "REPAIR_EMBEDDED_ESCAPES",
+    "REPAIR_ESCAPES",
+    "REPAIR_STRAY_QUOTES",
+    "REPAIR_TRAILING_COMMAS",
+    "iter_balanced_json_object_candidates",
+    "loads_lenient",
+    "repair_invalid_escapes",
+    "repair_stray_quotes",
+    "strip_code_fence",
+    "strip_trailing_commas",
+]
+
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
-# The complete set of characters that may legally follow a backslash inside a
-# JSON string (RFC 8259 §7). Anything else makes the document unparseable.
-_VALID_ESCAPE_CHARS: Final[frozenset[str]] = frozenset('"\\/bfnrtu')
 
 # How a payload was recovered, for the caller's log. `None` means "parsed
 # clean, no repair needed".
@@ -77,10 +100,6 @@ REPAIR_STRAY_QUOTES: Final[str] = "stray_quote_repair"
 REPAIR_EMBEDDED: Final[str] = "embedded_object"
 REPAIR_EMBEDDED_ESCAPES: Final[str] = "embedded_object+escape_repair"
 
-# Characters that may legally follow a string's closing quote, ignoring
-# whitespace. If a `"` inside a string is followed by anything else, it did
-# not close the string -- the model wrote a quotation mark in its prose.
-_CLOSERS: Final[frozenset[str]] = frozenset(",:}]")
 
 
 def strip_code_fence(text: str) -> str:
@@ -89,141 +108,6 @@ def strip_code_fence(text: str) -> str:
     against rather than failing the whole run over it."""
     match = _FENCE_RE.match(text.strip())
     return match.group(1) if match else text.strip()
-
-
-def repair_invalid_escapes(text: str) -> str:
-    """Make every illegal `\\x` sequence legal by escaping the backslash.
-
-    Scanned character-by-character rather than by regex so an already-valid
-    `\\\\` is consumed as one unit and left alone -- a naive substitution
-    would corrupt it into `\\\\\\`, turning a valid document into a broken
-    one. A trailing lone backslash is escaped the same way.
-
-    The backslash is PRESERVED as a literal rather than dropped: we cannot
-    know what the model meant, and keeping the character is the smaller,
-    reversible edit. `\\h2>` therefore survives as the text `\\h2>` -- a
-    visible artifact in the output, which is the correct trade against
-    discarding the entire document, and one the quality gate downstream can
-    still judge.
-    """
-    out: list[str] = []
-    i = 0
-    length = len(text)
-    while i < length:
-        char = text[i]
-        if char != "\\":
-            out.append(char)
-            i += 1
-            continue
-        following = text[i + 1] if i + 1 < length else ""
-        if following in _VALID_ESCAPE_CHARS and following:
-            out.append(char)
-            out.append(following)
-            i += 2
-        else:
-            out.append("\\\\")
-            i += 1
-    return "".join(out)
-
-
-def strip_trailing_commas(text: str) -> str:
-    """Drop commas that sit directly before a closing `}` or `]`.
-
-    Unlike `repair_stray_quotes` this is not a guess: RFC 8259 has no
-    trailing-comma production, so such a comma can only be model error.
-    Removing it from an ALREADY-VALID document is a no-op, because a valid
-    document cannot contain one -- which is why this layer runs first of
-    the two.
-
-    String-aware, so a comma inside a value (`"a, b]"`) is untouched, and
-    escape pairs are consumed whole so a `\\"` cannot fool the scanner into
-    thinking the string ended.
-    """
-    out: list[str] = []
-    i = 0
-    length = len(text)
-    in_string = False
-    while i < length:
-        char = text[i]
-        if in_string:
-            if char == "\\" and i + 1 < length:
-                out.append(text[i : i + 2])
-                i += 2
-                continue
-            if char == '"':
-                in_string = False
-            out.append(char)
-            i += 1
-            continue
-        if char == '"':
-            in_string = True
-            out.append(char)
-            i += 1
-            continue
-        if char == ",":
-            probe = i + 1
-            while probe < length and text[probe] in " \t\r\n":
-                probe += 1
-            if probe < length and text[probe] in "}]":
-                i += 1  # drop it, keeping the whitespace that follows
-                continue
-        out.append(char)
-        i += 1
-    return "".join(out)
-
-
-def repair_stray_quotes(text: str) -> str:
-    """Escape `"` characters that appear *inside* a JSON string value.
-
-    Scans with a tiny state machine. Inside a string, a `"` is treated as the
-    real closing quote only when the next non-whitespace character is one of
-    `_CLOSERS`; otherwise the model wrote a quotation mark in its prose and
-    the quote is escaped so the string survives intact. Backslash escapes are
-    consumed as a unit, so an already-correct `\\"` is left alone.
-
-    HEURISTIC, and deliberately the second-to-last resort. It is wrong for
-    prose that quotes a phrase immediately before a legal delimiter --
-    `he said "hello", then left` reads as a closing quote and stays broken.
-    That case simply falls through to the next layer and, failing that, to
-    `None`; the repair is only ever *returned* when the result actually
-    parses. The cost of a bad guess is therefore a parse failure the caller
-    already had, while the benefit is a complete post that would otherwise
-    be discarded -- which is why this runs at all rather than being ruled
-    out for being imperfect.
-
-    Quotation marks are PRESERVED as escaped quotes rather than dropped: the
-    prose reads as the model wrote it (`"probiotic"` stays quoted), matching
-    `repair_invalid_escapes`'s choice to keep characters over discarding them.
-    """
-    out: list[str] = []
-    i = 0
-    length = len(text)
-    in_string = False
-    while i < length:
-        char = text[i]
-        if not in_string:
-            out.append(char)
-            in_string = char == '"'
-            i += 1
-            continue
-        if char == "\\" and i + 1 < length:
-            out.append(text[i : i + 2])  # consume an escape pair whole
-            i += 2
-            continue
-        if char == '"':
-            probe = i + 1
-            while probe < length and text[probe] in " \t\r\n":
-                probe += 1
-            if probe >= length or text[probe] in _CLOSERS:
-                out.append(char)
-                in_string = False
-            else:
-                out.append('\\"')
-            i += 1
-            continue
-        out.append(char)
-        i += 1
-    return "".join(out)
 
 
 def iter_balanced_json_object_candidates(text: str) -> list[str]:
@@ -282,9 +166,6 @@ def loads_lenient(text: str) -> tuple[object | None, str | None]:
         except json.JSONDecodeError:
             pass
 
-    # Stray quotes, applied on top of the escape repair rather than the raw
-    # text: a payload can carry both defects, and by here the escape-only
-    # attempt has already failed, so there is nothing to lose by stacking.
     # Each repair stacks on the previous one: a payload can carry several of
     # these defects at once, and by the time we reach each layer the cheaper
     # attempts have already failed, so there is nothing to lose by keeping
