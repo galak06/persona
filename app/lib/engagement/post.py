@@ -2,8 +2,12 @@
 
 A Post is a platform-agnostic representation of a discovered third-party post.
 OutboundAdapter implementations construct Post instances; the scanner pipeline
-consumes them. The to_queue_record method produces the per-platform queue
-record shape consumed by comment_poster downstream.
+consumes them.
+
+`to_queue_record` was removed on 2026-08-16: it produced the queue-record shape
+`comment_poster` consumed in the two-stage scan-then-drain design that ADR 0002
+retired. Both engagers comment inline now, so nothing had called it since --
+only its own contract test, which asserted a shape no producer produced.
 """
 from __future__ import annotations
 
@@ -23,42 +27,3 @@ class Post:
     platform_extra: dict[str, object] = field(default_factory=dict)
     # FB extras keys: comment_count, category
     # IG extras keys: like_count, comment_count, weeks_old
-
-    def to_queue_record(
-        self,
-        *,
-        score: float,
-        draft: str,
-        requires_approval: bool,
-        queued_at: str,
-    ) -> dict[str, object]:
-        """Produce the platform-specific queue record dict.
-
-        FB record shape mirrors scripts/fb_scan.py lines 637-652:
-          platform, post_url, post_id, post_text, group_name, group_url,
-          category, relevance_score, queued_at, status, requires_approval, draft_comment
-
-        IG record shape mirrors scripts/ig_engager.py lines 580-595:
-          platform, post_url, post_id, post_text, hashtag, author,
-          category, relevance_score, like_count, queued_at, status, requires_approval, draft_comment
-        """
-        base: dict[str, object] = {
-            "platform": self.platform,
-            "post_url": self.post_url,
-            "post_id": self.post_id,
-            "post_text": self.text,
-            "category": self.platform_extra.get("category", ""),
-            "relevance_score": round(score, 3),
-            "queued_at": queued_at,
-            "status": "pending",
-            "requires_approval": requires_approval,
-            "draft_comment": draft,
-        }
-        if self.platform == "facebook":
-            base["group_name"] = self.source_name or ""
-            base["group_url"] = self.source_url or ""
-        elif self.platform == "instagram":
-            base["hashtag"] = self.source_name or ""
-            base["author"] = self.author or ""
-            base["like_count"] = self.platform_extra.get("like_count", 0)
-        return base
