@@ -34,7 +34,7 @@ from lib.comment_generator import score_relevance as _score_relevance
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.instagram import InstagramHashtagAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
-from lib.engagement.policy import EngagementPolicy
+from lib.engagement.policy import EngagementPolicy, thresholds_from_config
 from lib.engagement.post import Post
 from lib.io.jsonio import read_json, write_json
 from lib.notifier import skill_finished, skill_skipped, skill_started
@@ -112,7 +112,9 @@ def run_ig_scan(
     print_status()
 
     config: dict[str, Any] = read_json(CONFIG_FILE, default={})  # type: ignore[assignment]
-    policy = EngagementPolicy.from_config(config)
+    policy = EngagementPolicy.from_enforced_limits(
+        thresholds=thresholds_from_config(config),
+    )
     active = adapter or InstagramHashtagAdapter(
         {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE}
     )
@@ -154,10 +156,6 @@ def run_ig_scan(
         }
         write_json(LAST_RUN_FILE, last_run)
 
-    # Report the cap that is actually ENFORCED (rate_limiter reads the
-    # generated data/rate_limits.json artifact), not EngagementPolicy's
-    # config.json-derived copy — the two drift, and the enforced one is the
-    # number `_maybe_comment`'s quota gate consults.
     quota = daily_limit("instagram", "comment")
     if dry_run:
         summary = (

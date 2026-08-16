@@ -30,9 +30,16 @@ def run_like_step(
 ) -> LikeOutcome:
     """Like the post if the platform has a like quota and budget remains.
 
-    Quota-gate before rate-tracker probe: `rate_limiter.DAILY_LIMITS` has no
-    `facebook:like` key (FB doesn't like inline today) and `can_act` raises
-    on unknown keys. Skip both for platforms with daily_like_quota == 0.
+    Quota-gate before rate-tracker probe, because `can_act` raises on a key
+    the artifact doesn't define. A platform absent from `daily_like_quota`
+    reads as 0 and is skipped without ever probing the tracker.
+
+    (This used to justify itself with "`DAILY_LIMITS` has no `facebook:like`
+    key -- FB doesn't like inline today". ADR 0003 made that false: the key
+    exists and is 5. The guard still earns its place, but for the general
+    reason above rather than one platform's absence. Since the policy now
+    derives its quotas from that same artifact, "absent" means the same thing
+    to both sides of this check.)
     """
     platform = adapter.platform
     if policy.daily_like_quota.get(platform, 0) <= 0:

@@ -100,6 +100,32 @@ def _draft_idea_with_crewai_background(idea_id: str) -> None:
     else:
         stdout_tail = (result.stdout or "")[-2000:]
         stderr_tail = (result.stderr or "")[-2000:]
+        # The 2000-char tail alone is not enough to diagnose a writer failure.
+        # `lib/crew/writer/execute.py` deliberately logs the model's FULL raw
+        # output (its comment records that a short excerpt was "proven useless
+        # for real diagnosis"), but that line is emitted early in a run that
+        # ends with tens of KB of catalog keys -- so the tail reliably cuts off
+        # both the event name and the head of the JSON, exactly the parts that
+        # say what broke. Live: three `write_failed` ideas on 2026-08-15 whose
+        # cause could not be recovered from these logs at all.
+        # So: keep the tail inline for quick reads, and spill the whole thing
+        # next to the draft that was being written. Best-effort -- a failure to
+        # write the diagnostic must never mask the draft failure itself.
+        log_path = _resolve_brand_path(f"state/crew_drafts/{idea_id}.failure.log")
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(
+                f"returncode={result.returncode}\n\n"
+                f"=== stdout ===\n{result.stdout or ''}\n\n"
+                f"=== stderr ===\n{result.stderr or ''}\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            log.warning(
+                json.dumps(
+                    {"event": "idea_draft_log_write_failed", "idea_id": idea_id, "error": str(exc)}
+                )
+            )
         log.error(
             json.dumps(
                 {
@@ -108,6 +134,7 @@ def _draft_idea_with_crewai_background(idea_id: str) -> None:
                     "returncode": result.returncode,
                     "stdout_tail": stdout_tail,
                     "stderr_tail": stderr_tail,
+                    "full_log": str(log_path),
                 }
             )
         )

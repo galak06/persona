@@ -55,33 +55,6 @@ class SocialChannelsConfig(BaseModel):
     tiktok: TiktokConfig
 
 
-class FacebookRateLimits(BaseModel):
-    comments_per_day: int
-    group_visits_per_day: int
-    min_delay_between_comments_sec: int
-    max_delay_between_comments_sec: int
-    min_delay_between_group_visits_sec: int
-    max_delay_between_group_visits_sec: int
-    group_visit_schedule_hours: list[int]
-    _note_group_visits: str | None = None
-
-
-class InstagramRateLimits(BaseModel):
-    likes_per_day: int
-    comments_per_day: int
-    min_delay_between_likes_sec: int
-    max_delay_between_likes_sec: int
-    min_delay_between_comments_sec: int
-    max_delay_between_comments_sec: int
-    _note_likes: str | None = None
-    hashtag_rotation: dict[str, Any]
-
-
-class RateLimitsConfig(BaseModel):
-    facebook: FacebookRateLimits
-    instagram: InstagramRateLimits
-
-
 class ContentAnalysisConfig(BaseModel):
     relevance_threshold: float
     approval_threshold: float
@@ -149,7 +122,11 @@ class RecipeCardConfig(BaseModel):
 class AppSettings(BaseModel):
     site: SiteConfig
     social_channels: SocialChannelsConfig
-    rate_limits: RateLimitsConfig
+    # No `rate_limits`: quotas live in `profiles/<platform>.json` and reach
+    # runtime through the generated `data/rate_limits.json` (ADR 0004). The
+    # typed tree that used to sit here had zero readers while every engager
+    # re-read the same numbers from raw JSON -- a second copy that drifted.
+    # A `rate_limits` block left in a brand config.json is simply ignored.
     content_analysis: ContentAnalysisConfig
     approval_gates: ApprovalGatesConfig
     deduplication: DeduplicationConfig

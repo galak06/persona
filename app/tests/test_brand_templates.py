@@ -123,12 +123,25 @@ def test_render_config_json_does_not_leak_dogfoodandfun_recipe_card_values() -> 
 
 
 @pytest.mark.parametrize(
-    "block", ["rate_limits", "approval_gates", "deduplication", "file_paths", "voice_validation"]
+    "block", ["approval_gates", "deduplication", "file_paths", "voice_validation"]
 )
 def test_render_config_json_includes_engine_default_blocks(block: str) -> None:
     data = render_config_json(MINIMAL_SPEC)
     assert block in data
     assert data[block]  # non-empty
+
+
+def test_render_config_json_does_not_scaffold_rate_limits() -> None:
+    """A new brand must NOT be born with its own copy of the quotas.
+
+    `rate_limits` used to be scaffolded from `lib.brand_template_defaults`, a
+    verbatim copy of dogfoodandfun's numbers that had already drifted --
+    Instagram 8/2 against an enforced 20/10. Quotas come from
+    `profiles/<platform>.json` via the generated artifact (ADR 0004); a brand
+    config carrying them would be a second opinion nothing reads.
+    """
+    data = render_config_json(MINIMAL_SPEC)
+    assert "rate_limits" not in data
 
 
 # ------------------------------------------------------------- render_brand_facts_md
