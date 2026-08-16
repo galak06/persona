@@ -15,6 +15,8 @@ import pytest
 from api import reels_compose_api
 from fastapi import HTTPException
 
+from lib import flow_queue
+
 _BRAND = "b1"
 _BRAND_DIR = "/app/brands/b1"
 _LABEL = f"{_BRAND}-reels-compose"
@@ -43,7 +45,7 @@ def worker_state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["pushed"].append(payload)
             return "1"
 
-    monkeypatch.setattr(reels_compose_api, "TaskQueue", _FakeQueue)
+    monkeypatch.setattr(flow_queue, "TaskQueue", _FakeQueue)
     return state
 
 

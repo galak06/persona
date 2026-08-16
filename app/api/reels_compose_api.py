@@ -28,21 +28,18 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.brand_context import resolve_api_brand
-from lib import worker_db
-from lib.task_queue import TaskQueue
+from lib import flow_queue, worker_db
 
 # Per idea: crew + image generation + two ffmpeg renders. A five-idea batch
 # runs well past the scout's 900s, so this ceiling is wider.
 _COMPOSE_TIMEOUT_SECONDS = 1800
 _PIPELINE_SCRIPT = "scripts/crewai_reels_pipeline.py"
 # Must match scripts/task_worker.py's QUEUE_WORKER -- same Redis list.
-_QUEUE_WORKER = "flow-run"
 _FLOW_ID = "reels-compose"
 
 # Statuses that mean "a run is already in flight". `queued` is written here at
@@ -129,15 +126,13 @@ def compose_reels() -> dict[str, str]:
         # moment this returns, rather than a gap where it looks idle until the
         # worker's own record_start lands.
         worker_db.record_start(brand_dir, label, brand_id)
-        payload: dict[str, Any] = {
-            "schedule_task_id": label,
-            "script": _PIPELINE_SCRIPT,
-            "args": [],
-            "brand": brand_id,
-            "brand_dir": brand_dir,
-            "timeout_seconds": _COMPOSE_TIMEOUT_SECONDS,
-        }
-        TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+        flow_queue.dispatch(
+            schedule_task_id=label,
+            script=_PIPELINE_SCRIPT,
+            brand=brand_id,
+            brand_dir=brand_dir,
+            timeout_seconds=_COMPOSE_TIMEOUT_SECONDS,
+        )
 
     log.info(json.dumps({"event": "reels_compose_dispatched", "brand": brand_id, "label": label}))
     return {"status": "started"}

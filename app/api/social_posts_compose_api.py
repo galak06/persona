@@ -33,8 +33,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.brand_context import resolve_api_brand
-from lib import schedule_db, social_post_db, worker_db
-from lib.task_queue import TaskQueue
+from lib import flow_queue, schedule_db, social_post_db, worker_db
 
 # Crew + Gemini image per candidate, up to `--limit` (5) of them per run --
 # matches the flow's own `timeout_minutes: 30` in profiles/_engine.json.
@@ -42,7 +41,6 @@ _COMPOSE_TIMEOUT_SECONDS = 1800
 _PIPELINE_SCRIPT = "scripts/crewai_social_posts_pipeline.py"
 _COMPOSE_ARGS = ["--compose-only"]
 # Must match scripts/task_worker.py's QUEUE_WORKER -- same Redis list.
-_QUEUE_WORKER = "flow-run"
 _FLOW_ID = "social-posts-compose"
 
 _QUEUED = "queued"
@@ -160,15 +158,14 @@ def compose_social_posts() -> dict[str, str]:
         # Recorded BEFORE the push so the status endpoint reports the run the
         # moment this returns, rather than a gap where it looks idle.
         worker_db.record_start(brand_dir, label, brand_id)
-        payload: dict[str, Any] = {
-            "schedule_task_id": label,
-            "script": _PIPELINE_SCRIPT,
-            "args": args,
-            "brand": brand_id,
-            "brand_dir": brand_dir,
-            "timeout_seconds": timeout_seconds,
-        }
-        TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+        flow_queue.dispatch(
+            schedule_task_id=label,
+            script=_PIPELINE_SCRIPT,
+            args=args,
+            brand=brand_id,
+            brand_dir=brand_dir,
+            timeout_seconds=timeout_seconds,
+        )
 
     log.info(
         json.dumps({"event": "social_posts_compose_dispatched", "brand": brand_id, "label": label})

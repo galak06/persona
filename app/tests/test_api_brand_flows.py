@@ -19,7 +19,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from scripts.backfill_flow_templates import load_rows as load_flow_template_rows
 
-from lib import brand_provisioning, db, flow_templates_db
+from lib import brand_provisioning, db, flow_queue, flow_templates_db
 from lib.task_queue import TaskQueue
 from tests._pg import requires_postgres
 
@@ -116,7 +116,7 @@ def test_run_now_409_when_flow_disabled(monkeypatch: pytest.MonkeyPatch) -> None
 def test_run_now_enqueues_and_returns_response(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(brand_flows_api.brands_db, "get", lambda _bid: dict(_ROW))
     monkeypatch.setattr(brand_flows_api.schedule_db, "load_all", lambda: [dict(_TASK_ROW)])
-    monkeypatch.setattr(brand_flows_api, "TaskQueue", _FakeQueue)
+    monkeypatch.setattr(flow_queue, "TaskQueue", _FakeQueue)
 
     resp = brand_flows_api.run_flow_now("acme-dogs", "ig-engager")
 

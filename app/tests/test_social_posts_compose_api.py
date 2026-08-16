@@ -14,6 +14,8 @@ import pytest
 from api import social_posts_compose_api as compose_api
 from fastapi import HTTPException
 
+from lib import flow_queue
+
 _BRAND = "b1"
 _BRAND_DIR = "/app/brands/b1"
 _ROW_ID = "legacy-social-posts-compose"  # ids don't have to match the brand id
@@ -63,7 +65,7 @@ def worker_state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             state["pushed"].append(payload)
             return "1"
 
-    monkeypatch.setattr(compose_api, "TaskQueue", _FakeQueue)
+    monkeypatch.setattr(flow_queue, "TaskQueue", _FakeQueue)
     return state
 
 

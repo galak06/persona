@@ -696,7 +696,7 @@ def _spawn_worker_instance(
 ) -> subprocess.Popen:
     log_fh = None
     try:
-        log_fh = open(log_path, "a")  # noqa: WPS515
+        log_fh = open(log_path, "a")
     except OSError:
         pass
     proc = subprocess.Popen(
