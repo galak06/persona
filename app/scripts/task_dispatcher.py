@@ -46,7 +46,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import redis
 
-from lib import brands_db, schedule_db, worker_db
+from lib import brands_db, flow_queue, schedule_db, worker_db
 from lib.brands_db.models import MANAGED_FLOW_IDS, BrandStatus
 from lib.observability import get_logger
 from lib.scheduling import is_task_due
@@ -66,7 +66,7 @@ _DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 _LOCK_TTL_SECONDS = 45
 _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 600
 _DEFAULT_LOOP_INTERVAL_SECONDS = 30
-QUEUE_WORKER = "flow-run"  # TaskQueue worker name shared with scripts/task_worker.py
+QUEUE_WORKER = flow_queue.FLOW_RUN_WORKER
 
 
 class RedisLock(Protocol):
@@ -107,23 +107,15 @@ def _notify_telegram_failure(task_id: str, error: str) -> None:
 def build_queue_payload(
     task: dict[str, Any], *, brand: str, brand_dir: Path, timeout_seconds: int
 ) -> dict[str, Any]:
-    """Shape one `flow-run` queue item from a `schedule_tasks` row.
+    """Shape one `flow-run` item from a `schedule_tasks` row.
 
-    `schedule_task_id` (the row's own `id`, e.g. `dogfoodandfun-ig-engager`)
-    is carried explicitly -- distinct from `TaskQueue.push()`'s own
-    auto-generated `task_id` (a UUID, just a queue-item identity) -- because
-    `scripts/task_worker.py` needs it as `worker_runs.worker_label` to record
-    start/completion under the SAME label this dispatcher's own due-check
-    reads via `worker_db.get_one()`.
+    Delegates to `lib.flow_queue`, which is now the single definition of that
+    shape. This wrapper stays because the dispatcher's own tests and callers
+    speak in terms of a schedule row.
     """
-    return {
-        "schedule_task_id": str(task.get("id")),
-        "script": task["script"],
-        "args": [str(a) for a in (task.get("args") or [])],
-        "brand": brand,
-        "brand_dir": str(brand_dir),
-        "timeout_seconds": timeout_seconds,
-    }
+    return flow_queue.payload_from_task(
+        task, brand=brand, brand_dir=brand_dir, timeout_seconds=timeout_seconds
+    )
 
 
 def _flow_enabled(task: dict[str, Any], enabled_flows: frozenset[str] | None) -> bool:

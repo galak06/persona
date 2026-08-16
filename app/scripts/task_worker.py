@@ -36,7 +36,7 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from lib import brands_db, worker_db
+from lib import brands_db, flow_queue, worker_db
 from lib.brands_db.models import BrandStatus
 from lib.local_env import load_brand_env
 from lib.observability import get_logger
@@ -50,7 +50,7 @@ logger = get_logger(__name__)
 # consumer. Not imported from there to keep these two CLI entry points
 # independently runnable (mirrors this file's own duplication of
 # `_notify_telegram_failure`, an established pattern for this pair).
-QUEUE_WORKER = "flow-run"
+QUEUE_WORKER = flow_queue.FLOW_RUN_WORKER
 _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 600
 _DEFAULT_IDLE_SLEEP_SECONDS = 5
 _DISPATCHABLE_STATUSES = frozenset({BrandStatus.PROVISIONED, BrandStatus.ACTIVE})

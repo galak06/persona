@@ -43,14 +43,12 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.brand_context import resolve_api_brand
-from lib import worker_db
-from lib.task_queue import TaskQueue
+from lib import flow_queue, worker_db
 
 # Serper + two crews; generous, not unbounded. Passed explicitly because the
 # worker's own default (600s) is tighter than this run needs.
@@ -59,7 +57,6 @@ _SCOUT_SCRIPT = "scripts/crewai_content_scout.py"
 # Without --apply the scout is a dry run and writes nothing.
 _SCOUT_ARGS = ["--apply"]
 # Must match scripts/task_worker.py's QUEUE_WORKER -- same Redis list.
-_QUEUE_WORKER = "flow-run"
 _FLOW_ID = "content-scout"
 
 # Statuses that mean "a run is already in flight". `queued` is written here at
@@ -113,15 +110,14 @@ def generate_ideas() -> dict[str, str]:
         # moment this returns, rather than a gap where it looks idle until the
         # worker's own record_start lands.
         worker_db.record_start(brand_dir, label, brand_id)
-        payload: dict[str, Any] = {
-            "schedule_task_id": label,
-            "script": _SCOUT_SCRIPT,
-            "args": list(_SCOUT_ARGS),
-            "brand": brand_id,
-            "brand_dir": brand_dir,
-            "timeout_seconds": _SCOUT_TIMEOUT_SECONDS,
-        }
-        TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+        flow_queue.dispatch(
+            schedule_task_id=label,
+            script=_SCOUT_SCRIPT,
+            args=list(_SCOUT_ARGS),
+            brand=brand_id,
+            brand_dir=brand_dir,
+            timeout_seconds=_SCOUT_TIMEOUT_SECONDS,
+        )
 
     log.info(json.dumps({"event": "ideas_generate_dispatched", "brand": brand_id, "label": label}))
     return {"status": "started"}

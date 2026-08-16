@@ -25,14 +25,12 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from api.brand_schemas import FlowStatus, FlowStatusResponse, RunNowRequest, RunNowResponse
-from lib import brands_db, schedule_db
+from lib import brands_db, flow_queue, schedule_db
 from lib.brands_db.models import MANAGED_FLOW_IDS
 from lib.flow_readiness import flow_status
-from lib.task_queue import TaskQueue
 
 router = APIRouter()
 
-_QUEUE_WORKER = "flow-run"  # must match scripts/task_dispatcher.py's QUEUE_WORKER
 _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS = 600
 
 
@@ -106,16 +104,14 @@ def run_flow_now(brand_id: str, flow_id: str, body: RunNowRequest | None = None)
     timeout_seconds = (
         int(timeout_minutes) * 60 if timeout_minutes else _DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
     )
-    payload = {
-        "schedule_task_id": schedule_task_id,
-        "script": task["script"],
-        "args": [str(a) for a in (task.get("args") or [])],
-        "brand": brand_id,
-        "brand_dir": brand_dir,
-        "timeout_seconds": timeout_seconds,
-    }
-    if body is not None and body.headless is not None:
-        payload["headless"] = body.headless
-    TaskQueue(worker=_QUEUE_WORKER, brand=brand_id).push(payload)
+    flow_queue.dispatch(
+        schedule_task_id=schedule_task_id,
+        script=str(task["script"]),
+        args=[str(a) for a in (task.get("args") or [])],
+        brand=brand_id,
+        brand_dir=brand_dir,
+        timeout_seconds=timeout_seconds,
+        headless=body.headless if body is not None else None,
+    )
 
     return RunNowResponse(brand_id=brand_id, flow_id=flow_id, schedule_task_id=schedule_task_id)
