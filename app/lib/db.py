@@ -1,12 +1,14 @@
 """Thin Postgres access helpers built on the shared pool in `lib/db_pool.py`.
 
-Replaces `lib.supabase_client.get_client()` for the modules migrating off
+Replaced `lib/supabase_client.py::get_client()` for the modules that moved off
 Supabase this stage -- `groups_db`, `engagements_db`, `worker_db`,
 `schedule_db` (tables defined in `db/schema.sql`). Repository rewrites for
 those modules are a separate, parallel task; this module only provides the
 connection/query primitive they will consume.
 
-`recipes_db` stays on `lib.supabase_client` -- this module does not touch it.
+`recipes_db` never moved here; Supabase has since been removed from the
+engine entirely and its client now lives beside its last caller in
+`recipe-publisher/recipe_db/_supabase.py` (see ADR 0008).
 `content_ideas` migrated here in 2026-08 after the Supabase project's DNS
 went permanently unreachable; see `lib.ideas_db`. `oauth_tokens` was never
 actually on Supabase in practice (its Supabase branch was dead code, gated
@@ -81,7 +83,7 @@ def fetch_one(query: str, params: QueryParams = None) -> dict[str, Any] | None:
 
 
 def health_check() -> bool:
-    """Return True if the database is reachable (mirrors supabase_client.health_check)."""
+    """Return True if the database is reachable."""
     try:
         fetch_one("SELECT 1")
         return True

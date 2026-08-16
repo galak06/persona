@@ -22,8 +22,6 @@
 #
 # External dependencies (cloud-hosted, not containerised):
 #   Telegram  — Approval bot        (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)
-#   Supabase  — recipes_db / content_ideas / oauth_tokens only, NOT the tables
-#               in db/schema.sql (SUPABASE_URL / SUPABASE_KEY, optional)
 #
 # Quick start:
 #   cp .env.example .env          # fill in your secrets

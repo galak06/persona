@@ -114,7 +114,6 @@ from api.ideas_generate_api import router as _ideas_generate_router
 from api.oauth_api import router as _oauth_router
 from api.oauth_openart_api import router as _oauth_openart_router
 from api.recipe_card_api import router as _recipe_card_router
-from api.recipes_api import router as _recipes_router
 from api.reels_compose_api import router as _reels_compose_router
 from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
@@ -154,7 +153,6 @@ app.add_middleware(
 
 app.include_router(_campaigns_router, prefix="/api/v1/campaigns", tags=["campaigns"])
 app.include_router(_recipe_card_router, prefix="/api/v1")
-app.include_router(_recipes_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])

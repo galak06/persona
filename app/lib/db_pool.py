@@ -2,7 +2,7 @@
 
 Wraps a single process-wide `psycopg_pool.ConnectionPool` (psycopg v3),
 opened lazily on first use and reused across calls. This is the local-Postgres
-successor to `lib/supabase_client.py::get_client()` for the tables in
+successor to the removed `lib/supabase_client.py::get_client()` for the tables in
 `db/schema.sql` (`brands`, `fb_groups`, `engagements`, `worker_runs`,
 `schedule_tasks`, `published_content`, `content_ideas`) -- `recipes` stays on
 Supabase this stage and is untouched by this module. `oauth_tokens` is not a

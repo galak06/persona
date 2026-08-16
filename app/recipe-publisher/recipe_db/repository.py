@@ -16,7 +16,7 @@ _SA_ROOT = Path(__file__).resolve().parents[2]
 if str(_SA_ROOT) not in sys.path:
     sys.path.insert(0, str(_SA_ROOT))
 
-from lib.supabase_client import get_client
+from recipe_db._supabase import get_client
 
 logger = logging.getLogger(__name__)
 
