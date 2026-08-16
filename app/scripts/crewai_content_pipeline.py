@@ -198,7 +198,15 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
 
     print("\ninjecting JSON-LD + resolving affiliate placeholders...")
     try:
-        final_html = assemble_final_html(brand_dir, written_post)
+        # drop_unknown_affiliates: the writer invents catalog keys despite the
+        # prompt forbidding it, and this path has no human in the loop -- a
+        # fail-closed resolve discarded the entire finished post over one bad
+        # key (live: 'plentum-gut-health-powder', 2026-08-16). Dropping the
+        # placeholder costs one link; the remaining AffiliateResolverError
+        # cases (missing associates tag, missing FTC disclosure) still abort,
+        # because those would produce a legally wrong post rather than a
+        # thinner one.
+        final_html = assemble_final_html(brand_dir, written_post, drop_unknown_affiliates=True)
     except AffiliateResolverError as exc:
         print(f"\nAFFILIATE RESOLUTION FAILED: {exc}", file=sys.stderr)
         print(

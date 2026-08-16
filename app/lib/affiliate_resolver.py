@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -91,17 +92,53 @@ def build_affiliate_url(asin: str, tag: str, campaign_id: str | None = None) -> 
     return url
 
 
+def _strip_placeholders(html: str, keys: Iterable[str]) -> str:
+    """Remove every [AFFILIATE:key] in `keys` from `html`, link and all.
+
+    A placeholder is normally written as the href of a real anchor
+    (`<a href="[AFFILIATE:k]">View on Amazon</a>`), so deleting only the
+    placeholder would leave `<a href="">` -- a dead link, which is worse
+    than no link. The anchor is therefore UNWRAPPED to its own text, and
+    only then are any bare leftovers removed.
+    """
+    for key in keys:
+        placeholder = re.escape(f"[AFFILIATE:{key}]")
+        html = re.sub(
+            rf"<a\b[^>]*{placeholder}[^>]*>(.*?)</a>",
+            r"\1",
+            html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        html = re.sub(placeholder, "", html, flags=re.IGNORECASE)
+    return html
+
+
 def resolve_html(
     html: str,
     *,
     associates_tag: str | None = None,
     campaign_id: str | None = None,
     catalog: dict[str, ProductEntry] | None = None,
+    drop_unknown: bool = False,
 ) -> str:
     """Replace every [AFFILIATE:key] in `html` with a real Amazon URL.
 
     Raises `AffiliateResolverError` if the associates tag is missing, the
-    disclosure block is missing, or any placeholder key is unknown.
+    disclosure block is missing, or -- when `drop_unknown` is False -- any
+    placeholder key is unknown.
+
+    `drop_unknown=True` downgrades that last case from fatal to lossy: the
+    unknown placeholders are stripped (see `_strip_placeholders`) and the
+    rest of the post is resolved normally. The writer prompt already says
+    "Never invent a [AFFILIATE:key]" and the model does it anyway, so the
+    real choice is what an invented key costs. Failing closed threw away a
+    complete, otherwise-publishable draft over one bad key -- live: a 1654-
+    word post lost to `['plentum-gut-health-powder']` on 2026-08-16, one of
+    four keys, the other three valid. Dropping is strictly safer than the
+    alternative it replaces: a wrong link is never emitted (an unknown key
+    has no URL to get wrong), the post simply carries one fewer link, and
+    the quality editor still judges the result. Callers that need the old
+    all-or-nothing guarantee keep it by leaving this False.
     """
     tag = associates_tag or os.environ.get("AMAZON_ASSOCIATES_TAG", "").strip()
     if not tag:
@@ -121,11 +158,24 @@ def resolve_html(
         return html  # no placeholders, nothing to do
 
     unknown = {m.group(1).lower() for m in matches} - set(catalog.keys())
-    if unknown:
+    if unknown and not drop_unknown:
         raise AffiliateResolverError(
             f"unknown product key(s) in catalog: {sorted(unknown)} — "
             f"add them to {_CATALOG_FILE.name}"
         )
+    if unknown:
+        # Warning, not info: the post is publishable but is missing a link
+        # the writer intended. Names every key so a repeatedly-invented one
+        # can be spotted and added to the catalog for real.
+        logger.warning(
+            "affiliate_resolver: dropped %d unknown placeholder(s): %s",
+            len(unknown),
+            sorted(unknown),
+        )
+        html = _strip_placeholders(html, unknown)
+        matches = list(_PLACEHOLDER_RE.finditer(html))
+        if not matches:
+            return html
 
     def _sub(match: re.Match[str]) -> str:
         entry = catalog[match.group(1).lower()]

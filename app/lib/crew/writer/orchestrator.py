@@ -208,6 +208,7 @@ def assemble_final_html(
     written_post: WrittenPost,
     *,
     catalog: dict[str, ProductEntry] | None = None,
+    drop_unknown_affiliates: bool = False,
 ) -> str:
     """Unwrap any `<ul>`/`<ol>` the writer nested inside a `<p>` (invalid
     HTML5 that corrupts WordPress's rendering, see
@@ -218,6 +219,10 @@ def assemble_final_html(
 
     Deliberately does NOT catch `AffiliateResolverError` -- see module
     docstring. Callers that want a clean CLI message catch it themselves.
+
+    `drop_unknown_affiliates` forwards to `resolve_html`: on, an invented
+    catalog key costs one link instead of the whole draft. Off by default
+    so this stays a caller's decision, not a silent library-wide loosening.
     """
     config = read_brand_config(brand_dir)
     site = config.get("site", {}) if isinstance(config, dict) else {}
@@ -253,7 +258,9 @@ def assemble_final_html(
     from lib.crew.products import load_candidate_pool  # runtime import: avoids cycle
 
     catalog = catalog if catalog is not None else load_candidate_pool(brand_dir)
-    return resolve_html(body_with_schema, catalog=catalog)
+    return resolve_html(
+        body_with_schema, catalog=catalog, drop_unknown=drop_unknown_affiliates
+    )
 
 
 def strategist_and_writer(
