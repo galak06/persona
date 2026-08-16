@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import generate_image
+from lib.crew.wp_image import resolve_reference_image_path
 from lib.oauth.openart import OpenArtAuthRequiredError, openart_enabled
 from lib.oauth.openart_store import stored_auth_state
 from lib.observability import get_logger
@@ -63,8 +64,32 @@ class ResolvedImages(NamedTuple):
         return "mixed"
 
 
-def _generate_one_beat(prompt: str, hero_bytes: bytes, *, index: int) -> bytes | None:
+def _load_mascot_reference(brand_dir: Path) -> bytes | None:
+    """The brand's real persona+mascot photo, for OpenArt's image2image
+    grounding -- or None when the brand has no such asset.
+
+    Reuses `lib.crew.wp_image.resolve_reference_image_path`, the same
+    resolver the WP hero-image generator already uses, so both pipelines
+    agree on where a brand's mascot reference lives
+    (`$BRAND_DIR/data/assets/persona_mascot_reference.{png,jpg,jpeg}`).
+    """
+    path = resolve_reference_image_path(brand_dir)
+    if path is None:
+        return None
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        # Never fatal: a missing/unreadable reference degrades to the hero
+        # image, exactly as a brand without the asset already does.
+        logger.warning("reels_mascot_reference_unreadable", path=str(path), error=str(exc))
+        return None
+
+
+def _generate_one_beat(prompt: str, reference_bytes: bytes, *, index: int) -> bytes | None:
     """One beat's image, or None if it couldn't be generated.
+
+    `reference_bytes` is OpenArt's image2image grounding, NOT the fallback
+    image -- see `resolve_images` for why those are two different pictures.
 
     Retries once on an ordinary failure. `OpenArtAuthRequiredError`
     propagates: authorization is a run-wide condition, so retrying it per
@@ -73,7 +98,7 @@ def _generate_one_beat(prompt: str, hero_bytes: bytes, *, index: int) -> bytes |
     for attempt in range(1, _ATTEMPTS_PER_BEAT + 1):
         try:
             return anyio.run(
-                functools.partial(generate_image, prompt, reference_image=hero_bytes)
+                functools.partial(generate_image, prompt, reference_image=reference_bytes)
             )
         except OpenArtAuthRequiredError:
             raise
@@ -95,6 +120,20 @@ def resolve_images(
 
     Never raises for an OpenArt problem -- the hero image always yields a
     usable set, so the caller composes a reel either way.
+
+    Two different pictures, previously conflated into one:
+
+      * the FALLBACK image, shown verbatim when a beat can't be generated --
+        the post's own hero, which is correct: it is what the article shows.
+      * the REFERENCE image, which grounds what OpenArt draws. This must be
+        the brand's mascot. Passing the hero here (the prior behavior) told
+        OpenArt to keep the reel "visually consistent" with whatever the
+        post's featured image happened to be -- routinely a Pexels stock
+        dog -- so every generated beat looked like a stranger's dog rather
+        than the brand's own. Live-reported: reels not matching the mascot.
+
+    Brands without the asset fall back to the hero as the reference, i.e.
+    exactly the previous behavior, so this stays brand-agnostic.
     """
     total = len(plan.beats)
     all_hero = ResolvedImages([hero_bytes] * total, 0, total)
@@ -113,6 +152,14 @@ def resolve_images(
         )
         return all_hero
 
+    mascot_bytes = _load_mascot_reference(brand_dir)
+    reference_bytes = mascot_bytes if mascot_bytes is not None else hero_bytes
+    logger.info(
+        "reels_reference_image_selected",
+        idea_id=idea_id,
+        source="brand_mascot" if mascot_bytes is not None else "wp_hero",
+    )
+
     images: list[bytes] = []
     ai_count = 0
     authorization_lost = False
@@ -121,7 +168,7 @@ def resolve_images(
             images.append(hero_bytes)
             continue
         try:
-            generated = _generate_one_beat(beat.image_prompt, hero_bytes, index=index)
+            generated = _generate_one_beat(beat.image_prompt, reference_bytes, index=index)
         except OpenArtAuthRequiredError:
             # Run-wide: a stored token whose refresh is rejected only fails
             # at call time. Stop calling; remaining beats use the hero image.
