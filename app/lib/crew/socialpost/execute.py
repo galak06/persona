@@ -20,23 +20,23 @@ Two things learned from live runs, both encoded below:
    the ceiling is `MAX_ATTEMPTS`, not one -- with surgical retries the drift
    that made extra attempts pointless is gone.
 
-`_strip_code_fence`/`_iter_balanced_json_object_candidates` are a local,
-independent copy -- deliberately NOT imported from `lib.crew.reels.execute` or
-any sibling -- matching this repo's "independently-evolving pipelines"
-convention.
+Parsing the model's JSON is delegated to `lib.crew.structured_output`. The
+local `_strip_code_fence`/`_iter_balanced_json_object_candidates` copies were
+kept independent on purpose; in practice they diverged into three tiers of
+robustness, leaving this stage without the lenient repair `writer` had. See
+`docs/adr/0007-one-crew-output-parser.md`.
 """
 
 from __future__ import annotations
 
-import json
-import re
 from typing import TypeVar
 
 from crewai import Agent, Task
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.socialpost.rules import find_caption_violations
+from lib.crew.structured_output import parse_structured_output
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -48,80 +48,13 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 # the orchestrator's per-idea budget.
 MAX_ATTEMPTS = 3
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-
-
-def _strip_code_fence(text: str) -> str:
-    """Strip a wrapping ` ```json ... ``` ` fence, if present."""
-    match = _FENCE_RE.match(text.strip())
-    return match.group(1) if match else text.strip()
-
-
-def _iter_balanced_json_object_candidates(text: str) -> list[str]:
-    """Return every top-level, brace-balanced `{...}` substring found in
-    `text`, in the order they appear. Same brace-depth/string-skipping
-    algorithm as `lib.crew.idea.execute`'s copy -- see that module's
-    docstring for the reasoning-model-prose rationale."""
-    candidates: list[str] = []
-    depth = 0
-    start: int | None = None
-    in_string = False
-    escaped = False
-    for i, ch in enumerate(text):
-        if in_string:
-            if escaped:
-                escaped = False
-            elif ch == "\\":
-                escaped = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start is not None:
-                candidates.append(text[start : i + 1])
-                start = None
-    return candidates
-
-
-def _extract_json_payload(text: str) -> object | None:
-    """Find and parse the most likely intended JSON object embedded in
-    `text`, trying candidates last-to-first (the model's actual final
-    answer). `None` if no candidate parses."""
-    for candidate in reversed(_iter_balanced_json_object_candidates(text)):
-        try:
-            parsed: object = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        return parsed
-    return None
-
 
 def _parse_structured_output(raw: str | None, model: type[ModelT], *, event: str) -> ModelT | None:
-    """Parse+validate one CrewAI task's raw text output against `model`.
-    `None` (logged) on missing output, invalid JSON, or a schema mismatch."""
-    if not raw or not raw.strip():
-        logger.warning(f"{event}_empty_output")
-        return None
-    text = _strip_code_fence(raw)
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        payload = _extract_json_payload(text)
-        if payload is None:
-            logger.warning(f"{event}_json_decode_failed", error=str(exc), raw_output=text)
-            return None
-    try:
-        return model.model_validate(payload)
-    except ValidationError as exc:
-        logger.warning(f"{event}_schema_validation_failed", error=str(exc))
-        return None
+    """Delegates to the one crew output parser -- see `lib.crew.structured_output`.
+
+    Kept as a thin wrapper so this stage's log lines keep its own logger name.
+    """
+    return parse_structured_output(raw, model, event=event, log=logger)
 
 
 class KickoffError(Exception):

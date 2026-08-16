@@ -92,6 +92,7 @@ jobs:
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           recipe-publisher/tests/test_ideator_skill_prompts.py
+          lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
@@ -146,6 +147,7 @@ jobs:
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           recipe-publisher/tests/test_ideator_skill_prompts.py
+          lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
@@ -202,6 +204,7 @@ jobs:
           lib/llm_client.py lib/skill_loader.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
+          lib/crew/structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
@@ -369,6 +372,7 @@ jobs:
             tests/test_draft_helper.py \
             tests/test_llm_tracing.py \
             tests/test_gemini_client.py \
+            tests/lib/crew/test_structured_output.py \
             tests/test_crew_products_pool.py \
             tests/test_crew_products_usage.py \
             tests/test_crew_products_stage.py \
@@ -399,6 +403,7 @@ jobs:
             --cov=api.brands_api --cov=api.brand_settings_api --cov=api.brand_schemas --cov=api.brand_flows_api \
             --cov=api.oauth_api --cov=api.session_status_api \
             --cov=lib/crew/products \
+            --cov=lib/crew/structured_output.py \
             --cov-report=term-missing --cov-fail-under=80
 
   security:
