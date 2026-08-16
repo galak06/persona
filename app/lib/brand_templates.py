@@ -33,7 +33,6 @@ from lib.brand_template_defaults import (
     FACEBOOK_CHANNEL_DEFAULTS,
     FILE_PATHS,
     INSTAGRAM_CHANNEL_DEFAULTS,
-    RATE_LIMITS,
     VOICE_VALIDATION,
 )
 from lib.brands_db.models import default_enabled_flows
@@ -135,7 +134,6 @@ def render_config_json(spec: BrandSpec) -> dict[str, Any]:
             "twitter": {"enabled": False, "profile_url": "", "note": DISABLED_CHANNEL_NOTE},
             "tiktok": {"enabled": False, "profile_url": "", "note": DISABLED_CHANNEL_NOTE},
         },
-        "rate_limits": RATE_LIMITS,
         "content_analysis": {
             **CONTENT_ANALYSIS_DEFAULTS,
             # Brand-driven. Each category is written ONLY when the operator

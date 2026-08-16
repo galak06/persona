@@ -49,7 +49,7 @@ from lib.comment_generator import score_relevance as _score_relevance
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
-from lib.engagement.policy import EngagementPolicy
+from lib.engagement.policy import EngagementPolicy, thresholds_from_config
 from lib.engagement.post import Post
 from lib.engagement.warm_sources import WarmFilteredAdapter
 from lib.io.jsonio import read_json, write_json
@@ -150,7 +150,9 @@ def run_fb_engager_scan(
         "facebook_session": str(settings.paths.facebook_session),
         "groups_tracker": str(settings.paths.groups_tracker),
     }
-    policy = EngagementPolicy.from_config(config)
+    policy = EngagementPolicy.from_enforced_limits(
+        thresholds=thresholds_from_config(config),
+    )
     # Warmup filter wraps WHATEVER adapter is active — injected test
     # adapters included — exactly as the retired fb_scan.py wrapped its
     # `_WarmFiltered`: newly joined groups sit out the comment warmup.
@@ -191,10 +193,6 @@ def run_fb_engager_scan(
         }
         write_json(LAST_RUN_FILE, last_run)
 
-    # Report the cap that is actually ENFORCED (rate_limiter reads the
-    # generated data/rate_limits.json artifact), not EngagementPolicy's
-    # config.json-derived copy — the two drift, and the enforced one is the
-    # number `_maybe_comment`'s quota gate consults.
     quota = daily_limit("facebook", "comment")
     if dry_run:
         summary = (

@@ -27,27 +27,11 @@ from __future__ import annotations
 from typing import Any
 
 # Verbatim from dogfoodandfun/config.json's `rate_limits` block.
-RATE_LIMITS: dict[str, Any] = {
-    "facebook": {
-        "comments_per_day": 5,
-        "group_visits_per_day": 6,
-        "min_delay_between_comments_sec": 1,
-        "max_delay_between_comments_sec": 5,
-        "min_delay_between_group_visits_sec": 1,
-        "max_delay_between_group_visits_sec": 10,
-        "group_visit_schedule_hours": [9, 11, 14, 16, 18, 20],
-    },
-    "instagram": {
-        "likes_per_day": 20,
-        "comments_per_day": 10,
-        "min_delay_between_likes_sec": 1,
-        "max_delay_between_likes_sec": 10,
-        "min_delay_between_comments_sec": 1,
-        "max_delay_between_comments_sec": 10,
-        "hashtag_rotation": {},
-    },
-}
-
+# RATE_LIMITS was here: a verbatim copy of dogfoodandfun's quotas, scaffolded
+# into every new brand's config.json. It had already drifted -- Instagram 8/2
+# against an enforced 20/10 -- so each new brand was born forked from the
+# profile that actually governs it. Quotas now come from profiles/ only
+# (ADR 0004); a brand config.json no longer carries them.
 # Verbatim from dogfoodandfun/config.json's `content_analysis` block, minus
 # `keywords`/`competitor_accounts` (brand-driven -- see render_config_json).
 # The relevance-scoring *formula shape* (thresholds + weight keys) stays

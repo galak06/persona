@@ -166,25 +166,26 @@ def make_policy(
     fb_comment_quota: int = 5,
     ig_comment_quota: int = 10,
     fb_like_quota: int = 0,
+    ig_like_quota: int = 8,
 ) -> EngagementPolicy:
-    return EngagementPolicy.from_config(
-        {
-            "content_analysis": {
-                "relevance_threshold": 0.70,
-                "approval_threshold": 0.80,
-                "ig_comment_threshold": 0.75,
-            },
-            "rate_limits": {
-                "facebook": {
-                    "comments_per_day": fb_comment_quota,
-                    "likes_per_day": fb_like_quota,
-                },
-                "instagram": {
-                    "comments_per_day": ig_comment_quota,
-                    "likes_per_day": 8,
-                },
-            },
-        }
+    """Build a policy from an explicit limits map.
+
+    Quotas now come from the artifact `lib.rate_limiter` enforces, so tests
+    inject that map directly rather than a config.json-shaped dict. The keys
+    are the artifact's own `<platform>:<action>` form.
+    """
+    return EngagementPolicy.from_enforced_limits(
+        thresholds={
+            "candidate_threshold": 0.70,
+            "approval_threshold": 0.80,
+            "comment_threshold": 0.75,
+        },
+        limits={
+            "facebook:comment": fb_comment_quota,
+            "facebook:like": fb_like_quota,
+            "instagram:comment": ig_comment_quota,
+            "instagram:like": ig_like_quota,
+        },
     )
 
 
