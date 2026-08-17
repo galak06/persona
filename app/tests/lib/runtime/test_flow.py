@@ -106,6 +106,43 @@ def test_main_return_code_propagates(recorder: dict[str, Any]) -> None:
     assert [c[2] for c in recorder["completed"]] == ["success"]
 
 
+def test_a_domain_object_return_is_success_not_exit_1(recorder: dict[str, Any]) -> None:
+    """The bug this pins: `fb-engager`/`ig-engager` returned a `ScanReport`.
+
+    `return code or 0` passed the truthy report through; `SystemExit(report)`
+    treats a non-int as an error MESSAGE and exits 1. Every successful run of
+    both daily engagement flows was recorded as a failure, with the report
+    itself as the error text -- while `run_flow` had already written
+    `worker_runs` as "success". The exit code must be an int, always.
+    """
+
+    class _ScanReport:
+        def __bool__(self) -> bool:  # truthy, like a real report
+            return True
+
+    code = run_flow("fb-engager", lambda: _ScanReport(), argv=["prog"])  # type: ignore[arg-type,return-value]
+    assert code == 0
+    assert isinstance(code, int)
+    assert recorder["completed"][-1][-1] == "success"
+
+
+@pytest.mark.parametrize("returned", [True, False])
+def test_bool_return_is_success_not_an_exit_code(returned: bool, recorder: dict[str, Any]) -> None:
+    """`bool` is an `int` subclass, so `True` would otherwise exit 1.
+
+    A flow returning True means "it worked" -- the opposite of what exit 1
+    says. Neither bool is a status, so both mean success.
+    """
+    code = run_flow("fb-engager", lambda: returned, argv=["prog"])  # type: ignore[arg-type,return-value]
+    assert code == 0
+
+
+def test_zero_and_nonzero_int_returns_are_still_honoured(recorder: dict[str, Any]) -> None:
+    """The hardening must not swallow a real exit code."""
+    assert run_flow("fb-engager", lambda: 0, argv=["prog"]) == 0
+    assert run_flow("fb-engager", lambda: 2, argv=["prog"]) == 2
+
+
 def test_worker_label_override_is_honoured(recorder: dict[str, Any]) -> None:
     run_flow("fb-engager", lambda: None, argv=["prog"], worker_label="legacy-label")
     assert recorder["started"][0][0] == "legacy-label"
@@ -176,3 +213,48 @@ def test_session_file_check_rejects_empty_json(tmp_path: Path) -> None:
     f = tmp_path / "session.json"
     f.write_text("{}")
     assert session_file_check(f, "IG") == 1
+
+
+# ── every flow's `main` matches run_flow's contract ─────────────────────────
+#
+# mypy catches this ("Argument 2 to run_flow has incompatible type ... ->
+# ScanReport | None; expected Callable[[], int | None]") -- but it never ran:
+# scripts/fb_engager.py and scripts/ig_engager.py are in CI's lint and format
+# lists and NOT its mypy list, because each carries 9 unrelated pre-existing
+# errors. The type system already knew; the gate didn't. This test is the
+# cheap stand-in that runs everywhere until those files are mypy-clean.
+
+_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
+_VALID_MAIN_RETURNS = {"None", "int", "int | None", "Optional[int]"}
+
+
+def _run_flow_main_annotations() -> list[tuple[str, str, str]]:
+    """(file, main-function name, its return annotation) for each run_flow call."""
+    import ast
+
+    found: list[tuple[str, str, str]] = []
+    for path in sorted(_SCRIPTS_DIR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        funcs = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") == "run_flow"):
+                continue
+            if len(node.args) < 2 or not isinstance(node.args[1], ast.Name):
+                continue  # a lambda -- nothing to resolve statically
+            fn = funcs.get(node.args[1].id)
+            if fn is None:
+                continue
+            ann = ast.unparse(fn.returns) if fn.returns else "<unannotated>"
+            found.append((path.name, fn.name, ann))
+    return found
+
+
+def test_every_flow_main_returns_an_exit_code_or_none() -> None:
+    """A `main` returning a domain object silently becomes exit 1."""
+    annotations = _run_flow_main_annotations()
+    assert annotations, "expected to find run_flow call sites to check"
+    bad = [(f, n, a) for f, n, a in annotations if a not in _VALID_MAIN_RETURNS]
+    assert not bad, (
+        "these run_flow mains do not return an exit code, so SystemExit will "
+        f"treat the value as an error message and exit 1: {bad}"
+    )

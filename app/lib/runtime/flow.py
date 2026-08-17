@@ -59,6 +59,28 @@ def session_file_check(session_file: Path, label: str) -> int:
     return 1
 
 
+def _exit_code(code: object) -> int:
+    """Coerce ``main``'s return into a real exit code.
+
+    `main` is typed `Callable[[], int | None]`, but the flows that call this
+    are not all covered by CI's mypy list, and two of them (`fb-engager`,
+    `ig-engager`) returned a `ScanReport` instead -- useful to their callers
+    and tests, meaningless as an exit status. `return code or 0` passed the
+    truthy report through, `SystemExit(report)` treated it as an error
+    MESSAGE rather than a status, and Python exited **1**. Every successful
+    run of both daily engagement flows was recorded as a failure, with the
+    report itself as the error text.
+
+    So a non-int return means "no exit code was given", i.e. success -- the
+    same as `None`. `bool` is deliberately excluded even though it is an
+    `int` subclass: a flow returning `True` means "it worked", which as an
+    exit code would mean failure.
+    """
+    if isinstance(code, bool) or not isinstance(code, int):
+        return 0
+    return code
+
+
 def run_flow(
     flow_id: str,
     main: Callable[[], int | None],
@@ -101,7 +123,7 @@ def run_flow(
                 record_complete(ctx.brand_dir, label, ctx.brand_id, "error", str(exc))
                 raise
             record_complete(ctx.brand_dir, label, ctx.brand_id, "success")
-            return code or 0
+            return _exit_code(code)
     except LockAcquisitionError as exc:
         # Expected under normal cron pacing — the previous tick is still going.
         print(f"another instance of {flow_id!r} is running: {exc}", file=sys.stderr)

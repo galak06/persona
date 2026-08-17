@@ -366,6 +366,7 @@ jobs:
             tests/lib/engagement/test_pipeline_record_publish.py \
             tests/lib/engagement/test_pipeline_like_only.py \
             tests/lib/test_local_env_pytest_guard.py \
+            tests/lib/runtime/test_flow.py \
             tests/test_reply_drafter.py \
             tests/test_draft_helper.py \
             tests/test_llm_tracing.py \
