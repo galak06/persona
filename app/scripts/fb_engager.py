@@ -214,11 +214,24 @@ def run_fb_engager_scan(
     return report
 
 
+def _flow_main() -> None:
+    """Adapt the scan to `run_flow`'s exit-code contract.
+
+    `run_fb_engager_scan` returns a `ScanReport` because its callers and tests
+    want one. `run_flow` wants `int | None`, an exit code. Passing the scan
+    straight through handed the report to `SystemExit`, which treats a
+    non-int as an error MESSAGE and exits 1 -- so every successful run was
+    recorded as a failure. Discarding the report here keeps both contracts
+    honest.
+    """
+    run_fb_engager_scan()
+
+
 if __name__ == "__main__":
     raise SystemExit(
         run_flow(
             "fb-engager",
-            run_fb_engager_scan,
+            _flow_main,
             health_check=lambda: session_file_check(SESSION_FILE, "FB"),
             worker_label=WORKER_LABEL,
         )
