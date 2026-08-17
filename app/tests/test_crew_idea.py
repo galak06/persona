@@ -19,7 +19,11 @@ import pytest
 
 from lib.crew.idea.agent import build_idea_agent, build_idea_task
 from lib.crew.idea.execute import _parse_structured_output
-from lib.crew.idea.prompts import build_idea_task_description, serialize_trend_signals
+from lib.crew.idea.prompts import (
+    build_idea_task_description,
+    serialize_existing_topics,
+    serialize_trend_signals,
+)
 from lib.crew.models import ScoutOutput
 from lib.crew.trends.models import TrendSignal
 
@@ -74,6 +78,7 @@ def test_build_idea_task_description_includes_all_sections() -> None:
         voice="Authentic, peer-to-peer.",
         seed_keywords="dog food, gps tracker",
         trends_json=serialize_trend_signals([_signal()]),
+        existing_topics=serialize_existing_topics({"canicross 101: the 3 pieces of gear"}),
         top_n=7,
     )
     assert "Brand: DogFoodAndFun" in description
@@ -81,6 +86,11 @@ def test_build_idea_task_description_includes_all_sections() -> None:
     assert "dog food, gps tracker" in description
     assert "dog gps tracker" in description  # from trends_json
     assert "at most 7 ideas" in description
+    # The agent can only avoid repeating what it is shown. Without this the
+    # crew re-derived covered subjects every run and a post-hoc string filter
+    # was left to catch repeats it could not see.
+    assert "canicross 101: the 3 pieces of gear" in description
+    assert "ALREADY covered" in description
 
 
 def test_build_idea_task_description_missing_voice_and_seed_keywords_fallback() -> None:
@@ -89,10 +99,24 @@ def test_build_idea_task_description_missing_voice_and_seed_keywords_fallback() 
         voice="",
         seed_keywords="",
         trends_json="[]",
+        existing_topics=serialize_existing_topics(set()),
         top_n=10,
     )
     assert "(no voice guide available)" in description
     assert "(none on file)" in description
+    assert "(nothing published or queued yet)" in description
+
+
+def test_serialize_existing_topics_is_sorted_and_capped() -> None:
+    """The set is unordered and the table grows without bound, so the render
+    is sorted for determinism and capped so it can't crowd out the trend
+    signals the agent is meant to synthesize from."""
+    rendered = serialize_existing_topics({f"topic {i:03d}" for i in range(200)}, limit=5)
+    lines = rendered.splitlines()
+
+    assert lines[:5] == [f"- topic {i:03d}" for i in range(5)]
+    # The omitted count is kept so the agent knows the list is partial.
+    assert lines[-1] == "- (+195 more not listed)"
 
 
 # ── build_idea_agent / build_idea_task ───────────────────────────────────────
