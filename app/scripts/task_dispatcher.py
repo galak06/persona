@@ -137,6 +137,14 @@ def _flow_enabled(task: dict[str, Any], enabled_flows: frozenset[str] | None) ->
     return flow_id in enabled_flows
 
 
+# A flow is retired by moving `schedule.cron` aside instead of deleting the row,
+# so the schedule it used to run on stays recoverable. Either key marks the row
+# as deliberately cron-less; `disabled_reason` alone is enough for rows retired
+# before there was a cron worth preserving.
+_RETIRED_KEY = "cron_disabled"
+_RETIRED_REASON_KEY = "disabled_reason"
+
+
 def dispatch_task(
     task: dict[str, Any],
     *,
@@ -150,7 +158,9 @@ def dispatch_task(
 
     No-ops (returns without error) when: the row has no `schedule.cron` or
     `script`, it isn't due yet, or a concurrent dispatch already holds its
-    lock. A row carrying a `skill` instead of a `script` is a Claude Code
+    lock. A cron-less row that carries `cron_disabled`/`disabled_reason` was
+    retired on purpose and is logged at info; one without either is a genuine
+    misconfiguration and still warns. A row carrying a `skill` instead of a `script` is a Claude Code
     skill, invoked as `claude /<skill>` by the generated launchd plists; the
     worker container has no claude CLI so it can never be dispatched here,
     which is by design and logged at info rather than as a warning. A row
@@ -160,9 +170,26 @@ def dispatch_task(
     pops this item off the `flow-run` queue.
     """
     task_id = str(task.get("id"))
-    cron_expr = (task.get("schedule") or {}).get("cron")
+    schedule = task.get("schedule") or {}
+    cron_expr = schedule.get("cron")
     if not cron_expr:
-        logger.warning("task_missing_cron", task_id=task_id)
+        # A retired row is not a misconfigured one. Retiring a flow here means
+        # moving `cron` aside rather than deleting the row (so the schedule it
+        # used to run on stays recoverable), which leaves it permanently
+        # cron-less by design -- exactly the shape a genuine misconfiguration
+        # has. Warning about both made the two indistinguishable and buried
+        # the real signal: seven retired rows re-warned on every pass, ~2,880
+        # lines a day. Same distinction the `script` branch below already
+        # draws between a by-design skill row and a genuine misconfiguration.
+        if _RETIRED_KEY in schedule or _RETIRED_REASON_KEY in schedule:
+            logger.info(
+                "task_retired",
+                task_id=task_id,
+                reason=schedule.get(_RETIRED_REASON_KEY),
+                retired_cron=schedule.get(_RETIRED_KEY),
+            )
+        else:
+            logger.warning("task_missing_cron", task_id=task_id)
         return
 
     last_run_row = worker_db.get_one(brand_dir, task_id, brand)

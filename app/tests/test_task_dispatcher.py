@@ -212,6 +212,87 @@ def test_dispatch_task_skips_row_missing_cron(pg: None, tmp_path: Path) -> None:
     assert queue.pushed == []
 
 
+class _RecordingLogger:
+    """Captures the structured lines the dispatcher emits, with their level."""
+
+    def __init__(self) -> None:
+        self.lines: list[tuple[str, str, dict[str, Any]]] = []
+
+    def info(self, event: str, **kw: Any) -> None:
+        self.lines.append(("info", event, kw))
+
+    def warning(self, event: str, **kw: Any) -> None:
+        self.lines.append(("warning", event, kw))
+
+    def events(self) -> list[str]:
+        return [e for _, e, _ in self.lines]
+
+
+def _dispatch_with_schedule(
+    schedule: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[_FakeQueue, _RecordingLogger]:
+    """Dispatch one row whose `schedule` is `schedule`.
+
+    Needs no Postgres: a cron-less row returns before `worker_db` is touched.
+    """
+    queue, log = _FakeQueue(), _RecordingLogger()
+    monkeypatch.setattr(task_dispatcher, "logger", log)
+    task = _task_row("t1", _BRAND)
+    task["schedule"] = schedule
+    task_dispatcher.dispatch_task(
+        task,
+        brand=_BRAND,
+        brand_dir=tmp_path,
+        now=datetime.now(UTC),
+        redis_client=_FakeLock(),
+        queue=queue,
+    )
+    return queue, log
+
+
+def test_retired_row_logs_at_info_not_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Retiring a flow moves `cron` aside rather than deleting the row, so the
+    row is permanently cron-less BY DESIGN -- the same shape a genuine
+    misconfiguration has. Warning about both made them indistinguishable."""
+    queue, log = _dispatch_with_schedule(
+        {"cron_disabled": "33 15 * * *", "disabled_reason": "superseded by fb-engager"},
+        tmp_path,
+        monkeypatch,
+    )
+    assert queue.pushed == []
+    assert log.events() == ["task_retired"]
+    level, _, fields = log.lines[0]
+    assert level == "info"
+    assert fields["reason"] == "superseded by fb-engager"
+    assert fields["retired_cron"] == "33 15 * * *", "the retired schedule stays recoverable"
+
+
+def test_reason_alone_is_enough_to_mark_a_row_retired(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """fb-scanner/fb-comment were retired before there was a cron worth
+    preserving -- their `schedule` was cleared outright."""
+    queue, log = _dispatch_with_schedule(
+        {"disabled_reason": "superseded by fb-engager"}, tmp_path, monkeypatch
+    )
+    assert queue.pushed == []
+    assert log.events() == ["task_retired"]
+
+
+@pytest.mark.parametrize("schedule", [{}, {"cadence": "daily"}])
+def test_genuinely_cronless_row_still_warns(
+    schedule: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The signal this change exists to protect: a row that lost its cron by
+    accident must still be loud."""
+    queue, log = _dispatch_with_schedule(schedule, tmp_path, monkeypatch)
+    assert queue.pushed == []
+    assert log.events() == ["task_missing_cron"]
+    assert log.lines[0][0] == "warning"
+
+
 @requires_postgres
 def test_dispatch_task_skips_skill_only_row_without_warning(
     pg: None, tmp_path: Path, capsys: pytest.CaptureFixture[str]
