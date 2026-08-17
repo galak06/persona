@@ -654,6 +654,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/keywords": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scout search vocabulary
+         * @description Curated and discovered keywords for the active brand, newest-strongest
+         *     first. Never 404s: a brand with no discoveries yet returns an empty
+         *     `discovered` list rather than an error, because that is the normal state
+         *     before the first scout run.
+         */
+        get: operations["get_keywords_api_v1_keywords_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/oauth/facebook": {
         parameters: {
             query?: never;
@@ -1966,6 +1989,16 @@ export interface components {
             topic: string;
         };
         /**
+         * CuratedKeyword
+         * @description One term from the brand's own `content_analysis.keywords` block.
+         */
+        CuratedKeyword: {
+            /** Category */
+            category: string;
+            /** Keyword */
+            keyword: string;
+        };
+        /**
          * DecisionResponse
          * @description Returned on every commit endpoint.
          */
@@ -1983,6 +2016,28 @@ export interface components {
             join_status?: "queued" | null;
             /** Status */
             status: string;
+        };
+        /**
+         * DiscoveredKeyword
+         * @description One term the Trends stage found, with the provenance behind it.
+         */
+        DiscoveredKeyword: {
+            /** Active */
+            active: boolean;
+            /** Best Score */
+            best_score: number;
+            /** Category */
+            category: string;
+            /** First Seen */
+            first_seen: string;
+            /** Keyword */
+            keyword: string;
+            /** Last Seen */
+            last_seen: string;
+            /** Reason */
+            reason: string;
+            /** Times Seen */
+            times_seen: number;
         };
         /**
          * EditBody
@@ -2134,7 +2189,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "running" | "success" | "error";
+            status: "queued" | "running" | "success" | "error";
         };
         /**
          * FlowReadiness
@@ -2413,6 +2468,15 @@ export interface components {
             ideas: components["schemas"]["ContentIdea"][];
             /** Total */
             total: number;
+        };
+        /** KeywordsResponse */
+        KeywordsResponse: {
+            /** Active Limit */
+            active_limit: number;
+            /** Curated */
+            curated: components["schemas"]["CuratedKeyword"][];
+            /** Discovered */
+            discovered: components["schemas"]["DiscoveredKeyword"][];
         };
         /**
          * LogTailResponse
@@ -2716,7 +2780,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "never" | "running" | "success" | "error";
+            status: "never" | "queued" | "running" | "success" | "error";
             /** Title */
             title: string;
         };
@@ -3697,6 +3761,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_keywords_api_v1_keywords_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeywordsResponse"];
                 };
             };
         };
