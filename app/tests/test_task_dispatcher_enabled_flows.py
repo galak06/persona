@@ -104,5 +104,12 @@ def test_run_once_skips_disabled_managed_flow(
     )
 
     assert [p["schedule_task_id"] for p in queue.pushed] == ["ig"]
-    assert worker_db.get_one(tmp_path, "ig", _FLOW_GATE_BRAND) is None
+    # The enqueued flow claims its cron slot at enqueue (status='queued') so
+    # the dispatcher can't re-enqueue it while it waits for the single-slot
+    # worker. The skipped one must NOT -- claiming a slot for a flow that was
+    # never queued would suppress it again on the next pass for a reason that
+    # has nothing to do with it being disabled.
+    ig_row = worker_db.get_one(tmp_path, "ig", _FLOW_GATE_BRAND)
+    assert ig_row is not None
+    assert ig_row["status"] == "queued"
     assert worker_db.get_one(tmp_path, "scout", _FLOW_GATE_BRAND) is None

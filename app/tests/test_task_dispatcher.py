@@ -70,6 +70,17 @@ class _FakeLock:
         self._held.add(name)
         return True
 
+    def expire_all(self) -> None:
+        """Simulate every held key's TTL elapsing.
+
+        The lock is 45s and the dispatcher loop is 30s, so in production the
+        lock DOES expire between passes -- repeatedly, for as long as a task
+        sits unstarted. Tests that assert "the lock prevents a duplicate"
+        without modelling expiry describe a window narrower than the real
+        one; this lets a test cross it.
+        """
+        self._held.clear()
+
 
 class _FakeQueue:
     """In-memory stand-in for `lib.task_queue.TaskQueue.push()`.
@@ -171,9 +182,13 @@ def test_dispatch_task_enqueues_due_task_without_executing_it(pg: None, tmp_path
 
     assert len(queue.pushed) == 1
     assert queue.pushed[0]["schedule_task_id"] == "t1"
-    # Enqueuing is NOT executing -- worker_runs stays untouched; that's
-    # scripts/task_worker.py's job once it pops this off the queue.
-    assert worker_db.get_one(tmp_path, "t1", _BRAND) is None
+    # Enqueuing is still NOT executing -- running the script is
+    # scripts/task_worker.py's job once it pops this off the queue. But the
+    # dispatcher now claims the cron slot at enqueue with status='queued', so
+    # `is_task_due` stops returning True for a row that is already waiting.
+    row = worker_db.get_one(tmp_path, "t1", _BRAND)
+    assert row is not None
+    assert row["status"] == "queued"
 
 
 @requires_postgres
@@ -367,6 +382,72 @@ def test_dispatch_task_lock_prevents_double_enqueue(
     )
 
     assert len(queue.pushed) == 1  # second call saw the held lock and skipped
+
+
+@requires_postgres
+def test_expired_lock_does_not_requeue_a_task_still_waiting_in_the_queue(
+    pg: None, tmp_path: Path
+) -> None:
+    """The duplicate-enqueue bug, as observed on 2026-08-17.
+
+    `task_worker` is single-slot. While a 13-minute browser flow held it,
+    `social-posts-release` sat enqueued-but-unstarted -- so nothing wrote
+    `worker_runs`, `is_task_due` kept answering True, and the only throttle
+    was the 45s lock against a 30s loop. It expired every 45s and the row was
+    re-enqueued once a minute: 8 enqueues, 8 real runs.
+
+    Note this test does NOT stub `is_task_due` (unlike the lock test above) --
+    the whole point is that the real due-check now says "not due" because
+    `record_queued` claimed the slot. With the lock expired between passes,
+    the due-check is the only guard left, which is exactly the production
+    shape.
+    """
+    queue = _FakeQueue()
+    lock = _FakeLock()
+    now = datetime.now(UTC)
+    task = _task_row("t1", _BRAND)
+
+    task_dispatcher.dispatch_task(
+        task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock, queue=queue
+    )
+    assert len(queue.pushed) == 1
+
+    # Five more dispatcher passes, each with the lock fully expired -- i.e.
+    # ~5 minutes of a long flow hogging the worker. The item is still sitting
+    # in the queue; nothing has run it.
+    for _ in range(5):
+        lock.expire_all()
+        task_dispatcher.dispatch_task(
+            task, brand=_BRAND, brand_dir=tmp_path, now=now, redis_client=lock, queue=queue
+        )
+
+    assert len(queue.pushed) == 1, "a queued-but-unstarted task must not be enqueued again"
+
+
+@requires_postgres
+def test_failed_push_leaves_the_slot_unclaimed_so_the_next_pass_retries(
+    pg: None, tmp_path: Path
+) -> None:
+    """`record_queued` runs AFTER the push, never before.
+
+    Claiming the slot first would mean a broken Redis silently burns the
+    flow's cron slot: the push raises, but the row now says "queued", so the
+    due-check suppresses every later pass and the flow just never runs that
+    day. Ordering it after the push keeps a failed enqueue retryable.
+    """
+    queue = _FakeQueue(fail_for="t1")
+
+    with pytest.raises(RuntimeError):
+        task_dispatcher.dispatch_task(
+            _task_row("t1", _BRAND),
+            brand=_BRAND,
+            brand_dir=tmp_path,
+            now=datetime.now(UTC),
+            redis_client=_FakeLock(),
+            queue=queue,
+        )
+
+    assert worker_db.get_one(tmp_path, "t1", _BRAND) is None
 
 
 # --------------------------------------------------------------------------- run_once

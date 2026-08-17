@@ -220,6 +220,15 @@ def dispatch_task(
     )
     resolved_queue = queue or TaskQueue(worker=QUEUE_WORKER, brand=brand)
     resolved_queue.push(payload)
+    # Claim the cron slot NOW, not when the worker gets round to it. The
+    # due-check above reads `worker_runs.last_run`, which used to be written
+    # only by `record_start` -- so between push and pickup the row still held
+    # the PREVIOUS run's timestamp and the row stayed due on every pass. With
+    # a single-slot worker that window is however long the flow ahead of it
+    # takes (13+ min for a browser flow), and the 45s lock was the only
+    # throttle: it expired every 45s and re-enqueued a duplicate every minute.
+    # After the push, so a failed push leaves the slot unclaimed and retryable.
+    worker_db.record_queued(brand_dir, task_id, brand)
     logger.info("task_enqueued", task_id=task_id, script=script)
 
 
