@@ -140,6 +140,9 @@ export const endpoints = {
   oauthOpenartStart: (brandId: string, returnTo: string): string =>
     `/oauth/openart/start?brand_id=${enc(brandId)}&return_to=${enc(returnTo)}`,
 
+  /** OAuth — OpenArt connection state ("ok" | "missing" | "not_configured"). */
+  oauthOpenartStatus: "/oauth/openart/status",
+
   /** OAuth — exchange stored user token for a page token. */
   oauthFacebookPage: (brandId: string, pageId: string): string =>
     `/oauth/facebook/page/${enc(pageId)}?brand_id=${enc(brandId)}`,

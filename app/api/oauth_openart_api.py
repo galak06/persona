@@ -3,6 +3,7 @@
   GET /api/v1/oauth/openart/start     → 302 to OpenArt's consent screen
   GET /api/v1/oauth/openart/callback  → exchange code, save token, 302 back
                                         to the frontend Reels page
+  GET /api/v1/oauth/openart/status    → {"state": "ok"|"missing"|"not_configured"}
 
 Mounted under `/api/v1/oauth` next to `api.oauth_api` (Facebook), and
 mirrors its patterns: an in-memory state stash for the cross-request leg
@@ -17,14 +18,18 @@ from __future__ import annotations
 import os
 import re
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 
+from api.brand_context import resolve_api_brand
 from lib.oauth.openart import openart_enabled
+from lib.oauth.openart_store import stored_auth_state
 from lib.oauth.openart_web import OpenArtWebFlowError, begin_authorization, complete_authorization
 
 router = APIRouter()
@@ -128,3 +133,22 @@ def openart_callback(
         return RedirectResponse(url=f"{return_to}?openart=error&reason={quote(str(exc)[:200])}")
 
     return RedirectResponse(url=f"{return_to}?openart=connected")
+
+
+class OpenArtStatus(BaseModel):
+    """Connection state the Reels page renders before offering Compose."""
+
+    state: Literal["ok", "missing", "not_configured"]
+
+
+@router.get("/openart/status", response_model=OpenArtStatus, summary="OpenArt connection state")
+def openart_status() -> OpenArtStatus:
+    """Cheap UI pre-flight -- brand config plus the stored token record, no
+    network. `stored_auth_state` already accounts for expiry skew and counts
+    a stale-but-refreshable token as usable, so "missing" means a fresh
+    Authorize is genuinely needed. Always 200: the state is data, not an
+    error."""
+    brand_id, brand_dir = resolve_api_brand()
+    if not openart_enabled(Path(brand_dir)):
+        return OpenArtStatus(state="not_configured")
+    return OpenArtStatus(state=stored_auth_state(brand_id))
