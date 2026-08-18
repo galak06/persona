@@ -169,9 +169,6 @@ export const endpoints = {
   /** GET — the active brand's reference-image library (categories + images). */
   referenceLibrary: "/reference-images",
 
-  /** POST — declare a new reference category (label in, slug back). */
-  referenceCategories: "/reference-images/categories",
-
   /** POST — upload one reference photo. multipart/form-data, not JSON. */
   referenceImages: "/reference-images/images",
 
@@ -181,9 +178,6 @@ export const endpoints = {
 
   /** POST — copy the brand's legacy mascot asset in. 404 when there is none. */
   referenceImportLegacy: "/reference-images/import-legacy",
-
-  /** POST — advisory category for an about-to-be-uploaded photo. multipart. */
-  referenceSuggestCategory: "/reference-images/suggest-category",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

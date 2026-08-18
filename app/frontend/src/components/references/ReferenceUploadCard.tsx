@@ -1,6 +1,12 @@
 // Add photos to the reference library: drag-and-drop or a file picker, one
 // status row per file, uploaded sequentially so a mid-batch failure leaves
 // the successful ones filed rather than rolling the lot back.
+//
+// There is no category picker here on purpose. The server runs a vision pass
+// over every upload and tags it itself, so the operator's job is "drop the
+// photos in", and each finished row reports what the model decided — its
+// tag, whether it saw the mascot, and its one-line description. Correcting a
+// wrong call is an edit in the grid below, not a decision made up front.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
@@ -8,12 +14,10 @@ import type { DragEvent } from "react";
 import { getErrorMessage } from "../../api/client";
 import {
   ACCEPT_ATTR,
-  createReferenceCategory,
   preflightRejection,
-  suggestReferenceCategory,
   uploadReferenceImage,
 } from "../../api/referenceImages";
-import type { CategorySummary } from "../../api/referenceImages";
+import type { LibraryImage } from "../../api/referenceImages";
 import Alert from "../ui/Alert";
 
 type RowStatus = "pending" | "uploading" | "done" | "failed";
@@ -24,11 +28,18 @@ interface QueuedFile {
   previewUrl: string;
   status: RowStatus;
   message: string;
+  /** The filed entry, once the server answers — what the model decided. */
+  result?: LibraryImage;
 }
 
 interface ReferenceUploadCardProps {
-  categories: CategorySummary[];
   disabled?: boolean;
+  /**
+   * The brand's mascot by name, so a finished row reads "shows Nalla" rather
+   * than "shows the mascot". Empty or absent (record still loading, or the
+   * brand never named one) falls back to the generic wording.
+   */
+  mascotName?: string;
   /** Refetch the library after anything lands. */
   onUploaded: () => void;
 }
@@ -36,19 +47,51 @@ interface ReferenceUploadCardProps {
 /** Per-status tone, plus fixed text for the states that carry no message. */
 const STATUS_ROW: Record<RowStatus, { cls: string; text: string }> = {
   pending: { cls: "text-slate-500", text: "Ready to upload" },
-  uploading: { cls: "text-amber-700", text: "Uploading…" },
+  uploading: { cls: "text-amber-700", text: "Analyzing and filing…" },
   done: { cls: "text-emerald-700", text: "" },
   failed: { cls: "text-rose-700", text: "" },
 };
 
+/** The tagging result, spelled out — this is the operator's proof it ran. */
+function AnalysisSummary({
+  image,
+  mascot,
+}: {
+  image: LibraryImage;
+  /** Already trimmed; empty means fall back to the generic wording. */
+  mascot: string;
+}): React.JSX.Element {
+  const shown = mascot || "the mascot";
+  return (
+    <>
+      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="rounded bg-stone-100 px-1.5 py-0.5 font-semibold text-slate-700">
+          {image.category}
+        </span>
+        <span
+          className={
+            image.shows_mascot
+              ? "rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-800"
+              : "rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-500"
+          }
+        >
+          {image.shows_mascot ? `shows ${shown}` : `no ${shown}`}
+        </span>
+      </p>
+      {image.description && (
+        <p className="mt-0.5 text-xs text-slate-500">{image.description}</p>
+      )}
+    </>
+  );
+}
+
 export default function ReferenceUploadCard({
-  categories,
   disabled = false,
+  mascotName,
   onUploaded,
 }: ReferenceUploadCardProps): React.JSX.Element {
+  const mascot = mascotName?.trim() ?? "";
   const [queue, setQueue] = useState<QueuedFile[]>([]);
-  const [category, setCategory] = useState("general");
-  const [newCategory, setNewCategory] = useState("");
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -58,48 +101,26 @@ export default function ReferenceUploadCard({
   // revoke off `queue` instead would tear down URLs still on screen: each
   // per-file status update replaces the array and would fire the cleanup.
   const objectUrls = useRef<string[]>([]);
-  // Set once the operator picks a category by hand — after that, a late
-  // suggestion must not yank the selection out from under them.
-  const userChoseCategory = useRef(false);
 
   useEffect(() => () => objectUrls.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
-  const prefillCategory = useCallback(async (file: File) => {
-    try {
-      const suggested = (await suggestReferenceCategory(file))?.toLowerCase();
-      if (!suggested || userChoseCategory.current) return;
-      const match = categories.find(
-        (c) => c.label.toLowerCase() === suggested || c.slug.toLowerCase() === suggested,
-      );
-      if (match) setCategory(match.slug);
-    } catch {
-      // Advisory only — a failed suggestion is a silent no-op, never a
-      // reason to hold up an upload the operator already asked for.
-    }
-  }, [categories]);
-
-  const addFiles = useCallback(
-    (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      setNotice("");
-      const rows: QueuedFile[] = Array.from(files).map((file, i) => {
-        const previewUrl = URL.createObjectURL(file);
-        objectUrls.current.push(previewUrl);
-        const rejection = preflightRejection(file);
-        return {
-          key: `${Date.now()}-${i}-${file.name}`,
-          file,
-          previewUrl,
-          status: rejection ? "failed" : "pending",
-          message: rejection ?? "",
-        };
-      });
-      setQueue((prev) => [...prev, ...rows]);
-      const first = rows.find((r) => r.status === "pending");
-      if (first) void prefillCategory(first.file);
-    },
-    [prefillCategory],
-  );
+  const addFiles = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setNotice("");
+    const rows: QueuedFile[] = Array.from(files).map((file, i) => {
+      const previewUrl = URL.createObjectURL(file);
+      objectUrls.current.push(previewUrl);
+      const rejection = preflightRejection(file);
+      return {
+        key: `${Date.now()}-${i}-${file.name}`,
+        file,
+        previewUrl,
+        status: rejection ? "failed" : "pending",
+        message: rejection ?? "",
+      };
+    });
+    setQueue((prev) => [...prev, ...rows]);
+  }, []);
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -107,9 +128,14 @@ export default function ReferenceUploadCard({
     if (!disabled) addFiles(e.dataTransfer.files);
   };
 
-  const markRow = (key: string, status: RowStatus, message: string) => {
+  const markRow = (
+    key: string,
+    status: RowStatus,
+    message: string,
+    result?: LibraryImage,
+  ) => {
     setQueue((prev) =>
-      prev.map((row) => (row.key === key ? { ...row, status, message } : row)),
+      prev.map((row) => (row.key === key ? { ...row, status, message, result } : row)),
     );
   };
 
@@ -122,8 +148,8 @@ export default function ReferenceUploadCard({
     for (const row of pending) {
       markRow(row.key, "uploading", "");
       try {
-        await uploadReferenceImage(row.file, category);
-        markRow(row.key, "done", "Added to the library.");
+        const entry = await uploadReferenceImage(row.file);
+        markRow(row.key, "done", "Filed and tagged.", entry);
         landed += 1;
       } catch (err) {
         markRow(row.key, "failed", getErrorMessage(err, "Upload failed."));
@@ -131,21 +157,6 @@ export default function ReferenceUploadCard({
     }
     setBusy(false);
     if (landed > 0) onUploaded();
-  };
-
-  const handleCreateCategory = async () => {
-    const label = newCategory.trim();
-    if (!label || disabled) return;
-    setNotice("");
-    try {
-      const created = await createReferenceCategory(label);
-      setNewCategory("");
-      userChoseCategory.current = true;
-      setCategory(created.slug);
-      onUploaded();
-    } catch (err) {
-      setNotice(getErrorMessage(err, "Could not create that category."));
-    }
   };
 
   const clearFinished = () => {
@@ -160,7 +171,6 @@ export default function ReferenceUploadCard({
   };
 
   const pendingCount = queue.filter((row) => row.status === "pending").length;
-  const knownCategory = categories.some((c) => c.slug === category);
 
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
@@ -169,9 +179,12 @@ export default function ReferenceUploadCard({
           Add reference photos
         </h3>
         <p className="text-xs text-slate-500 mt-1">
-          These ground every generated image, so quality here decides quality there: clear,
-          well-lit shots of one subject &mdash; the mascot, a product, an ingredient, a place &mdash;
-          from varied angles. PNG, JPEG or WEBP, at least 256px per side, up to 12&nbsp;MB.
+          Anything that grounds a generated image belongs here &mdash; the brand&rsquo;s
+          own dog, but equally ingredients, kitchens, products, locations, style shots.
+          Every upload is analyzed and tagged automatically, so you never pick a
+          category; if a tag or a mascot flag comes back wrong, correct it in the
+          library below. Clear, well-lit shots of one subject work best. PNG, JPEG or
+          WEBP, at least 256px per side, up to 12&nbsp;MB.
         </p>
       </div>
 
@@ -209,48 +222,6 @@ export default function ReferenceUploadCard({
         </button>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="text-sm">
-          <span className="block mb-1 font-medium text-slate-700">Category</span>
-          <select
-            value={category}
-            disabled={disabled}
-            onChange={(e) => {
-              userChoseCategory.current = true;
-              setCategory(e.target.value);
-            }}
-            className="rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50 disabled:bg-stone-50"
-          >
-            {!knownCategory && <option value={category}>{category}</option>}
-            {categories.map((c) => (
-              <option key={c.slug} value={c.slug}>
-                {c.label} ({c.count})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="text-sm">
-          <span className="block mb-1 font-medium text-slate-700">New category</span>
-          <input
-            type="text"
-            value={newCategory}
-            disabled={disabled}
-            placeholder="e.g. close-up"
-            onChange={(e) => setNewCategory(e.target.value)}
-            className="rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50 disabled:bg-stone-50"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={disabled || !newCategory.trim()}
-          onClick={() => void handleCreateCategory()}
-          className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-stone-50 disabled:opacity-50"
-        >
-          Add category
-        </button>
-      </div>
-
       {notice && <Alert status="error">{notice}</Alert>}
 
       {queue.length > 0 && (
@@ -258,18 +229,19 @@ export default function ReferenceUploadCard({
           {queue.map((row) => (
             <li
               key={row.key}
-              className="flex items-center gap-3 rounded-lg border border-stone-200 p-2"
+              className="flex items-start gap-3 rounded-lg border border-stone-200 p-2"
             >
               <img
                 src={row.previewUrl}
                 alt={row.file.name}
-                className="h-12 w-12 rounded object-cover border border-stone-200"
+                className="h-12 w-12 shrink-0 rounded object-cover border border-stone-200"
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm text-slate-700">{row.file.name}</p>
                 <p className={`text-xs ${STATUS_ROW[row.status].cls}`}>
                   {STATUS_ROW[row.status].text || row.message}
                 </p>
+                {row.result && <AnalysisSummary image={row.result} mascot={mascot} />}
               </div>
             </li>
           ))}

@@ -16,6 +16,15 @@ import ReferenceUploadCard from "./ReferenceUploadCard";
 interface ReferenceLibrarySectionProps {
   /** The brand id in the URL — what this page claims to be editing. */
   brandId: string;
+  /**
+   * The brand's mascot as it is actually called, from the brand record. Every
+   * mention of the mascot flag below names it, because "is Nalla in this
+   * photo?" is a question an operator can answer at a glance and "does this
+   * show the mascot?" is not. Optional and possibly empty — the brand record
+   * may still be loading, or the field may simply be unset — in which case
+   * each consumer falls back to the generic wording.
+   */
+  mascotName?: string;
 }
 
 const BRAND_STORAGE_KEY = "social_automation_selected_brand";
@@ -24,6 +33,7 @@ const EMPTY_LIBRARY: LibraryResponse = { categories: [], images: [] };
 
 export default function ReferenceLibrarySection({
   brandId,
+  mascotName,
 }: ReferenceLibrarySectionProps): React.JSX.Element {
   // Read once at mount: this is the same value `apiClient`'s interceptor
   // reads for `X-Brand`, so it is the brand every request below will
@@ -45,11 +55,12 @@ export default function ReferenceLibrarySection({
           Reference photos
         </h2>
         <p className="text-sm text-slate-500">
-          Real photos to ground generated imagery &mdash; the mascot, but also
-          ingredients, kitchens, products, locations, style shots &mdash; each
-          tagged by category. Image generation picks the reference whose tag
-          matches what it is drawing, so a fuller library means generated
-          images that stay anchored to the real thing.
+          Real photos to ground generated imagery &mdash; the brand&rsquo;s own dog,
+          but also ingredients, kitchens, products, locations, style shots. Every
+          upload is described, tagged and mascot-flagged automatically; image
+          generation then picks the reference whose tag matches what it is drawing,
+          so a fuller library means generated images that stay anchored to the real
+          thing.
         </p>
       </header>
 
@@ -77,13 +88,14 @@ export default function ReferenceLibrarySection({
       )}
 
       <ReferenceUploadCard
-        categories={library.categories}
         disabled={mismatch}
+        mascotName={mascotName}
         onUploaded={() => void refetch()}
       />
       <ReferenceCategoryGrid
         library={library}
         disabled={mismatch}
+        mascotName={mascotName}
         onChanged={() => void refetch()}
       />
     </section>

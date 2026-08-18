@@ -235,7 +235,7 @@ export default function BrandSettings(): React.JSX.Element {
         </form>
       )}
 
-      <ReferenceLibrarySection brandId={id} />
+      <ReferenceLibrarySection brandId={id} mascotName={brand?.mascot_name} />
 
       {result && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-2">
