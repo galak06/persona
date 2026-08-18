@@ -331,20 +331,6 @@
         "title": "Body_post_image_api_v1_reference_images_images_post",
         "type": "object"
       },
-      "Body_post_suggest_category_api_v1_reference_images_suggest_category_post": {
-        "properties": {
-          "file": {
-            "contentMediaType": "application/octet-stream",
-            "title": "File",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file"
-        ],
-        "title": "Body_post_suggest_category_api_v1_reference_images_suggest_category_post",
-        "type": "object"
-      },
       "BrandCreateRequest": {
         "description": "Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.",
         "properties": {
@@ -1140,24 +1126,6 @@
           "label"
         ],
         "title": "CategoryCreated",
-        "type": "object"
-      },
-      "CategorySuggestion": {
-        "description": "Advisory tag for an about-to-be-uploaded photo. `None` = no opinion.",
-        "properties": {
-          "suggested_category": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Suggested Category"
-          }
-        },
-        "title": "CategorySuggestion",
         "type": "object"
       },
       "CategorySummary": {
@@ -2598,6 +2566,35 @@
         "title": "IdeasResponse",
         "type": "object"
       },
+      "ImageUpdate": {
+        "description": "PATCH body. Every field is optional; an omitted one is left unchanged.\n\n`category` re-homes the photo (its id is `\"<category>/<filename>\"`), so a\nPATCH that changes it gets a different id back than it sent.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "shows_mascot": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Mascot"
+          }
+        },
+        "title": "ImageUpdate",
+        "type": "object"
+      },
       "KeywordsResponse": {
         "properties": {
           "active_limit": {
@@ -2665,6 +2662,11 @@
             "title": "Content Type",
             "type": "string"
           },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "filename": {
             "title": "Filename",
             "type": "string"
@@ -2682,6 +2684,11 @@
             "default": "",
             "title": "Label",
             "type": "string"
+          },
+          "shows_mascot": {
+            "default": false,
+            "title": "Shows Mascot",
+            "type": "boolean"
           },
           "source": {
             "default": "",
@@ -5901,7 +5908,7 @@
     },
     "/api/v1/reference-images/images": {
       "post": {
-        "description": "File an uploaded photo under `category` (defaults to `general`).\n\nContent-addressed, so re-uploading identical bytes to the same category\nreturns the existing entry rather than a duplicate.",
+        "description": "File an uploaded photo, tagged by the vision pass.\n\n`category` is an OPTIONAL override: supply it and it wins, leave it out\n(as the UI does) and the model's choice is used -- a tag it reused from\nthe brand's list, or a new one the store declares on the way in. If the\nmodel could not be asked at all, the photo still lands, under `general`.\n\nContent-addressed, so re-uploading identical bytes to the same category\nreturns the existing entry rather than a duplicate.",
         "operationId": "post_image_api_v1_reference_images_images_post",
         "requestBody": {
           "content": {
@@ -5975,6 +5982,57 @@
         "tags": [
           "reference-images"
         ]
+      },
+      "patch": {
+        "description": "Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.\n\nRe-tagging MOVES the file, so the returned entry carries a different id\nthan the one in the URL -- callers must adopt it rather than reuse theirs.",
+        "operationId": "patch_image_api_v1_reference_images_images__image_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Image",
+        "tags": [
+          "reference-images"
+        ]
       }
     },
     "/api/v1/reference-images/images/{image_id}/raw": {
@@ -6035,48 +6093,6 @@
           }
         },
         "summary": "Post Import Legacy",
-        "tags": [
-          "reference-images"
-        ]
-      }
-    },
-    "/api/v1/reference-images/suggest-category": {
-      "post": {
-        "description": "Which existing tag fits this photo? Advisory -- never an error.\n\nA failing model call is a 200 with `suggested_category: null`, because the\nUI's fallback is simply an unset selector. The bytes are still validated,\nso the same file that would be rejected on upload is rejected here too.",
-        "operationId": "post_suggest_category_api_v1_reference_images_suggest_category_post",
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_post_suggest_category_api_v1_reference_images_suggest_category_post"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CategorySuggestion"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Post Suggest Category",
         "tags": [
           "reference-images"
         ]

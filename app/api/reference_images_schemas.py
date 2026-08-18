@@ -42,6 +42,8 @@ class LibraryImage(BaseModel):
     height: int = 0
     source: str = ""  # how it got here; "upload" for everything written today
     label: str = ""  # display name; the uploader's filename by default
+    shows_mascot: bool = False  # does the brand's own mascot appear in THIS photo?
+    description: str = ""  # one sentence from the upload-time vision pass
     approved_at: str | None = None
     added_at: str | None = None
     url: str = ""  # serving URL for the bytes (see `image_url`)
@@ -72,10 +74,15 @@ class CategoryCreated(BaseModel):
     label: str
 
 
-class CategorySuggestion(BaseModel):
-    """Advisory tag for an about-to-be-uploaded photo. `None` = no opinion."""
+class ImageUpdate(BaseModel):
+    """PATCH body. Every field is optional; an omitted one is left unchanged.
 
-    suggested_category: str | None = None
+    `category` re-homes the photo (its id is `"<category>/<filename>"`), so a
+    PATCH that changes it gets a different id back than it sent.
+    """
+
+    category: str | None = None
+    shows_mascot: bool | None = None
 
 
 def image_url(image_id: str) -> str:
@@ -105,6 +112,8 @@ def to_model(entry: dict[str, Any]) -> LibraryImage:
         height=number("height"),
         source=str(entry.get("source") or ""),
         label=str(entry.get("label") or ""),
+        shows_mascot=bool(entry.get("shows_mascot")),
+        description=str(entry.get("description") or ""),
         approved_at=text("approved_at"),
         added_at=text("added_at"),
         url=image_url(image_id),

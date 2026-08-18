@@ -982,7 +982,12 @@ export interface paths {
         put?: never;
         /**
          * Post Image
-         * @description File an uploaded photo under `category` (defaults to `general`).
+         * @description File an uploaded photo, tagged by the vision pass.
+         *
+         *     `category` is an OPTIONAL override: supply it and it wins, leave it out
+         *     (as the UI does) and the model's choice is used -- a tag it reused from
+         *     the brand's list, or a new one the store declares on the way in. If the
+         *     model could not be asked at all, the photo still lands, under `general`.
          *
          *     Content-addressed, so re-uploading identical bytes to the same category
          *     returns the existing entry rather than a duplicate.
@@ -1011,7 +1016,14 @@ export interface paths {
         delete: operations["remove_image_api_v1_reference_images_images__image_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Patch Image
+         * @description Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.
+         *
+         *     Re-tagging MOVES the file, so the returned entry carries a different id
+         *     than the one in the URL -- callers must adopt it rather than reuse theirs.
+         */
+        patch: operations["patch_image_api_v1_reference_images_images__image_id__patch"];
         trace?: never;
     };
     "/api/v1/reference-images/images/{image_id}/raw": {
@@ -1051,30 +1063,6 @@ export interface paths {
          *     404 when the brand has no legacy asset to import.
          */
         post: operations["post_import_legacy_api_v1_reference_images_import_legacy_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/reference-images/suggest-category": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Post Suggest Category
-         * @description Which existing tag fits this photo? Advisory -- never an error.
-         *
-         *     A failing model call is a 200 with `suggested_category: null`, because the
-         *     UI's fallback is simply an unset selector. The bytes are still validated,
-         *     so the same file that would be rejected on upload is rejected here too.
-         */
-        post: operations["post_suggest_category_api_v1_reference_images_suggest_category_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1610,11 +1598,6 @@ export interface components {
              */
             label: string;
         };
-        /** Body_post_suggest_category_api_v1_reference_images_suggest_category_post */
-        Body_post_suggest_category_api_v1_reference_images_suggest_category_post: {
-            /** File */
-            file: string;
-        };
         /**
          * BrandCreateRequest
          * @description Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.
@@ -2091,14 +2074,6 @@ export interface components {
             label: string;
             /** Slug */
             slug: string;
-        };
-        /**
-         * CategorySuggestion
-         * @description Advisory tag for an about-to-be-uploaded photo. `None` = no opinion.
-         */
-        CategorySuggestion: {
-            /** Suggested Category */
-            suggested_category?: string | null;
         };
         /**
          * CategorySummary
@@ -2681,6 +2656,19 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ImageUpdate
+         * @description PATCH body. Every field is optional; an omitted one is left unchanged.
+         *
+         *     `category` re-homes the photo (its id is `"<category>/<filename>"`), so a
+         *     PATCH that changes it gets a different id back than it sent.
+         */
+        ImageUpdate: {
+            /** Category */
+            category?: string | null;
+            /** Shows Mascot */
+            shows_mascot?: boolean | null;
+        };
         /** KeywordsResponse */
         KeywordsResponse: {
             /** Active Limit */
@@ -2708,6 +2696,11 @@ export interface components {
             category: string;
             /** Content Type */
             content_type: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
             /** Filename */
             filename: string;
             /**
@@ -2722,6 +2715,11 @@ export interface components {
              * @default
              */
             label: string;
+            /**
+             * Shows Mascot
+             * @default false
+             */
+            shows_mascot: boolean;
             /**
              * Source
              * @default
@@ -4539,6 +4537,41 @@ export interface operations {
             };
         };
     };
+    patch_image_api_v1_reference_images_images__image_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_image_raw_api_v1_reference_images_images__image_id__raw_get: {
         parameters: {
             query?: never;
@@ -4586,39 +4619,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LibraryImage"];
-                };
-            };
-        };
-    };
-    post_suggest_category_api_v1_reference_images_suggest_category_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "multipart/form-data": components["schemas"]["Body_post_suggest_category_api_v1_reference_images_suggest_category_post"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CategorySuggestion"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -1,9 +1,12 @@
 """Tagged reference-image library -- WRITE side.
 
-Every writer goes through here -- today the upload route and the explicit
-`import_legacy` call behind it -- so there is one manifest shape and one
-on-disk layout no matter who is filing the image. Reads live in
-`lib.crew.reference_library`; byte validation in `lib.crew.reference_validate`.
+Every writer that FILES an image goes through here -- the upload route and
+the explicit `import_legacy` call behind it -- so there is one manifest shape
+and one on-disk layout no matter who is filing the image. Editing an image
+already in the library is its sibling, `lib.crew.reference_library_edit`
+(which reuses this module's `normalize_manifest`/`ensure_category`/`utc_now`);
+reads live in `lib.crew.reference_library`; byte validation in
+`lib.crew.reference_validate`.
 
 Two invariants hold every write together:
 
@@ -105,6 +108,8 @@ def add_image(
     content_type: str,
     label: str,
     source: str,
+    shows_mascot: bool = False,
+    description: str = "",
 ) -> dict[str, Any]:
     """File `data` under `category` and return its manifest entry.
 
@@ -120,6 +125,11 @@ def add_image(
         source: How the image got here. Everything written today is
             `"upload"` (user-curated), which outranks any other origin at
             resolve time -- see `reference_library.SOURCE_PRIORITY`.
+        shows_mascot: Does the brand's own mascot appear in THIS image?
+            Per image, not per category (`lib.crew.reference_vision` decides
+            it at upload time; the operator can flip it afterwards).
+        description: One sentence about what is in the image, from the same
+            vision pass. `""` whenever it could not be asked.
 
     Raises:
         ValueError: `content_type` is not one the library stores.
@@ -139,7 +149,7 @@ def add_image(
     _write_bytes_atomic(destination, data)
 
     width, height = probe_dimensions(data)
-    now = _utc_now()
+    now = utc_now()
     entry: dict[str, Any] = {
         "id": image_id,
         "category": slug,
@@ -150,17 +160,19 @@ def add_image(
         "height": height,
         "source": source,
         "label": label,
+        "shows_mascot": bool(shows_mascot),
+        "description": description,
         "approved_at": now,
         "added_at": now,
     }
 
     with locked_json(manifest_path(brand_dir), empty_manifest()) as manifest:
-        _normalize(manifest)
+        normalize_manifest(manifest)
         existing = next((i for i in manifest["images"] if i.get("id") == image_id), None)
         if existing is not None:
             logger.info("reference_library_add_noop", image_id=image_id, brand_dir=str(brand_dir))
             return dict(existing)
-        _ensure_category(manifest, slug, category or slug, now)
+        ensure_category(manifest, slug, category or slug, now)
         manifest["images"].append(entry)
     logger.info(
         "reference_library_image_added", image_id=image_id, source=source, bytes_len=len(data)
@@ -177,7 +189,7 @@ def delete_image(brand_dir: Path, image_id: str) -> bool:
     migrate_legacy_dirname(brand_dir)
     removed: dict[str, Any] | None = None
     with locked_json(manifest_path(brand_dir), empty_manifest()) as manifest:
-        _normalize(manifest)
+        normalize_manifest(manifest)
         kept = []
         for image in manifest["images"]:
             if removed is None and image.get("id") == image_id:
@@ -211,8 +223,8 @@ def create_category(brand_dir: Path, label: str) -> dict[str, Any]:
         raise ValueError(f"category label {label!r} has no usable slug")
     (library_root(brand_dir) / slug).mkdir(parents=True, exist_ok=True)
     with locked_json(manifest_path(brand_dir), empty_manifest()) as manifest:
-        _normalize(manifest)
-        category = _ensure_category(manifest, slug, label, _utc_now())
+        normalize_manifest(manifest)
+        category = ensure_category(manifest, slug, label, utc_now())
     return dict(category)
 
 
@@ -243,7 +255,7 @@ def import_legacy(brand_dir: Path) -> dict[str, Any] | None:
     )
 
 
-def _ensure_category(manifest: Manifest, slug: str, label: str, created_at: str) -> dict[str, Any]:
+def ensure_category(manifest: Manifest, slug: str, label: str, created_at: str) -> dict[str, Any]:
     """Append the category if the manifest has not declared it yet."""
     for category in manifest["categories"]:
         if isinstance(category, dict) and category.get("slug") == slug:
@@ -253,7 +265,7 @@ def _ensure_category(manifest: Manifest, slug: str, label: str, created_at: str)
     return category
 
 
-def _normalize(manifest: Manifest) -> None:
+def normalize_manifest(manifest: Manifest) -> None:
     """Make a manifest read off disk safe to mutate.
 
     `locked_json` hands back whatever the file held (it falls back to the
@@ -284,5 +296,5 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
         raise
 
 
-def _utc_now() -> str:
+def utc_now() -> str:
     return datetime.now(UTC).isoformat()

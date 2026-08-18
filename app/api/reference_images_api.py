@@ -2,11 +2,11 @@
 
   GET    /api/v1/reference-images                     -- categories + images
   POST   /api/v1/reference-images/categories          -- declare a tag
-  POST   /api/v1/reference-images/images              -- upload a photo
+  POST   /api/v1/reference-images/images              -- upload a photo (auto-tagged)
   POST   /api/v1/reference-images/import-legacy       -- copy in the legacy asset
+  PATCH  /api/v1/reference-images/images/{id}         -- re-tag / re-flag one photo
   DELETE /api/v1/reference-images/images/{id}         -- remove one photo
   GET    /api/v1/reference-images/images/{id}/raw     -- serve the bytes
-  POST   /api/v1/reference-images/suggest-category    -- which tag fits? (advisory)
 
 Storage, validation and resolution all live in `lib.crew.reference_library*`,
 and the response shapes in `api.reference_images_schemas`; this module is
@@ -15,7 +15,16 @@ guard, and the mapping from `ImageValidationError.status_code` onto an HTTP
 response. Nothing here decides what a valid image is, or what one looks like
 on the wire.
 
-Two things are load-bearing rather than incidental:
+**Uploads tag themselves.** `lib.crew.reference_vision.analyze_for_brand` looks
+at the bytes and answers with a description, a category (reused from the brand's
+tags, or newly proposed and then created by the store) and a per-image
+`shows_mascot` flag -- so choosing a tag is an EDIT the operator may make
+afterwards, not a decision they must make first. That call is advisory in the
+strongest sense: any failure of it degrades to "filed under `general`,
+untagged", never to a failed upload. The `category` form field survives as an
+override for scripted callers, and wins when it is non-empty.
+
+Three things are load-bearing rather than incidental:
 
 * **`image_id` is `"<category>/<filename>"`**, so its routes need the `:path`
   converter, which means a raw `library_root / image_id` join could climb out
@@ -48,13 +57,14 @@ from api.brand_context import resolve_api_brand
 from api.reference_images_schemas import (
     CategoryCreate,
     CategoryCreated,
-    CategorySuggestion,
+    ImageUpdate,
     LibraryImage,
     LibraryResponse,
     categories,
     to_model,
 )
-from lib.crew.reference_library import library_root, list_category_labels, read_manifest
+from lib.crew.reference_library import library_root, read_manifest
+from lib.crew.reference_library_edit import update_image
 from lib.crew.reference_library_store import (
     add_image,
     create_category,
@@ -68,7 +78,7 @@ from lib.crew.reference_validate import (
     ValidationResult,
     validate_upload,
 )
-from lib.crew.reference_vision import suggest_category
+from lib.crew.reference_vision import analyze_for_brand
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -157,21 +167,32 @@ async def post_image(
     category: str = Form(""),
     label: str = Form(""),
 ) -> LibraryImage:
-    """File an uploaded photo under `category` (defaults to `general`).
+    """File an uploaded photo, tagged by the vision pass.
+
+    `category` is an OPTIONAL override: supply it and it wins, leave it out
+    (as the UI does) and the model's choice is used -- a tag it reused from
+    the brand's list, or a new one the store declares on the way in. If the
+    model could not be asked at all, the photo still lands, under `general`.
 
     Content-addressed, so re-uploading identical bytes to the same category
     returns the existing entry rather than a duplicate.
     """
     raw = await _read_capped(file)
     result = await _validated(raw, file.filename)
+    brand_dir = _brand_dir()
+    analysis = await run_in_threadpool(analyze_for_brand, brand_dir, raw, result.content_type)
     entry = await run_in_threadpool(
         add_image,
-        _brand_dir(),
+        brand_dir,
         raw,
-        category=category,
+        # Empty is not "general" here -- `add_image` slugifies it to `general`
+        # itself, so the fallback lives in exactly one place.
+        category=category.strip() or (analysis.category if analysis else ""),
         content_type=result.content_type,
         label=label.strip() or result.label,
         source="upload",
+        shows_mascot=bool(analysis and analysis.shows_mascot),
+        description=analysis.description if analysis else "",
     )
     return to_model(entry)
 
@@ -206,6 +227,23 @@ def get_image_raw(image_id: str) -> FileResponse:
     )
 
 
+@router.patch("/reference-images/images/{image_id:path}", response_model=LibraryImage)
+def patch_image(image_id: str, body: ImageUpdate) -> LibraryImage:
+    """Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.
+
+    Re-tagging MOVES the file, so the returned entry carries a different id
+    than the one in the URL -- callers must adopt it rather than reuse theirs.
+    """
+    brand_dir = _brand_dir()
+    _safe_target(brand_dir, image_id)
+    entry = update_image(
+        brand_dir, image_id, category=body.category, shows_mascot=body.shows_mascot
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="image not found")
+    return to_model(entry)
+
+
 @router.delete("/reference-images/images/{image_id:path}", status_code=204)
 def remove_image(image_id: str) -> Response:
     """Drop a photo from the manifest and unlink its file. 404 if absent."""
@@ -214,26 +252,3 @@ def remove_image(image_id: str) -> Response:
     if not delete_image(brand_dir, image_id):
         raise HTTPException(status_code=404, detail="image not found")
     return Response(status_code=204)
-
-
-@router.post("/reference-images/suggest-category", response_model=CategorySuggestion)
-async def post_suggest_category(
-    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency marker
-) -> CategorySuggestion:
-    """Which existing tag fits this photo? Advisory -- never an error.
-
-    A failing model call is a 200 with `suggested_category: null`, because the
-    UI's fallback is simply an unset selector. The bytes are still validated,
-    so the same file that would be rejected on upload is rejected here too.
-    """
-    raw = await _read_capped(file)
-    result = await _validated(raw, file.filename)
-    brand_dir = _brand_dir()
-    try:
-        suggestion = await run_in_threadpool(
-            suggest_category, raw, result.content_type, list_category_labels(brand_dir)
-        )
-    except Exception as exc:
-        logger.warning("reference_library_suggest_failed", error=str(exc))
-        suggestion = None
-    return CategorySuggestion(suggested_category=suggestion)

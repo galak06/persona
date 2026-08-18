@@ -1,12 +1,13 @@
-"""Tests for `lib.crew.reference_vision` -- the advisory tag suggester.
+"""Tests for `lib.crew.reference_vision` -- the upload-time image analysis.
 
 respx stubs the Gemini `generateContent` endpoint (same approach as
-`tests/test_crew_wp_image.py`), so no real call happens. Two properties are
+`tests/test_crew_wp_image.py`), so no real call happens. Three properties are
 non-negotiable and get their own tests: the API key travels in the
 `x-goog-api-key` HEADER and never in the URL (a `?key=` would leak it into
-every access log -- a known past bug in this repo), and every failure mode
-returns `None` instead of raising, because the caller is a route that must
-answer 200 either way.
+every access log -- a known past bug in this repo), `is_new_category` is
+decided from the CALLER's list rather than believed from the model, and every
+failure mode returns `None` instead of raising, because the caller is an
+upload route that must file the photo either way.
 """
 # ruff: noqa: S101
 
@@ -14,12 +15,18 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from lib.crew.reference_vision import suggest_category, vision_model
+from lib.crew.reference_vision import (
+    analyze_for_brand,
+    analyze_image,
+    brand_mascot_name,
+    vision_model,
+)
 
 _CATEGORIES = ["Eating", "Walking", "Sleeping"]
 
@@ -30,12 +37,21 @@ def _url() -> str:
     )
 
 
-def _answer(category: str) -> httpx.Response:
+def _answer(
+    category: str = "Walking", description: str = "A dog eating from a bowl.", mascot: bool = False
+) -> httpx.Response:
+    payload = {"description": description, "category": category, "shows_mascot": mascot}
     return httpx.Response(
-        200,
-        json={
-            "candidates": [{"content": {"parts": [{"text": json.dumps({"category": category})}]}}]
-        },
+        200, json={"candidates": [{"content": {"parts": [{"text": json.dumps(payload)}]}}]}
+    )
+
+
+def _analyze(categories: list[str] | None = None, mascot_name: str = ""):
+    return analyze_image(
+        b"png",
+        "image/png",
+        existing_categories=_CATEGORIES if categories is None else categories,
+        mascot_name=mascot_name,
     )
 
 
@@ -45,27 +61,128 @@ def _gemini_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_VISION_MODEL", raising=False)
 
 
-@respx.mock
-def test_sends_the_image_inline_and_returns_the_matched_label() -> None:
-    route = respx.post(_url()).mock(return_value=_answer("Walking"))
+# ── the analysis itself ──────────────────────────────────────────────────────
 
-    assert suggest_category(b"\x89PNG-bytes", "image/png", _CATEGORIES) == "Walking"
+
+@respx.mock
+def test_sends_the_image_inline_and_returns_every_field() -> None:
+    route = respx.post(_url()).mock(
+        return_value=_answer("Walking", "Nalla on a forest trail.", mascot=True)
+    )
+
+    analysis = analyze_image(
+        b"\x89PNG-bytes", "image/png", existing_categories=_CATEGORIES, mascot_name="Nalla"
+    )
+
+    assert analysis is not None
+    assert analysis.description == "Nalla on a forest trail."
+    assert analysis.category == "Walking"
+    assert analysis.shows_mascot is True
+    assert analysis.is_new_category is False
 
     payload = json.loads(route.calls[0].request.content)
     parts = payload["contents"][0]["parts"]
     inline = parts[0]["inline_data"]
     assert inline["mime_type"] == "image/png"
     assert base64.b64decode(inline["data"]) == b"\x89PNG-bytes"
-    # The tag list has to reach the model, or "verbatim from the list" is
-    # not a constraint the model can satisfy.
+    # Both halves of the question have to reach the model: the tags it may
+    # reuse, and the mascot it is being asked to recognise.
     assert "Eating" in parts[1]["text"]
+    assert "Nalla" in parts[1]["text"]
+
+
+@respx.mock
+def test_an_unnamed_mascot_is_still_asked_about() -> None:
+    route = respx.post(_url()).mock(return_value=_answer())
+
+    assert _analyze(mascot_name="") is not None
+
+    prompt = json.loads(route.calls[0].request.content)["contents"][0]["parts"][1]["text"]
+    assert "shows_mascot" in prompt
+    assert "mascot" in prompt
+
+
+@respx.mock
+def test_an_existing_category_is_reused_in_the_callers_spelling() -> None:
+    respx.post(_url()).mock(return_value=_answer("  walking  "))
+
+    analysis = _analyze()
+
+    assert analysis is not None
+    assert (analysis.category, analysis.is_new_category) == ("Walking", False)
+
+
+@respx.mock
+def test_a_proposed_label_is_flagged_as_new() -> None:
+    respx.post(_url()).mock(return_value=_answer("dog treats"))
+
+    analysis = _analyze()
+
+    assert analysis is not None
+    assert (analysis.category, analysis.is_new_category) == ("dog treats", True)
+
+
+@respx.mock
+def test_novelty_is_computed_not_believed() -> None:
+    """One identical answer is "new" or "existing" purely by the CALLER's
+    list -- the model is neither asked about it nor trusted on it."""
+    respx.post(_url()).mock(return_value=_answer("kitchen counter"))
+
+    unknown = _analyze(categories=["Eating"])
+    known = _analyze(categories=["Kitchen Counter"])
+
+    assert unknown is not None and unknown.is_new_category is True
+    assert known is not None and known.is_new_category is False
+    assert known.category == "Kitchen Counter"
+
+
+@respx.mock
+def test_an_empty_category_falls_back_to_general() -> None:
+    respx.post(_url()).mock(return_value=_answer("", "A bag of kibble."))
+
+    analysis = _analyze()
+
+    assert analysis is not None
+    assert (analysis.category, analysis.is_new_category) == ("general", False)
+    assert analysis.description == "A bag of kibble."
+
+
+@respx.mock
+def test_a_brand_with_no_categories_still_gets_an_answer() -> None:
+    respx.post(_url()).mock(return_value=_answer("ingredients"))
+
+    analysis = _analyze(categories=[])
+
+    assert analysis is not None
+    assert (analysis.category, analysis.is_new_category) == ("ingredients", True)
+
+
+@respx.mock
+def test_missing_fields_degrade_rather_than_raise() -> None:
+    respx.post(_url()).mock(
+        return_value=httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "{}"}]}}]}
+        )
+    )
+
+    analysis = _analyze()
+
+    assert analysis is not None
+    assert (analysis.description, analysis.category, analysis.shows_mascot) == (
+        "",
+        "general",
+        False,
+    )
+
+
+# ── the key never leaks ──────────────────────────────────────────────────────
 
 
 @respx.mock
 def test_key_goes_in_the_header_and_never_in_the_url() -> None:
     route = respx.post(_url()).mock(return_value=_answer("Eating"))
 
-    suggest_category(b"png", "image/png", _CATEGORIES)
+    _analyze()
 
     request = route.calls[0].request
     assert request.headers["x-goog-api-key"] == "test-key"
@@ -73,25 +190,7 @@ def test_key_goes_in_the_header_and_never_in_the_url() -> None:
     assert "key=" not in (request.url.query.decode() or "")
 
 
-@respx.mock
-def test_matches_case_insensitively_but_returns_the_callers_spelling() -> None:
-    respx.post(_url()).mock(return_value=_answer("  walking  "))
-
-    assert suggest_category(b"png", "image/png", _CATEGORIES) == "Walking"
-
-
-@respx.mock
-def test_label_outside_the_supplied_list_is_discarded() -> None:
-    respx.post(_url()).mock(return_value=_answer("swimming"))
-
-    assert suggest_category(b"png", "image/png", _CATEGORIES) is None
-
-
-@respx.mock
-def test_explicit_no_match_is_none() -> None:
-    respx.post(_url()).mock(return_value=_answer(""))
-
-    assert suggest_category(b"png", "image/png", _CATEGORIES) is None
+# ── every failure is a None ──────────────────────────────────────────────────
 
 
 @respx.mock
@@ -103,36 +202,30 @@ def test_explicit_no_match_is_none() -> None:
         httpx.Response(200, text="not json at all"),
         httpx.Response(200, json={"candidates": []}),
         httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "{{{"}]}}]}),
+        httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "[1, 2]"}]}}]}),
+        httpx.Response(200, json={"candidates": [{"content": {"parts": []}}]}),
         httpx.Response(200, json={"nonsense": True}),
     ],
 )
 def test_bad_responses_return_none_without_raising(response: httpx.Response) -> None:
     respx.post(_url()).mock(return_value=response)
 
-    assert suggest_category(b"png", "image/png", _CATEGORIES) is None
+    assert _analyze() is None
 
 
 @respx.mock
 def test_transport_error_returns_none() -> None:
     respx.post(_url()).mock(side_effect=httpx.ConnectTimeout("timed out"))
 
-    assert suggest_category(b"png", "image/png", _CATEGORIES) is None
-
-
-@respx.mock
-def test_no_categories_short_circuits_before_any_call() -> None:
-    route = respx.post(_url()).mock(return_value=_answer("Eating"))
-
-    assert suggest_category(b"png", "image/png", []) is None
-    assert not route.called
+    assert _analyze() is None
 
 
 @respx.mock
 def test_missing_api_key_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    route = respx.post(_url()).mock(return_value=_answer("Eating"))
+    route = respx.post(_url()).mock(return_value=_answer())
 
-    assert suggest_category(b"png", "image/png", _CATEGORIES) is None
+    assert _analyze() is None
     assert not route.called
 
 
@@ -141,5 +234,57 @@ def test_model_is_overridable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_VISION_MODEL", "gemini-test-vision")
     route = respx.post(_url()).mock(return_value=_answer("Eating"))
 
-    assert suggest_category(b"png", "image/png", _CATEGORIES) == "Eating"
+    assert _analyze() is not None
     assert "gemini-test-vision" in str(route.calls[0].request.url)
+
+
+# ── the brand seam ───────────────────────────────────────────────────────────
+
+
+@respx.mock
+def test_analyze_for_brand_supplies_the_brands_tags_and_mascot(tmp_path: Path) -> None:
+    (tmp_path / "config.json").write_text(json.dumps({"site": {"mascot_name": "Nalla"}}))
+    library = tmp_path / "data" / "assets" / "reference_images"
+    library.mkdir(parents=True)
+    (library / "library.json").write_text(
+        json.dumps(
+            {"version": 1, "categories": [{"slug": "eating", "label": "Eating"}], "images": []}
+        )
+    )
+    route = respx.post(_url()).mock(return_value=_answer("Eating"))
+
+    analysis = analyze_for_brand(tmp_path, b"png", "image/png")
+
+    assert analysis is not None and analysis.category == "Eating"
+    prompt = json.loads(route.calls[0].request.content)["contents"][0]["parts"][1]["text"]
+    assert "Eating" in prompt
+    assert "Nalla" in prompt
+
+
+@respx.mock
+def test_analyze_for_brand_swallows_anything_the_call_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An upload must never fail because the advisory pass blew up."""
+    import lib.crew.reference_vision as vision
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("gemini exploded")
+
+    monkeypatch.setattr(vision, "analyze_image", _boom)
+
+    assert analyze_for_brand(tmp_path, b"png", "image/png") is None
+
+
+@pytest.mark.parametrize(
+    "config",
+    ["not json at all", json.dumps({"site": {}}), json.dumps({"site": "wrong shape"}), "{}"],
+)
+def test_brand_mascot_name_degrades_to_empty(tmp_path: Path, config: str) -> None:
+    (tmp_path / "config.json").write_text(config)
+
+    assert brand_mascot_name(tmp_path) == ""
+
+
+def test_brand_mascot_name_without_a_config_is_empty(tmp_path: Path) -> None:
+    assert brand_mascot_name(tmp_path) == ""
