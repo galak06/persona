@@ -1,16 +1,16 @@
-"""Tagged mascot reference-image library -- READ side.
+"""Tagged reference-image library -- READ side.
 
-A brand may keep several real photos of its persona/mascot, tagged by the
-kind of scene they show (`eating`, `walking`, ..., plus a catch-all
-`general`). Image generators pick the reference whose tag matches the beat
-they are about to render, instead of conditioning every frame on the one
-legacy `persona_mascot_reference.png`.
+A brand may keep any number of real photos to ground its generated imagery,
+tagged by what they show (`eating`, `kitchen`, `ingredients`, ..., plus a
+catch-all `general`) -- NOT all mascot portraits: a reference may just as
+well be a product, a place, or a style plate. Generators pick the one whose
+tag matches the beat they render, not the one legacy photo below.
 
 Layout under `$BRAND_DIR`::
 
     data/assets/
       persona_mascot_reference.png   # LEGACY -- never touched, never copied
-      mascot_refs/
+      reference_images/
         library.json                 # manifest (see `read_manifest`)
         general/<sha256[:16]><ext>
         eating/<sha256[:16]><ext>
@@ -21,8 +21,8 @@ as the manifest entry's `label`).
 
 This module is imported by the worker on every generated beat, so it is
 deliberately dependency-light: **no Pillow, no FastAPI**. Byte validation
-lives in `lib.crew.mascot_validate` (the only PIL importer) and writes in
-`lib.crew.mascot_library_store`. The import direction is one-way --
+lives in `lib.crew.reference_validate` (the only PIL importer) and writes in
+`lib.crew.reference_library_store`. The import direction is one-way --
 `lib.crew.wp_image` imports from here, never the reverse.
 
 Every read is tolerant: a missing or malformed manifest reads as an empty
@@ -46,7 +46,7 @@ from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-LIBRARY_DIRNAME = "mascot_refs"
+LIBRARY_DIRNAME = "reference_images"
 GENERAL_CATEGORY = "general"
 LEGACY_CATEGORY = "legacy"
 MANIFEST_FILENAME = "library.json"
@@ -106,7 +106,7 @@ def assets_dir(brand_dir: Path) -> Path:
 
 
 def library_root(brand_dir: Path) -> Path:
-    """`$BRAND_DIR/data/assets/mascot_refs`. May not exist."""
+    """`$BRAND_DIR/data/assets/reference_images`. May not exist."""
     return assets_dir(brand_dir) / LIBRARY_DIRNAME
 
 
@@ -132,11 +132,11 @@ def read_manifest(brand_dir: Path) -> Manifest:
     try:
         raw = read_json(path, None)
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("mascot_library_manifest_unreadable", path=str(path), error=str(exc))
+        logger.warning("reference_library_manifest_unreadable", path=str(path), error=str(exc))
         return empty_manifest()
     if not isinstance(raw, dict):
         if raw is not None:
-            logger.warning("mascot_library_manifest_not_an_object", path=str(path))
+            logger.warning("reference_library_manifest_not_an_object", path=str(path))
         return empty_manifest()
 
     def dicts(key: str) -> list[dict[str, Any]]:
@@ -259,7 +259,9 @@ def _existing_images_by_category(brand_dir: Path) -> dict[str, list[_Candidate]]
         path = root / slug / str(entry.get("filename", ""))
         if not path.is_file():
             logger.warning(
-                "mascot_library_entry_file_missing", image_id=str(entry.get("id")), path=str(path)
+                "reference_library_entry_file_missing",
+                image_id=str(entry.get("id")),
+                path=str(path),
             )
             continue
         image = ReferenceImage(

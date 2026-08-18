@@ -261,7 +261,7 @@ def brand_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[o
         "data/config",
         "data/trackers",
         "data/cache",
-        "data/assets/mascot_refs",
+        "data/assets/reference_images",
         "state",
         "logs",
     ):

@@ -29,7 +29,7 @@ from crewai import Agent, Task
 
 from lib import ideas_db
 from lib.crew.context import brand_identity_summary, brand_voice_summary
-from lib.crew.mascot_library import list_category_labels
+from lib.crew.reference_library import list_category_labels
 from lib.crew.writer.agent import (
     build_strategist_agent,
     build_strategist_task,

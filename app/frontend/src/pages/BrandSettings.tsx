@@ -9,7 +9,7 @@ import { useToast } from "../components/ui/Toast";
 import Alert from "../components/ui/Alert";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
-import MascotLibrarySection from "../components/mascot/MascotLibrarySection";
+import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -235,7 +235,7 @@ export default function BrandSettings(): React.JSX.Element {
         </form>
       )}
 
-      <MascotLibrarySection brandId={id} />
+      <ReferenceLibrarySection brandId={id} />
 
       {result && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-2">

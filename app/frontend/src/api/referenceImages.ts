@@ -1,8 +1,10 @@
 /**
- * Mascot reference-image library — the operator's side of
- * `api/mascot_library_api.py`. Reference photos uploaded here are what every
- * generated mascot image is grounded on, so this module is deliberately thin:
- * validation lives on the server, and the UI only mirrors the cheap checks.
+ * Reference-image library — the operator's side of
+ * `api/reference_images_api.py`. The photos filed here are what every
+ * generated image is grounded on — the mascot, but also ingredients,
+ * kitchens, products, locations, style plates — so this module is
+ * deliberately thin: validation lives on the server, and the UI only mirrors
+ * the cheap checks.
  *
  * Every route resolves the brand server-side from the `X-Brand` header that
  * `apiClient`'s interceptor attaches — no brand id is ever passed here.
@@ -19,10 +21,10 @@ export type CategoryCreate = components["schemas"]["CategoryCreate"];
 export type CategoryCreated = components["schemas"]["CategoryCreated"];
 export type CategorySuggestion = components["schemas"]["CategorySuggestion"];
 
-/** Mirrors `lib/crew/mascot_validate.MAX_UPLOAD_BYTES` (12 MiB). */
+/** Mirrors `lib/crew/reference_validate.MAX_UPLOAD_BYTES` (12 MiB). */
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
-/** Mirrors `mascot_validate.EXTENSION_BY_CONTENT_TYPE`'s accepted keys. */
+/** Mirrors `reference_validate.EXTENSION_BY_CONTENT_TYPE`'s accepted keys. */
 export const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
 
 /** `accept` attribute for the file picker, from the same list. */
@@ -59,13 +61,13 @@ export function preflightRejection(file: File): string | null {
 }
 
 /** Absolute URL for a photo's bytes. `image.url` is already the `/raw` path. */
-export function mascotImageUrl(image: LibraryImage): string {
+export function referenceImageUrl(image: LibraryImage): string {
   return `${apiOrigin}${image.url}`;
 }
 
 /** GET — the whole library in one payload (it is a handful of photos). */
-export async function fetchMascotLibrary(): Promise<LibraryResponse> {
-  const { data } = await apiClient.get<LibraryResponse>(endpoints.mascotLibrary);
+export async function fetchReferenceLibrary(): Promise<LibraryResponse> {
+  const { data } = await apiClient.get<LibraryResponse>(endpoints.referenceLibrary);
   return data;
 }
 
@@ -74,7 +76,7 @@ export async function fetchMascotLibrary(): Promise<LibraryResponse> {
  * re-uploading identical bytes to the same category is a no-op that returns
  * the existing entry rather than a duplicate.
  */
-export async function uploadMascotImage(
+export async function uploadReferenceImage(
   file: File,
   category: string,
   label?: string,
@@ -84,7 +86,7 @@ export async function uploadMascotImage(
   form.append("category", category);
   if (label) form.append("label", label);
   const { data } = await apiClient.post<LibraryImage>(
-    endpoints.mascotImages,
+    endpoints.referenceImages,
     form,
     MULTIPART,
   );
@@ -92,15 +94,15 @@ export async function uploadMascotImage(
 }
 
 /** DELETE — remove one photo. 404 when the id is already gone. */
-export async function deleteMascotImage(imageId: string): Promise<void> {
-  await apiClient.delete(endpoints.mascotImage(imageId));
+export async function deleteReferenceImage(imageId: string): Promise<void> {
+  await apiClient.delete(endpoints.referenceImage(imageId));
 }
 
 /** POST — declare a tag. Re-declaring an existing slug returns it unchanged. */
-export async function createMascotCategory(label: string): Promise<CategoryCreated> {
+export async function createReferenceCategory(label: string): Promise<CategoryCreated> {
   const body: CategoryCreate = { label };
   const { data } = await apiClient.post<CategoryCreated>(
-    endpoints.mascotCategories,
+    endpoints.referenceCategories,
     body,
   );
   return data;
@@ -108,7 +110,7 @@ export async function createMascotCategory(label: string): Promise<CategoryCreat
 
 /** POST — copy the brand's legacy mascot asset in. Throws 404 when absent. */
 export async function importLegacyReference(): Promise<LibraryImage> {
-  const { data } = await apiClient.post<LibraryImage>(endpoints.mascotImportLegacy);
+  const { data } = await apiClient.post<LibraryImage>(endpoints.referenceImportLegacy);
   return data;
 }
 
@@ -117,11 +119,11 @@ export async function importLegacyReference(): Promise<LibraryImage> {
  * 200 with `null` when the model call fails, and callers must never block an
  * upload on it. Returns the suggested *label*, or `null` for "no opinion".
  */
-export async function suggestMascotCategory(file: File): Promise<string | null> {
+export async function suggestReferenceCategory(file: File): Promise<string | null> {
   const form = new FormData();
   form.append("file", file);
   const { data } = await apiClient.post<CategorySuggestion>(
-    endpoints.mascotSuggestCategory,
+    endpoints.referenceSuggestCategory,
     form,
     MULTIPART,
   );

@@ -1,9 +1,9 @@
-"""Tagged mascot reference-image library -- WRITE side.
+"""Tagged reference-image library -- WRITE side.
 
 Every writer goes through here -- today the upload route and the explicit
 `import_legacy` call behind it -- so there is one manifest shape and one
 on-disk layout no matter who is filing the image. Reads live in
-`lib.crew.mascot_library`; byte validation in `lib.crew.mascot_validate`.
+`lib.crew.reference_library`; byte validation in `lib.crew.reference_validate`.
 
 Two invariants hold every write together:
 
@@ -25,34 +25,76 @@ The LEGACY `data/assets/persona_mascot_reference.png` is never touched and
 never copied automatically: `import_legacy` is an explicit, operator-driven
 call that COPIES it into `general` and leaves the original exactly where it
 is, because `resolve_reference_image_path` still falls back to it.
+
+The same copy-only discipline covers the directory rename: the library used
+to live under `data/assets/mascot_refs/`, and `migrate_legacy_dirname`
+COPIES such a tree into `reference_images/` the first time this module
+touches a brand. The old tree is left byte-identical, forever -- see that
+function.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from lib.crew.mascot_library import (
+from lib.crew.reference_library import (
     CONTENT_TYPE_BY_SUFFIX,
     GENERAL_CATEGORY,
+    MANIFEST_FILENAME,
     Manifest,
+    assets_dir,
     empty_manifest,
     library_root,
     manifest_path,
     resolve_reference_image_path,
     slugify,
 )
-from lib.crew.mascot_validate import EXTENSION_BY_CONTENT_TYPE, probe_dimensions, sniff_mime
+from lib.crew.reference_validate import EXTENSION_BY_CONTENT_TYPE, probe_dimensions, sniff_mime
 from lib.io.jsonio import locked_json
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
 LEGACY_IMPORT_LABEL = "persona_mascot_reference (legacy)"
+
+#: What the library directory was called before it was renamed to hold any
+#: reference image rather than only mascot photos. Read-only, forever.
+PRE_RENAME_LIBRARY_DIRNAME = "mascot_refs"
+
+
+def migrate_legacy_dirname(brand_dir: Path) -> bool:
+    """COPY a pre-rename `mascot_refs/` library into `reference_images/`.
+
+    Strictly additive, and that is the whole point: the old tree is read and
+    never written, moved, or unlinked, so a brand that is rolled back to an
+    older build still finds its library exactly where it left it. Running
+    against a brand that has already been migrated is a no-op decided by one
+    `is_file()` -- cheap enough to sit in front of every entry point below.
+
+    Returns:
+        `True` only on the run that actually copied something.
+    """
+    destination = library_root(brand_dir)
+    if (destination / MANIFEST_FILENAME).is_file():
+        return False
+    source = assets_dir(brand_dir) / PRE_RENAME_LIBRARY_DIRNAME
+    if not (source / MANIFEST_FILENAME).is_file():
+        return False
+    # `dirs_exist_ok` because provisioning may already have created an empty
+    # `reference_images/`; the manifest check above is what makes this run once.
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+    logger.info(
+        "reference_library_migrated_from_mascot_refs",
+        source=str(source),
+        destination=str(destination),
+    )
+    return True
 
 
 def add_image(
@@ -71,21 +113,22 @@ def add_image(
 
     Args:
         brand_dir: The brand root; the library lives under `data/assets`.
-        data: Raw image bytes, already validated by `mascot_validate`.
+        data: Raw image bytes, already validated by `reference_validate`.
         category: Free-text tag; slugified. Empty falls back to `general`.
         content_type: The SNIFFED type -- decides the stored extension.
         label: Display name (the sanitized original filename, or a caption).
         source: How the image got here. Everything written today is
             `"upload"` (user-curated), which outranks any other origin at
-            resolve time -- see `mascot_library.SOURCE_PRIORITY`.
+            resolve time -- see `reference_library.SOURCE_PRIORITY`.
 
     Raises:
         ValueError: `content_type` is not one the library stores.
         OSError: The bytes could not be written.
     """
+    migrate_legacy_dirname(brand_dir)
     extension = EXTENSION_BY_CONTENT_TYPE.get(content_type)
     if extension is None:
-        raise ValueError(f"unsupported content type for the mascot library: {content_type!r}")
+        raise ValueError(f"unsupported content type for the reference library: {content_type!r}")
 
     slug = slugify(category) or GENERAL_CATEGORY
     filename = f"{hashlib.sha256(data).hexdigest()[:16]}{extension}"
@@ -115,11 +158,13 @@ def add_image(
         _normalize(manifest)
         existing = next((i for i in manifest["images"] if i.get("id") == image_id), None)
         if existing is not None:
-            logger.info("mascot_library_add_noop", image_id=image_id, brand_dir=str(brand_dir))
+            logger.info("reference_library_add_noop", image_id=image_id, brand_dir=str(brand_dir))
             return dict(existing)
         _ensure_category(manifest, slug, category or slug, now)
         manifest["images"].append(entry)
-    logger.info("mascot_library_image_added", image_id=image_id, source=source, bytes_len=len(data))
+    logger.info(
+        "reference_library_image_added", image_id=image_id, source=source, bytes_len=len(data)
+    )
     return entry
 
 
@@ -129,6 +174,7 @@ def delete_image(brand_dir: Path, image_id: str) -> bool:
     Returns `True` if an entry was removed, `False` if the library never had
     one (already-deleted is not an error -- the UI may double-fire).
     """
+    migrate_legacy_dirname(brand_dir)
     removed: dict[str, Any] | None = None
     with locked_json(manifest_path(brand_dir), empty_manifest()) as manifest:
         _normalize(manifest)
@@ -148,8 +194,8 @@ def delete_image(brand_dir: Path, image_id: str) -> bool:
         try:
             path.unlink(missing_ok=True)
         except OSError as exc:  # pragma: no cover - filesystem-level failure
-            logger.warning("mascot_library_unlink_failed", path=str(path), error=str(exc))
-    logger.info("mascot_library_image_deleted", image_id=image_id)
+            logger.warning("reference_library_unlink_failed", path=str(path), error=str(exc))
+    logger.info("reference_library_image_deleted", image_id=image_id)
     return True
 
 
@@ -159,6 +205,7 @@ def create_category(brand_dir: Path, label: str) -> dict[str, Any]:
     Raises:
         ValueError: `label` slugifies to nothing.
     """
+    migrate_legacy_dirname(brand_dir)
     slug = slugify(label)
     if not slug:
         raise ValueError(f"category label {label!r} has no usable slug")
@@ -177,13 +224,14 @@ def import_legacy(brand_dir: Path) -> dict[str, Any] | None:
     disk, unmodified, because it remains the last-resort fallback for brands
     that never populate the library.
     """
+    migrate_legacy_dirname(brand_dir)
     legacy = resolve_reference_image_path(brand_dir)
     if legacy is None:
         return None
     data = legacy.read_bytes()
     content_type = sniff_mime(data) or CONTENT_TYPE_BY_SUFFIX.get(legacy.suffix.lower())
     if content_type is None:
-        logger.warning("mascot_library_legacy_unrecognized", path=str(legacy))
+        logger.warning("reference_library_legacy_unrecognized", path=str(legacy))
         return None
     return add_image(
         brand_dir,

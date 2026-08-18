@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 from scripts import reels_images
 
-from lib.crew.mascot_library import ReferenceImage, identity_clause
 from lib.crew.reels.models import ReelBeat, ReelPlan
+from lib.crew.reference_library import ReferenceImage, identity_clause
 from lib.oauth.openart import OpenArtAuthRequiredError
 
 _HERO = b"hero-image-bytes"

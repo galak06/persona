@@ -112,11 +112,11 @@ from api.flow_templates_api import router as _flow_templates_router
 from api.ideas_api import router as _ideas_router
 from api.ideas_generate_api import router as _ideas_generate_router
 from api.keywords_api import router as _keywords_router
-from api.mascot_library_api import router as _mascot_library_router
 from api.oauth_api import router as _oauth_router
 from api.oauth_openart_api import router as _oauth_openart_router
 from api.recipe_card_api import router as _recipe_card_router
 from api.reels_compose_api import router as _reels_compose_router
+from api.reference_images_api import router as _reference_images_router
 from api.schedule_config import label_for_task_id, load_schedule_config, task_for_label
 from api.session_status_api import router as _session_status_router
 from api.social_posts_api import router as _social_posts_router
@@ -161,7 +161,7 @@ app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"]
 app.include_router(_social_posts_compose_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_keywords_router, prefix="/api/v1", tags=["ideas"])
-app.include_router(_mascot_library_router, prefix="/api/v1", tags=["mascot-library"])
+app.include_router(_reference_images_router, prefix="/api/v1", tags=["reference-images"])
 app.include_router(_reels_compose_router, prefix="/api/v1", tags=["reels"])
 app.include_router(_tiktok_router, prefix="/api/v1", tags=["tiktok"])
 app.include_router(_oauth_router, prefix="/api/v1/oauth", tags=["oauth"])

@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from lib.crew.mascot_library import library_root, manifest_path
+from lib.crew.reference_library import library_root, manifest_path
 from lib.crew.socialpost import compose
 from lib.crew.socialpost.models import SocialPostPlan
 

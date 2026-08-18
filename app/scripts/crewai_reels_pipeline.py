@@ -58,10 +58,10 @@ from scripts.reels_images import resolve_images
 from lib import ideas_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
-from lib.crew.mascot_library import list_category_labels
 from lib.crew.reels import build_reels_agent, build_reels_task, execute_reels_crew
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.prompts import build_reels_task_description
+from lib.crew.reference_library import list_category_labels
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import get_logger
 

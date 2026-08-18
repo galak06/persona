@@ -1,6 +1,6 @@
-// Add reference photos to the mascot library: drag-and-drop or a file
-// picker, one status row per file, uploaded sequentially so a mid-batch
-// failure leaves the successful ones filed rather than rolling the lot back.
+// Add photos to the reference library: drag-and-drop or a file picker, one
+// status row per file, uploaded sequentially so a mid-batch failure leaves
+// the successful ones filed rather than rolling the lot back.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
@@ -8,12 +8,12 @@ import type { DragEvent } from "react";
 import { getErrorMessage } from "../../api/client";
 import {
   ACCEPT_ATTR,
-  createMascotCategory,
+  createReferenceCategory,
   preflightRejection,
-  suggestMascotCategory,
-  uploadMascotImage,
-} from "../../api/mascotLibrary";
-import type { CategorySummary } from "../../api/mascotLibrary";
+  suggestReferenceCategory,
+  uploadReferenceImage,
+} from "../../api/referenceImages";
+import type { CategorySummary } from "../../api/referenceImages";
 import Alert from "../ui/Alert";
 
 type RowStatus = "pending" | "uploading" | "done" | "failed";
@@ -26,7 +26,7 @@ interface QueuedFile {
   message: string;
 }
 
-interface MascotUploadCardProps {
+interface ReferenceUploadCardProps {
   categories: CategorySummary[];
   disabled?: boolean;
   /** Refetch the library after anything lands. */
@@ -41,11 +41,11 @@ const STATUS_ROW: Record<RowStatus, { cls: string; text: string }> = {
   failed: { cls: "text-rose-700", text: "" },
 };
 
-export default function MascotUploadCard({
+export default function ReferenceUploadCard({
   categories,
   disabled = false,
   onUploaded,
-}: MascotUploadCardProps): React.JSX.Element {
+}: ReferenceUploadCardProps): React.JSX.Element {
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [category, setCategory] = useState("general");
   const [newCategory, setNewCategory] = useState("");
@@ -66,7 +66,7 @@ export default function MascotUploadCard({
 
   const prefillCategory = useCallback(async (file: File) => {
     try {
-      const suggested = (await suggestMascotCategory(file))?.toLowerCase();
+      const suggested = (await suggestReferenceCategory(file))?.toLowerCase();
       if (!suggested || userChoseCategory.current) return;
       const match = categories.find(
         (c) => c.label.toLowerCase() === suggested || c.slug.toLowerCase() === suggested,
@@ -122,7 +122,7 @@ export default function MascotUploadCard({
     for (const row of pending) {
       markRow(row.key, "uploading", "");
       try {
-        await uploadMascotImage(row.file, category);
+        await uploadReferenceImage(row.file, category);
         markRow(row.key, "done", "Added to the library.");
         landed += 1;
       } catch (err) {
@@ -138,7 +138,7 @@ export default function MascotUploadCard({
     if (!label || disabled) return;
     setNotice("");
     try {
-      const created = await createMascotCategory(label);
+      const created = await createReferenceCategory(label);
       setNewCategory("");
       userChoseCategory.current = true;
       setCategory(created.slug);
@@ -170,8 +170,8 @@ export default function MascotUploadCard({
         </h3>
         <p className="text-xs text-slate-500 mt-1">
           These ground every generated image, so quality here decides quality there: clear,
-          well-lit shots with one subject and nothing else in frame, from varied angles and
-          distances. PNG, JPEG or WEBP, at least 256px per side, up to 12&nbsp;MB.
+          well-lit shots of one subject &mdash; the mascot, a product, an ingredient, a place &mdash;
+          from varied angles. PNG, JPEG or WEBP, at least 256px per side, up to 12&nbsp;MB.
         </p>
       </div>
 

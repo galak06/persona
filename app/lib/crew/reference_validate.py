@@ -1,10 +1,10 @@
-"""Byte validation for mascot reference-image uploads.
+"""Byte validation for reference-image uploads.
 
-The ONLY Pillow importer in the mascot-library slice: the read side
-(`lib.crew.mascot_library`) runs inside the worker on every generated beat
+The ONLY Pillow importer in the reference-library slice: the read side
+(`lib.crew.reference_library`) runs inside the worker on every generated beat
 and must stay dependency-light, so anything that has to actually decode
 pixels lives here and is imported by the write side
-(`lib.crew.mascot_library_store`) and, later, the upload route.
+(`lib.crew.reference_library_store`) and, later, the upload route.
 
 Checks run in order, cheapest and most-certain first, and each raises
 `ImageValidationError` carrying an HTTP status the API phase maps straight

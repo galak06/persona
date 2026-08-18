@@ -6,16 +6,16 @@ import { useState } from "react";
 
 import { getErrorMessage, isHttpStatus } from "../../api/client";
 import {
-  deleteMascotImage,
+  deleteReferenceImage,
   importLegacyReference,
-  mascotImageUrl,
-} from "../../api/mascotLibrary";
-import type { LibraryImage, LibraryResponse } from "../../api/mascotLibrary";
+  referenceImageUrl,
+} from "../../api/referenceImages";
+import type { LibraryImage, LibraryResponse } from "../../api/referenceImages";
 import Alert from "../ui/Alert";
 import ConfirmDialog from "../ui/ConfirmDialog";
 import EmptyState from "../ui/EmptyState";
 
-interface MascotCategoryGridProps {
+interface ReferenceCategoryGridProps {
   library: LibraryResponse;
   disabled?: boolean;
   /** Refetch the library after a delete or an import. */
@@ -52,11 +52,11 @@ function toBlocks(library: LibraryResponse): CategoryBlock[] {
   return blocks;
 }
 
-export default function MascotCategoryGrid({
+export default function ReferenceCategoryGrid({
   library,
   disabled = false,
   onChanged,
-}: MascotCategoryGridProps): React.JSX.Element {
+}: ReferenceCategoryGridProps): React.JSX.Element {
   // Cache-buster fixed at mount: the raw route is `no-store`, but a browser
   // that already painted a thumbnail can still reuse it in-memory after the
   // id is reused (the store is content-addressed per category).
@@ -75,7 +75,7 @@ export default function MascotCategoryGrid({
     setError("");
     setNotice("");
     try {
-      await deleteMascotImage(target.id);
+      await deleteReferenceImage(target.id);
       onChanged();
     } catch (err) {
       setError(getErrorMessage(err, "Could not delete that photo."));
@@ -147,7 +147,7 @@ export default function MascotCategoryGrid({
                 {block.images.map((image) => (
                   <figure key={image.id} className="w-28">
                     <img
-                      src={`${mascotImageUrl(image)}?t=${bust}`}
+                      src={`${referenceImageUrl(image)}?t=${bust}`}
                       alt={image.label || image.filename}
                       className="h-28 w-28 rounded-lg border border-stone-200 object-cover shadow-sm"
                     />

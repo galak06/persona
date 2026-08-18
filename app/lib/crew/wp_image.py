@@ -47,8 +47,10 @@ from pathlib import Path
 
 import httpx
 
-from lib.crew.mascot_library import identity_clause
-from lib.crew.mascot_library import resolve_reference_image_path as _resolve_reference_image_path
+from lib.crew.reference_library import identity_clause
+from lib.crew.reference_library import (
+    resolve_reference_image_path as _resolve_reference_image_path,
+)
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -98,9 +100,9 @@ def build_image_brief(title: str, mascot_angle: str) -> str:
 
 
 def resolve_reference_image_path(brand_dir: Path) -> Path | None:
-    """Delegating alias for `lib.crew.mascot_library.resolve_reference_image_path`.
+    """Delegating alias for `lib.crew.reference_library.resolve_reference_image_path`.
 
-    The legacy-asset probe moved to `mascot_library` (which also owns the new
+    The legacy-asset probe moved to `reference_library` (which also owns the new
     tagged reference library); this alias keeps every existing importer --
     `scripts/crewai_content_pipeline.py`, `scripts/reels_images.py`, and their
     tests, which monkeypatch it by module attribute -- working unchanged.

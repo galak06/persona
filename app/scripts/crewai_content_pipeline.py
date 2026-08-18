@@ -45,7 +45,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
 from lib.crew.draft import DraftCreationError, create_wp_draft
-from lib.crew.mascot_library import resolve_reference
+from lib.crew.reference_library import resolve_reference
 from lib.crew.validate import ValidationResult, validate_draft
 from lib.crew.wp_image import build_image_brief
 from lib.crew.writer import (

@@ -8,7 +8,7 @@ for file-size discipline: everything from "we have a validated
 One image serves both platforms (see `lib.crew.socialpost.models` on why the
 captions don't). Generation is Gemini via `lib.crew.wp_image`, conditioned on
 a real photo of the brand's own persona and mascot, picked from the tagged
-library (`lib.crew.mascot_library`) by the scene the plan says the image
+library (`lib.crew.reference_library`) by the scene the plan says the image
 shows (`SocialPostPlan.reference_category`).
 
 That reference used to be the WP post's OWN featured image, on the theory
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from lib.crew.mascot_library import resolve_reference
+from lib.crew.reference_library import resolve_reference
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.wp_image import generate_wp_image
 from lib.observability import get_logger

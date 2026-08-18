@@ -36,12 +36,12 @@ from lib.groups_db.models import slugify
 # app/ (this file lives at app/lib/brand_provisioning.py).
 _PERSONA_ROOT = Path(__file__).resolve().parent.parent
 
-# Mirrors `lib.crew.mascot_library.LIBRARY_DIRNAME`, deliberately as a
+# Mirrors `lib.crew.reference_library.LIBRARY_DIRNAME`, deliberately as a
 # literal: importing it would execute `lib/crew/__init__.py`, which pulls in
 # the CrewAI scout (and `lib.config` behind it) -- exactly what this module's
 # docstring forbids. One string, asserted against the real constant in
-# tests/test_mascot_library.py so the two cannot drift.
-MASCOT_LIBRARY_DIRNAME = "mascot_refs"
+# tests/test_reference_library.py so the two cannot drift.
+REFERENCE_LIBRARY_DIRNAME = "reference_images"
 
 # Sibling-directory convention already established by the merged Phase 0/A
 # infra: docker-compose.yml (app/docker-compose.yml) mounts `./brands` as
@@ -211,13 +211,13 @@ def provision_brand(spec: BrandSpec, *, dry_run: bool = False) -> ProvisionResul
     # Only these directories -- session files, dedup caches, and queues are
     # lazily created by ig_engager.py/fb_engager.py themselves on first write
     # (confirmed by reading both scripts). No data/db/: everything is
-    # Postgres now. data/assets/mascot_refs is the mascot reference-image
-    # library (`lib.crew.mascot_library`); it is created empty here so a new
+    # Postgres now. data/assets/reference_images is the reference-image
+    # library (`lib.crew.reference_library`); it is created empty here so a new
     # brand's upload UI has a directory to list, but note that the library's
     # own writers still mkdir defensively -- brands provisioned before this
     # change never got one.
     (brand_dir / "data" / "config").mkdir(parents=True, exist_ok=True)
-    (brand_dir / "data" / "assets" / MASCOT_LIBRARY_DIRNAME).mkdir(parents=True, exist_ok=True)
+    (brand_dir / "data" / "assets" / REFERENCE_LIBRARY_DIRNAME).mkdir(parents=True, exist_ok=True)
     (brand_dir / "state").mkdir(parents=True, exist_ok=True)
     (brand_dir / "logs").mkdir(parents=True, exist_ok=True)
 

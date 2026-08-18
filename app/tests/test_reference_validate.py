@@ -1,4 +1,4 @@
-"""Tests for `lib.crew.mascot_validate` -- mascot-upload byte validation.
+"""Tests for `lib.crew.reference_validate` -- reference-upload byte validation.
 
 Each rejection asserts the HTTP status the upload route will map onto, so
 the API phase can rely on 413/415/422 meaning size / type / content.
@@ -12,7 +12,7 @@ from io import BytesIO
 import pytest
 from PIL import Image
 
-from lib.crew.mascot_validate import (
+from lib.crew.reference_validate import (
     MAX_UPLOAD_BYTES,
     ImageValidationError,
     probe_dimensions,

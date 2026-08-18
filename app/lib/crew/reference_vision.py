@@ -1,9 +1,11 @@
-"""Category suggestion for a mascot reference upload -- convenience only.
+"""Category suggestion for a reference-image upload -- convenience only.
 
 One job: the operator has already picked a photo they intend to keep, and
 this saves them the click of choosing which of their own tags it belongs to.
-It is deliberately NOT an identity gate -- nothing here decides whether the
-photo shows the right dog, because the person uploading it already did.
+It is deliberately NOT a content gate -- nothing here decides whether the
+photo belongs in the library at all (or, where it shows the brand's own
+mascot, whether it is really THAT animal), because the person uploading it
+already did.
 
 Consequences of "convenience only":
 
@@ -56,7 +58,8 @@ def suggest_category(
     """Best-matching label from `categories` for this photo, or `None`.
 
     Args:
-        image_bytes: The uploaded image, already validated by `mascot_validate`.
+        image_bytes: The uploaded image, already validated by
+            `reference_validate`.
         content_type: Its SNIFFED mime type (`image/png`, `image/jpeg`, ...).
         categories: The brand's existing category LABELS, in display order.
 
@@ -72,7 +75,7 @@ def suggest_category(
 
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
-        logger.warning("mascot_vision_no_api_key")
+        logger.warning("reference_vision_no_api_key")
         return None
 
     payload = {
@@ -103,10 +106,10 @@ def suggest_category(
             timeout=_TIMEOUT_SEC,
         )
     except httpx.HTTPError as exc:
-        logger.warning("mascot_vision_request_failed", error=str(exc))
+        logger.warning("reference_vision_request_failed", error=str(exc))
         return None
     if response.status_code >= 400:
-        logger.warning("mascot_vision_http_error", status=response.status_code)
+        logger.warning("reference_vision_http_error", status=response.status_code)
         return None
 
     return _match(_answer(response), labels)
@@ -129,13 +132,13 @@ def _answer(response: httpx.Response) -> str:
     try:
         data = response.json()
     except ValueError as exc:
-        logger.warning("mascot_vision_body_not_json", error=str(exc))
+        logger.warning("reference_vision_body_not_json", error=str(exc))
         return ""
     if not isinstance(data, dict):
         return ""
     candidates = data.get("candidates") or []
     if not isinstance(candidates, list) or not candidates:
-        logger.warning("mascot_vision_no_candidates")
+        logger.warning("reference_vision_no_candidates")
         return ""
     first = candidates[0] if isinstance(candidates[0], dict) else {}
     parts = (first.get("content") or {}).get("parts") or []
@@ -149,7 +152,7 @@ def _answer(response: httpx.Response) -> str:
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("mascot_vision_answer_not_json", text=text[:120])
+        logger.warning("reference_vision_answer_not_json", text=text[:120])
         return ""
     return str(parsed.get("category") or "") if isinstance(parsed, dict) else ""
 
@@ -162,5 +165,5 @@ def _match(answer: str, labels: list[str]) -> str | None:
     for label in labels:
         if label.casefold() == wanted:
             return label
-    logger.warning("mascot_vision_label_not_offered", answer=answer[:60])
+    logger.warning("reference_vision_label_not_offered", answer=answer[:60])
     return None

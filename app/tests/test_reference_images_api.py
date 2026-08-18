@@ -1,4 +1,4 @@
-"""Tests for `api.mascot_library_api` -- the operator's library endpoints.
+"""Tests for `api.reference_images_api` -- the operator's library endpoints.
 
 Driven through `TestClient` rather than by calling the route functions
 directly: `UploadFile`/`Form` are FastAPI dependency markers, so a plain call
@@ -18,16 +18,16 @@ import json
 from io import BytesIO
 from pathlib import Path
 
-import api.mascot_library_api as api_module
+import api.reference_images_api as api_module
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from lib.crew.mascot_library import library_root, manifest_path
-from lib.crew.mascot_validate import MAX_UPLOAD_BYTES
+from lib.crew.reference_library import library_root, manifest_path
+from lib.crew.reference_validate import MAX_UPLOAD_BYTES
 
-_PREFIX = "/api/v1/mascot-library"
+_PREFIX = "/api/v1/reference-images"
 
 
 def _png(color: tuple[int, int, int] = (10, 20, 30), size: int = 300) -> bytes:

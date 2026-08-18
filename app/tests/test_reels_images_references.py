@@ -13,7 +13,7 @@ beats are no longer conditioned on one photo passed five times.
   * one identity clause, one seed and ONE `ReferenceCache` per run
 
 Real files under a `tmp_path` brand dir, same posture as
-`tests/test_mascot_library.py`; only OpenArt itself is stubbed.
+`tests/test_reference_library.py`; only OpenArt itself is stubbed.
 """
 # ruff: noqa: S101
 
@@ -26,8 +26,8 @@ from typing import Any
 import pytest
 from scripts import reels_images
 
-from lib.crew.mascot_library import identity_clause, library_root, manifest_path
 from lib.crew.reels.models import ReelBeat, ReelPlan
+from lib.crew.reference_library import identity_clause, library_root, manifest_path
 
 _HERO = b"hero-image-bytes"
 

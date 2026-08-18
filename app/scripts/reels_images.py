@@ -17,7 +17,7 @@ prerequisite, so a run without it is a plain success.
 
 **The reference is picked per beat, from the brand's tagged library.** Each
 beat names the kind of scene it shows (`ReelBeat.reference_category`) and
-`lib.crew.mascot_library.resolve_reference` answers with the brand photo that
+`lib.crew.reference_library.resolve_reference` answers with the brand photo that
 actually matches it, so a "walking" beat is grounded on a walking photo
 rather than on whichever single asset the brand happened to keep. One
 `ReferenceCache` is shared by the whole run, so N distinct photos across five
@@ -37,10 +37,10 @@ import anyio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib.crew.mascot_library import identity_clause, resolve_reference
-from lib.crew.mascot_validate import EXTENSION_BY_CONTENT_TYPE, sniff_mime
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import ReferenceCache, ReferenceUpload, generate_image
+from lib.crew.reference_library import identity_clause, resolve_reference
+from lib.crew.reference_validate import EXTENSION_BY_CONTENT_TYPE, sniff_mime
 from lib.oauth.openart import OpenArtAuthRequiredError, openart_enabled
 from lib.oauth.openart_store import stored_auth_state
 from lib.observability import get_logger

@@ -1,7 +1,7 @@
-"""Pydantic models for the mascot reference-image library API.
+"""Pydantic models for the reference-image library API.
 
-Mirrors the `library.json` manifest entries (`lib.crew.mascot_library`) for
-the web UI. Kept in its own module so `mascot_library_api.py` stays small --
+Mirrors the `library.json` manifest entries (`lib.crew.reference_library`) for
+the web UI. Kept in its own module so `reference_images_api.py` stays small --
 that file is then transport only: the router, its seven routes, and the
 request-handling helpers.
 
@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from lib.crew.mascot_library import Manifest, slugify
+from lib.crew.reference_library import Manifest, slugify
 
 
 class CategorySummary(BaseModel):
@@ -47,7 +47,7 @@ class LibraryImage(BaseModel):
     url: str = ""  # serving URL for the bytes (see `image_url`)
 
 
-# Envelope for ``GET /api/v1/mascot-library``. Unpaginated on purpose: the
+# Envelope for ``GET /api/v1/reference-images``. Unpaginated on purpose: the
 # library is a handful of curated photos, not a feed, and the UI renders every
 # tag alongside every image at once. Kept out of the docstring because
 # FastAPI copies docstrings into `components/schemas.*.description`, and the
@@ -80,7 +80,7 @@ class CategorySuggestion(BaseModel):
 
 def image_url(image_id: str) -> str:
     """Serving URL for one photo's bytes (`GET .../images/{id}/raw`)."""
-    return f"/api/v1/mascot-library/images/{image_id}/raw"
+    return f"/api/v1/reference-images/images/{image_id}/raw"
 
 
 def to_model(entry: dict[str, Any]) -> LibraryImage:

@@ -110,11 +110,12 @@ jobs:
           api/reels_compose_api.py tests/test_reels_compose_api.py
           tests/test_managed_flow_ids_consistency.py
           scripts/pg_backup.py tests/test_pg_backup.py
-          lib/crew/mascot_library.py lib/crew/mascot_library_store.py
-          lib/crew/mascot_validate.py lib/crew/mascot_vision.py
-          api/mascot_library_api.py api/mascot_library_schemas.py
-          tests/test_mascot_library.py tests/test_mascot_validate.py
-          tests/test_mascot_library_api.py tests/test_mascot_vision.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          api/reference_images_api.py api/reference_images_schemas.py
+          tests/test_reference_library.py tests/test_reference_validate.py
+          tests/test_reference_library_migration.py
+          tests/test_reference_images_api.py tests/test_reference_vision.py
           tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
           tests/test_reels_images.py tests/test_reels_images_references.py
@@ -170,11 +171,12 @@ jobs:
           api/reels_compose_api.py tests/test_reels_compose_api.py
           tests/test_managed_flow_ids_consistency.py
           scripts/pg_backup.py tests/test_pg_backup.py
-          lib/crew/mascot_library.py lib/crew/mascot_library_store.py
-          lib/crew/mascot_validate.py lib/crew/mascot_vision.py
-          api/mascot_library_api.py api/mascot_library_schemas.py
-          tests/test_mascot_library.py tests/test_mascot_validate.py
-          tests/test_mascot_library_api.py tests/test_mascot_vision.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          api/reference_images_api.py api/reference_images_schemas.py
+          tests/test_reference_library.py tests/test_reference_validate.py
+          tests/test_reference_library_migration.py
+          tests/test_reference_images_api.py tests/test_reference_vision.py
           tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
           tests/test_reels_images.py tests/test_reels_images_references.py
@@ -230,9 +232,9 @@ jobs:
           api/ideas_generate_api.py
           scripts/pg_backup.py
           api/reels_compose_api.py
-          lib/crew/mascot_library.py lib/crew/mascot_library_store.py
-          lib/crew/mascot_validate.py lib/crew/mascot_vision.py
-          api/mascot_library_api.py api/mascot_library_schemas.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          api/reference_images_api.py api/reference_images_schemas.py
           --ignore-missing-imports
 
   test:
@@ -413,10 +415,11 @@ jobs:
             tests/test_managed_flow_ids_consistency.py \
             tests/test_pg_backup.py \
             tests/test_reels_compose_api.py \
-            tests/test_mascot_library.py \
-            tests/test_mascot_validate.py \
-            tests/test_mascot_library_api.py \
-            tests/test_mascot_vision.py \
+            tests/test_reference_library.py \
+            tests/test_reference_library_migration.py \
+            tests/test_reference_validate.py \
+            tests/test_reference_images_api.py \
+            tests/test_reference_vision.py \
             tests/test_crew_writer_prompts.py \
             tests/test_crew_socialpost_prompts.py \
             tests/test_reels_openart_generate.py \

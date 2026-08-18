@@ -166,24 +166,24 @@ export const endpoints = {
   /** GET — FB/IG browser-session (login) status for the active brand. */
   sessionStatus: "/sessions",
 
-  /** GET — the active brand's mascot reference library (categories + images). */
-  mascotLibrary: "/mascot-library",
+  /** GET — the active brand's reference-image library (categories + images). */
+  referenceLibrary: "/reference-images",
 
   /** POST — declare a new reference category (label in, slug back). */
-  mascotCategories: "/mascot-library/categories",
+  referenceCategories: "/reference-images/categories",
 
   /** POST — upload one reference photo. multipart/form-data, not JSON. */
-  mascotImages: "/mascot-library/images",
+  referenceImages: "/reference-images/images",
 
   /** DELETE — drop one photo. `imageId` is `"<category>/<filename>"`. */
-  mascotImage: (imageId: string): string =>
-    `/mascot-library/images/${encPath(imageId)}`,
+  referenceImage: (imageId: string): string =>
+    `/reference-images/images/${encPath(imageId)}`,
 
   /** POST — copy the brand's legacy mascot asset in. 404 when there is none. */
-  mascotImportLegacy: "/mascot-library/import-legacy",
+  referenceImportLegacy: "/reference-images/import-legacy",
 
   /** POST — advisory category for an about-to-be-uploaded photo. multipart. */
-  mascotSuggestCategory: "/mascot-library/suggest-category",
+  referenceSuggestCategory: "/reference-images/suggest-category",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

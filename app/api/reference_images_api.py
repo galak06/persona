@@ -1,15 +1,15 @@
-"""Mascot reference-image library API -- the operator's side of the library.
+"""Reference-image library API -- the operator's side of the library.
 
-  GET    /api/v1/mascot-library                     -- categories + images
-  POST   /api/v1/mascot-library/categories          -- declare a tag
-  POST   /api/v1/mascot-library/images              -- upload a photo
-  POST   /api/v1/mascot-library/import-legacy       -- copy in the legacy asset
-  DELETE /api/v1/mascot-library/images/{id}         -- remove one photo
-  GET    /api/v1/mascot-library/images/{id}/raw     -- serve the bytes
-  POST   /api/v1/mascot-library/suggest-category    -- which tag fits? (advisory)
+  GET    /api/v1/reference-images                     -- categories + images
+  POST   /api/v1/reference-images/categories          -- declare a tag
+  POST   /api/v1/reference-images/images              -- upload a photo
+  POST   /api/v1/reference-images/import-legacy       -- copy in the legacy asset
+  DELETE /api/v1/reference-images/images/{id}         -- remove one photo
+  GET    /api/v1/reference-images/images/{id}/raw     -- serve the bytes
+  POST   /api/v1/reference-images/suggest-category    -- which tag fits? (advisory)
 
-Storage, validation and resolution all live in `lib.crew.mascot_library*`,
-and the response shapes in `api.mascot_library_schemas`; this module is
+Storage, validation and resolution all live in `lib.crew.reference_library*`,
+and the response shapes in `api.reference_images_schemas`; this module is
 transport only -- it owns the brand lookup, the byte cap, the containment
 guard, and the mapping from `ImageValidationError.status_code` onto an HTTP
 response. Nothing here decides what a valid image is, or what one looks like
@@ -45,7 +45,7 @@ from fastapi.responses import FileResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.brand_context import resolve_api_brand
-from api.mascot_library_schemas import (
+from api.reference_images_schemas import (
     CategoryCreate,
     CategoryCreated,
     CategorySuggestion,
@@ -54,15 +54,21 @@ from api.mascot_library_schemas import (
     categories,
     to_model,
 )
-from lib.crew.mascot_library import library_root, list_category_labels, read_manifest
-from lib.crew.mascot_library_store import add_image, create_category, delete_image, import_legacy
-from lib.crew.mascot_validate import (
+from lib.crew.reference_library import library_root, list_category_labels, read_manifest
+from lib.crew.reference_library_store import (
+    add_image,
+    create_category,
+    delete_image,
+    import_legacy,
+    migrate_legacy_dirname,
+)
+from lib.crew.reference_validate import (
     MAX_UPLOAD_BYTES,
     ImageValidationError,
     ValidationResult,
     validate_upload,
 )
-from lib.crew.mascot_vision import suggest_category
+from lib.crew.reference_vision import suggest_category
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -86,7 +92,7 @@ def _safe_target(brand_dir: Path, image_id: str) -> Path:
     root = library_root(brand_dir).resolve()
     target = (library_root(brand_dir) / image_id).resolve()
     if not target.is_relative_to(root):
-        logger.warning("mascot_library_path_escape_blocked", image_id=image_id[:200])
+        logger.warning("reference_library_path_escape_blocked", image_id=image_id[:200])
         raise HTTPException(status_code=400, detail="invalid image id")
     return target
 
@@ -118,17 +124,24 @@ async def _validated(raw: bytes, filename: str | None) -> ValidationResult:
         raise HTTPException(status_code=exc.status_code, detail=exc.reason) from exc
 
 
-@router.get("/mascot-library", response_model=LibraryResponse)
+@router.get("/reference-images", response_model=LibraryResponse)
 def get_library() -> LibraryResponse:
-    """Every declared tag and every filed photo for the active brand."""
-    manifest = read_manifest(_brand_dir())
+    """Every declared tag and every filed photo for the active brand.
+
+    The only READ that runs the pre-rename directory migration: an operator
+    opening this page is the first thing that touches a brand carried over
+    from before the rename, and it must show them their existing photos.
+    """
+    brand_dir = _brand_dir()
+    migrate_legacy_dirname(brand_dir)
+    manifest = read_manifest(brand_dir)
     return LibraryResponse(
         categories=categories(manifest),
         images=[to_model(entry) for entry in manifest["images"]],
     )
 
 
-@router.post("/mascot-library/categories", response_model=CategoryCreated)
+@router.post("/reference-images/categories", response_model=CategoryCreated)
 def post_category(body: CategoryCreate) -> CategoryCreated:
     """Declare a tag. Re-declaring an existing slug returns it unchanged."""
     try:
@@ -138,7 +151,7 @@ def post_category(body: CategoryCreate) -> CategoryCreated:
     return CategoryCreated(slug=str(category["slug"]), label=str(category["label"]))
 
 
-@router.post("/mascot-library/images", response_model=LibraryImage)
+@router.post("/reference-images/images", response_model=LibraryImage)
 async def post_image(
     file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency marker
     category: str = Form(""),
@@ -163,7 +176,7 @@ async def post_image(
     return to_model(entry)
 
 
-@router.post("/mascot-library/import-legacy", response_model=LibraryImage)
+@router.post("/reference-images/import-legacy", response_model=LibraryImage)
 def post_import_legacy() -> LibraryImage:
     """Copy `data/assets/persona_mascot_reference.*` into `general`.
 
@@ -176,7 +189,7 @@ def post_import_legacy() -> LibraryImage:
     return to_model(entry)
 
 
-@router.get("/mascot-library/images/{image_id:path}/raw")
+@router.get("/reference-images/images/{image_id:path}/raw")
 def get_image_raw(image_id: str) -> FileResponse:
     """Serve one photo's bytes, uncached (the library is edited live)."""
     brand_dir = _brand_dir()
@@ -193,7 +206,7 @@ def get_image_raw(image_id: str) -> FileResponse:
     )
 
 
-@router.delete("/mascot-library/images/{image_id:path}", status_code=204)
+@router.delete("/reference-images/images/{image_id:path}", status_code=204)
 def remove_image(image_id: str) -> Response:
     """Drop a photo from the manifest and unlink its file. 404 if absent."""
     brand_dir = _brand_dir()
@@ -203,7 +216,7 @@ def remove_image(image_id: str) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/mascot-library/suggest-category", response_model=CategorySuggestion)
+@router.post("/reference-images/suggest-category", response_model=CategorySuggestion)
 async def post_suggest_category(
     file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency marker
 ) -> CategorySuggestion:
@@ -221,6 +234,6 @@ async def post_suggest_category(
             suggest_category, raw, result.content_type, list_category_labels(brand_dir)
         )
     except Exception as exc:
-        logger.warning("mascot_library_suggest_failed", error=str(exc))
+        logger.warning("reference_library_suggest_failed", error=str(exc))
         suggestion = None
     return CategorySuggestion(suggested_category=suggestion)

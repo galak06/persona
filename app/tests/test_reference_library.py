@@ -1,6 +1,6 @@
-"""Tests for the tagged mascot reference-image library.
+"""Tests for the tagged reference-image library.
 
-Covers `lib.crew.mascot_library` (resolution), `mascot_library_store` (writes),
+Covers `lib.crew.reference_library` (resolution), `reference_library_store` (writes),
 and the provisioning constant they share. Follows `tests/test_crew_wp_image.py
 ::test_resolve_reference_image_path_finds_png`: real files under a `tmp_path`
 brand dir, nothing about the filesystem mocked.
@@ -17,8 +17,8 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from lib.brand_provisioning import MASCOT_LIBRARY_DIRNAME
-from lib.crew.mascot_library import (
+from lib.brand_provisioning import REFERENCE_LIBRARY_DIRNAME
+from lib.crew.reference_library import (
     GENERAL_CATEGORY,
     LIBRARY_DIRNAME,
     library_root,
@@ -29,7 +29,7 @@ from lib.crew.mascot_library import (
     resolve_reference_image_path,
     source_rank,
 )
-from lib.crew.mascot_library_store import add_image, create_category, delete_image, import_legacy
+from lib.crew.reference_library_store import add_image, create_category, delete_image, import_legacy
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -297,4 +297,4 @@ def test_import_legacy_without_an_asset_returns_none(tmp_path: Path) -> None:
 
 
 def test_provisioning_uses_the_same_library_dirname() -> None:
-    assert MASCOT_LIBRARY_DIRNAME == LIBRARY_DIRNAME
+    assert REFERENCE_LIBRARY_DIRNAME == LIBRARY_DIRNAME

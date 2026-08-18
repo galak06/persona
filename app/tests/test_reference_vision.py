@@ -1,4 +1,4 @@
-"""Tests for `lib.crew.mascot_vision` -- the advisory tag suggester.
+"""Tests for `lib.crew.reference_vision` -- the advisory tag suggester.
 
 respx stubs the Gemini `generateContent` endpoint (same approach as
 `tests/test_crew_wp_image.py`), so no real call happens. Two properties are
@@ -19,7 +19,7 @@ import httpx
 import pytest
 import respx
 
-from lib.crew.mascot_vision import suggest_category, vision_model
+from lib.crew.reference_vision import suggest_category, vision_model
 
 _CATEGORIES = ["Eating", "Walking", "Sleeping"]
 

@@ -65,7 +65,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import social_post_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
-from lib.crew.mascot_library import list_category_labels
+from lib.crew.reference_library import list_category_labels
 from lib.crew.socialpost import (
     build_social_post_agent,
     build_social_post_task,
