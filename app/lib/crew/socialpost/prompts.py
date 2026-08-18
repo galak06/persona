@@ -32,9 +32,16 @@ model's instincts:
 - **Hashtags: none on FB, 3-5 on IG.** Note this is deliberately fewer than the
   6-8 in `app/CLAUDE.md`, which predates keywords-in-captions displacing hashtags
   as Instagram's discovery mechanism.
+- **`reference_category` only when the brand has a reference-photo library.** The
+  hook image is generated from a real photo of the brand's dog, so naming the
+  collection whose scenes match the brief is what makes that reference ground the
+  scene instead of fighting it. A brand with no library passes nothing and gets a
+  prompt byte-identical to the one that predates the field.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 MAX_HEADLINE_LINE_CHARS = 18
 MAX_SUBCOPY_CHARS = 40
@@ -44,6 +51,26 @@ IG_HASHTAG_MIN = 3
 IG_HASHTAG_MAX = 5
 
 
+def _reference_category_section(categories: Sequence[str]) -> str:
+    """The `reference_category` instructions -- empty string when the brand has
+    no reference-photo library, so the prompt stays byte-identical to what it
+    was before this field existed."""
+    if not categories:
+        return ""
+    listed = "\n".join(f"  - {label}" for label in categories)
+    return f"""
+## Reference-photo collection (`reference_category`)
+That image is generated from a real photo of the brand's actual dog. The brand keeps \
+several collections of those photos, one collection per kind of scene:
+{listed}
+Set `reference_category` to the ONE collection whose scenes best match the \
+`image_brief` you just wrote, copied verbatim from the list above. The closer the \
+collection matches the scene, the more the finished image actually looks like this dog \
+in that setting -- a couch reference dragged into a kitchen scene fights the brief \
+instead of grounding it. If none of them fits, use "general".
+"""
+
+
 def build_social_post_task_description(
     *,
     title: str,
@@ -51,6 +78,7 @@ def build_social_post_task_description(
     target_keyword: str,
     site_domain: str,
     brand_voice: str,
+    reference_categories: Sequence[str] = (),
 ) -> str:
     """The full prompt handed to the Social Post Writer's `Task`.
 
@@ -158,4 +186,4 @@ the image (e.g. "FULL GUIDE  ->  {site_domain.upper()}").
 `image_alt_text` describes the finished image in plain language for screen readers. \
 It is also indexed by search, so write it as a real sentence including the topic -- \
 not a keyword list.
-"""
+{_reference_category_section(reference_categories)}"""

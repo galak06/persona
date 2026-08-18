@@ -8,6 +8,7 @@ scout, one function per pipeline stage.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from lib.crew.writer.context import internal_link_candidates_json
@@ -52,6 +53,27 @@ keep mascot mentions general ("in our experience", "we've noticed").
 """
 
 
+def _reference_category_section(categories: Sequence[str]) -> str:
+    """The `reference_category` instructions -- empty string when the brand has
+    no reference-photo library, so the strategist prompt stays byte-identical
+    to what it was before this field existed."""
+    if not categories:
+        return ""
+    listed = "\n".join(f"  - {label}" for label in categories)
+    return f"""
+## Reference-photo collection (`reference_category`)
+The post's hero image is generated with a real photo of the brand's actual dog as its \
+visual reference (the result is still a generated image, not a photograph of a real \
+moment -- the title rule in step 1 still holds). The brand keeps several collections of \
+those photos, one collection per kind of scene:
+{listed}
+Set `reference_category` to the ONE collection whose scenes best match the hero image \
+this post calls for, copied verbatim from the list above. Pick it from the topic and \
+your mascot_angle: a feeding post wants a feeding reference, a trail post wants an \
+outdoor one. If none of them fits, use "general".
+"""
+
+
 def build_strategist_task_description(
     *,
     idea: dict[str, Any],
@@ -60,6 +82,7 @@ def build_strategist_task_description(
     mascot_facts: str,
     link_candidates: list[InternalLinkCandidate],
     year: int,
+    reference_categories: Sequence[str] = (),
 ) -> str:
     """The strategist agent's full prompt: one content idea -> a `ContentBrief`."""
     return f"""You are turning ONE approved content idea into a structured content brief.
@@ -105,7 +128,7 @@ for, not generic filler.
 6. Write mascot_angle: 2-4 sentences on how the brand's real voice/mascot fits THIS specific \
 topic, grounded in the idea's own reasoning above and the mascot facts above -- never a generic \
 statement that could apply to any topic.
-"""
+{_reference_category_section(reference_categories)}"""
 
 
 def build_writer_task_description(

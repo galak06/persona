@@ -32,6 +32,11 @@ class ReelBeat(BaseModel):
         "subject, setting, mood, composition -- grounded in this beat's actual content, "
         "never vague mood words with nothing for the model to render."
     )
+    reference_category: str = Field(
+        default="",
+        description="Which of the brand's reference-photo collections best matches this "
+        "scene -- copy one value verbatim from the list supplied in the task, or leave empty.",
+    )
 
 
 class ReelPlan(BaseModel):

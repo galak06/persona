@@ -14,9 +14,16 @@ that fails for any reason, the WP post's own hero image is reused for all 5
 beats instead and `image_prompt` goes unused; the overlay text (headline/
 subcopy) is identical either way, so this one agent/prompt serves both
 outcomes without knowing in advance which one will run.
+
+Each beat may also name the reference-photo collection its generated image
+should be grounded in (`reference_category`), chosen from the labels passed in
+`reference_categories`. Brands with no such library pass nothing and get a
+prompt byte-identical to the one that predates the field.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 from lib.crew.reels.models import REEL_BEAT_COUNT
 
@@ -24,7 +31,33 @@ MAX_HEADLINE_LINE_CHARS = 14
 MAX_SUBCOPY_CHARS = 32
 
 
-def build_reels_task_description(*, title: str, body: str, brand_voice: str) -> str:
+def _reference_category_section(categories: Sequence[str]) -> str:
+    """The `reference_category` instructions -- empty string when the brand has
+    no reference-photo library, so the prompt stays byte-identical to what it
+    was before this field existed."""
+    if not categories:
+        return ""
+    listed = "\n".join(f"  - {label}" for label in categories)
+    return f"""
+## Reference-photo collection (`reference_category`)
+Every beat's image is generated from a real photo of the brand's actual dog. The brand \
+keeps several collections of those photos, one collection per kind of scene:
+{listed}
+For each beat, set `reference_category` to the ONE collection whose scenes best match \
+that beat's own `image_prompt`, copied verbatim from the list above. The closer the \
+collection matches the scene you described, the more the generated frame actually looks \
+like this dog in that setting -- a "lying on the couch" reference dragged into a trail \
+shot fights the prompt instead of grounding it. If none of them fits, use "general".
+"""
+
+
+def build_reels_task_description(
+    *,
+    title: str,
+    body: str,
+    brand_voice: str,
+    reference_categories: Sequence[str] = (),
+) -> str:
     """The full prompt handed to the fallback Reel Beats agent's `Task`.
 
     `body` is the WP post's HTML-stripped content, already truncated by the
@@ -81,7 +114,7 @@ food, the person's hands, the kitchen -- nothing with text for the model to inve
 lighting, moody neon).
 - **Standalone design:** Each beat's image stands completely alone as a compelling \
 frame; do not reference continuity or "next shots."
-
+{_reference_category_section(reference_categories)}
 ## Captions
 Write an `ig_caption` and `fb_caption` -- both end with one clear CTA: invite the \
 reader to DM for the article (e.g. "DM me and I'll send you the article" -- Reels \
