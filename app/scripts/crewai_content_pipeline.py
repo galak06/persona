@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from functools import partial
 from pathlib import Path
 
 _ENGINE_ROOT = Path(__file__).resolve().parent.parent
@@ -45,9 +46,10 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
 from lib.crew.draft import DraftCreationError, create_wp_draft
+from lib.crew.reference_clauses import reference_clause
 from lib.crew.reference_library import resolve_reference
 from lib.crew.validate import ValidationResult, validate_draft
-from lib.crew.wp_image import build_image_brief
+from lib.crew.wp_image import build_image_brief, generate_wp_image
 from lib.crew.writer import (
     assemble_final_html,
     build_content_brief,
@@ -268,11 +270,11 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # back to `general`, then to the legacy asset, then to no reference.
     reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
     reference_image_path = reference.path if reference is not None else None
+    # What the model is TOLD the photo is: a library image of a bowl or a
+    # kitchen must not be introduced as the brand's dog.
+    clause = reference_clause(reference, mascot_name)
     if reference is not None:
-        print(
-            f"reference: {reference.path} [{reference.category}] "
-            "(conditioning hero image on this photo)"
-        )
+        print(f"reference: {reference.path} [{reference.category}] mascot={reference.shows_mascot}")
     tag_names = list(
         dict.fromkeys(
             name for name in [brief.primary_keyword, *brief.secondary_keywords[:2]] if name
@@ -288,6 +290,9 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
             category_name=str(idea.get("category") or ""),
             tag_names=tag_names,
             reference_image_path=reference_image_path,
+            # The clause rides in on `create_wp_draft`'s generator seam rather
+            # than as one more pass-through parameter through `lib.crew.draft`.
+            generate_image_fn=partial(generate_wp_image, reference_clause=clause),
         )
     except DraftCreationError as exc:
         print(f"\nWORDPRESS DRAFT CREATION FAILED: {exc}", file=sys.stderr)

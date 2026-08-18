@@ -86,6 +86,14 @@ class ReferenceImage:
     path: Path
     content_type: str
     label: str
+    #: Does this photo actually show the brand's persona/mascot? Decides which
+    #: prompt clause a generator attaches (`lib.crew.reference_clauses`).
+    #: Entries written before the vision tagger have no such key, so the
+    #: default is the SAFE reading: assume it is not a mascot portrait.
+    shows_mascot: bool = False
+    #: What the tagger saw, carried for logs and operator UI only -- never
+    #: sent to the image model.
+    description: str = ""
 
 
 def slugify(label: str) -> str:
@@ -205,6 +213,10 @@ def resolve_reference(
             path=legacy,
             content_type=CONTENT_TYPE_BY_SUFFIX.get(legacy.suffix.lower(), _FALLBACK_CONTENT_TYPE),
             label=legacy.stem,
+            # `persona_mascot_reference.*` is a photo of the brand's mascot by
+            # definition -- that is the entire meaning of the filename -- so it
+            # keeps the identity clause even though it has no manifest entry.
+            shows_mascot=True,
         )
     return None
 
@@ -225,22 +237,6 @@ def resolve_reference_image_path(brand_dir: Path) -> Path | None:
         if candidate.is_file():
             return candidate
     return None
-
-
-def identity_clause(mascot_name: str) -> str:
-    """The subject-consistency instruction appended to an image prompt when a
-    reference photo IS attached.
-
-    Moved verbatim out of `lib.crew.wp_image._style_suffix` so every
-    generator that conditions on a library photo phrases the constraint
-    identically.
-    """
-    return (
-        "A reference photo of the brand's real persona and mascot is attached -- use the "
-        "EXACT SAME person and dog shown in that photo (same face, same dog coloring/"
-        f"markings{f' -- the dog is {mascot_name}' if mascot_name else ''}), placed into "
-        "this new scene. Do not invent a different person or dog. "
-    )
 
 
 #: One candidate as the resolver carries it internally: its `source` rank
@@ -273,6 +269,8 @@ def _existing_images_by_category(brand_dir: Path) -> dict[str, list[_Candidate]]
                 or CONTENT_TYPE_BY_SUFFIX.get(path.suffix.lower(), _FALLBACK_CONTENT_TYPE)
             ),
             label=str(entry.get("label") or path.stem),
+            shows_mascot=bool(entry.get("shows_mascot", False)),
+            description=str(entry.get("description") or ""),
         )
         grouped.setdefault(slug, []).append((source_rank(str(entry.get("source", ""))), image))
     return grouped

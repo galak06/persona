@@ -24,7 +24,8 @@ import pytest
 from scripts import reels_images
 
 from lib.crew.reels.models import ReelBeat, ReelPlan
-from lib.crew.reference_library import ReferenceImage, identity_clause
+from lib.crew.reference_clauses import grounding_clause
+from lib.crew.reference_library import ReferenceImage
 from lib.oauth.openart import OpenArtAuthRequiredError
 
 _HERO = b"hero-image-bytes"
@@ -53,13 +54,14 @@ def _resolve(plan: ReelPlan, brand_dir: Path = Path("/brand")) -> reels_images.R
 
 
 def _beat_prompt(prompt: str) -> str:
-    """The beat's own prompt, with the identity clause stripped off the front.
+    """The beat's own prompt, with the reference clause stripped off the front.
 
-    Every OpenArt prompt is now prefixed with the subject-consistency clause
-    (see `test_reels_images_references.py`); these tests care about the beat
-    text underneath it. No brand config in `tmp_path`, so the mascot name is "".
+    Every OpenArt prompt is prefixed with a clause about the attached photo
+    (see `test_reels_images_references.py`); these tests care about the text
+    underneath. `/brand` has no library and no legacy asset, so the reference
+    is the hero -- an unknown photo, hence the grounding clause.
     """
-    return prompt.removeprefix(identity_clause(""))
+    return prompt.removeprefix(grounding_clause())
 
 
 # ── authorized: OpenArt must actually be used ─────────────────────────────────

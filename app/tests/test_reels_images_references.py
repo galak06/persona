@@ -1,19 +1,18 @@
-"""Which photo grounds which beat -- `scripts.reels_images` x the tagged library.
+"""Which photo grounds which beat, and what the model is told it is.
 
 The sibling `test_reels_images.py` pins the fallback contract (OpenArt off,
-unauthorized, a beat failing). This file pins the other half: a reel's five
-beats are no longer conditioned on one photo passed five times.
+unauthorized, a beat failing); this file pins the other half:
 
-  * each beat resolves the reference matching ITS OWN `reference_category`
-  * `""` and unrecognised labels reach the resolver verbatim and land on
+  * each beat resolves the reference matching ITS OWN `reference_category`;
+    `""` and unrecognised labels reach the resolver verbatim and land on
     `general` -- callers never second-guess it
   * the upload carries the file's REAL name and content type (the old single-
     reference call left OpenArt's `image/jpeg` default on every PNG) -- for
     the hero fallback too, which has no filename and must be sniffed
-  * one identity clause, one seed and ONE `ReferenceCache` per run
+  * the prompt clause matches the photo: mascot identity only for a mascot
+    photo, grounding otherwise; one seed and ONE `ReferenceCache` per run
 
-Real files under a `tmp_path` brand dir, same posture as
-`tests/test_reference_library.py`; only OpenArt itself is stubbed.
+Real files under a `tmp_path` brand dir; only OpenArt itself is stubbed.
 """
 # ruff: noqa: S101
 
@@ -27,7 +26,8 @@ import pytest
 from scripts import reels_images
 
 from lib.crew.reels.models import ReelBeat, ReelPlan
-from lib.crew.reference_library import identity_clause, library_root, manifest_path
+from lib.crew.reference_clauses import grounding_clause, identity_clause
+from lib.crew.reference_library import library_root, manifest_path
 
 _HERO = b"hero-image-bytes"
 
@@ -48,12 +48,12 @@ def _plan(categories: list[str]) -> ReelPlan:
     )
 
 
-def _write_library(brand_dir: Path, files: dict[str, str], *, ext: str = ".png") -> None:
-    """`{category: distinctive-bytes}` -> a one-image-per-category library.
-
-    The bytes double as the assertion handle: whichever photo a beat picks is
-    identifiable from the `ReferenceUpload` alone.
-    """
+def _write_library(
+    brand_dir: Path, files: dict[str, str], *, ext: str = ".png", shows_mascot: bool = False
+) -> None:
+    """`{category: distinctive-bytes}` -> a one-image-per-category library. The
+    bytes double as the assertion handle: whichever photo a beat picks is
+    identifiable from the `ReferenceUpload` alone."""
     root = library_root(brand_dir)
     entries: list[dict[str, Any]] = []
     for category, marker in files.items():
@@ -68,6 +68,7 @@ def _write_library(brand_dir: Path, files: dict[str, str], *, ext: str = ".png")
                 "content_type": "image/png" if ext == ".png" else "image/jpeg",
                 "source": "upload",
                 "label": marker,
+                "shows_mascot": shows_mascot,
             }
         )
     manifest_path(brand_dir).write_text(
@@ -111,8 +112,8 @@ def _resolve(plan: ReelPlan, brand_dir: Path, idea_id: str = "idea-1") -> Any:
 def test_three_categories_resolve_to_three_different_photos(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """The whole point: beats showing different scenes get different photos of
-    the same real dog, instead of one asset conditioning all five frames."""
+    """The whole point: different scenes get different photos, not one asset
+    conditioning all five frames."""
     _write_library(tmp_path, {"eating": "eat-bytes", "walking": "walk-bytes", "general": "gen"})
 
     resolved = _resolve(_plan(["eating", "walking", "general"]), tmp_path)
@@ -126,8 +127,8 @@ def test_three_categories_resolve_to_three_different_photos(
 def test_an_empty_category_lands_on_general(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """`""` is what the model emits when it declines to tag a beat. It goes to
-    the resolver verbatim; the resolver -- not this caller -- picks `general`."""
+    """`""` is what the model emits when it declines to tag a beat; the
+    resolver -- not this caller -- turns it into `general`."""
     _write_library(tmp_path, {"eating": "eat-bytes", "general": "gen-bytes"})
 
     _resolve(_plan(["", ""]), tmp_path)
@@ -138,8 +139,8 @@ def test_an_empty_category_lands_on_general(
 def test_an_unrecognised_category_is_passed_through_not_rewritten(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """A hallucinated label must behave exactly like `""` -- the caller does no
-    validation of its own, so there is only one fallback rule to reason about."""
+    """A hallucinated label behaves exactly like `""`: the caller validates
+    nothing, so there is only one fallback rule to reason about."""
     _write_library(tmp_path, {"general": "gen-bytes"})
 
     _resolve(_plan(["surfing-on-mars"]), tmp_path)
@@ -152,8 +153,7 @@ def test_the_upload_carries_the_real_filename_and_content_type(
 ) -> None:
     """THE PNG mislabel fix. The old single-reference call left OpenArt's
     `reference.jpg` / `image/jpeg` defaults in place, so every PNG reference --
-    including the legacy `persona_mascot_reference.png` -- was uploaded
-    declared as a JPEG."""
+    the legacy `persona_mascot_reference.png` included -- went up as a JPEG."""
     _write_library(tmp_path, {"general": "gen-bytes"})
 
     _resolve(_plan(["general"]), tmp_path)
@@ -182,9 +182,8 @@ def test_a_png_hero_fallback_is_uploaded_as_a_png(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
     """The SAME mislabel, on the last fallback. A brand with no library and no
-    legacy asset grounds every beat on the WP hero -- which is a PNG -- and the
-    hero arrives as bare bytes, so its type has to be sniffed rather than read
-    off a filename."""
+    legacy asset grounds every beat on the WP hero -- a PNG arriving as bare
+    bytes, so its type has to be sniffed rather than read off a filename."""
     png = b"\x89PNG\r\n\x1a\n" + b"hero-image-bytes"
 
     reels_images.resolve_images(_plan(["general"]), png, brand_dir=tmp_path, idea_id="idea-1")
@@ -197,9 +196,8 @@ def test_a_png_hero_fallback_is_uploaded_as_a_png(
 def test_an_unsniffable_hero_keeps_the_dataclass_defaults(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """Sniffing is best-effort: bytes that match no known magic fall back to
-    `ReferenceUpload`'s own defaults, i.e. the pre-existing behaviour, rather
-    than failing a beat over a label."""
+    """Sniffing is best-effort: bytes matching no known magic keep
+    `ReferenceUpload`'s defaults rather than failing a beat over a label."""
     _resolve(_plan(["general"]), tmp_path)
 
     upload = calls[0]["references"][0]
@@ -209,13 +207,12 @@ def test_an_unsniffable_hero_keeps_the_dataclass_defaults(
 # ── prompt, seed and cache are run-wide ───────────────────────────────────────
 
 
-def test_the_identity_clause_prefixes_every_prompt(
+def test_a_mascot_photo_prefixes_the_identity_clause(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """A reference photo is attached on every call, so every prompt must carry
-    the 'use the person and dog in the attached photo' instruction -- the same
-    wording `lib.crew.wp_image` already proved out for the WP hero."""
-    _write_library(tmp_path, {"general": "gen-bytes"})
+    """A photo tagged `shows_mascot` IS the brand's dog, so every prompt built
+    on it carries the 'use the person and dog in that photo' wording."""
+    _write_library(tmp_path, {"general": "gen-bytes"}, shows_mascot=True)
     (tmp_path / "config.json").write_text(json.dumps({"site": {"mascot_name": "Nalla"}}))
 
     _resolve(_plan(["general", "eating", ""]), tmp_path)
@@ -226,16 +223,30 @@ def test_the_identity_clause_prefixes_every_prompt(
         assert call["prompt"] == f"{clause}prompt {index}"
 
 
-def test_a_brand_with_no_mascot_name_still_gets_a_clause(
+def test_a_non_mascot_photo_prefixes_the_grounding_clause(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """No config, or no `site.mascot_name`: the clause degrades to the unnamed
-    wording rather than the pipeline failing over a cosmetic field."""
+    """THE bug. Most library photos are dishes, kitchens and products; naming a
+    dog that isn't in the frame makes the model hallucinate one."""
     _write_library(tmp_path, {"general": "gen-bytes"})
+    (tmp_path / "config.json").write_text(json.dumps({"site": {"mascot_name": "Nalla"}}))
 
     _resolve(_plan(["general"]), tmp_path)
 
-    assert calls[0]["prompt"] == f"{identity_clause('')}prompt 0"
+    assert calls[0]["prompt"] == f"{grounding_clause()}prompt 0"
+    assert "EXACT SAME" not in calls[0]["prompt"]
+    assert "Nalla" not in calls[0]["prompt"]
+
+
+def test_the_hero_fallback_prefixes_the_grounding_clause(
+    authorized: None, calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """No library and no legacy asset: the reference is the WP hero, routinely
+    a Pexels stock dog. Identity over it IS the 'stranger's dog' bug."""
+    _resolve(_plan(["general"]), tmp_path)
+
+    assert calls[0]["prompt"] == f"{grounding_clause()}prompt 0"
+    assert "EXACT SAME" not in calls[0]["prompt"]
 
 
 def test_one_seed_reaches_every_beat(
@@ -264,9 +275,8 @@ def test_one_seed_reaches_every_beat(
 def test_one_reference_cache_is_shared_across_beats(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """Without a run-scoped cache, N categories x 5 beats means N x 5 uploads.
-    Every beat must be handed the SAME cache object so a repeated photo is
-    uploaded once."""
+    """Without a run-scoped cache, N categories x 5 beats means N x 5 uploads:
+    every beat gets the SAME cache object so a repeated photo uploads once."""
     _write_library(tmp_path, {"eating": "eat-bytes", "general": "gen-bytes"})
 
     _resolve(_plan(["eating", "general", "eating", "", "general"]), tmp_path)

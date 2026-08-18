@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from lib.crew.reference_clauses import grounding_clause, identity_clause
 from lib.crew.reference_library import library_root, manifest_path
 from lib.crew.socialpost import compose
 from lib.crew.socialpost.models import SocialPostPlan
@@ -41,7 +42,7 @@ def _plan(reference_category: str = "") -> SocialPostPlan:
     )
 
 
-def _write_library(brand_dir: Path, files: dict[str, str]) -> None:
+def _write_library(brand_dir: Path, files: dict[str, str], *, shows_mascot: bool = False) -> None:
     """`{category: distinctive-bytes}` -- see `tests/test_reels_images_references`."""
     root = library_root(brand_dir)
     entries: list[dict[str, Any]] = []
@@ -56,6 +57,7 @@ def _write_library(brand_dir: Path, files: dict[str, str]) -> None:
                 "content_type": "image/png",
                 "source": "upload",
                 "label": marker,
+                "shows_mascot": shows_mascot,
             }
         )
     manifest_path(brand_dir).write_text(
@@ -144,6 +146,51 @@ def test_the_hero_remains_the_fallback_image_on_failure(
     )
 
     assert (image, source) == (_HERO, "fallback")
+
+
+# ── the prompt clause follows what the photo actually shows ──────────────────
+
+
+def test_a_mascot_photo_gets_the_identity_clause(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """Only a photo tagged `shows_mascot` earns the 'reuse the EXACT person and
+    dog' instruction, which is what keeps the brand's dog recognisable."""
+    _write_library(tmp_path, {"eating": "eat-bytes"}, shows_mascot=True)
+
+    compose.generate_hook_image(
+        _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    assert calls[0]["reference_clause"] == identity_clause("Nalla")
+
+
+def test_a_non_mascot_photo_gets_the_grounding_clause(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """The hook image's share of the bug: an untagged library photo is a dish or
+    a kitchen, and demanding a dog that isn't in it corrupts the generation."""
+    _write_library(tmp_path, {"eating": "eat-bytes"})
+
+    compose.generate_hook_image(
+        _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    assert calls[0]["reference_clause"] == grounding_clause()
+    assert "EXACT SAME" not in calls[0]["reference_clause"]
+    assert "Nalla" not in calls[0]["reference_clause"]
+
+
+def test_the_hero_reference_gets_the_grounding_clause(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """No library -> the reference is the hero, routinely a Pexels stock dog.
+    Identity must not be asserted over a photo nobody has looked at."""
+    compose.generate_hook_image(
+        _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    assert calls[0]["reference_clause"] == grounding_clause()
 
 
 def test_an_unreadable_reference_degrades_to_the_hero(

@@ -7,9 +7,10 @@ for file-size discipline: everything from "we have a validated
 
 One image serves both platforms (see `lib.crew.socialpost.models` on why the
 captions don't). Generation is Gemini via `lib.crew.wp_image`, conditioned on
-a real photo of the brand's own persona and mascot, picked from the tagged
-library (`lib.crew.reference_library`) by the scene the plan says the image
-shows (`SocialPostPlan.reference_category`).
+a real brand photo picked from the tagged library
+(`lib.crew.reference_library`) by the scene the plan says the image shows
+(`SocialPostPlan.reference_category`) -- and introduced to the model as what
+it actually is, mascot portrait or not (`lib.crew.reference_clauses`).
 
 That reference used to be the WP post's OWN featured image, on the theory
 that it grounds the scene in this post's subject matter. It did -- but a hero
@@ -28,7 +29,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from lib.crew.reference_library import resolve_reference
+from lib.crew.reference_clauses import reference_clause
+from lib.crew.reference_library import ReferenceImage, resolve_reference
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.wp_image import generate_wp_image
 from lib.observability import get_logger
@@ -75,9 +77,13 @@ def center_crop_square(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def _reference(plan: SocialPostPlan, brand_dir: Path, hero_bytes: bytes) -> tuple[bytes, str]:
-    """(bytes, mime) to condition generation on: the library photo matching
-    `plan.reference_category`, or the WP hero when the brand has no library.
+def _reference(
+    plan: SocialPostPlan, brand_dir: Path, hero_bytes: bytes
+) -> tuple[bytes, str, ReferenceImage | None]:
+    """(bytes, mime, entry) to condition generation on: the library photo
+    matching `plan.reference_category`, or the WP hero when the brand has no
+    library. The entry travels with it so the caller can pick the prompt
+    clause from `shows_mascot`; `None` means "this is the hero".
 
     The category is passed to the resolver verbatim -- "" and an unrecognised
     label are its business (it falls through to `general`, then to any other
@@ -97,9 +103,10 @@ def _reference(plan: SocialPostPlan, brand_dir: Path, hero_bytes: bytes) -> tupl
                 requested_category=plan.reference_category,
                 category=reference.category,
                 image_id=reference.id,
+                shows_mascot=reference.shows_mascot,
             )
-            return data, reference.content_type
-    return hero_bytes, _sniff_mime(hero_bytes)
+            return data, reference.content_type, reference
+    return hero_bytes, _sniff_mime(hero_bytes), None
 
 
 def generate_hook_image(
@@ -113,7 +120,7 @@ def generate_hook_image(
     Passing a reference deliberately routes `generate_wp_image` past the
     Imagen tiers to `gemini-3-pro-image-preview` -- the only tier that
     accepts image input (see that function's docstring)."""
-    reference_bytes, reference_mime = _reference(plan, brand_dir, hero_bytes)
+    reference_bytes, reference_mime, reference = _reference(plan, brand_dir, hero_bytes)
     try:
         generated = generate_wp_image(
             plan.image_brief,
@@ -121,6 +128,9 @@ def generate_hook_image(
             mascot_name=mascot_name,
             reference_image_bytes=reference_bytes,
             reference_image_mime=reference_mime,
+            # A library photo of a bowl or a kitchen must NOT be introduced as
+            # "the brand's dog"; nor must the hero, which is often stock.
+            reference_clause=reference_clause(reference, mascot_name),
         )
         if generated.bytes_:
             return generated.bytes_, "gemini"

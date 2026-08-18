@@ -47,7 +47,7 @@ from pathlib import Path
 
 import httpx
 
-from lib.crew.reference_library import identity_clause
+from lib.crew.reference_clauses import identity_clause
 from lib.crew.reference_library import (
     resolve_reference_image_path as _resolve_reference_image_path,
 )
@@ -110,9 +110,12 @@ def resolve_reference_image_path(brand_dir: Path) -> Path | None:
     return _resolve_reference_image_path(brand_dir)
 
 
-def _style_suffix(mascot_name: str, *, has_reference: bool) -> str:
+def _style_suffix(mascot_name: str, *, has_reference: bool, reference_clause: str = "") -> str:
     if has_reference:
-        mascot_clause = identity_clause(mascot_name)
+        # The caller's verdict on WHAT the attached photo shows (built by
+        # `lib.crew.reference_clauses.reference_clause`). Callers that don't
+        # express one keep the historical assumption: it is the mascot.
+        mascot_clause = reference_clause or identity_clause(mascot_name)
     else:
         mascot_clause = (
             f"If a dog appears in the scene, it is {mascot_name}. " if mascot_name else ""
@@ -132,8 +135,14 @@ def generate_wp_image(
     mascot_name: str = "",
     reference_image_bytes: bytes | None = None,
     reference_image_mime: str = "image/png",
+    reference_clause: str = "",
 ) -> GeneratedImage:
     """Generate a topic-appropriate hero image -- never food-styled.
+
+    `reference_clause` (optional): what to tell the model the attached photo
+    IS -- build it with `lib.crew.reference_clauses.reference_clause`, which
+    uses the mascot-identity wording only for photos tagged `shows_mascot`.
+    Left empty, the reference is assumed to show the mascot (historical).
 
     `reference_image_bytes` (optional): a real photo of the brand's persona
     and/or mascot to condition generation on, so the hero image actually
@@ -153,7 +162,8 @@ def generate_wp_image(
     key = os.environ.get("GEMINI_API_KEY", "")
     alt_text = alt_hint or brief[:80]
     full_prompt = (
-        f"{brief}. {_style_suffix(mascot_name, has_reference=bool(reference_image_bytes))}"
+        f"{brief}. "
+        f"{_style_suffix(mascot_name, has_reference=bool(reference_image_bytes), reference_clause=reference_clause)}"
         f"{_NEGATIVES}"
     )
 

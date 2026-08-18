@@ -5,23 +5,22 @@ get -- its own OpenArt-generated image, or the WP post's hero image?
 
 **The fallback is per beat, never per run.** An earlier revision discarded
 every generated image when any single beat failed, so one slow generation
-turned four paid-for AI images into a reel of the same hero image repeated
-five times -- the user paid and waited for nothing. Each beat now keeps
-whatever it got: successful beats use their own image, and only the beats
-that actually failed fall back to the hero image.
+turned four paid-for AI images into a reel of the same hero repeated five
+times. Each beat now keeps whatever it got: only the beats that actually
+failed fall back to the hero image.
 
 **OpenArt remains an optional enhancement.** Not configured, not authorized,
 out of credits, erroring -- all of it degrades gracefully to hero images and
-the reel still composes. Authorization is an opt-in upgrade, never a
-prerequisite, so a run without it is a plain success.
+the reel still composes; a run without it is a plain success.
 
 **The reference is picked per beat, from the brand's tagged library.** Each
 beat names the kind of scene it shows (`ReelBeat.reference_category`) and
-`lib.crew.reference_library.resolve_reference` answers with the brand photo that
-actually matches it, so a "walking" beat is grounded on a walking photo
-rather than on whichever single asset the brand happened to keep. One
-`ReferenceCache` is shared by the whole run, so N distinct photos across five
-beats cost N uploads, not five.
+`lib.crew.reference_library.resolve_reference` answers with the photo that
+matches, so a "walking" beat is grounded on a walking photo rather than on
+whichever single asset the brand kept. One `ReferenceCache` is shared by the
+run, so N distinct photos cost N uploads, not five. **The prompt clause
+follows the photo** (`lib.crew.reference_clauses`): mascot identity only for
+photos that show the mascot, neutral scene-grounding for everything else.
 """
 
 from __future__ import annotations
@@ -39,7 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import ReferenceCache, ReferenceUpload, generate_image
-from lib.crew.reference_library import identity_clause, resolve_reference
+from lib.crew.reference_clauses import reference_clause
+from lib.crew.reference_library import ReferenceImage, resolve_reference
 from lib.crew.reference_validate import EXTENSION_BY_CONTENT_TYPE, sniff_mime
 from lib.oauth.openart import OpenArtAuthRequiredError, openart_enabled
 from lib.oauth.openart_store import stored_auth_state
@@ -85,8 +85,8 @@ def _mascot_name(brand_dir: Path) -> str:
     read, so every generator names the dog identically.
 
     Tolerant by design: no config, unreadable file, malformed JSON or a
-    non-object document all yield "", and `identity_clause` then simply omits
-    the name rather than the pipeline failing over a cosmetic field.
+    non-object document all yield "", and the identity clause then simply
+    omits the name rather than the pipeline failing over a cosmetic field.
     """
     try:
         config = json.loads((brand_dir / "config.json").read_text(encoding="utf-8"))
@@ -110,8 +110,11 @@ def _run_seed(idea_id: str) -> int:
 
 def _beat_reference(
     brand_dir: Path, category: str, *, idea_id: str, index: int
-) -> ReferenceUpload | None:
+) -> tuple[ReferenceUpload, ReferenceImage] | None:
     """The library photo grounding one beat, or None when the brand has none.
+
+    Returns the upload AND the entry, because the caller needs the entry's
+    `shows_mascot` flag to pick this beat's prompt clause.
 
     `category` is handed to the resolver verbatim -- "" and an unrecognised
     label are its business, not this caller's: it falls through to `general`,
@@ -136,12 +139,15 @@ def _beat_reference(
         requested_category=category,
         category=reference.category,
         image_id=reference.id,
+        # Which clause this beat will get, so a wrong-looking frame is
+        # diagnosable from the log alone.
+        shows_mascot=reference.shows_mascot,
     )
     # The file's REAL content type travels with it. The previous single-
     # reference call left OpenArt's default `image/jpeg` in place, so every
     # PNG reference -- including the legacy `persona_mascot_reference.png` --
     # was uploaded mislabelled.
-    return ReferenceUpload(data, reference.path.name, reference.content_type)
+    return ReferenceUpload(data, reference.path.name, reference.content_type), reference
 
 
 def _hero_reference(hero_bytes: bytes) -> ReferenceUpload:
@@ -212,18 +218,16 @@ def resolve_images(
 
       * the FALLBACK image, shown verbatim when a beat can't be generated --
         the post's own hero, which is correct: it is what the article shows.
-      * the REFERENCE image, which grounds what OpenArt draws. This must be
-        the brand's mascot. Passing the hero here (the prior behavior) told
-        OpenArt to keep the reel "visually consistent" with whatever the
-        post's featured image happened to be -- routinely a Pexels stock
-        dog -- so every generated beat looked like a stranger's dog rather
-        than the brand's own. Live-reported: reels not matching the mascot.
+      * the REFERENCE image, which grounds what OpenArt draws, resolved PER
+        BEAT from the brand's tagged library (`ReelBeat.reference_category`).
+        Passing the hero here (the prior behavior) told OpenArt to match
+        whatever the post's featured image happened to be -- routinely a
+        Pexels stock dog -- so every beat looked like a stranger's dog.
 
-    The reference is now resolved PER BEAT from the brand's tagged library
-    (`ReelBeat.reference_category`), so beats showing different scenes get
-    different photos of the same real dog. Brands with no library at all
-    still fall back to the hero as the reference, i.e. exactly the previous
-    behavior, so this stays brand-agnostic.
+    Brands with no library still fall back to the hero as the reference, i.e.
+    exactly the previous behavior, so this stays brand-agnostic; those beats
+    now get the grounding clause rather than an identity claim over a photo
+    nobody has looked at.
     """
     total = len(plan.beats)
     all_hero = ResolvedImages([hero_bytes] * total, 0, total)
@@ -242,10 +246,10 @@ def resolve_images(
         )
         return all_hero
 
-    # Every prompt carries the same subject-consistency instruction the WP
-    # hero generator already proved out: a reference photo is attached on
-    # every call, so the model must be told to reuse the person and dog in it.
-    identity = identity_clause(_mascot_name(brand_dir))
+    # A reference is attached on EVERY call, but only some show the mascot:
+    # `reference_clause` sends the identity instruction for those and the
+    # neutral grounding one for the rest, the hero fallback included.
+    mascot_name = _mascot_name(brand_dir)
     seed = _run_seed(idea_id)
     # ONE cache for the run: the five beats routinely agree on a photo, and
     # without this each beat would re-upload the same bytes.
@@ -260,10 +264,11 @@ def resolve_images(
             images.append(hero_bytes)
             continue
         library = _beat_reference(brand_dir, beat.reference_category, idea_id=idea_id, index=index)
+        upload, resolved_reference = library if library is not None else (hero_reference, None)
         try:
             generated = _generate_one_beat(
-                f"{identity}{beat.image_prompt}",
-                library if library is not None else hero_reference,
+                f"{reference_clause(resolved_reference, mascot_name)}{beat.image_prompt}",
+                upload,
                 index=index,
                 seed=seed,
                 cache=cache,
