@@ -143,6 +143,41 @@ def test_build_image_params_uses_existing_reference_field_name() -> None:
     assert "visualReferences" not in params
 
 
+def test_build_image_params_passes_every_reference_through_verbatim() -> None:
+    """The wire field has always been a *list*; the old single-element list
+    was a caller limitation, not a format one. Several references must ride
+    through in order, untouched."""
+    defaults: dict[str, object] = {"prompt": "", "imageCount": 1}
+    first: dict[str, object] = {"type": "image", "id": "r1", "url": "https://cdn/1.jpg"}
+    second: dict[str, object] = {"type": "image", "id": "r2", "url": "https://cdn/2.jpg"}
+    params = _build_image_params(defaults, "instructions", visual_references=[first, second])
+    assert params["visualReferences"] == [first, second]
+
+
+# ── _build_image_params: defaults-gated seed ──────────────────────────────
+
+
+def test_build_image_params_sets_seed_when_defaults_declare_one() -> None:
+    defaults: dict[str, object] = {"prompt": "", "seed": -1}
+    params = _build_image_params(defaults, "instructions", seed=1234)
+    assert params["seed"] == 1234
+
+
+def test_build_image_params_never_injects_seed_absent_from_defaults() -> None:
+    """A model that doesn't declare `seed` would reject the field, so an
+    explicit seed must be dropped rather than added -- the gate is the key
+    already existing in the model's own `defaults`."""
+    defaults: dict[str, object] = {"prompt": "", "imageCount": 1}
+    params = _build_image_params(defaults, "instructions", seed=1234)
+    assert "seed" not in params
+
+
+def test_build_image_params_leaves_declared_seed_default_alone_when_unset() -> None:
+    defaults: dict[str, object] = {"prompt": "", "seed": -1}
+    params = _build_image_params(defaults, "instructions")
+    assert params["seed"] == -1
+
+
 # ── _extract_history_id ───────────────────────────────────────────────────
 
 
