@@ -11,11 +11,19 @@ import type { components } from "../types/openapi";
  * shape) field-for-field.
  */
 
-export interface BrandKeywords {
-  primary_keywords: string[];
-  secondary_keywords: string[];
-  competitor_mentions: string[];
-}
+/**
+ * The `keywords` blob as `GET /brands/{id}` emits it.
+ *
+ * GENERATED, never hand-written. This interface used to be declared by hand
+ * with all three lists required, while the backend typed the field as a bare
+ * `dict[str, Any]` passthrough of a deliberately SPARSE storage blob (a brand
+ * onboarded without keywords stores `{}`). TypeScript believed the hand-written
+ * lie, so `BrandSettings`' `keywords.primary_keywords.join(", ")` compiled
+ * clean and threw at runtime. Sourcing it from the generated schema is what
+ * makes that divergence impossible: `npm run check:api` fails the build if this
+ * ever drifts from `api.brand_schemas.BrandKeywords` again.
+ */
+export type BrandKeywords = components["schemas"]["BrandKeywords"];
 
 /** Row shape returned by `GET /brands` (list). */
 export interface BrandSummary {

@@ -4,11 +4,44 @@ split-schemas-from-routes convention).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from pydantic import BaseModel
 
 from lib.worker_db import WorkerRunStatus
+
+
+class BrandKeywords(BaseModel):
+    """The `keywords` JSONB blob in the shape the HTTP layer ALWAYS emits.
+
+    Storage is deliberately sparse: `lib.brand_templates._render_keywords`
+    omits a category the operator supplied nothing for, because an absent
+    key means "score against the broad DEFAULT_* list" while a present-but-
+    empty list would shadow those defaults and collapse every relevance
+    score to ~0. A freshly onboarded brand therefore stores `keywords: {}`.
+
+    That sparseness must not reach the wire. Clients render one field per
+    category and read each list unconditionally, so every category is
+    REQUIRED here and normalised out of the row exactly once, in
+    `from_row()`. Round-tripping an empty list back through
+    `PATCH /brands/{id}/settings` re-omits it at the storage layer, so the
+    sparse-storage invariant survives an edit untouched.
+    """
+
+    primary_keywords: list[str]
+    secondary_keywords: list[str]
+    competitor_mentions: list[str]
+
+    @classmethod
+    def from_row(cls, row: Mapping[str, Any]) -> BrandKeywords:
+        """Normalise a `brands` row's sparse `keywords` blob into the full shape."""
+        blob = dict(row.get("keywords") or {})
+        return cls(
+            primary_keywords=list(blob.get("primary_keywords") or []),
+            secondary_keywords=list(blob.get("secondary_keywords") or []),
+            competitor_mentions=list(blob.get("competitor_mentions") or []),
+        )
 
 
 class BrandCreateRequest(BaseModel):
@@ -55,7 +88,7 @@ class BrandDetail(BaseModel):
     niche: str = ""
     mascot_name: str = ""
     target_audience: str = ""
-    keywords: dict[str, Any] = {}
+    keywords: BrandKeywords
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
     headless: bool = True
@@ -98,7 +131,7 @@ class BrandProvisionResponse(BaseModel):
     niche: str = ""
     mascot_name: str = ""
     target_audience: str = ""
-    keywords: dict[str, Any] = {}
+    keywords: BrandKeywords
     competitor_accounts: list[str] = []
     enabled_flows: list[str] = []
     headless: bool = True

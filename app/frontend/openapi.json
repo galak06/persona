@@ -462,10 +462,7 @@
             "type": "string"
           },
           "keywords": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Keywords",
-            "type": "object"
+            "$ref": "#/components/schemas/BrandKeywords"
           },
           "mascot_name": {
             "default": "",
@@ -509,9 +506,43 @@
         "required": [
           "id",
           "name",
+          "keywords",
           "status"
         ],
         "title": "BrandDetail",
+        "type": "object"
+      },
+      "BrandKeywords": {
+        "description": "The `keywords` JSONB blob in the shape the HTTP layer ALWAYS emits.\n\nStorage is deliberately sparse: `lib.brand_templates._render_keywords`\nomits a category the operator supplied nothing for, because an absent\nkey means \"score against the broad DEFAULT_* list\" while a present-but-\nempty list would shadow those defaults and collapse every relevance\nscore to ~0. A freshly onboarded brand therefore stores `keywords: {}`.\n\nThat sparseness must not reach the wire. Clients render one field per\ncategory and read each list unconditionally, so every category is\nREQUIRED here and normalised out of the row exactly once, in\n`from_row()`. Round-tripping an empty list back through\n`PATCH /brands/{id}/settings` re-omits it at the storage layer, so the\nsparse-storage invariant survives an edit untouched.",
+        "properties": {
+          "competitor_mentions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Competitor Mentions",
+            "type": "array"
+          },
+          "primary_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Primary Keywords",
+            "type": "array"
+          },
+          "secondary_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secondary Keywords",
+            "type": "array"
+          }
+        },
+        "required": [
+          "primary_keywords",
+          "secondary_keywords",
+          "competitor_mentions"
+        ],
+        "title": "BrandKeywords",
         "type": "object"
       },
       "BrandListResponse": {
@@ -599,10 +630,7 @@
             "type": "string"
           },
           "keywords": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Keywords",
-            "type": "object"
+            "$ref": "#/components/schemas/BrandKeywords"
           },
           "mascot_name": {
             "default": "",
@@ -660,6 +688,7 @@
         "required": [
           "id",
           "name",
+          "keywords",
           "status",
           "brand_dir",
           "files_written",

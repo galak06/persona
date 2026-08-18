@@ -1699,13 +1699,7 @@ export interface components {
             headless: boolean;
             /** Id */
             id: string;
-            /**
-             * Keywords
-             * @default {}
-             */
-            keywords: {
-                [key: string]: unknown;
-            };
+            keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
              * @default
@@ -1740,6 +1734,31 @@ export interface components {
              * @default
              */
             updated_at: string;
+        };
+        /**
+         * BrandKeywords
+         * @description The `keywords` JSONB blob in the shape the HTTP layer ALWAYS emits.
+         *
+         *     Storage is deliberately sparse: `lib.brand_templates._render_keywords`
+         *     omits a category the operator supplied nothing for, because an absent
+         *     key means "score against the broad DEFAULT_* list" while a present-but-
+         *     empty list would shadow those defaults and collapse every relevance
+         *     score to ~0. A freshly onboarded brand therefore stores `keywords: {}`.
+         *
+         *     That sparseness must not reach the wire. Clients render one field per
+         *     category and read each list unconditionally, so every category is
+         *     REQUIRED here and normalised out of the row exactly once, in
+         *     `from_row()`. Round-tripping an empty list back through
+         *     `PATCH /brands/{id}/settings` re-omits it at the storage layer, so the
+         *     sparse-storage invariant survives an edit untouched.
+         */
+        BrandKeywords: {
+            /** Competitor Mentions */
+            competitor_mentions: string[];
+            /** Primary Keywords */
+            primary_keywords: string[];
+            /** Secondary Keywords */
+            secondary_keywords: string[];
         };
         /** BrandListResponse */
         BrandListResponse: {
@@ -1799,13 +1818,7 @@ export interface components {
             id: string;
             /** Ig Login Command */
             ig_login_command: string;
-            /**
-             * Keywords
-             * @default {}
-             */
-            keywords: {
-                [key: string]: unknown;
-            };
+            keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
              * @default

@@ -89,7 +89,11 @@ def test_create_brand_success_returns_201_shape(monkeypatch: pytest.MonkeyPatch)
     # Full brand row is included too (matches the frontend's `Brand &
     # ProvisionResult` intersection type) -- not just the ProvisionResult subset.
     assert resp.mascot_name == "Rex"
-    assert resp.keywords == {"primary_keywords": ["dog food"]}
+    assert resp.keywords.model_dump() == {
+        "primary_keywords": ["dog food"],
+        "secondary_keywords": [],
+        "competitor_mentions": [],
+    }
     assert resp.enabled_flows == ["ig-engager", "fb-scanner"]
 
     # brand_id passed to brands_db.create() is slugify(name), computed by the handler
@@ -179,7 +183,11 @@ def test_get_brand_returns_full_row(monkeypatch: pytest.MonkeyPatch) -> None:
 
     resp = brands_api.get_brand("acme-dogs")
     assert resp.id == "acme-dogs"
-    assert resp.keywords == {"primary_keywords": ["dog food"]}
+    assert resp.keywords.model_dump() == {
+        "primary_keywords": ["dog food"],
+        "secondary_keywords": [],
+        "competitor_mentions": [],
+    }
     assert resp.competitor_accounts == ["@rival1"]
     assert resp.extra == {"instagram_profile_url": "https://instagram.com/acmedogs"}
     assert resp.created_at == "2026-07-01T00:00:00Z"

@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from api.brand_schemas import BrandProvisionResponse, BrandSettingsRequest
+from api.brand_schemas import BrandKeywords, BrandProvisionResponse, BrandSettingsRequest
 from api.brands_api import _provision_response, _provisioning_failed_response, _spec_from_row
 from lib import brands_db
 from lib.brand_provisioning import provision_brand
@@ -40,22 +40,22 @@ def _merge_keywords(row: dict[str, Any], body: BrandSettingsRequest) -> dict[str
     ):
         return None
 
-    existing = dict(row.get("keywords") or {})
+    existing = BrandKeywords.from_row(row)
     return {
         "primary_keywords": (
             list(body.primary_keywords)
             if body.primary_keywords is not None
-            else list(existing.get("primary_keywords") or [])
+            else list(existing.primary_keywords)
         ),
         "secondary_keywords": (
             list(body.secondary_keywords)
             if body.secondary_keywords is not None
-            else list(existing.get("secondary_keywords") or [])
+            else list(existing.secondary_keywords)
         ),
         "competitor_mentions": (
             list(body.competitor_mentions)
             if body.competitor_mentions is not None
-            else list(existing.get("competitor_mentions") or [])
+            else list(existing.competitor_mentions)
         ),
     }
 

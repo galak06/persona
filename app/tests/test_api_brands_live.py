@@ -65,7 +65,7 @@ def test_create_get_list_round_trip_via_handlers(pg: None, brands_root: Path) ->
     fetched = brands_api.get_brand("acme-dogs")
     assert fetched.name == "Acme Dogs"
     assert fetched.status == "provisioned"
-    assert fetched.keywords == {
+    assert fetched.keywords.model_dump() == {
         "primary_keywords": ["dog food"],
         "secondary_keywords": ["gps"],
         "competitor_mentions": ["brand x"],
