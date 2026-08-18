@@ -677,6 +677,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/mascot-library": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library
+         * @description Every declared tag and every filed photo for the active brand.
+         */
+        get: operations["get_library_api_v1_mascot_library_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Category
+         * @description Declare a tag. Re-declaring an existing slug returns it unchanged.
+         */
+        post: operations["post_category_api_v1_mascot_library_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Image
+         * @description File an uploaded photo under `category` (defaults to `general`).
+         *
+         *     Content-addressed, so re-uploading identical bytes to the same category
+         *     returns the existing entry rather than a duplicate.
+         */
+        post: operations["post_image_api_v1_mascot_library_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Image
+         * @description Drop a photo from the manifest and unlink its file. 404 if absent.
+         */
+        delete: operations["remove_image_api_v1_mascot_library_images__image_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/images/{image_id}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Image Raw
+         * @description Serve one photo's bytes, uncached (the library is edited live).
+         */
+        get: operations["get_image_raw_api_v1_mascot_library_images__image_id__raw_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/import-legacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Import Legacy
+         * @description Copy `data/assets/persona_mascot_reference.*` into `general`.
+         *
+         *     The original is only read -- it stays on disk as the last-resort fallback.
+         *     404 when the brand has no legacy asset to import.
+         */
+        post: operations["post_import_legacy_api_v1_mascot_library_import_legacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mascot-library/suggest-category": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Suggest Category
+         * @description Which existing tag fits this photo? Advisory -- never an error.
+         *
+         *     A failing model call is a 200 with `suggested_category: null`, because the
+         *     UI's fallback is simply an unset selector. The bytes are still validated,
+         *     so the same file that would be rejected on upload is rejected here too.
+         */
+        post: operations["post_suggest_category_api_v1_mascot_library_suggest_category_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/oauth/facebook": {
         parameters: {
             query?: never;
@@ -1441,6 +1591,26 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** Body_post_image_api_v1_mascot_library_images_post */
+        Body_post_image_api_v1_mascot_library_images_post: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /** File */
+            file: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
+        /** Body_post_suggest_category_api_v1_mascot_library_suggest_category_post */
+        Body_post_suggest_category_api_v1_mascot_library_suggest_category_post: {
+            /** File */
+            file: string;
+        };
         /**
          * BrandCreateRequest
          * @description Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.
@@ -1899,6 +2069,44 @@ export interface components {
             };
             /** Total */
             total: number;
+        };
+        /**
+         * CategoryCreate
+         * @description Request body for declaring a new tag.
+         */
+        CategoryCreate: {
+            /** Label */
+            label: string;
+        };
+        /**
+         * CategoryCreated
+         * @description The declared tag, slugified.
+         */
+        CategoryCreated: {
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * CategorySuggestion
+         * @description Advisory tag for an about-to-be-uploaded photo. `None` = no opinion.
+         */
+        CategorySuggestion: {
+            /** Suggested Category */
+            suggested_category?: string | null;
+        };
+        /**
+         * CategorySummary
+         * @description One tag, with how many photos currently carry it.
+         */
+        CategorySummary: {
+            /** Count */
+            count: number;
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
         };
         /**
          * CommentItem
@@ -2477,6 +2685,64 @@ export interface components {
             curated: components["schemas"]["CuratedKeyword"][];
             /** Discovered */
             discovered: components["schemas"]["DiscoveredKeyword"][];
+        };
+        /**
+         * LibraryImage
+         * @description A manifest entry as the UI consumes it, plus its `raw` URL.
+         */
+        LibraryImage: {
+            /** Added At */
+            added_at?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /** Category */
+            category: string;
+            /** Content Type */
+            content_type: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+        };
+        /**
+         * LibraryResponse
+         * @description The whole library in one payload -- it is a handful of photos.
+         */
+        LibraryResponse: {
+            /** Categories */
+            categories: components["schemas"]["CategorySummary"][];
+            /** Images */
+            images: components["schemas"]["LibraryImage"][];
         };
         /**
          * LogTailResponse
@@ -3781,6 +4047,205 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["KeywordsResponse"];
+                };
+            };
+        };
+    };
+    get_library_api_v1_mascot_library_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryResponse"];
+                };
+            };
+        };
+    };
+    post_category_api_v1_mascot_library_categories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_image_api_v1_mascot_library_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_post_image_api_v1_mascot_library_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_image_api_v1_mascot_library_images__image_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_raw_api_v1_mascot_library_images__image_id__raw_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_import_legacy_api_v1_mascot_library_import_legacy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+        };
+    };
+    post_suggest_category_api_v1_mascot_library_suggest_category_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_post_suggest_category_api_v1_mascot_library_suggest_category_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategorySuggestion"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

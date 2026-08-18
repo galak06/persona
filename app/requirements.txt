@@ -16,6 +16,9 @@ arize-phoenix-otel>=0.16.0
 openinference-instrumentation-langchain>=0.1.60
 fastapi>=0.115
 uvicorn[standard]>=0.30
+# multipart/form-data parsing — FastAPI hard-requires it for UploadFile
+# (api/mascot_library_api.py); Docker builds install from this file only.
+python-multipart>=0.0.9
 pydantic>=2.7
 croniter>=3.0.3
 pillow>=10.0

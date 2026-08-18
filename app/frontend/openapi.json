@@ -307,6 +307,44 @@
         "title": "BlogPostItem",
         "type": "object"
       },
+      "Body_post_image_api_v1_mascot_library_images_post": {
+        "properties": {
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_post_image_api_v1_mascot_library_images_post",
+        "type": "object"
+      },
+      "Body_post_suggest_category_api_v1_mascot_library_suggest_category_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_post_suggest_category_api_v1_mascot_library_suggest_category_post",
+        "type": "object"
+      },
       "BrandCreateRequest": {
         "description": "Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.",
         "properties": {
@@ -1069,6 +1107,81 @@
           "counts"
         ],
         "title": "CandidatesResponse",
+        "type": "object"
+      },
+      "CategoryCreate": {
+        "description": "Request body for declaring a new tag.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "CategoryCreate",
+        "type": "object"
+      },
+      "CategoryCreated": {
+        "description": "The declared tag, slugified.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "label"
+        ],
+        "title": "CategoryCreated",
+        "type": "object"
+      },
+      "CategorySuggestion": {
+        "description": "Advisory tag for an about-to-be-uploaded photo. `None` = no opinion.",
+        "properties": {
+          "suggested_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Category"
+          }
+        },
+        "title": "CategorySuggestion",
+        "type": "object"
+      },
+      "CategorySummary": {
+        "description": "One tag, with how many photos currently carry it.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "label",
+          "count"
+        ],
+        "title": "CategorySummary",
         "type": "object"
       },
       "CommentItem": {
@@ -2512,6 +2625,112 @@
           "active_limit"
         ],
         "title": "KeywordsResponse",
+        "type": "object"
+      },
+      "LibraryImage": {
+        "description": "A manifest entry as the UI consumes it, plus its `raw` URL.",
+        "properties": {
+          "added_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "bytes": {
+            "default": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "height": {
+            "default": 0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "default": 0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "filename",
+          "content_type"
+        ],
+        "title": "LibraryImage",
+        "type": "object"
+      },
+      "LibraryResponse": {
+        "description": "The whole library in one payload -- it is a handful of photos.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategorySummary"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryImage"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "images"
+        ],
+        "title": "LibraryResponse",
         "type": "object"
       },
       "LogTailResponse": {
@@ -5011,6 +5230,253 @@
         "summary": "Scout search vocabulary",
         "tags": [
           "ideas"
+        ]
+      }
+    },
+    "/api/v1/mascot-library": {
+      "get": {
+        "description": "Every declared tag and every filed photo for the active brand.",
+        "operationId": "get_library_api_v1_mascot_library_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/categories": {
+      "post": {
+        "description": "Declare a tag. Re-declaring an existing slug returns it unchanged.",
+        "operationId": "post_category_api_v1_mascot_library_categories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Category",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/images": {
+      "post": {
+        "description": "File an uploaded photo under `category` (defaults to `general`).\n\nContent-addressed, so re-uploading identical bytes to the same category\nreturns the existing entry rather than a duplicate.",
+        "operationId": "post_image_api_v1_mascot_library_images_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_post_image_api_v1_mascot_library_images_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Image",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/images/{image_id}": {
+      "delete": {
+        "description": "Drop a photo from the manifest and unlink its file. 404 if absent.",
+        "operationId": "remove_image_api_v1_mascot_library_images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Image",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/images/{image_id}/raw": {
+      "get": {
+        "description": "Serve one photo's bytes, uncached (the library is edited live).",
+        "operationId": "get_image_raw_api_v1_mascot_library_images__image_id__raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image Raw",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/import-legacy": {
+      "post": {
+        "description": "Copy `data/assets/persona_mascot_reference.*` into `general`.\n\nThe original is only read -- it stays on disk as the last-resort fallback.\n404 when the brand has no legacy asset to import.",
+        "operationId": "post_import_legacy_api_v1_mascot_library_import_legacy_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Import Legacy",
+        "tags": [
+          "mascot-library"
+        ]
+      }
+    },
+    "/api/v1/mascot-library/suggest-category": {
+      "post": {
+        "description": "Which existing tag fits this photo? Advisory -- never an error.\n\nA failing model call is a 200 with `suggested_category: null`, because the\nUI's fallback is simply an unset selector. The bytes are still validated,\nso the same file that would be rejected on upload is rejected here too.",
+        "operationId": "post_suggest_category_api_v1_mascot_library_suggest_category_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_post_suggest_category_api_v1_mascot_library_suggest_category_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategorySuggestion"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Suggest Category",
+        "tags": [
+          "mascot-library"
         ]
       }
     },
