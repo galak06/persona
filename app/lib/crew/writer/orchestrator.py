@@ -29,6 +29,7 @@ from crewai import Agent, Task
 
 from lib import ideas_db
 from lib.crew.context import brand_identity_summary, brand_voice_summary
+from lib.crew.mascot_library import list_category_labels
 from lib.crew.writer.agent import (
     build_strategist_agent,
     build_strategist_task,
@@ -123,6 +124,9 @@ def build_content_brief(
         mascot_facts=mascot_facts_summary(brand_dir),
         link_candidates=link_candidates,
         year=date.today().year,
+        # The strategist may only tag the post with a category the brand
+        # actually keeps photos under; an empty library drops the section.
+        reference_categories=list_category_labels(brand_dir),
     )
     agent = build_strategist_agent()
     task = build_strategist_task(agent, description)

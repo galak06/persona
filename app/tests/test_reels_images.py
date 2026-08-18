@@ -10,6 +10,9 @@ The contract both ways, which is the whole point of the module:
 
 DB-free: `openart_enabled` / `stored_auth_state` / `generate_image` are all
 stubbed on the module under test.
+
+Which library photo each beat is grounded on lives next door in
+`test_reels_images_references.py`; this file is about the fallback contract.
 """
 # ruff: noqa: S101
 
@@ -20,6 +23,7 @@ from pathlib import Path
 import pytest
 from scripts import reels_images
 
+from lib.crew.mascot_library import ReferenceImage, identity_clause
 from lib.crew.reels.models import ReelBeat, ReelPlan
 from lib.oauth.openart import OpenArtAuthRequiredError
 
@@ -44,8 +48,18 @@ def authorized(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(reels_images, "stored_auth_state", lambda: "ok")
 
 
-def _resolve(plan: ReelPlan) -> reels_images.ResolvedImages:
-    return reels_images.resolve_images(plan, _HERO, brand_dir=Path("/brand"), idea_id="idea-1")
+def _resolve(plan: ReelPlan, brand_dir: Path = Path("/brand")) -> reels_images.ResolvedImages:
+    return reels_images.resolve_images(plan, _HERO, brand_dir=brand_dir, idea_id="idea-1")
+
+
+def _beat_prompt(prompt: str) -> str:
+    """The beat's own prompt, with the identity clause stripped off the front.
+
+    Every OpenArt prompt is now prefixed with the subject-consistency clause
+    (see `test_reels_images_references.py`); these tests care about the beat
+    text underneath it. No brand config in `tmp_path`, so the mascot name is "".
+    """
+    return prompt.removeprefix(identity_clause(""))
 
 
 # ── authorized: OpenArt must actually be used ─────────────────────────────────
@@ -58,9 +72,12 @@ def test_authorized_generates_images_via_openart(
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
         prompts.append(prompt)
-        # `/brand` has no mascot asset, so the reference degrades to the hero
-        # -- the pre-existing behavior, kept for brands without the asset.
-        assert kwargs["reference_image"] == _HERO
+        # `/brand` has no library and no legacy asset, so the reference
+        # degrades to the hero -- the pre-existing behavior, kept for brands
+        # without either.
+        references = kwargs["references"]
+        assert isinstance(references, list)
+        assert [r.data for r in references] == [_HERO]
         return f"ai-{prompt}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
@@ -69,7 +86,10 @@ def test_authorized_generates_images_via_openart(
     resolved = _resolve(plan)
 
     assert resolved.source == "openart"
-    assert prompts == [b.image_prompt for b in plan.beats]  # one call per beat
+    # One call per beat, each carrying that beat's own prompt.
+    assert [p.endswith(b.image_prompt) for p, b in zip(prompts, plan.beats, strict=True)] == [
+        True
+    ] * 5
     assert resolved.images == [f"ai-{p}".encode() for p in prompts]
     assert _HERO not in resolved.images  # NOT the fallback
     assert (resolved.ai_count, resolved.total) == (5, 5)
@@ -113,11 +133,20 @@ _MASCOT = b"mascot-reference-bytes"
 
 
 @pytest.fixture()
-def with_mascot(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    asset = tmp_path / "persona_mascot_reference.png"
-    asset.write_bytes(_MASCOT)
-    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: asset)
-    return asset
+def with_mascot(tmp_path: Path) -> Path:
+    """A brand dir holding only the LEGACY asset -- no tagged library. The
+    resolver must still find it, so brands that never migrate keep working."""
+    assets = tmp_path / "data" / "assets"
+    assets.mkdir(parents=True)
+    (assets / "persona_mascot_reference.png").write_bytes(_MASCOT)
+    return tmp_path
+
+
+def _reference_data(kwargs: dict[str, object]) -> bytes:
+    references = kwargs["references"]
+    assert isinstance(references, list)
+    assert len(references) == 1  # one reference per call, never a growing list
+    return bytes(references[0].data)
 
 
 def test_generation_is_grounded_on_the_mascot_not_the_hero(
@@ -126,12 +155,12 @@ def test_generation_is_grounded_on_the_mascot_not_the_hero(
     seen: list[object] = []
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
-        seen.append(kwargs["reference_image"])
+        seen.append(_reference_data(kwargs))
         return f"ai-{prompt}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan(beats=3))
+    resolved = _resolve(_plan(beats=3), with_mascot)
 
     assert seen == [_MASCOT] * 3  # every beat grounded on the mascot
     assert _HERO not in seen  # the hero is NOT the reference
@@ -149,7 +178,7 @@ def test_a_failed_beat_still_falls_back_to_the_hero_not_the_mascot(
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan(beats=2))
+    resolved = _resolve(_plan(beats=2), with_mascot)
 
     assert resolved.images == [_HERO, _HERO]
     assert _MASCOT not in resolved.images
@@ -157,20 +186,19 @@ def test_a_failed_beat_still_falls_back_to_the_hero_not_the_mascot(
 
 
 def test_a_brand_without_the_asset_keeps_using_the_hero_as_reference(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Brand-agnostic: most brands have no mascot asset, and for them nothing
-    about this pipeline changes."""
+    """Brand-agnostic: most brands have neither a library nor the legacy
+    asset, and for them nothing about this pipeline changes."""
     seen: list[object] = []
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
-        seen.append(kwargs["reference_image"])
+        seen.append(_reference_data(kwargs))
         return b"ai"
 
-    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: None)
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    _resolve(_plan(beats=2))
+    _resolve(_plan(beats=2), tmp_path)  # empty brand dir: nothing to resolve
 
     assert seen == [_HERO, _HERO]
 
@@ -178,13 +206,19 @@ def test_a_brand_without_the_asset_keeps_using_the_hero_as_reference(
 def test_an_unreadable_mascot_asset_degrades_instead_of_raising(
     authorized: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A path that resolves but can't be read must not abort the reel."""
-    missing = tmp_path / "gone.png"  # resolver returns it; the file isn't there
-    monkeypatch.setattr(reels_images, "resolve_reference_image_path", lambda _d: missing)
+    """A reference that resolves but can't be read must not abort the reel."""
+    gone = ReferenceImage(
+        id="gone",
+        category="general",
+        path=tmp_path / "gone.png",  # resolved; the file isn't there
+        content_type="image/png",
+        label="gone",
+    )
+    monkeypatch.setattr(reels_images, "resolve_reference", lambda *_a, **_k: gone)
     seen: list[object] = []
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
-        seen.append(kwargs["reference_image"])
+        seen.append(_reference_data(kwargs))
         return b"ai"
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
@@ -254,10 +288,11 @@ def test_failed_beat_falls_back_alone_keeping_the_others(
     calls: list[str] = []
 
     async def _generate(prompt: str, **_kw: object) -> bytes:
-        calls.append(prompt)
-        if prompt == "prompt 3":  # every attempt for this beat fails
+        beat = _beat_prompt(prompt)
+        calls.append(beat)
+        if beat == "prompt 3":  # every attempt for this beat fails
             raise RuntimeError("The operation was aborted due to timeout")
-        return f"ai-{prompt}".encode()
+        return f"ai-{beat}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
@@ -278,10 +313,11 @@ def test_failed_beat_is_retried_before_falling_back(
     attempts: list[str] = []
 
     async def _generate(prompt: str, **_kw: object) -> bytes:
-        attempts.append(prompt)
-        if prompt == "prompt 0" and attempts.count("prompt 0") == 1:
+        beat = _beat_prompt(prompt)
+        attempts.append(beat)
+        if beat == "prompt 0" and attempts.count("prompt 0") == 1:
             raise RuntimeError("aborted due to timeout")
-        return f"ai-{prompt}".encode()
+        return f"ai-{beat}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
@@ -301,9 +337,10 @@ def test_auth_loss_midway_keeps_images_already_generated(
     calls: list[str] = []
 
     async def _generate(prompt: str, **_kw: object) -> bytes:
-        calls.append(prompt)
-        if prompt in ("prompt 0", "prompt 1"):
-            return f"ai-{prompt}".encode()
+        beat = _beat_prompt(prompt)
+        calls.append(beat)
+        if beat in ("prompt 0", "prompt 1"):
+            return f"ai-{beat}".encode()
         raise OpenArtAuthRequiredError("authorize me")
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)

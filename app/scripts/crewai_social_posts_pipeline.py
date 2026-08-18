@@ -65,6 +65,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import social_post_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
+from lib.crew.mascot_library import list_category_labels
 from lib.crew.socialpost import (
     build_social_post_agent,
     build_social_post_task,
@@ -158,6 +159,9 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         target_keyword=target_keyword,
         site_domain=site_domain,
         brand_voice=brand_voice_summary(brand_dir),
+        # The agent may only tag the image with a category the brand actually
+        # keeps photos under; an empty library drops the section entirely.
+        reference_categories=list_category_labels(brand_dir),
     )
     task = build_social_post_task(agent, description)
     plan = execute_social_post_crew(agent, task, target_keyword=target_keyword)
@@ -179,9 +183,12 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     if not social_post_db.claim(idea_id):
         return "skipped_claim_lost"
 
-    # The WP hero doubles as the generation reference (mascot consistency +
-    # grounding in this post's real subject) and the fallback image.
-    image_bytes, source = generate_hook_image(plan, mascot_name=mascot_name, hero_bytes=hero_bytes)
+    # Generation is grounded on the brand's own mascot photo (from the tagged
+    # library); the WP hero is the fallback image, and the reference only for
+    # brands with no library at all.
+    image_bytes, source = generate_hook_image(
+        plan, mascot_name=mascot_name, hero_bytes=hero_bytes, brand_dir=brand_dir
+    )
     # Same convention as worker_post_stories.py: IG_USERNAME env, brand-folder
     # name as the fallback (for this brand that IS the IG handle).
     ig_handle = f"@{os.environ.get('IG_USERNAME', brand_dir.name)}"

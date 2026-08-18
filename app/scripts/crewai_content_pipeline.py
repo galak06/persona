@@ -45,8 +45,9 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
 from lib.crew.draft import DraftCreationError, create_wp_draft
+from lib.crew.mascot_library import resolve_reference
 from lib.crew.validate import ValidationResult, validate_draft
-from lib.crew.wp_image import build_image_brief, resolve_reference_image_path
+from lib.crew.wp_image import build_image_brief
 from lib.crew.writer import (
     assemble_final_html,
     build_content_brief,
@@ -179,9 +180,7 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     brief = build_content_brief(brand_dir, idea)
     if brief is None:
         print("\nstrategist produced no structured brief (see logs) -- aborting")
-        ideas_db.update_status(
-            idea_id, "write_failed", "strategist produced no structured brief"
-        )
+        ideas_db.update_status(idea_id, "write_failed", "strategist produced no structured brief")
         return 1
     print(f"brief    : {brief.suggested_title} ({len(brief.outline)} sections)")
 
@@ -263,9 +262,17 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     site = read_brand_config(brand_dir).get("site", {})
     mascot_name = str(site.get("mascot_name") or "") if isinstance(site, dict) else ""
     image_brief = build_image_brief(written_post.title, brief.mascot_angle)
-    reference_image_path = resolve_reference_image_path(brand_dir)
-    if reference_image_path:
-        print(f"reference: {reference_image_path} (conditioning hero image on this photo)")
+    # The strategist tagged this post with the kind of scene its hero should
+    # show; the library answers with the photo that matches. `""` and an
+    # unrecognised label are passed through untouched -- the resolver falls
+    # back to `general`, then to the legacy asset, then to no reference.
+    reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
+    reference_image_path = reference.path if reference is not None else None
+    if reference is not None:
+        print(
+            f"reference: {reference.path} [{reference.category}] "
+            "(conditioning hero image on this photo)"
+        )
     tag_names = list(
         dict.fromkeys(
             name for name in [brief.primary_keyword, *brief.secondary_keywords[:2]] if name

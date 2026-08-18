@@ -7,13 +7,17 @@ for file-size discipline: everything from "we have a validated
 
 One image serves both platforms (see `lib.crew.socialpost.models` on why the
 captions don't). Generation is Gemini via `lib.crew.wp_image`, conditioned on
-the WP post's OWN featured image as the visual reference -- the same
-hero-as-reference choice the reels crew made for OpenArt, and for the same
-live-confirmed reason: without a reference the model has no idea what the
-brand's actual dog looks like and invents a generic one. The hero also
-grounds the generated scene in this post's real subject matter, not just the
-dog. On any generation failure that same hero is used directly as the image
-(`source='fallback'`), overlays applied either way.
+a real photo of the brand's own persona and mascot, picked from the tagged
+library (`lib.crew.mascot_library`) by the scene the plan says the image
+shows (`SocialPostPlan.reference_category`).
+
+That reference used to be the WP post's OWN featured image, on the theory
+that it grounds the scene in this post's subject matter. It did -- but a hero
+is routinely a Pexels stock dog, so the "brand's dog" in every generated hook
+image was a stranger's. Same bug the reels pipeline had, third home. The hero
+now serves only as the FALLBACK output image when generation fails
+(`source='fallback'`), and as the reference only for brands whose library is
+empty. Overlays are applied either way.
 """
 
 from __future__ import annotations
@@ -24,6 +28,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from lib.crew.mascot_library import resolve_reference
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.wp_image import generate_wp_image
 from lib.observability import get_logger
@@ -70,24 +75,52 @@ def center_crop_square(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
+def _reference(plan: SocialPostPlan, brand_dir: Path, hero_bytes: bytes) -> tuple[bytes, str]:
+    """(bytes, mime) to condition generation on: the library photo matching
+    `plan.reference_category`, or the WP hero when the brand has no library.
+
+    The category is passed to the resolver verbatim -- "" and an unrecognised
+    label are its business (it falls through to `general`, then to any other
+    tag, then to the legacy asset), not this caller's.
+    """
+    reference = resolve_reference(brand_dir, plan.reference_category)
+    if reference is not None:
+        try:
+            data = reference.path.read_bytes()
+        except OSError as exc:
+            logger.warning(
+                "social_posts_reference_unreadable", path=str(reference.path), error=str(exc)
+            )
+        else:
+            logger.info(
+                "social_posts_reference_selected",
+                requested_category=plan.reference_category,
+                category=reference.category,
+                image_id=reference.id,
+            )
+            return data, reference.content_type
+    return hero_bytes, _sniff_mime(hero_bytes)
+
+
 def generate_hook_image(
-    plan: SocialPostPlan, *, mascot_name: str, hero_bytes: bytes
+    plan: SocialPostPlan, *, mascot_name: str, hero_bytes: bytes, brand_dir: Path
 ) -> tuple[bytes, str]:
-    """The single shared image: Gemini-generated from the plan's brief with
-    the WP post's own hero image as the visual reference, or that same hero
-    used directly on any failure. Returns (bytes, source) with source in
-    ('gemini', 'fallback').
+    """The single shared image: Gemini-generated from the plan's brief,
+    conditioned on the brand's own mascot photo (see `_reference`), with the
+    WP hero used directly as the image on any failure. Returns (bytes, source)
+    with source in ('gemini', 'fallback').
 
     Passing a reference deliberately routes `generate_wp_image` past the
     Imagen tiers to `gemini-3-pro-image-preview` -- the only tier that
     accepts image input (see that function's docstring)."""
+    reference_bytes, reference_mime = _reference(plan, brand_dir, hero_bytes)
     try:
         generated = generate_wp_image(
             plan.image_brief,
             alt_hint=plan.image_alt_text,
             mascot_name=mascot_name,
-            reference_image_bytes=hero_bytes,
-            reference_image_mime=_sniff_mime(hero_bytes),
+            reference_image_bytes=reference_bytes,
+            reference_image_mime=reference_mime,
         )
         if generated.bytes_:
             return generated.bytes_, "gemini"

@@ -58,6 +58,7 @@ from scripts.reels_images import resolve_images
 from lib import ideas_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
+from lib.crew.mascot_library import list_category_labels
 from lib.crew.reels import build_reels_agent, build_reels_task, execute_reels_crew
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.prompts import build_reels_task_description
@@ -148,9 +149,7 @@ def _revert_claim(idea_id: str) -> None:
         ideas_db.update_status(idea_id, "wp_published")
 
 
-def _process_idea(
-    row: dict[str, Any], *, dry_run: bool, brand_dir: Path
-) -> tuple[str, int, int]:
+def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> tuple[str, int, int]:
     idea_id = str(row["id"])
     wp_post_id = row.get("wp_post_id")
     if not wp_post_id:
@@ -168,7 +167,15 @@ def _process_idea(
     brand_voice = brand_voice_summary(brand_dir)
 
     agent = build_reels_agent()
-    description = build_reels_task_description(title=title, body=body, brand_voice=brand_voice)
+    # The agent can only tag a beat with a category the brand actually has, so
+    # the declared labels travel into the prompt; a brand with no library
+    # sends an empty list and the section is dropped entirely.
+    description = build_reels_task_description(
+        title=title,
+        body=body,
+        brand_voice=brand_voice,
+        reference_categories=list_category_labels(brand_dir),
+    )
     task = build_reels_task(agent, description)
     plan = execute_reels_crew(agent, task)
     if plan is None:
@@ -230,13 +237,15 @@ def main() -> int:
         return 1
 
     brand_id = brand_dir.name
-    flipped = wp_source.detect_publish_sweep(
-        brand_id=brand_id, event="reels_marked_wp_published"
-    )
+    flipped = wp_source.detect_publish_sweep(brand_id=brand_id, event="reels_marked_wp_published")
     print(f"detect-publish sweep: {flipped} idea(s) marked wp_published")
 
     if args.idea_id:
-        rows = [r for r in ideas_db.list_ideas(brand_id=brand_id, limit=5000) if str(r["id"]) == args.idea_id]
+        rows = [
+            r
+            for r in ideas_db.list_ideas(brand_id=brand_id, limit=5000)
+            if str(r["id"]) == args.idea_id
+        ]
     else:
         rows = ideas_db.list_ideas(status="wp_published", brand_id=brand_id, limit=args.limit)
         rows = [r for r in rows if r.get("reel_ig_video_path") is None]
