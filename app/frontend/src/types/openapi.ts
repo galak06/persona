@@ -2855,6 +2855,13 @@ export interface components {
             running: boolean;
             /** Started At */
             started_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "success" | "error" | "never";
+            /** Timeout Seconds */
+            timeout_seconds: number;
             /** Used Openart */
             used_openart?: boolean | null;
         };
