@@ -27,6 +27,13 @@ type Channel = NonNullable<components["schemas"]["BlogPostItem"]["channel"]>;
 
 const enc = (id: string): string => encodeURIComponent(id);
 
+/**
+ * Encode a multi-segment id for a FastAPI `{x:path}` route — each segment is
+ * escaped, but the `/` separators survive. `enc()` would percent-encode them
+ * and collapse the id into a single segment the `:path` converter never sees.
+ */
+const encPath = (id: string): string => id.split("/").map(enc).join("/");
+
 export interface ActivityParams {
   limit?: number;
   platform?: string;
@@ -158,6 +165,25 @@ export const endpoints = {
 
   /** GET — FB/IG browser-session (login) status for the active brand. */
   sessionStatus: "/sessions",
+
+  /** GET — the active brand's mascot reference library (categories + images). */
+  mascotLibrary: "/mascot-library",
+
+  /** POST — declare a new reference category (label in, slug back). */
+  mascotCategories: "/mascot-library/categories",
+
+  /** POST — upload one reference photo. multipart/form-data, not JSON. */
+  mascotImages: "/mascot-library/images",
+
+  /** DELETE — drop one photo. `imageId` is `"<category>/<filename>"`. */
+  mascotImage: (imageId: string): string =>
+    `/mascot-library/images/${encPath(imageId)}`,
+
+  /** POST — copy the brand's legacy mascot asset in. 404 when there is none. */
+  mascotImportLegacy: "/mascot-library/import-legacy",
+
+  /** POST — advisory category for an about-to-be-uploaded photo. multipart. */
+  mascotSuggestCategory: "/mascot-library/suggest-category",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers
