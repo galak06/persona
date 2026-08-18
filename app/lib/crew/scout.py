@@ -6,7 +6,7 @@ ranking data, live web search (Serper), and the Instagram trends feed; the
 Idea stage (`lib.crew.idea`) then synthesizes those signals into a final,
 deduped, ranked list of concrete publishable content ideas. Winners are
 written to `content_ideas` (`lib.ideas_db.insert_idea`), same table and row
-shape `lib.gsc_scout.run_scout` already writes to (see `_idea_row` below) so
+shape `lib.gsc_scout.run_scout` already writes to (`lib.crew.scout_rows`) so
 downstream consumers (`content-enricher`, `wp-post-creator`,
 `performance-tracker`) see one consistent shape regardless of which scout
 produced a row. Tagged `"source": "crewai_scout"` in `input` so the two are
@@ -32,14 +32,13 @@ documented tradeoff, not a bug.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from crewai import Agent, Task
 
 from lib import ideas_db
+from lib.crew import keyword_store
 from lib.crew.context import (
     brand_identity_summary,
     brand_voice_summary,
@@ -47,8 +46,13 @@ from lib.crew.context import (
     serialize_opportunities,
 )
 from lib.crew.idea import build_idea_agent, build_idea_task, execute_idea_crew
-from lib.crew.idea.prompts import build_idea_task_description, serialize_trend_signals
+from lib.crew.idea.prompts import (
+    build_idea_task_description,
+    serialize_existing_topics,
+    serialize_trend_signals,
+)
 from lib.crew.models import IdeaCandidate, ScoutOutput
+from lib.crew.scout_rows import idea_row, read_config
 from lib.crew.topic_similarity import is_similar_topic
 from lib.crew.trends import (
     TrendsOutput,
@@ -68,48 +72,6 @@ logger = get_logger(__name__)
 
 TrendsExecuteFn = Callable[[Agent, Task], TrendsOutput | None]
 IdeaExecuteFn = Callable[[Agent, Task], ScoutOutput | None]
-
-_DISCOVERY_TYPES = frozenset({"discovery", "web_discovery", "instagram_trend"})
-
-
-def _read_config(brand_dir: Path) -> dict[str, Any]:
-    """`config.json`, tolerant of a missing/malformed file (never raises) --
-    a small local copy of `lib.gsc_scout`'s private `_read_json` rather than
-    importing that module's underscore-prefixed helper directly."""
-    path = brand_dir / "config.json"
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        logger.warning("crew_scout_config_json_parse_failed", path=str(path))
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _idea_row(idea: IdeaCandidate, *, data_sufficient: bool) -> dict[str, Any]:
-    return {
-        "category": idea.category,
-        "topic": idea.topic.strip(),
-        "target_keyword": idea.target_keyword,
-        # Same real key `ideas_db.insert_idea` reads as `lib.gsc_scout._idea_row`
-        # uses (see that module's note on the `nalla_context`/`persona_context`
-        # drift) -- kept identical here so both scouts produce one row shape.
-        "nalla_context": idea.reasoning,
-        "post_goal": "topic_discovery"
-        if idea.opportunity_type in _DISCOVERY_TYPES
-        else "seo_traffic",
-        "status": "publish",
-        "input": json.dumps(
-            {
-                "source": "crewai_scout",
-                "opportunity_type": idea.opportunity_type,
-                "priority_score": idea.priority_score,
-                "reasoning": idea.reasoning,
-                "data_sufficient": data_sufficient,
-            }
-        ),
-    }
 
 
 def run_crew_scout(
@@ -141,7 +103,7 @@ def run_crew_scout(
     against existing topics (see `lib.crew.topic_similarity.is_similar_topic`).
     """
     brand_id = brand_dir.name
-    config = _read_config(brand_dir)
+    config = read_config(brand_dir)
     brand_name = str(config.get("site", {}).get("name") or brand_id)
 
     repo = repo or PublishedContentRepository()
@@ -152,7 +114,15 @@ def run_crew_scout(
     instagram_trends_fn = instagram_trends_fn or fetch_instagram_trends_text
     update_status_fn = update_status_fn or ideas_db.update_status
 
-    seeds = load_keyword_seeds(brand_dir)
+    # Curated vocabulary (the operator's `content_analysis.keywords`) widened
+    # by what previous runs' Trends stage discovered. Without this the scout
+    # searches one frozen list forever and converges on the same subjects --
+    # see `lib.crew.keyword_store` for why the discoveries live in their own
+    # file rather than being appended to config.json.
+    curated = load_keyword_seeds(brand_dir)
+    seeds = curated + keyword_store.active_seeds(
+        brand_dir, exclude={s.keyword.strip().lower() for s in curated}
+    )
     site_posts = list(load_site_content_cache(brand_dir).get("recent_posts", []) or [])
     published_rows = repo.list_for_brand(brand_id, limit=10_000)
     sufficiency = evaluate_data_sufficiency(
@@ -198,11 +168,31 @@ def run_crew_scout(
         signals=[s.model_dump() for s in trends_output.signals],
     )
 
+    # Keep what the research found so the NEXT run searches a wider space.
+    # Never raises; a failed write costs vocabulary, not this run's ideas.
+    # Recorded even on a dry run: discovering a keyword is not the same act as
+    # inserting an idea, and a dry run's whole point is to see what a real one
+    # would find -- discarding that would make `--dry-run` quietly lossy.
+    discovered_new, discovered_seen = keyword_store.record_signals(
+        brand_dir, list(trends_output.signals)
+    )
+    logger.info(
+        "crew_scout_keywords_recorded",
+        brand_id=brand_id,
+        new=discovered_new,
+        updated=discovered_seen,
+    )
+
+    # Fetched BEFORE the crew runs, not after -- it used to only filter output
+    # the agent produced blind. See `build_idea_task_description` for why.
+    existing_topics = existing_topics_fn(brand_id=brand_id)
+
     idea_description = build_idea_task_description(
         identity=identity,
         voice=voice,
         seed_keywords=seed_kw,
         trends_json=serialize_trend_signals(trends_output.signals),
+        existing_topics=serialize_existing_topics(existing_topics),
         top_n=top_n,
     )
     idea_agent = build_idea_agent()
@@ -219,7 +209,6 @@ def run_crew_scout(
         logger.warning("crew_scout_run_no_output", brand_id=brand_id)
         return []
 
-    existing_topics = existing_topics_fn(brand_id=brand_id)
     results: list[tuple[IdeaCandidate, str | None]] = []
     for idea in output.ideas:
         if is_similar_topic(idea.topic, existing_topics, threshold=similarity_threshold):
@@ -238,7 +227,7 @@ def run_crew_scout(
             continue
         try:
             idea_id = insert_idea_fn(
-                _idea_row(idea, data_sufficient=sufficiency.sufficient),
+                idea_row(idea, data_sufficient=sufficiency.sufficient),
                 brand_id=brand_id,
                 brand_name=brand_name,
             )

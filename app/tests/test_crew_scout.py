@@ -21,8 +21,10 @@ from typing import Any
 import pytest
 from crewai import Agent, Task
 
+from lib.crew import keyword_store
 from lib.crew.models import IdeaCandidate, ScoutOutput
-from lib.crew.scout import _idea_row, run_crew_scout
+from lib.crew.scout import run_crew_scout
+from lib.crew.scout_rows import idea_row
 from lib.crew.trends.models import TrendSignal, TrendsOutput
 
 
@@ -87,7 +89,7 @@ def _no_instagram_trends(_brand_dir: Path) -> str | None:
 
 def test_idea_row_shape_matches_gsc_scout_convention() -> None:
     idea = _candidate()
-    row = _idea_row(idea, data_sufficient=True)
+    row = idea_row(idea, data_sufficient=True)
     assert set(row.keys()) == {
         "category",
         "topic",
@@ -108,12 +110,12 @@ def test_idea_row_shape_matches_gsc_scout_convention() -> None:
 
 def test_idea_row_post_goal_seo_traffic_for_optimize_and_emerging() -> None:
     for opp_type in ("optimize", "emerging"):
-        row = _idea_row(_candidate(opportunity_type=opp_type), data_sufficient=True)
+        row = idea_row(_candidate(opportunity_type=opp_type), data_sufficient=True)
         assert row["post_goal"] == "seo_traffic"
 
 
 def test_idea_row_post_goal_topic_discovery_for_instagram_trend() -> None:
-    row = _idea_row(_candidate(opportunity_type="instagram_trend"), data_sufficient=True)
+    row = idea_row(_candidate(opportunity_type="instagram_trend"), data_sufficient=True)
     assert row["post_goal"] == "topic_discovery"
 
 
@@ -268,3 +270,81 @@ def test_run_crew_scout_dry_run_never_calls_insert_idea(brand_dir: Path) -> None
     assert not calls
     assert results
     assert all(idea_id is None for _, idea_id in results)
+
+
+# ------------------------------------------------------- keyword feedback loop
+
+
+def test_run_crew_scout_records_discovered_keywords_for_the_next_run(brand_dir: Path) -> None:
+    """The Trends stage already researches the market every run and used to
+    throw the result away. Persisting it is what turns a frozen vocabulary
+    into a growing one -- without this the scout searches the same 73 curated
+    terms forever and keeps landing on the same subjects."""
+
+    def fake_trends_execute(agent: Agent, task: Task) -> TrendsOutput:
+        return TrendsOutput(
+            signals=[_signal(keyword="canicross harness fit"), _signal(keyword="dog joint chews")]
+        )
+
+    run_crew_scout(
+        brand_dir,
+        repo=_FakeRepo([]),  # type: ignore[arg-type]
+        insert_idea_fn=lambda *a, **k: "idea-1",
+        existing_topics_fn=lambda **_: set(),
+        trends_execute_fn=fake_trends_execute,
+        idea_execute_fn=lambda agent, task: ScoutOutput(ideas=[_candidate()]),
+        instagram_trends_fn=_no_instagram_trends,
+        update_status_fn=lambda *_: True,
+        dry_run=False,
+    )
+
+    stored = keyword_store.load(brand_dir)
+    assert set(stored) == {"canicross harness fit", "dog joint chews"}
+
+
+def test_discovered_keywords_widen_the_next_run_vocabulary(brand_dir: Path) -> None:
+    """The loop actually closing: run 1's discoveries must reach run 2's
+    prompt. The brand config seeds only "dog food"/"homemade", so anything
+    else in the seed summary can only have come from the store."""
+    keyword_store.record_signals(brand_dir, [_signal(keyword="raw feeding transition")])
+
+    seen_descriptions: list[str] = []
+
+    def capturing_trends_execute(agent: Agent, task: Task) -> TrendsOutput:
+        seen_descriptions.append(task.description)
+        return TrendsOutput(signals=[_signal()])
+
+    run_crew_scout(
+        brand_dir,
+        repo=_FakeRepo([]),  # type: ignore[arg-type]
+        insert_idea_fn=lambda *a, **k: "idea-1",
+        existing_topics_fn=lambda **_: set(),
+        trends_execute_fn=capturing_trends_execute,
+        idea_execute_fn=lambda agent, task: ScoutOutput(ideas=[_candidate()]),
+        instagram_trends_fn=_no_instagram_trends,
+        update_status_fn=lambda *_: True,
+        dry_run=True,
+    )
+
+    assert seen_descriptions, "trends stage never ran"
+    assert "raw feeding transition" in seen_descriptions[0]
+
+
+def test_dry_run_still_records_discoveries(brand_dir: Path) -> None:
+    """Discovering a keyword is not the same act as inserting an idea. A dry
+    run exists to show what a real one would find, so dropping its research
+    would make --dry-run quietly lossy."""
+    run_crew_scout(
+        brand_dir,
+        repo=_FakeRepo([]),  # type: ignore[arg-type]
+        insert_idea_fn=lambda *a, **k: "idea-1",
+        existing_topics_fn=lambda **_: set(),
+        trends_execute_fn=lambda agent, task: TrendsOutput(
+            signals=[_signal(keyword="senior dog mobility")]
+        ),
+        idea_execute_fn=lambda agent, task: ScoutOutput(ideas=[_candidate()]),
+        instagram_trends_fn=_no_instagram_trends,
+        dry_run=True,
+    )
+
+    assert "senior dog mobility" in keyword_store.load(brand_dir)

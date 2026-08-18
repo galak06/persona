@@ -40,6 +40,7 @@ const TABLE_COL_COUNT = 5;
 
 const STATUS_STYLES: Record<WorkerStatus["status"], string> = {
   never: "text-slate-400",
+  queued: "text-amber-700 font-semibold",
   running: "text-sky-700 font-semibold",
   success: "text-emerald-700 font-semibold",
   error: "text-rose-700 font-semibold",

@@ -26,6 +26,11 @@ export type Tone = "ok" | "warn" | "bad" | "idle";
 export interface FlowSummary {
   total: number;
   running: number;
+  /** Enqueued by the dispatcher, not yet picked up. `task_worker` is
+   *  single-slot, so anything behind a 10-15min browser flow sits here for
+   *  minutes. Counted separately from `running` so the buckets still sum to
+   *  `total` and a waiting flow doesn't read as an active one. */
+  queued: number;
   ok: number;
   errored: number;
   never: number;
@@ -48,10 +53,12 @@ export function summarizeFlows(workers: WorkerStatus[]): FlowSummary {
   const errored = flows.filter((w) => w.status === "error");
   const never = flows.filter((w) => w.status === "never");
   const running = flows.filter((w) => w.status === "running");
+  const queued = flows.filter((w) => w.status === "queued");
   const problems = (errored.length > 0 ? errored : never).map((w) => w.title);
   return {
     total: flows.length,
     running: running.length,
+    queued: queued.length,
     ok: flows.filter((w) => w.status === "success").length,
     errored: errored.length,
     never: never.length,

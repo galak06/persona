@@ -325,7 +325,7 @@ class WorkerStatus(BaseModel):
     description: str
     # The union is the type now, not a comment: it propagates into the
     # generated OpenAPI client, so the frontend stops re-declaring it.
-    status: Literal["never", "running", "success", "error"]
+    status: Literal["never", "queued", "running", "success", "error"]
     last_run: str | None = None
     message: str | None = None
     is_instance: bool = False  # True for individual slots of a multi-instance trigger

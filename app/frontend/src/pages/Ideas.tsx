@@ -13,6 +13,7 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
+import IdeasKeywords from "./IdeasKeywords";
 
 const CATEGORIES = [
   "all", "recipes", "health", "training", "nutrition",
@@ -211,7 +212,44 @@ function IdeaRow({ idea, rowNumber, onDecision, busy, expanded, onToggle }: RowP
   );
 }
 
+const TABS = [
+  { id: "ideas", label: "Ideas" },
+  { id: "keywords", label: "Keywords" },
+] as const;
+
+type TabId = (typeof TABS)[number]["id"];
+
+function TabStrip({
+  active,
+  onChange,
+}: {
+  active: TabId;
+  onChange: (id: TabId) => void;
+}): React.JSX.Element {
+  return (
+    <div className="flex gap-1 border-b border-brand-border" role="tablist">
+      {TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={active === t.id}
+          onClick={() => onChange(t.id)}
+          className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+            active === t.id
+              ? "border-amber-600 text-amber-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Ideas(): React.JSX.Element {
+  const [tab, setTab] = useState<TabId>("ideas");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -292,9 +330,20 @@ export default function Ideas(): React.JSX.Element {
   const counts = data?.counts ?? {};
   const pendingCount = counts["publish"] ?? 0;
 
-  if (loading && !data) return <LoadingState message="Loading ideas…" />;
+  // The strip renders on every branch, so a failed or slow ideas fetch can
+  // never trap the operator on a tab they can't leave.
+  const withTabs = (children: React.ReactNode): React.JSX.Element => (
+    <div className="space-y-5">
+      <TabStrip active={tab} onChange={setTab} />
+      {children}
+    </div>
+  );
+
+  if (tab === "keywords") return withTabs(<IdeasKeywords />);
+
+  if (loading && !data) return withTabs(<LoadingState message="Loading ideas…" />);
   if (error && !data)
-    return (
+    return withTabs(
       <ErrorState
         title="Could not load ideas"
         message={error}
@@ -303,7 +352,7 @@ export default function Ideas(): React.JSX.Element {
       />
     );
 
-  return (
+  return withTabs(
     <div className="space-y-5">
       <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card px-5 py-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-baseline gap-3">
@@ -396,3 +445,4 @@ export default function Ideas(): React.JSX.Element {
     </div>
   );
 }
+

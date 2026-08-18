@@ -131,10 +131,12 @@ export default function Dashboard(): React.JSX.Element {
                 ? `${flows.errored} failing`
                 : flows.running > 0
                   ? `${flows.running} running`
-                  : "All healthy"
+                  : flows.queued > 0
+                    ? `${flows.queued} queued`
+                    : "All healthy"
             }
             tone={flows.tone}
-            caption={`${flows.ok} ok · ${flows.never} never run · ${flows.total} total`}
+            caption={`${flows.ok} ok · ${flows.queued} queued · ${flows.never} never run · ${flows.total} total`}
           />
           {flows.problems.length > 0 && (
             <p className="text-xs text-slate-500 mt-2 break-words">

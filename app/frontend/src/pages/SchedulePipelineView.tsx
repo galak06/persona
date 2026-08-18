@@ -17,6 +17,7 @@ import type { WorkerStatus } from "../api/workers";
 
 const STATUS_DOT: Record<WorkerStatus["status"], string> = {
   never: "bg-slate-300",
+  queued: "bg-amber-400",
   running: "bg-sky-500",
   success: "bg-emerald-500",
   error: "bg-rose-500",
