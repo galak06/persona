@@ -47,12 +47,11 @@ from pathlib import Path
 
 import httpx
 
+from lib.crew.mascot_library import identity_clause
+from lib.crew.mascot_library import resolve_reference_image_path as _resolve_reference_image_path
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
-
-_REFERENCE_IMAGE_STEM = "persona_mascot_reference"
-_REFERENCE_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 _IMAGEN_PREDICT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
 _GEMINI_GENCONTENT_ENDPOINT = (
@@ -99,30 +98,19 @@ def build_image_brief(title: str, mascot_angle: str) -> str:
 
 
 def resolve_reference_image_path(brand_dir: Path) -> Path | None:
-    """The brand's optional real persona+mascot reference photo, if one
-    exists -- `$BRAND_DIR/data/assets/persona_mascot_reference.{png,jpg,jpeg}`.
+    """Delegating alias for `lib.crew.mascot_library.resolve_reference_image_path`.
 
-    This pipeline is brand-agnostic (see `/Users/gilcohen/.claude/plans/
-    immutable-frolicking-mitten.md`, decision 3) -- most brands won't have
-    this asset. `None` means "generate without a reference" (the
-    pre-existing, generic behavior), not an error.
+    The legacy-asset probe moved to `mascot_library` (which also owns the new
+    tagged reference library); this alias keeps every existing importer --
+    `scripts/crewai_content_pipeline.py`, `scripts/reels_images.py`, and their
+    tests, which monkeypatch it by module attribute -- working unchanged.
     """
-    assets_dir = brand_dir / "data" / "assets"
-    for ext in _REFERENCE_IMAGE_EXTENSIONS:
-        candidate = assets_dir / f"{_REFERENCE_IMAGE_STEM}{ext}"
-        if candidate.is_file():
-            return candidate
-    return None
+    return _resolve_reference_image_path(brand_dir)
 
 
 def _style_suffix(mascot_name: str, *, has_reference: bool) -> str:
     if has_reference:
-        mascot_clause = (
-            "A reference photo of the brand's real persona and mascot is attached -- use the "
-            "EXACT SAME person and dog shown in that photo (same face, same dog coloring/"
-            f"markings{f' -- the dog is {mascot_name}' if mascot_name else ''}), placed into "
-            "this new scene. Do not invent a different person or dog. "
-        )
+        mascot_clause = identity_clause(mascot_name)
     else:
         mascot_clause = (
             f"If a dog appears in the scene, it is {mascot_name}. " if mascot_name else ""
