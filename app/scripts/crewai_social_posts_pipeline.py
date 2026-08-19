@@ -191,8 +191,11 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     if not social_post_db.claim(idea_id):
         return "skipped_claim_lost"
 
-    # Generation is grounded on a photo from the tagged library; the WP hero
-    # is the fallback image, for brands with no library at all.
+    # Generation is grounded on a photo from the tagged library -- the scene
+    # the plan asked for, plus a mascot photo when that one shows no mascot.
+    # The WP hero is the fallback image, for brands with no library at all.
+    # `idea_id` seeds the pick, so two posts naming one collection do not
+    # both take its first photo (and a re-run of one post reproduces it).
     image_bytes, source = generate_hook_image(
         plan,
         mascot_name=identity.mascot_name,
@@ -200,6 +203,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         persona_name=identity.persona_name,
         hero_bytes=hero_bytes,
         brand_dir=brand_dir,
+        idea_id=idea_id,
     )
     # Same convention as worker_post_stories.py: IG_USERNAME env, brand-folder
     # name as the fallback (for this brand that IS the IG handle).

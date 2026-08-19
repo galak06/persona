@@ -20,6 +20,7 @@ requests it, which reads as a redefinition to any linter.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ def write_library(
     *,
     ext: str = ".png",
     shows_mascot: bool = False,
+    mascot_categories: Sequence[str] = (),
 ) -> None:
     """`{category: marker}` -> one uploaded photo per category.
 
@@ -42,6 +44,11 @@ def write_library(
     `{"eating": "eat-bytes"}` writes `eating/eat-bytes.png` containing
     `b"eat-bytes"`. Every entry is filed as `source="upload"`, since that is
     the only source that may anchor a generation.
+
+    `shows_mascot` tags EVERY entry; `mascot_categories` tags only the named
+    ones, which is what a real library looks like -- some collections show the
+    brand's mascot and some are places or products -- and what the mascot
+    anchor (`lib.crew.reference_mascot`) exists to tell apart.
     """
     root = library_root(brand_dir)
     entries: list[dict[str, Any]] = []
@@ -57,7 +64,7 @@ def write_library(
                 "content_type": CONTENT_TYPES[ext],
                 "source": "upload",
                 "label": marker,
-                "shows_mascot": shows_mascot,
+                "shows_mascot": shows_mascot or category in mascot_categories,
             }
         )
     manifest_path(brand_dir).write_text(

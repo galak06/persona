@@ -25,60 +25,55 @@ to new users" for this project's `GEMINI_API_KEY` -- a real, external
 provider deprecation, not a bug in this code. `recipe-publisher/generators/
 image.py` already carries the accepted fix for this exact situation: a
 `gemini-3-pro-image-preview` ("nano_pro") tier via the `generateContent`
-API (confirmed working live, real ~1.1MB JPEG returned). Adapted here as
-`_call_nano_pro`, same shape as that module's `_generate_nano_pro`, kept in
-the same fallback chain (after both Imagen tiers) so a working provider
-remains once Imagen access is restored.
+API (confirmed working live, real ~1.1MB JPEG returned). Adapted as
+`lib.crew.wp_image_providers.call_nano_pro`, same shape as that module's
+`_generate_nano_pro`, kept in the same fallback chain (after both Imagen
+tiers) so a working provider remains once Imagen access is restored.
 
-Never raises out of `generate_wp_image` -- returns a placeholder
-`GeneratedImage` (`url="placeholder"`, `bytes_=b""`) if every provider
-fails, so `lib.crew.draft.create_wp_draft` can detect and skip the image
-step gracefully (best-effort, matches `_maybe_attach_affiliate_block`'s
+The provider calls themselves live in `lib.crew.wp_image_providers` (this
+file was at its 300-line ceiling); what stays here is the prompt, the
+fallback chain and the never-raises contract: `generate_wp_image` returns a
+placeholder `GeneratedImage` (`url="placeholder"`, `bytes_=b""`) if every
+provider fails, so `lib.crew.draft.create_wp_draft` can detect and skip the
+image step gracefully (best-effort, matches `_maybe_attach_affiliate_block`'s
 "never blocks publish" convention in
 `recipe-publisher/publishers/wordpress.py`).
 """
 
 from __future__ import annotations
 
-import base64
 import os
-from dataclasses import dataclass
+from collections.abc import Sequence
 from pathlib import Path
-
-import httpx
 
 from lib.crew.reference_clauses import identity_clause
 from lib.crew.reference_legacy import (
     resolve_reference_image_path as _resolve_reference_image_path,
 )
+from lib.crew.wp_image_providers import (
+    IMAGEN_FAST,
+    IMAGEN_STANDARD,
+    GeneratedImage,
+    ImageGenerationError,
+    ReferencePhoto,
+    call_imagen,
+    call_nano_pro,
+)
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-_IMAGEN_PREDICT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/{model}:predict"
-_GEMINI_GENCONTENT_ENDPOINT = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-)
-_IMAGEN_FAST = "imagen-4.0-fast-generate-001"
-_IMAGEN_STANDARD = "imagen-4.0-generate-001"
-_NANO_PRO = "gemini-3-pro-image-preview"
+#: Re-exported for the modules that have always imported them from here.
+__all__ = [
+    "GeneratedImage",
+    "ImageGenerationError",
+    "ReferencePhoto",
+    "build_image_brief",
+    "generate_wp_image",
+    "resolve_reference_image_path",
+]
 
 _NEGATIVES = " No text, labels, watermarks, logos, or packaging."
-
-
-@dataclass
-class GeneratedImage:
-    """One generated (or placeholder) hero image."""
-
-    url: str
-    alt_text: str
-    provider: str
-    bytes_: bytes | None = None
-    content_type: str = "image/png"
-
-
-class ImageGenerationError(RuntimeError):
-    """Raised by a single provider attempt; never escapes `generate_wp_image`."""
 
 
 def build_image_brief(title: str, mascot_angle: str) -> str:
@@ -135,14 +130,15 @@ def generate_wp_image(
     mascot_name: str = "",
     reference_image_bytes: bytes | None = None,
     reference_image_mime: str = "image/png",
+    extra_reference_images: Sequence[ReferencePhoto] = (),
     reference_clause: str = "",
 ) -> GeneratedImage:
     """Generate a topic-appropriate hero image -- never food-styled.
 
-    `reference_clause` (optional): what to tell the model the attached photo
-    IS -- build it with `lib.crew.reference_clauses.reference_clause`, which
-    uses the mascot-identity wording only for photos tagged `shows_mascot`.
-    Left empty, the reference is assumed to show the mascot (historical).
+    `reference_clause` (optional): what to tell the model the attached
+    photo(s) ARE -- build it with `lib.crew.reference_clauses.reference_clause`
+    for one photo or `paired_reference_clause` for two. Left empty, the
+    reference is assumed to show the mascot (historical).
 
     `reference_image_bytes` (optional): a real photo of the brand's persona
     and/or mascot to condition generation on, so the hero image actually
@@ -153,7 +149,16 @@ def generate_wp_image(
     would silently produce a non-matching generic image and defeat the
     purpose, since they'd succeed before ever reaching nano_pro).
 
-    Without a reference image, tries Imagen 4 Fast, then Imagen 4 Standard,
+    `extra_reference_images` (optional): FURTHER photos, sent after that one
+    and in the order given, because one photo cannot both hold the scene and
+    hold the brand's mascot. A scene collection ("home exterior") anchored a
+    kitchen brief while nothing at all anchored the mascot, so the model
+    invented one; `lib.crew.socialpost.compose` now sends the scene photo
+    plus a `shows_mascot` photo and a clause that says which is which.
+    Ignored without a primary reference: the positional clause describes
+    "PHOTO 1" first, and there is no photo 1 without one.
+
+    Without any reference image, tries Imagen 4 Fast, then Imagen 4 Standard,
     then nano_pro (see module docstring on why this third tier was added).
     Returns a placeholder `GeneratedImage` (`bytes_=b""`) on total failure
     (missing `GEMINI_API_KEY`, or every provider erroring) so the caller can
@@ -161,9 +166,14 @@ def generate_wp_image(
     """
     key = os.environ.get("GEMINI_API_KEY", "")
     alt_text = alt_hint or brief[:80]
+    references: list[ReferencePhoto] = (
+        [ReferencePhoto(reference_image_bytes, reference_image_mime), *extra_reference_images]
+        if reference_image_bytes
+        else []
+    )
     full_prompt = (
         f"{brief}. "
-        f"{_style_suffix(mascot_name, has_reference=bool(reference_image_bytes), reference_clause=reference_clause)}"
+        f"{_style_suffix(mascot_name, has_reference=bool(references), reference_clause=reference_clause)}"
         f"{_NEGATIVES}"
     )
 
@@ -177,22 +187,15 @@ def generate_wp_image(
             content_type="image/png",
         )
 
-    providers = (
-        ("nano_pro",) if reference_image_bytes else ("imagen_fast", "imagen_standard", "nano_pro")
-    )
+    providers = ("nano_pro",) if references else ("imagen_fast", "imagen_standard", "nano_pro")
     for provider in providers:
         try:
             if provider == "imagen_fast":
-                img = _call_imagen(full_prompt, model=_IMAGEN_FAST, provider=provider, key=key)
+                img = call_imagen(full_prompt, model=IMAGEN_FAST, provider=provider, key=key)
             elif provider == "imagen_standard":
-                img = _call_imagen(full_prompt, model=_IMAGEN_STANDARD, provider=provider, key=key)
+                img = call_imagen(full_prompt, model=IMAGEN_STANDARD, provider=provider, key=key)
             else:
-                img = _call_nano_pro(
-                    full_prompt,
-                    key=key,
-                    reference_image_bytes=reference_image_bytes,
-                    reference_image_mime=reference_image_mime,
-                )
+                img = call_nano_pro(full_prompt, key=key, references=references)
             img.alt_text = alt_text
             logger.info(
                 "crew_draft_image_generated", provider=provider, bytes_len=len(img.bytes_ or b"")
@@ -205,96 +208,3 @@ def generate_wp_image(
     return GeneratedImage(
         url="placeholder", alt_text=alt_text, provider="none", bytes_=b"", content_type="image/png"
     )
-
-
-def _call_imagen(
-    prompt: str, *, model: str, provider: str, key: str, timeout: float = 60.0
-) -> GeneratedImage:
-    """Call the Gemini Imagen predict endpoint and return raw image bytes."""
-    url = _IMAGEN_PREDICT_ENDPOINT.format(model=model)
-    payload = {
-        "instances": [{"prompt": prompt}],
-        "parameters": {"sampleCount": 1, "aspectRatio": "16:9", "personGeneration": "dont_allow"},
-    }
-    try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=timeout)
-    except httpx.HTTPError as e:
-        raise ImageGenerationError(f"imagen request error: {e}") from e
-    if r.status_code >= 400:
-        raise ImageGenerationError(f"imagen HTTP {r.status_code}: {r.text[:300]}")
-    data = r.json()
-    preds = data.get("predictions") or []
-    if not preds:
-        raise ImageGenerationError(f"imagen returned no predictions: {data!r}")
-    first = preds[0]
-    b64 = first.get("bytesBase64Encoded", "")
-    if not b64:
-        raise ImageGenerationError(f"imagen missing image bytes: {first!r}")
-    mime = first.get("mimeType", "image/png")
-    raw = base64.b64decode(b64)
-    return GeneratedImage(
-        url=f"imagen://{model}", alt_text="", provider=provider, bytes_=raw, content_type=mime
-    )
-
-
-def _call_nano_pro(
-    prompt: str,
-    *,
-    key: str,
-    reference_image_bytes: bytes | None = None,
-    reference_image_mime: str = "image/png",
-    timeout: float = 180.0,
-) -> GeneratedImage:
-    """Call Gemini 3 Pro Image ("nano_pro") via `generateContent`.
-
-    Same request shape as `recipe-publisher/generators/image.py::
-    _generate_nano_pro` -- third fallback tier, see module docstring. When
-    `reference_image_bytes` is given, it's sent as an `inline_data` part
-    BEFORE the text part -- `generateContent` treats it as visual context
-    the text prompt then describes a new scene for (subject-consistency
-    conditioning), not merely an attachment.
-    """
-    url = _GEMINI_GENCONTENT_ENDPOINT.format(model=_NANO_PRO)
-    request_parts: list[dict[str, object]] = []
-    if reference_image_bytes:
-        request_parts.append(
-            {
-                "inline_data": {
-                    "mime_type": reference_image_mime,
-                    "data": base64.b64encode(reference_image_bytes).decode("ascii"),
-                }
-            }
-        )
-    request_parts.append({"text": prompt})
-    payload = {
-        "contents": [{"parts": request_parts}],
-        "generationConfig": {
-            "responseModalities": ["IMAGE"],
-            "imageConfig": {"aspectRatio": "16:9"},
-        },
-    }
-    try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=timeout)
-    except httpx.HTTPError as e:
-        raise ImageGenerationError(f"nano_pro request error: {e}") from e
-    if r.status_code >= 400:
-        raise ImageGenerationError(f"nano_pro HTTP {r.status_code}: {r.text[:300]}")
-
-    data = r.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise ImageGenerationError(f"nano_pro: no candidates in {data!r}")
-    parts = candidates[0].get("content", {}).get("parts", [])
-    for part in parts:
-        inline = part.get("inlineData") or part.get("inline_data") or {}
-        if inline.get("data"):
-            raw = base64.b64decode(inline["data"])
-            mime = inline.get("mimeType", "image/jpeg")
-            return GeneratedImage(
-                url=f"nano_pro://{_NANO_PRO}",
-                alt_text="",
-                provider="nano_pro",
-                bytes_=raw,
-                content_type=mime,
-            )
-    raise ImageGenerationError(f"nano_pro: no image bytes in parts {parts!r}")

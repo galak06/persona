@@ -21,6 +21,11 @@ manifest's flags, in ONE place, so the three generators that condition on the
 library (reels beats, the WP hero, the social hook image) can never drift
 apart.
 
+`paired_reference_clause` is the same decision for a generator that attaches
+TWO photos -- a scene reference plus the photo that anchors the mascot (see
+`lib.crew.reference_mascot`). It is assembled from the two clauses above
+rather than written afresh, for the same no-drift reason.
+
 **Two subjects, four cases.** A photo may show the mascot, the persona (the
 person behind the brand, `site.brand_persona`), both, or neither, and the
 identity instruction has to name exactly the ones that are actually in frame.
@@ -187,4 +192,47 @@ def reference_clause(
         persona_name,
         shows_mascot=reference.shows_mascot,
         shows_persona=reference.shows_persona,
+    )
+
+
+def paired_reference_clause(
+    scene: ReferenceImage,
+    anchor: ReferenceImage,
+    mascot_name: str,
+    mascot_kind: str = "",
+    persona_name: str = "",
+) -> str:
+    """One clause for TWO attached photos, described by position.
+
+    A single reference cannot do both jobs. The photo that matches the scene
+    the planner asked for is usually a place or a product, and the clause it
+    earns says -- correctly -- "do not take the mascot's appearance from this".
+    With nothing else attached, the model then invents one
+    (`lib.crew.reference_mascot` has the live example). Attaching a
+    `shows_mascot` photo as well fixes that only if the model is told which
+    photo is which, so this clause is strictly positional and the caller MUST
+    send the parts in the same order: scene first, anchor second.
+
+    Built from `reference_clause` and `identity_clause` rather than from new
+    prose, so the single-reference and two-reference paths can never drift
+    into saying different things about the same photo. The closing sentence is
+    the only new instruction, and it exists to settle the one conflict the two
+    photos create: which of them decides what the mascot looks like.
+    """
+    scene_clause = reference_clause(scene, mascot_name, mascot_kind, persona_name)
+    anchor_clause = identity_clause(
+        mascot_name,
+        mascot_kind,
+        persona_name,
+        shows_mascot=True,
+        shows_persona=anchor.shows_persona,
+    )
+    return (
+        "TWO reference photos are attached, in this order. "
+        f"PHOTO 1 -- {scene_clause}"
+        f"PHOTO 2 -- {anchor_clause}"
+        "The two have different jobs: PHOTO 1 fixes the setting, styling and "
+        "props, PHOTO 2 fixes what the brand's own subject looks like. Where "
+        "they disagree, follow PHOTO 2 for that subject and PHOTO 1 for "
+        "everything else, and follow the scene described above over both. "
     )

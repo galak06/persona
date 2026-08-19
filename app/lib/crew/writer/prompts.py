@@ -63,7 +63,7 @@ def _reference_category_section(categories: Sequence[str]) -> str:
     listed = "\n".join(f"  - {label}" for label in categories)
     return f"""
 ## Reference-photo collection (`reference_category`)
-The post's hero image is generated with a real photo of the brand's actual dog as its \
+The post's hero image is generated with a real photo the brand itself uploaded as its \
 visual reference (the result is still a generated image, not a photograph of a real \
 moment -- the title rule in step 1 still holds). The brand keeps several collections of \
 those photos, one collection per kind of scene:
@@ -74,7 +74,7 @@ your mascot_angle: a feeding post wants a feeding reference, a trail post wants 
 outdoor one. Those collections are the only ones that exist -- there is no "none of \
 the above", and a name that is not on that list leaves the hero with no reference \
 photo at all. So when nothing is a clean match, still pick the CLOSEST collection on \
-the list; a near-miss reference is a real photo of this brand's own dog, which grounds \
+the list; a near-miss reference is a real photo of this brand's own, which grounds \
 the hero far better than none does.{catch_all_clause(categories)}
 """
 

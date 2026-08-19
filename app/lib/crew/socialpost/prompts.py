@@ -33,10 +33,13 @@ model's instincts:
   6-8 in `app/CLAUDE.md`, which predates keywords-in-captions displacing hashtags
   as Instagram's discovery mechanism.
 - **`reference_category` only when the brand has a reference-photo library.** The
-  hook image is generated from a real photo of the brand's dog, so naming the
-  collection whose scenes match the brief is what makes that reference ground the
-  scene instead of fighting it. A brand with no library passes nothing and gets a
-  prompt byte-identical to the one that predates the field.
+  hook image is generated from the brand's own real photos, so naming the collection
+  whose scenes match the brief is what makes that reference ground the scene instead
+  of fighting it. Nothing here may assume the brand HAS a dog -- or a mascot at all
+  (`lib.crew.brand_identity`); the mascot is anchored in code, on a `shows_mascot`
+  photo (`lib.crew.reference_mascot`), precisely so this prompt does not have to ask
+  for one. A brand with no library passes nothing and gets a prompt byte-identical to
+  the one that predates the field.
 """
 
 from __future__ import annotations
@@ -62,18 +65,20 @@ def _reference_category_section(categories: Sequence[str]) -> str:
     listed = "\n".join(f"  - {label}" for label in categories)
     return f"""
 ## Reference-photo collection (`reference_category`)
-That image is generated from a real photo of the brand's actual dog. The brand keeps \
-several collections of those photos, one collection per kind of scene:
+That image is generated from the brand's own real photos. The brand keeps several \
+collections of them, one collection per kind of scene:
 {listed}
 Set `reference_category` to the ONE collection whose scenes best match the \
-`image_brief` you just wrote, copied verbatim from the list above. The closer the \
-collection matches the scene, the more the finished image actually looks like this dog \
-in that setting -- a couch reference dragged into a kitchen scene fights the brief \
-instead of grounding it. Those collections are the only ones that exist: there is no \
-"none of the above", and a name that is not on that list means no image gets generated \
-at all -- the post falls back to a stock photo of some other dog. So when nothing is a \
-clean match, still pick the CLOSEST one on the list; a near-miss reference is a real \
-photo of this dog, which beats no reference every time.{catch_all_clause(categories)}
+`image_brief` you just wrote, copied verbatim from the list above. That collection \
+supplies the SETTING, so the closer it matches the scene, the more the finished image \
+looks like this brand's own place -- a couch reference dragged into a kitchen scene \
+fights the brief instead of grounding it. (The brand's mascot is anchored separately, \
+on a photo that actually shows it, so you never have to pick a collection just to get \
+the mascot right.) Those collections are the only ones that exist: there is no "none of \
+the above", and a name that is not on that list means no image gets generated at all -- \
+the post falls back to a stock photo. So when nothing is a clean match, still pick the \
+CLOSEST one on the list; a near-miss reference is still a real photo of this brand, \
+which beats no reference every time.{catch_all_clause(categories)}
 """
 
 

@@ -171,6 +171,111 @@ def test_the_legacy_asset_alone_is_not_enough_to_generate(
     assert (image, source) == (_HERO, "fallback")
 
 
+# ── the mascot is anchored on a photo that actually shows it ─────────────────
+
+
+def test_a_scene_category_still_gets_the_mascot_photo_attached(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """THE REGRESSION. The plan asked for `home-exterior`, got a porch, and the
+    porch's own clause forbids taking the mascot from it -- so with one photo
+    the mascot was invented every time. The mascot photo now rides along as a
+    second part, and the clause says which photo does which job."""
+    _write_library(
+        tmp_path,
+        {"home-exterior": "porch-bytes", "studio-mascot": "mascot-bytes"},
+        mascot_categories=("studio-mascot",),
+    )
+
+    compose.generate_hook_image(
+        _plan("home-exterior"),
+        mascot_name="Nalla",
+        mascot_kind="dog",
+        hero_bytes=_HERO,
+        brand_dir=tmp_path,
+        idea_id="idea-1",
+    )
+
+    assert calls[0]["reference_image_bytes"] == b"porch-bytes"
+    assert [photo.bytes_ for photo in calls[0]["extra_reference_images"]] == [b"mascot-bytes"]
+    assert "PHOTO 2 -- " in calls[0]["reference_clause"]
+    assert "the mascot is Nalla, the brand's dog" in calls[0]["reference_clause"]
+
+
+def test_a_mascot_scene_photo_is_not_paired_with_a_second_one(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """One photo already doing both jobs stays one photo -- and keeps the plain
+    identity clause, not the positional one."""
+    _write_library(tmp_path, {"eating": "eat-bytes"}, shows_mascot=True)
+
+    compose.generate_hook_image(
+        _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    assert calls[0]["extra_reference_images"] == ()
+    assert calls[0]["reference_clause"] == identity_clause("Nalla")
+
+
+def test_a_brand_with_no_mascot_photo_generates_from_the_scene_alone(
+    calls: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    """Nothing substitutes for a mascot photo the brand never uploaded: the
+    call is exactly the single-reference one it always was."""
+    _write_library(tmp_path, {"home-exterior": "porch-bytes"})
+
+    compose.generate_hook_image(
+        _plan("home-exterior"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    assert calls[0]["extra_reference_images"] == ()
+    assert calls[0]["reference_clause"] == grounding_clause()
+
+
+def test_the_scene_pick_is_seeded_on_the_idea(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The seed reaches the resolver itself, not only the mascot anchor -- a
+    category holding several photos must spread across them per post."""
+    seen: dict[str, object] = {}
+
+    def _resolve(brand_dir: Path, category: str | None, *, seed: str = "") -> None:
+        seen.update(category=category, seed=seed)
+        return None
+
+    monkeypatch.setattr(compose, "resolve_reference", _resolve)
+
+    compose.generate_hook_image(
+        _plan("eating"),
+        mascot_name="Nalla",
+        hero_bytes=_HERO,
+        brand_dir=tmp_path,
+        idea_id="idea-1",
+    )
+
+    assert seen == {"category": "eating", "seed": "idea-1"}
+
+
+def test_the_selection_log_records_both_subject_flags(
+    calls: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`reference_clause` branches on `shows_persona` too, so a log carrying
+    only `shows_mascot` cannot explain which clause an image got."""
+    events: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        compose.logger, "info", lambda event, **kw: events.append((event, kw)), raising=False
+    )
+    _write_library(tmp_path, {"eating": "eat-bytes"})
+
+    compose.generate_hook_image(
+        _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
+    )
+
+    selected = next(kw for event, kw in events if event == "social_posts_reference_selected")
+    assert selected["shows_mascot"] is False
+    assert selected["shows_persona"] is False
+
+
 def test_an_unreadable_reference_ships_the_hero_rather_than_grounding_on_it(
     calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:

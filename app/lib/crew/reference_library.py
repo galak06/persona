@@ -192,7 +192,7 @@ def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[
             labels[slug] = slug.replace("-", " ")
     if not with_photos:
         return list(labels.values())
-    stocked = _existing_images_by_category(brand_dir)
+    stocked = existing_images_by_category(brand_dir)
     return [label for slug, label in labels.items() if slug in stocked]
 
 
@@ -226,13 +226,13 @@ def resolve_reference(
     beats across different photos while a re-run reproduces them exactly;
     `seed=""` always takes the first candidate.
     """
-    by_category = _existing_images_by_category(brand_dir)
+    by_category = existing_images_by_category(brand_dir)
     wanted = slugify(category or "")
 
     for slug in (wanted, GENERAL_CATEGORY):
         candidates = by_category.get(slug) if slug else None
         if candidates:
-            return _pick(_best_tier(candidates), seed)
+            return pick(best_tier(candidates), seed)
     logger.info(
         "reference_library_no_match",
         requested=wanted or "(none)",
@@ -241,15 +241,15 @@ def resolve_reference(
     return None
 
 
-#: One candidate as the resolver carries it internally: its `source` rank
-#: paired with the image, so ranking never has to widen `ReferenceImage`.
-_Candidate = tuple[int, ReferenceImage]
+#: One candidate as a resolver carries it: its `source` rank paired with the
+#: image. Public with the three helpers below: `reference_mascot` reuses them.
+Candidate = tuple[int, ReferenceImage]
 
 
-def _existing_images_by_category(brand_dir: Path) -> dict[str, list[_Candidate]]:
+def existing_images_by_category(brand_dir: Path) -> dict[str, list[Candidate]]:
     """Manifest entries grouped by category, dropping any whose file is gone."""
     root = library_root(brand_dir)
-    grouped: dict[str, list[_Candidate]] = {}
+    grouped: dict[str, list[Candidate]] = {}
     for entry in read_manifest(brand_dir)["images"]:
         slug = slugify(str(entry.get("category", "")))
         if not slug:
@@ -279,7 +279,7 @@ def _existing_images_by_category(brand_dir: Path) -> dict[str, list[_Candidate]]
     return grouped
 
 
-def _best_tier(candidates: list[_Candidate]) -> list[ReferenceImage]:
+def best_tier(candidates: list[Candidate]) -> list[ReferenceImage]:
     """Only the highest-priority `source` tier present, sorted by id.
 
     Uploads never lose to harvested images: with 3 uploads and 5 harvests in
@@ -292,7 +292,7 @@ def _best_tier(candidates: list[_Candidate]) -> list[ReferenceImage]:
     return [image for rank, image in ranked if rank == best]
 
 
-def _pick(candidates: list[ReferenceImage], seed: str) -> ReferenceImage:
+def pick(candidates: list[ReferenceImage], seed: str) -> ReferenceImage:
     """Deterministic index from `seed` -- no `random`, so re-runs reproduce."""
     if not seed:
         return candidates[0]

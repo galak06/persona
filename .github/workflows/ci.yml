@@ -117,12 +117,16 @@ jobs:
           lib/crew/reference_library.py lib/crew/reference_library_store.py
           lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
           lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
           api/reference_images_api.py api/reference_images_schemas.py
           tests/test_reference_library.py tests/test_reference_validate.py
           tests/test_reference_library_migration.py
           tests/test_reference_images_api.py tests/test_reference_vision.py
           tests/test_reference_images_edit_api.py tests/_reference_images_fakes.py
-          tests/test_reference_clauses.py
+          tests/test_reference_clauses.py tests/test_reference_mascot.py
+          tests/_reference_library_fakes.py
+          tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
           lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
           tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
@@ -185,12 +189,16 @@ jobs:
           lib/crew/reference_library.py lib/crew/reference_library_store.py
           lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
           lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
           api/reference_images_api.py api/reference_images_schemas.py
           tests/test_reference_library.py tests/test_reference_validate.py
           tests/test_reference_library_migration.py
           tests/test_reference_images_api.py tests/test_reference_vision.py
           tests/test_reference_images_edit_api.py tests/_reference_images_fakes.py
-          tests/test_reference_clauses.py
+          tests/test_reference_clauses.py tests/test_reference_mascot.py
+          tests/_reference_library_fakes.py
+          tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
           lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
           tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
@@ -253,6 +261,8 @@ jobs:
           lib/crew/reference_library.py lib/crew/reference_library_store.py
           lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
           lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
           api/reference_images_api.py api/reference_images_schemas.py
           lib/oauth/openart.py lib/oauth/openart_store.py
           lib/crew/reference_vocabulary.py
@@ -443,6 +453,9 @@ jobs:
             tests/test_reference_images_edit_api.py \
             tests/test_reference_vision.py \
             tests/test_reference_clauses.py \
+            tests/test_reference_mascot.py \
+            tests/test_crew_wp_image.py \
+            tests/test_crew_wp_image_references.py \
             tests/test_reference_vocabulary.py \
             tests/test_crew_writer_prompts.py \
             tests/test_crew_socialpost_prompts.py \

@@ -41,19 +41,19 @@ def _reference_category_section(categories: Sequence[str]) -> str:
     listed = "\n".join(f"  - {label}" for label in categories)
     return f"""
 ## Reference-photo collection (`reference_category`)
-Every beat's image is generated from a real photo of the brand's actual dog. The brand \
+Every beat's image is generated from a real photo the brand itself uploaded. The brand \
 keeps several collections of those photos, one collection per kind of scene:
 {listed}
 For each beat, set `reference_category` to the ONE collection whose scenes best match \
 that beat's own `image_prompt`, copied verbatim from the list above. The closer the \
 collection matches the scene you described, the more the generated frame actually looks \
-like this dog in that setting -- a "lying on the couch" reference dragged into a trail \
-shot fights the prompt instead of grounding it. Those collections are the only ones that \
-exist: there is no "none of the above", and a name that is not on that list leaves the \
-beat with NO generated frame at all -- it falls back to a stock photo of some other dog. \
-So when nothing is a clean match, still pick the CLOSEST one on the list; a near-miss \
-reference is a real photo of this dog, which beats no reference every \
-time.{catch_all_clause(categories)}
+like this brand's own subject in that setting -- a "lying on the couch" reference \
+dragged into a trail shot fights the prompt instead of grounding it. Those collections \
+are the only ones that exist: there is no "none of the above", and a name that is not on \
+that list leaves the beat with NO generated frame at all -- it falls back to a stock \
+photo of somebody else's. So when nothing is a clean match, still pick the CLOSEST one \
+on the list; a near-miss reference is a real photo of this brand, which beats no \
+reference every time.{catch_all_clause(categories)}
 """
 
 
@@ -106,14 +106,14 @@ Write a concrete, highly-detailed image generation prompt tailored for OpenArt, 
 in what that beat actually says -- never invent a visual claim the source post doesn't \
 make. Every prompt must explicitly define:
 - **Subject:** A clear, specific focus. Live-confirmed failure mode: this image is \
-generated with a real reference photo of the brand's actual dog, but that reference \
-only grounds the dog's appearance when the dog is the described subject -- a prompt \
-describing an unrelated scene (a phone, a screen, an article, packaging) gets the dog \
-right but freely invents everything else, including fake brand names and fake text. \
-Never describe a phone screen, website, article preview, product label, or any surface \
-with readable text/branding -- the model will hallucinate a plausible-looking but \
-entirely fake brand name on it. Keep every subject physical and real: the dog, the \
-food, the person's hands, the kitchen -- nothing with text for the model to invent.
+generated with a real reference photo the brand uploaded, but that reference only \
+grounds the brand's own subject when that subject is the one you describe -- a prompt \
+describing an unrelated scene (a phone, a screen, an article, packaging) gets the \
+subject right but freely invents everything else, including fake brand names and fake \
+text. Never describe a phone screen, website, article preview, product label, or any \
+surface with readable text/branding -- the model will hallucinate a plausible-looking \
+but entirely fake brand name on it. Keep every subject physical and real: the mascot, \
+the food, the person's hands, the kitchen -- nothing with text for the model to invent.
 - **Action/Environment:** Grounded setting matching the beat's text.
 - **Cinematography & Style:** Vertical 9:16 aspect ratio, specific camera angle/lens \
 (e.g., macro, close-up, dramatic POV), and lighting (e.g., golden hour, studio soft \
