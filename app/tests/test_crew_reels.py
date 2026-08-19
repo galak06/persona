@@ -102,9 +102,36 @@ def test_build_reels_task_description_lists_reference_categories_when_given() ->
     assert "## Reference-photo collection (`reference_category`)" in description
     assert "- Eating" in description
     assert "- Outdoors" in description
-    # The per-beat instruction and the no-match fallback are both spelled out.
+    # The per-beat instruction and the no-clean-match rule are both spelled out.
     assert "For each beat" in description
-    assert '"general"' in description
+    assert "closest" in description.lower()
+    assert "copied verbatim from the list above" in description
+
+
+def test_build_reels_task_description_never_offers_an_unlisted_catch_all() -> None:
+    """The live bug: the section closed with *if none of them fits, use
+    "general"* -- naming a collection that was not in the list it had just
+    supplied. The planner took that exit on 2 of 5 beats and both resolved to
+    no image at all."""
+    description = build_reels_task_description(
+        title="T",
+        body="B",
+        brand_voice="V",
+        reference_categories=("forest-trail", "home-exterior", "studio-mascot"),
+    )
+    assert "general" not in description.lower()
+
+
+def test_build_reels_task_description_offers_a_catch_all_the_brand_actually_has() -> None:
+    """A brand that keeps a stocked catch-all still gets it offered -- and by
+    the exact label it was handed, because the model is told to copy verbatim."""
+    description = build_reels_task_description(
+        title="T",
+        body="B",
+        brand_voice="V",
+        reference_categories=("forest-trail", "General"),
+    )
+    assert '"General"' in description
 
 
 # ── build_reels_agent / build_reels_task ─────────────────────────────────

@@ -166,8 +166,10 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         site_domain=site_domain,
         brand_voice=brand_voice_summary(brand_dir),
         # The agent may only tag the image with a category the brand actually
-        # keeps photos under; an empty library drops the section entirely.
-        reference_categories=list_category_labels(brand_dir),
+        # keeps photos under -- `with_photos` is what makes that true, since a
+        # declared-but-empty tag resolves to no image at all. No stocked
+        # category means an empty list, which drops the section entirely.
+        reference_categories=list_category_labels(brand_dir, with_photos=True),
     )
     task = build_social_post_task(agent, description)
     plan = execute_social_post_crew(agent, task, target_keyword=target_keyword)

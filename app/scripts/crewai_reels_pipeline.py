@@ -167,14 +167,15 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> tup
     brand_voice = brand_voice_summary(brand_dir)
 
     agent = build_reels_agent()
-    # The agent can only tag a beat with a category the brand actually has, so
-    # the declared labels travel into the prompt; a brand with no library
-    # sends an empty list and the section is dropped entirely.
+    # The agent can only tag a beat with a category the brand actually keeps
+    # PHOTOS under -- a declared-but-empty tag reads to the model as a real
+    # choice and then resolves to no image at all. A brand with no stocked
+    # category sends an empty list and the section is dropped entirely.
     description = build_reels_task_description(
         title=title,
         body=body,
         brand_voice=brand_voice,
-        reference_categories=list_category_labels(brand_dir),
+        reference_categories=list_category_labels(brand_dir, with_photos=True),
     )
     task = build_reels_task(agent, description)
     plan = execute_reels_crew(agent, task)

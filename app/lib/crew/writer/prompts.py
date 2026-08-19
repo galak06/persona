@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from lib.crew.reference_vocabulary import catch_all_clause
 from lib.crew.writer.context import internal_link_candidates_json
 from lib.crew.writer.models import ContentBrief, InternalLinkCandidate
 
@@ -70,7 +71,11 @@ those photos, one collection per kind of scene:
 Set `reference_category` to the ONE collection whose scenes best match the hero image \
 this post calls for, copied verbatim from the list above. Pick it from the topic and \
 your mascot_angle: a feeding post wants a feeding reference, a trail post wants an \
-outdoor one. If none of them fits, use "general".
+outdoor one. Those collections are the only ones that exist -- there is no "none of \
+the above", and a name that is not on that list leaves the hero with no reference \
+photo at all. So when nothing is a clean match, still pick the CLOSEST collection on \
+the list; a near-miss reference is a real photo of this brand's own dog, which grounds \
+the hero far better than none does.{catch_all_clause(categories)}
 """
 
 

@@ -63,6 +63,22 @@ def test_social_post_prompt_lists_reference_categories_when_given() -> None:
     assert "- Eating" in description
     assert "- Outdoors" in description
     # It must tie the choice to the image brief the writer just wrote, and
-    # spell out the no-match fallback rather than leave it to the model.
+    # spell out the no-clean-match rule rather than leave it to the model.
     assert "`image_brief`" in description
-    assert '"general"' in description
+    assert "CLOSEST" in description
+    assert "copied verbatim from the list above" in description
+
+
+def test_social_post_prompt_never_offers_an_unlisted_catch_all() -> None:
+    """The live bug: the section closed with *if none of them fits, use
+    "general"* -- naming a collection that was not in the list it had just
+    supplied, so the model's choice resolved to no image at all."""
+    description = _description(reference_categories=("forest-trail", "studio-mascot"))
+    assert "general" not in description.lower()
+
+
+def test_social_post_prompt_offers_a_catch_all_the_brand_actually_has() -> None:
+    """A brand that keeps a stocked catch-all still gets it offered, spelled
+    exactly as supplied -- the model is told to copy these verbatim."""
+    description = _description(reference_categories=("forest-trail", "General"))
+    assert '"General"' in description

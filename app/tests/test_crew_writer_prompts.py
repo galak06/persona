@@ -87,5 +87,21 @@ def test_strategist_prompt_lists_reference_categories_when_given() -> None:
     assert "- Eating" in description
     assert "- Outdoors" in description
     assert "- Portrait" in description
-    # The no-match fallback is spelled out rather than left to the model.
-    assert '"general"' in description
+    # The no-clean-match rule is spelled out rather than left to the model.
+    assert "CLOSEST" in description
+    assert "copied verbatim from the list above" in description
+
+
+def test_strategist_prompt_never_offers_an_unlisted_catch_all() -> None:
+    """The live bug: the section closed with *if none of them fits, use
+    "general"* -- naming a collection that was not in the list it had just
+    supplied, and which therefore resolves to no reference photo at all."""
+    description = _description(reference_categories=("forest-trail", "studio-mascot"))
+    assert "general" not in description.lower()
+
+
+def test_strategist_prompt_offers_a_catch_all_the_brand_actually_has() -> None:
+    """A brand that keeps a stocked catch-all still gets it offered, spelled
+    exactly as supplied -- the model is told to copy these verbatim."""
+    description = _description(reference_categories=("forest-trail", "General"))
+    assert '"General"' in description

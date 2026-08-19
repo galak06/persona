@@ -167,12 +167,18 @@ def read_manifest(brand_dir: Path) -> Manifest:
     }
 
 
-def list_category_labels(brand_dir: Path) -> list[str]:
+def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[str]:
     """Human labels of every declared category, for prompt injection.
 
     Declared order first (that is the order an operator created them in),
     then any category that only exists on an image entry -- defensive, so a
     hand-edited manifest still advertises its tags.
+
+    `with_photos=True` keeps only categories that actually hold a photo -- what a
+    content PLANNER must be offered, since a declared-but-empty tag reads as a real
+    choice yet resolves to no image at all (a live reel lost two of five beats to a
+    `general` every photo had been re-tagged out of). The TAGGER wants them all: it
+    is building the vocabulary, and an empty tag is still one of its words.
     """
     manifest = read_manifest(brand_dir)
     labels: dict[str, str] = {}
@@ -184,7 +190,10 @@ def list_category_labels(brand_dir: Path) -> list[str]:
         slug = slugify(str(image.get("category", "")))
         if slug and slug not in labels:
             labels[slug] = slug.replace("-", " ")
-    return list(labels.values())
+    if not with_photos:
+        return list(labels.values())
+    stocked = _existing_images_by_category(brand_dir)
+    return [label for slug, label in labels.items() if slug in stocked]
 
 
 def resolve_reference(
@@ -198,11 +207,11 @@ def resolve_reference(
 
     There used to be a third tier -- "any other non-empty category,
     alphabetically" -- removed once the tagger started producing SPECIFIC
-    tags. It was never a fallback so much as a silent substitution: a request
-    for `products` that matched nothing returned whichever tag sorted first,
-    so a product beat came back anchored on a portrait. A wrong anchor ships;
-    a missing one does not. `general` survives as the deliberate catch-all, so
-    a blanket fallback is still one re-tag away.
+    tags: it was silent substitution, not fallback (a `products` request that
+    matched nothing came back anchored on a portrait). Nearest-tag string
+    matching is that same bargain in nicer wrapping and stays rejected: edit
+    distance tracks spelling, not subject. A wrong anchor ships; a missing one
+    does not, and `general` remains the deliberate, operator-owned catch-all.
 
     `None` therefore means "there is no photo this image may be anchored on",
     and every caller answers it by NOT generating: the reels beat and the

@@ -43,6 +43,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from lib.crew.reference_vocabulary import catch_all_clause
+
 MAX_HEADLINE_LINE_CHARS = 18
 MAX_SUBCOPY_CHARS = 40
 MIN_FB_CAPTION_WORDS = 150
@@ -67,7 +69,11 @@ Set `reference_category` to the ONE collection whose scenes best match the \
 `image_brief` you just wrote, copied verbatim from the list above. The closer the \
 collection matches the scene, the more the finished image actually looks like this dog \
 in that setting -- a couch reference dragged into a kitchen scene fights the brief \
-instead of grounding it. If none of them fits, use "general".
+instead of grounding it. Those collections are the only ones that exist: there is no \
+"none of the above", and a name that is not on that list means no image gets generated \
+at all -- the post falls back to a stock photo of some other dog. So when nothing is a \
+clean match, still pick the CLOSEST one on the list; a near-miss reference is a real \
+photo of this dog, which beats no reference every time.{catch_all_clause(categories)}
 """
 
 

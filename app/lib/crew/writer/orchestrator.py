@@ -125,8 +125,9 @@ def build_content_brief(
         link_candidates=link_candidates,
         year=date.today().year,
         # The strategist may only tag the post with a category the brand
-        # actually keeps photos under; an empty library drops the section.
-        reference_categories=list_category_labels(brand_dir),
+        # actually keeps photos under -- `with_photos` is what makes that
+        # true; an empty result drops the section entirely.
+        reference_categories=list_category_labels(brand_dir, with_photos=True),
     )
     agent = build_strategist_agent()
     task = build_strategist_task(agent, description)

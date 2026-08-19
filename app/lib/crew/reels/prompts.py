@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from lib.crew.reels.models import REEL_BEAT_COUNT
+from lib.crew.reference_vocabulary import catch_all_clause
 
 MAX_HEADLINE_LINE_CHARS = 14
 MAX_SUBCOPY_CHARS = 32
@@ -47,7 +48,12 @@ For each beat, set `reference_category` to the ONE collection whose scenes best 
 that beat's own `image_prompt`, copied verbatim from the list above. The closer the \
 collection matches the scene you described, the more the generated frame actually looks \
 like this dog in that setting -- a "lying on the couch" reference dragged into a trail \
-shot fights the prompt instead of grounding it. If none of them fits, use "general".
+shot fights the prompt instead of grounding it. Those collections are the only ones that \
+exist: there is no "none of the above", and a name that is not on that list leaves the \
+beat with NO generated frame at all -- it falls back to a stock photo of some other dog. \
+So when nothing is a clean match, still pick the CLOSEST one on the list; a near-miss \
+reference is a real photo of this dog, which beats no reference every \
+time.{catch_all_clause(categories)}
 """
 
 
