@@ -9,6 +9,8 @@
     "sitemap": "https://yourbrand.com/sitemap.xml",
     "brand_persona": "Your Persona Name",
     "mascot_name": "Your Mascot",
+    "_mascot_kind": "OPTIONAL free text: what kind of thing your mascot is, in your own words (e.g. \"dog\", \"cat\", \"cartoon fox\", \"delivery van\"). Leave empty and the image/vision prompts simply describe it as 'the brand's mascot' — they never guess a species.",
+    "mascot_kind": "",
     "niche": "describe your niche (e.g. dog food reviews, GPS trackers, running with dogs)",
     "target_audience": "describe your target audience (e.g. dog owners in USA/Canada)"
   },

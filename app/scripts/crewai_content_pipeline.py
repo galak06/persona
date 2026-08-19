@@ -46,6 +46,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
 from lib.crew.draft import DraftCreationError, create_wp_draft
+from lib.crew.mascot import read_mascot
 from lib.crew.reference_clauses import reference_clause
 from lib.crew.reference_library import resolve_reference
 from lib.crew.validate import ValidationResult, validate_draft
@@ -56,7 +57,6 @@ from lib.crew.writer import (
     select_idea,
     write_post_from_brief,
 )
-from lib.crew.writer.context import read_brand_config
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import get_logger
 
@@ -261,8 +261,8 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
         return 0
 
     print("\ncreating WordPress draft (real POST, status=draft)...")
-    site = read_brand_config(brand_dir).get("site", {})
-    mascot_name = str(site.get("mascot_name") or "") if isinstance(site, dict) else ""
+    mascot = read_mascot(brand_dir)
+    mascot_name = mascot.name
     image_brief = build_image_brief(written_post.title, brief.mascot_angle)
     # The strategist tagged this post with the kind of scene its hero should
     # show; the library answers with the photo that matches. `""` and an
@@ -277,10 +277,10 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # is all "uploads only" asks.
     reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
     reference_image_path = reference.path if reference is not None else None
-    # What the model is TOLD the photo is: a library image of a bowl or a
-    # kitchen must not be introduced as the brand's dog. Ignored downstream
-    # when there is no reference at all.
-    clause = reference_clause(reference, mascot_name)
+    # What the model is TOLD the photo is: a library image of a product or a
+    # location must not be introduced as the brand's mascot. Ignored
+    # downstream when there is no reference at all.
+    clause = reference_clause(reference, mascot.name, mascot.kind)
     if reference is not None:
         print(f"reference: {reference.path} [{reference.category}] mascot={reference.shows_mascot}")
     tag_names = list(

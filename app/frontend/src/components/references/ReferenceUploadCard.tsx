@@ -35,9 +35,10 @@ interface QueuedFile {
 interface ReferenceUploadCardProps {
   disabled?: boolean;
   /**
-   * The brand's mascot by name, so a finished row reads "shows Nalla" rather
-   * than "shows the mascot". Empty or absent (record still loading, or the
-   * brand never named one) falls back to the generic wording.
+   * The brand's mascot by name, so a finished row reads "shows <that name>"
+   * rather than "shows the mascot". Empty or absent (record still loading, or
+   * the brand never named one) falls back to the generic wording, which never
+   * guesses what kind of thing the mascot is.
    */
   mascotName?: string;
   /** Refetch the library after anything lands. */
@@ -180,7 +181,7 @@ export default function ReferenceUploadCard({
         </h3>
         <p className="text-xs text-slate-500 mt-1">
           Anything that grounds a generated image belongs here &mdash; the brand&rsquo;s
-          own dog, but equally ingredients, kitchens, products, locations, style shots.
+          mascot, but equally products, locations, people, settings, style shots.
           Every upload is analyzed and tagged automatically, so you never pick a
           category; if a tag or a mascot flag comes back wrong, correct it in the
           library below. Clear, well-lit shots of one subject work best. PNG, JPEG or

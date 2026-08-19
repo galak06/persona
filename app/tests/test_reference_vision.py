@@ -8,6 +8,12 @@ every access log -- a known past bug in this repo), `is_new_category` is
 decided from the CALLER's list rather than believed from the model, and every
 failure mode returns `None` instead of raising, because the caller is an
 upload route that must file the photo either way.
+
+A fourth property -- that the prompt never names a species the brand did not
+configure -- has its own file, `tests/test_brand_agnostic_mascot.py`, because
+it is the one thing here that is about the ENGINE rather than about this
+module. The dog-shaped values below are one concrete FIXTURE brand (a real
+brand has to be picked to test with), never an engine assumption.
 """
 # ruff: noqa: S101
 
@@ -259,6 +265,8 @@ def test_analyze_for_brand_supplies_the_brands_tags_and_mascot(tmp_path: Path) -
     prompt = json.loads(route.calls[0].request.content)["contents"][0]["parts"][1]["text"]
     assert "Eating" in prompt
     assert "Nalla" in prompt
+    # No `mascot_kind` in that config, so nothing describes what Nalla is.
+    assert "dog" not in prompt.lower()
 
 
 @respx.mock

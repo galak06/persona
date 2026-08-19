@@ -149,7 +149,9 @@ def test_empty_body_is_422(client: TestClient) -> None:
 def test_upload_stores_the_models_category_flag_and_description(
     client: TestClient, brand_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (brand_dir / "config.json").write_text(json.dumps({"site": {"mascot_name": "Nalla"}}))
+    (brand_dir / "config.json").write_text(
+        json.dumps({"site": {"mascot_name": "Nalla", "mascot_kind": "dog"}})
+    )
     client.post(f"{PREFIX}/categories", json={"label": "Eating"})
     seen: dict[str, Any] = {}
     stub_analysis(
@@ -161,8 +163,10 @@ def test_upload_stores_the_models_category_flag_and_description(
     assert body["category"] == "eating"
     assert body["shows_mascot"] is True
     assert body["description"] == "Nalla eating from a bowl."
-    # The brand's own tags and mascot are what the model was asked about.
-    assert seen == {"categories": ["Eating"], "mascot_name": "Nalla"}
+    # The brand's own tags and mascot are what the model was asked about --
+    # including what KIND of thing that mascot is, which the engine may never
+    # assume for it (`lib.crew.mascot`).
+    assert seen == {"categories": ["Eating"], "mascot_name": "Nalla", "mascot_kind": "dog"}
     assert client.get(PREFIX).json()["images"][0]["description"] == "Nalla eating from a bowl."
 
 

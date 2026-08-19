@@ -1,5 +1,5 @@
 // One filed photo, with the two things the operator ever needs to correct on
-// it: which tag it carries, and whether the brand's own dog is in it.
+// it: which tag it carries, and whether the brand's own mascot is in it.
 //
 // Both edits are PATCHes, and a category change re-homes the file — the id is
 // `"<category>/<filename>"`, so the entry comes back under a different id and
@@ -19,10 +19,11 @@ interface ReferenceImageTileProps {
   /** Every tag the library knows about, declared or only used by a photo. */
   options: CategoryOption[];
   /**
-   * The mascot's real name, so the flag reads "Shows Nalla" rather than
+   * The mascot's real name, so the flag reads "Shows <that name>" rather than
    * "Shows the mascot". Already trimmed by the grid; empty when the brand has
    * no mascot name (or its record has not arrived), which falls back to the
-   * generic wording — never "Shows " with a blank after it.
+   * generic wording — never "Shows " with a blank after it, and never a guess
+   * at what kind of thing the mascot is.
    */
   mascotName?: string;
   /** Mount-time cache-buster, shared across every tile in one render. */
@@ -100,7 +101,7 @@ export default function ReferenceImageTile({
             onChange={(e) => onPatch(image, { shows_mascot: e.target.checked })}
             className="h-3.5 w-3.5 rounded border-stone-300 text-amber-600 focus:ring-amber-300"
           />
-          {mascot ? `${mascot} is in this photo` : "The brand’s own dog is in this photo"}
+          {mascot ? `${mascot} is in this photo` : "The brand’s mascot is in this photo"}
         </label>
 
         <div className="flex items-center justify-between gap-2">

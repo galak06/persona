@@ -1,10 +1,10 @@
 """What is in this reference image? -- the upload-time vision pass.
 
 The library holds any photo that grounds generated imagery: the brand's
-mascot, but equally ingredients, a kitchen, a product, a location, a style
-plate. Asking the operator to tag each one was busywork, so every upload is
-described and tagged here instead, and the operator edits the result
-afterwards (`PATCH .../images/{id}`) rather than up front.
+mascot, but equally a product, a location, a person, a setting, a style plate.
+Asking the operator to tag each one was busywork, so every upload is described
+and tagged here instead, and the operator edits the result afterwards
+(`PATCH .../images/{id}`) rather than up front.
 
 Three answers come back per image:
 
@@ -19,7 +19,10 @@ Three answers come back per image:
   a property of the photo, not of the tag it happens to carry.
 
 `analyze_image` is the model call; `analyze_for_brand` is the seam routes
-use, which fills in the brand's own tag list and mascot name.
+use, which fills in the brand's own tag list and its own mascot. Nothing here
+assumes what that mascot IS -- the question is asked in the brand's own words
+(`site.mascot_name`, `site.mascot_kind`) or in general terms, never in terms
+of a species this engine picked.
 
 This is still an ADVISORY pass, not a content gate: nothing here decides
 whether the photo belongs in the library, because the person uploading it
@@ -46,6 +49,7 @@ from typing import Any
 
 import httpx
 
+from lib.crew.mascot import read_mascot
 from lib.crew.reference_library import list_category_labels
 from lib.observability import get_logger
 
@@ -92,6 +96,7 @@ def analyze_image(
     *,
     existing_categories: Sequence[str],
     mascot_name: str = "",
+    mascot_kind: str = "",
 ) -> ImageAnalysis | None:
     """Describe and tag one image, or `None` if the model could not be asked.
 
@@ -105,6 +110,10 @@ def analyze_image(
         mascot_name: The brand's mascot, when it has one. Only sharpens the
             `shows_mascot` question; an empty name still asks it, in terms of
             "the brand's own mascot".
+        mascot_kind: What KIND of thing that mascot is ("dog", "cat",
+            "delivery van", ...), from the brand's own `site.mascot_kind`.
+            Also only a sharpener -- and never guessed, because this engine
+            serves brands whose mascot is not an animal at all.
 
     Returns:
         An `ImageAnalysis`, or `None` for a missing key and every
@@ -127,7 +136,7 @@ def analyze_image(
                             "data": base64.b64encode(image_bytes).decode("ascii"),
                         }
                     },
-                    {"text": _prompt(labels, mascot_name.strip())},
+                    {"text": _prompt(labels, mascot_name.strip(), mascot_kind.strip())},
                 ]
             }
         ],
@@ -158,22 +167,24 @@ def analyze_image(
 def analyze_for_brand(
     brand_dir: Path, image_bytes: bytes, content_type: str
 ) -> ImageAnalysis | None:
-    """`analyze_image` for one brand: its own tags, its own mascot name.
+    """`analyze_image` for one brand: its own tags, its own mascot.
 
     The seam every route calls, so "which categories does this brand have"
-    and "what is its mascot called" are answered in one place rather than at
-    each call site. Blocking (two small file reads plus the HTTP round trip),
-    so callers push it off the event loop.
+    and "what is its mascot" are answered in one place rather than at each
+    call site. Blocking (two small file reads plus the HTTP round trip), so
+    callers push it off the event loop.
 
     Total by construction: this catches everything `analyze_image` does not,
     because an upload must never fail on account of the advisory pass.
     """
     try:
+        mascot = read_mascot(brand_dir)
         return analyze_image(
             image_bytes,
             content_type,
             existing_categories=list_category_labels(brand_dir),
-            mascot_name=brand_mascot_name(brand_dir),
+            mascot_name=mascot.name,
+            mascot_kind=mascot.kind,
         )
     except Exception as exc:  # advisory call: no failure of it is worth an error
         logger.warning("reference_vision_analysis_failed", error=str(exc))
@@ -183,37 +194,47 @@ def analyze_for_brand(
 def brand_mascot_name(brand_dir: Path) -> str:
     """`site.mascot_name` from the brand config, or `""`.
 
-    Defensive to the point of indifference (the same read as
-    `scripts.crewai_social_posts_pipeline._site_identity`): a brand with no
-    config, an unreadable one, or one that never named a mascot simply gets
-    asked the unnamed version of the mascot question.
+    A thin alias for `lib.crew.mascot.read_mascot(...).name`, kept because it
+    is the name this module has always exported. Defensive to the point of
+    indifference: a brand with no config, an unreadable one, or one that never
+    named a mascot simply gets asked the unnamed version of the mascot
+    question.
     """
-    try:
-        config = json.loads((brand_dir / "config.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        logger.warning("reference_vision_brand_config_unreadable", error=str(exc))
-        return ""
-    site = config.get("site") if isinstance(config, dict) else None
-    return str(site.get("mascot_name") or "").strip() if isinstance(site, dict) else ""
+    return read_mascot(brand_dir).name
 
 
-def _prompt(labels: list[str], mascot_name: str) -> str:
+def _mascot_terms(mascot_name: str, mascot_kind: str) -> tuple[str, str]:
+    """(how to name the mascot, what a stand-in for it would be called).
+
+    Species-free by construction: a brand that configured `site.mascot_kind`
+    gets its own word used, and a brand that did not is asked about "the
+    brand's own mascot" in the abstract. Nothing here may guess.
+    """
+    if mascot_name and mascot_kind:
+        subject = f'the brand\'s own mascot (the specific {mascot_kind} named "{mascot_name}")'
+    elif mascot_name:
+        subject = f'the brand\'s own mascot (the specific one named "{mascot_name}")'
+    elif mascot_kind:
+        subject = f"the brand's own mascot (its own specific {mascot_kind})"
+    else:
+        subject = "the brand's own mascot (the specific one this brand uses)"
+    return subject, (mascot_kind or "look-alike")
+
+
+def _prompt(labels: list[str], mascot_name: str, mascot_kind: str = "") -> str:
     """Instruction half of the request -- the image is the other half."""
-    mascot = (
-        f'the brand\'s own mascot -- a specific dog named "{mascot_name}"'
-        if mascot_name
-        else "the brand's own mascot (its own pet)"
-    )
+    mascot, stand_in = _mascot_terms(mascot_name, mascot_kind)
     options = ", ".join(f'"{label}"' for label in labels) if labels else "(no tags yet)"
     return (
         "You are tagging a photo for a brand's reference-image library. These photos "
         "ground generated imagery, so they show anything the brand shoots: its mascot, "
-        "but also ingredients, kitchens, products, locations, and style shots. "
+        "but also products, locations, people, settings, and style shots. "
         "Answer three questions about the attached image. "
         "(1) description: one short sentence saying what is actually in the image. "
         f"(2) shows_mascot: true ONLY if {mascot} actually appears in this image. It is "
-        "false for any other animal, false for a stock or generic dog that is not that "
-        "specific animal, and false for an image with no animal in it at all. "
+        f"false for any other subject, false for a generic or stock {stand_in} that is "
+        "not that specific one, and false for an image that shows nothing of the kind "
+        "at all. "
         f"(3) category: the ONE tag that best fits the image, from this list: {options}. "
         "Prefer reusing a tag from the list over inventing a near-duplicate of one. Only "
         "if none of them fits, propose a NEW tag of your own: at most two words, "

@@ -1,16 +1,24 @@
 """Which instruction rides along with the attached reference photo.
 
-The library holds ANY reference image -- a dish, a kitchen, a product, a
-place -- so the old unconditional "use the EXACT SAME person and dog shown in
-that photo" was wrong for most of them: it tells the model to reproduce a
+The library holds ANY reference image -- a product, a location, a person, a
+setting -- so the old unconditional "use the EXACT SAME person and dog shown
+in that photo" was wrong for most of them: it tells the model to reproduce a
 subject that is not in the picture. `lib.crew.reference_clauses` splits that
 into a mascot-identity clause and a neutral scene-grounding clause, chosen
 from the manifest's `shows_mascot` flag.
 
-Two halves, both pinned here: the flag surviving the trip from `library.json`
-to a resolved `ReferenceImage`, and the clause chosen from it. Real files
-under a `tmp_path` brand dir, same posture as `tests/test_reference_library.py`
-(which is at its line ceiling, hence the separate file).
+That old wording was wrong a second way, fixed here too: it hardcoded a
+SPECIES into a multi-brand engine's prompts. A brand describes its own mascot
+via `site.mascot_name` and the optional `site.mascot_kind`, and the clauses
+say nothing about what it is beyond what the brand said -- hence the
+delivery-van cases below, which are not a joke but the actual contract.
+
+Three halves now: the flag surviving the trip from `library.json` to a
+resolved `ReferenceImage`, the clause chosen from it, and the clause naming
+nothing the brand did not. Real files under a `tmp_path` brand dir, same
+posture as `tests/test_reference_library.py` (which is at its line ceiling,
+hence the separate file). "Nalla"/"dog" here is one concrete FIXTURE brand,
+never an engine assumption.
 """
 # ruff: noqa: S101
 
@@ -124,17 +132,17 @@ def test_the_legacy_asset_never_becomes_a_resolved_reference(tmp_path: Path) -> 
 
 
 def test_a_mascot_reference_gets_the_identity_clause() -> None:
-    clause = reference_clause(_image(shows_mascot=True), "Nalla")
+    clause = reference_clause(_image(shows_mascot=True), "Nalla", "dog")
 
-    assert clause == identity_clause("Nalla")
-    assert "EXACT SAME person and dog" in clause
-    assert "Nalla" in clause
+    assert clause == identity_clause("Nalla", "dog")
+    assert "EXACT SAME subject" in clause
+    assert "the mascot is Nalla, the brand's dog" in clause
 
 
 def test_a_non_mascot_reference_gets_the_grounding_clause() -> None:
-    """THE fix. Telling the model to reuse "the dog in that photo" when the
-    photo is a bowl of food makes it hallucinate one."""
-    clause = reference_clause(_image(shows_mascot=False), "Nalla")
+    """THE fix. Telling the model to reuse "the mascot in that photo" when the
+    photo is a shelf of products makes it hallucinate one."""
+    clause = reference_clause(_image(shows_mascot=False), "Nalla", "dog")
 
     assert clause == grounding_clause()
     assert "EXACT SAME" not in clause
@@ -146,12 +154,12 @@ def test_no_reference_at_all_stays_total_and_grounding() -> None:
     building a clause when nothing matches -- but the function must stay TOTAL:
     a missing reference may never become a raise, and if one ever does reach a
     prompt, grounding is the only thing it can honestly support."""
-    assert reference_clause(None, "Nalla") == grounding_clause()
+    assert reference_clause(None, "Nalla", "dog") == grounding_clause()
 
 
 def test_the_grounding_clause_denies_the_identity_reading() -> None:
     """Not merely "no identity instruction" -- an explicit denial, because
-    without it the model reads a stray dog in a stock kitchen shot as the
+    without it the model reads a stranger's pet in a stock photo as the
     brand's own and carries it into every later frame."""
     clause = grounding_clause()
 
@@ -160,9 +168,44 @@ def test_the_grounding_clause_denies_the_identity_reading() -> None:
     assert clause.endswith(" "), "prefixed straight onto a prompt, so it needs the separator"
 
 
+# ── no brand may be assumed to have a dog ────────────────────────────────────
+
+
+def test_a_mascot_that_is_not_an_animal_reads_correctly() -> None:
+    """The whole point of `mascot_kind`. This engine is multi-brand, and the
+    clause used to say "person and dog" to every one of them -- which told a
+    brand whose mascot is a delivery van that it owned a dog."""
+    clause = identity_clause("Rusty", "delivery van")
+
+    assert "dog" not in clause.lower()
+    assert "the mascot is Rusty, the brand's delivery van" in clause
+    assert "EXACT SAME subject" in clause
+    assert clause.endswith(" ")
+
+
+def test_no_clause_ever_names_a_species_the_brand_did_not() -> None:
+    """Belt and braces across every shape a brand's config can take: the only
+    route a species has into a prompt is the brand writing it itself."""
+    for name, kind in [("Nalla", ""), ("", ""), ("", "cartoon fox"), ("Rusty", "delivery van")]:
+        clause = identity_clause(name, kind)
+
+        assert "dog" not in clause.lower()
+        assert "animal" not in clause.lower()
+        assert "pet" not in clause.lower()
+    assert "dog" not in grounding_clause().lower()
+
+
 def test_the_identity_clause_survives_a_brand_with_no_mascot_name() -> None:
     """A cosmetic missing config field must not break the constraint."""
     clause = identity_clause("")
 
-    assert "EXACT SAME person and dog" in clause
-    assert "the dog is" not in clause
+    assert "EXACT SAME subject" in clause
+    assert "the mascot is" not in clause
+    assert "distinguishing features)" in clause, "no dangling aside where the name would be"
+
+
+def test_a_kind_without_a_name_still_describes_the_mascot() -> None:
+    """A brand may configure what its mascot IS without naming it."""
+    clause = identity_clause("", "cat")
+
+    assert "the mascot is the brand's cat" in clause

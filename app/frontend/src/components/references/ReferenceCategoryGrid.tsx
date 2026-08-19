@@ -2,7 +2,7 @@
 //
 // Two things are correctable here, because the tags come from a model rather
 // than from the operator: the category a photo carries, and whether the
-// brand's own dog is in it. Both are PATCHes, and a category change moves the
+// brand's own mascot is in it. Both are PATCHes, and a category change moves the
 // photo to another block under a NEW id — so every edit refetches instead of
 // patching local state.
 //
@@ -156,9 +156,9 @@ export default function ReferenceCategoryGrid({
         status="info"
         title={`Check the ${mascot || "mascot"} flag on every photo`}
       >
-        A photo marked as showing {mascot || "the brand’s own dog"} is sent with an
-        instruction to reproduce <em>that exact dog</em>; every other photo is used only
-        for setting, styling and composition. Getting this wrong is the one mistake that
+        A photo marked as showing {mascot || "the brand’s mascot"} is sent with an
+        instruction to reproduce <em>that exact subject</em>; every other photo is used
+        only for setting, styling and composition. Getting this wrong is the one mistake that
         shows up in generated images, so correct a wrong tag or flag here.
       </Alert>
 

@@ -18,11 +18,13 @@ interface ReferenceLibrarySectionProps {
   brandId: string;
   /**
    * The brand's mascot as it is actually called, from the brand record. Every
-   * mention of the mascot flag below names it, because "is Nalla in this
+   * mention of the mascot flag below names it, because "is <that name> in this
    * photo?" is a question an operator can answer at a glance and "does this
    * show the mascot?" is not. Optional and possibly empty — the brand record
    * may still be loading, or the field may simply be unset — in which case
-   * each consumer falls back to the generic wording.
+   * each consumer falls back to the generic wording. Never assume WHAT the
+   * mascot is: this engine serves brands whose mascot is a pet, a person, a
+   * character or an object.
    */
   mascotName?: string;
 }
@@ -55,8 +57,8 @@ export default function ReferenceLibrarySection({
           Reference photos
         </h2>
         <p className="text-sm text-slate-500">
-          Real photos to ground generated imagery &mdash; the brand&rsquo;s own dog,
-          but also ingredients, kitchens, products, locations, style shots. Every
+          Real photos to ground generated imagery &mdash; the brand&rsquo;s mascot,
+          but also products, locations, people, settings, style shots. Every
           upload is described, tagged and mascot-flagged automatically; image
           generation then picks the reference whose tag matches what it is drawing.
           These uploads are the <strong>only</strong> photos allowed to anchor a

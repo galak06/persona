@@ -1,8 +1,8 @@
 /**
  * Reference-image library — the operator's side of
  * `api/reference_images_api.py`. The photos filed here are what every
- * generated image is grounded on — the brand's own dog, but also ingredients,
- * kitchens, products, locations, style plates — so this module is
+ * generated image is grounded on — the brand's mascot, but also products,
+ * locations, people, settings, style plates — so this module is
  * deliberately thin: validation lives on the server, and the UI only mirrors
  * the cheap checks.
  *

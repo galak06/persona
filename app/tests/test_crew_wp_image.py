@@ -252,8 +252,11 @@ def test_generate_wp_image_with_reference_sends_inline_image_and_matching_instru
     assert parts[0]["inline_data"]["data"] == base64.b64encode(b"real-photo-bytes").decode()
     prompt = parts[1]["text"]
     assert "reference photo" in prompt.lower()
-    assert "exact same person and dog" in prompt.lower()
-    assert "Nalla" in prompt
+    # Species-free since "no brand may be assumed to have a dog": the identity
+    # constraint is about the SUBJECT of the attached photo, and the only
+    # description of it is whatever the brand configured.
+    assert "exact same subject" in prompt.lower()
+    assert "the mascot is Nalla" in prompt
 
 
 @respx.mock

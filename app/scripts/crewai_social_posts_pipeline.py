@@ -65,6 +65,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 from lib import social_post_db
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
+from lib.crew.mascot import read_mascot
 from lib.crew.reference_library import list_category_labels
 from lib.crew.socialpost import (
     build_social_post_agent,
@@ -120,17 +121,20 @@ def _check_required_env(*, release_only: bool) -> list[str]:
     return [name for name in required if not os.environ.get(name, "").strip()]
 
 
-def _site_identity(brand_dir: Path) -> tuple[str, str]:
-    """(site_domain, mascot_name) from the brand config, with safe fallbacks."""
+def _site_domain(brand_dir: Path) -> str:
+    """`site.url`'s domain from the brand config, with a safe fallback.
+
+    The mascot half of this read moved to `lib.crew.mascot.read_mascot`, which
+    every generator now shares -- it answers both "what is it called" and
+    "what kind of thing is it", and nothing may assume the latter.
+    """
     try:
         config = json.loads((brand_dir / "config.json").read_text())
-        site = config.get("site", {})
-        url = str(site.get("url", "")).rstrip("/")
-        domain = url.split("//", 1)[-1] if url else brand_dir.name
-        return domain, str(site.get("mascot_name", ""))
+        url = str(config.get("site", {}).get("url", "")).rstrip("/")
+        return url.split("//", 1)[-1] if url else brand_dir.name
     except Exception as exc:
         logger.warning("social_posts_config_read_failed", error=str(exc))
-        return brand_dir.name, ""
+        return brand_dir.name
 
 
 def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str:
@@ -149,7 +153,8 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
     featured_media_id = int(post.get("featured_media") or 0)
 
-    site_domain, mascot_name = _site_identity(brand_dir)
+    site_domain = _site_domain(brand_dir)
+    mascot = read_mascot(brand_dir)
     target_keyword = str(row.get("target_keyword") or "")
 
     agent = build_social_post_agent()
@@ -187,7 +192,11 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     # library); the WP hero is the fallback image, and the reference only for
     # brands with no library at all.
     image_bytes, source = generate_hook_image(
-        plan, mascot_name=mascot_name, hero_bytes=hero_bytes, brand_dir=brand_dir
+        plan,
+        mascot_name=mascot.name,
+        mascot_kind=mascot.kind,
+        hero_bytes=hero_bytes,
+        brand_dir=brand_dir,
     )
     # Same convention as worker_post_stories.py: IG_USERNAME env, brand-folder
     # name as the fallback (for this brand that IS the IG handle).

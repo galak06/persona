@@ -14,8 +14,8 @@ it actually is, mascot portrait or not (`lib.crew.reference_clauses`).
 
 That reference used to be the WP post's OWN featured image, on the theory
 that it grounds the scene in this post's subject matter. It did -- but a hero
-is routinely a Pexels stock dog, so the "brand's dog" in every generated hook
-image was a stranger's. Same bug the reels pipeline had, third home.
+is routinely a Pexels stock photo, so the "brand's mascot" in every generated
+hook image was a stranger's. Same bug the reels pipeline had, third home.
 
 **Only an uploaded photo may anchor a generated image.** The hero is now
 purely the FALLBACK OUTPUT (`source='fallback'`): it is what the post ships
@@ -114,7 +114,12 @@ def _reference(plan: SocialPostPlan, brand_dir: Path) -> tuple[bytes, str, Refer
 
 
 def generate_hook_image(
-    plan: SocialPostPlan, *, mascot_name: str, hero_bytes: bytes, brand_dir: Path
+    plan: SocialPostPlan,
+    *,
+    mascot_name: str,
+    hero_bytes: bytes,
+    brand_dir: Path,
+    mascot_kind: str = "",
 ) -> tuple[bytes, str]:
     """The single shared image: Gemini-generated from the plan's brief,
     conditioned on a photo from the brand's library (see `_reference`), with
@@ -140,9 +145,11 @@ def generate_hook_image(
             mascot_name=mascot_name,
             reference_image_bytes=reference_bytes,
             reference_image_mime=reference_mime,
-            # A library photo of a bowl or a kitchen must NOT be introduced
-            # as "the brand's dog".
-            reference_clause=reference_clause(reference, mascot_name),
+            # A library photo of a product or a location must NOT be
+            # introduced as "the brand's mascot". `mascot_kind` is the
+            # brand's own word for what its mascot is -- this engine may
+            # never assume one (see `lib.crew.mascot`).
+            reference_clause=reference_clause(reference, mascot_name, mascot_kind),
         )
         if generated.bytes_:
             return generated.bytes_, "gemini"

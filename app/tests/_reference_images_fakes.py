@@ -83,11 +83,17 @@ def stub_analysis(
     """Answer every analysis with `analysis`, recording what it was asked."""
 
     def _fake(
-        _image: bytes, _content_type: str, *, existing_categories: Any, mascot_name: str = ""
+        _image: bytes,
+        _content_type: str,
+        *,
+        existing_categories: Any,
+        mascot_name: str = "",
+        mascot_kind: str = "",
     ) -> ImageAnalysis | None:
         if seen is not None:
             seen["categories"] = list(existing_categories)
             seen["mascot_name"] = mascot_name
+            seen["mascot_kind"] = mascot_kind
         return analysis
 
     monkeypatch.setattr(vision_module, "analyze_image", _fake)

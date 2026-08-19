@@ -25,7 +25,7 @@ mascot, neutral scene-grounding for everything else.
 generated image, so a beat the library can't answer for is never sent to
 OpenArt -- it keeps the hero, exactly as a failed beat does. The hero used to
 be uploaded as that beat's reference, telling OpenArt to match whatever the
-post's featured image happened to be (routinely a Pexels stock dog). An
+post's featured image happened to be (routinely a Pexels stock photo). An
 entirely unmatched reel costs nothing and reports `source="fallback"`.
 """
 
@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import json
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -42,6 +41,7 @@ import anyio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from lib.crew.mascot import read_mascot
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import ReferenceCache, ReferenceUpload, generate_image
 from lib.crew.reference_clauses import reference_clause
@@ -82,24 +82,6 @@ class ResolvedImages(NamedTuple):
         if self.ai_count == self.total:
             return "openart"
         return "mixed"
-
-
-def _mascot_name(brand_dir: Path) -> str:
-    """`site.mascot_name` from the brand config -- the same field
-    `crewai_social_posts_pipeline._site_identity` and `crewai_content_pipeline`
-    read, so every generator names the dog identically.
-
-    Tolerant by design: no config, unreadable file, malformed JSON or a
-    non-object document all yield "", and the identity clause then simply
-    omits the name rather than the pipeline failing over a cosmetic field.
-    """
-    try:
-        config = json.loads((brand_dir / "config.json").read_text(encoding="utf-8"))
-        site = config.get("site", {}) if isinstance(config, dict) else {}
-        return str(site.get("mascot_name") or "") if isinstance(site, dict) else ""
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("reels_mascot_name_unreadable", brand_dir=str(brand_dir), error=str(exc))
-        return ""
 
 
 def _run_seed(idea_id: str) -> int:
@@ -244,7 +226,7 @@ def resolve_images(
     # A library photo is attached on EVERY call, but only some show the
     # mascot: `reference_clause` sends the identity instruction for those and
     # the neutral grounding one for the rest.
-    mascot_name = _mascot_name(brand_dir)
+    mascot = read_mascot(brand_dir)
     seed = _run_seed(idea_id)
     # ONE cache for the run: the five beats routinely agree on a photo, and
     # without this each beat would re-upload the same bytes.
@@ -266,7 +248,8 @@ def resolve_images(
         upload, resolved_reference = library
         try:
             generated = _generate_one_beat(
-                f"{reference_clause(resolved_reference, mascot_name)}{beat.image_prompt}",
+                f"{reference_clause(resolved_reference, mascot.name, mascot.kind)}"
+                f"{beat.image_prompt}",
                 upload,
                 index=index,
                 seed=seed,
