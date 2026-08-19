@@ -24,6 +24,8 @@ export type LibraryImage = components["schemas"]["LibraryImage"];
 export type CategorySummary = components["schemas"]["CategorySummary"];
 /** PATCH body: every field optional, an omitted one is left unchanged. */
 export type ImageUpdate = components["schemas"]["ImageUpdate"];
+/** One re-tag run: counts plus a row per photo. */
+export type RetagSummary = components["schemas"]["RetagSummary"];
 
 /** Mirrors `lib/crew/reference_validate.MAX_UPLOAD_BYTES` (12 MiB). */
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -102,8 +104,28 @@ export async function uploadReferenceImage(
 }
 
 /**
- * PATCH — correct what the vision pass decided: re-tag a photo, flip its
- * mascot flag, or both.
+ * POST — re-run the tagger over every photo already in the library.
+ *
+ * The reason it exists: the tagger's prompt changed under a library that was
+ * already full, and re-uploading cannot fix that (the store is
+ * content-addressed, so the same bytes land on the same id under the same
+ * tag). This asks the model again about photos already on disk.
+ *
+ * ONE MODEL CALL PER PHOTO, so it costs real quota — confirm the count with
+ * the operator before calling it. Slow in proportion to the library, and
+ * partially applied by design: the response reports a status per photo rather
+ * than one verdict, because a single failure must not discard the rest of a
+ * paid-for run. Re-categorising MOVES files, so every id the UI is holding is
+ * stale afterwards: refetch the library rather than reusing them.
+ */
+export async function retagReferenceLibrary(): Promise<RetagSummary> {
+  const { data } = await apiClient.post<RetagSummary>(endpoints.referenceRetag);
+  return data;
+}
+
+/**
+ * PATCH — correct what the vision pass decided: re-tag a photo, flip either
+ * of its subject flags, or any combination.
  *
  * A category change MOVES the file, and an id is `"<category>/<filename>"`,
  * so the returned entry carries a DIFFERENT id than the one passed in. Never

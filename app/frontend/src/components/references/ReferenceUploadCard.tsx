@@ -148,11 +148,11 @@ export default function ReferenceUploadCard({
         </h3>
         <p className="text-xs text-slate-500 mt-1">
           Anything that grounds a generated image belongs here &mdash; the brand&rsquo;s
-          mascot, but equally products, locations, people, settings, style shots.
-          Every upload is analyzed and tagged automatically, so you never pick a
-          category; if a tag or a mascot flag comes back wrong, correct it in the
-          library below. Clear, well-lit shots of one subject work best. PNG, JPEG or
-          WEBP, at least 256px per side, up to 12&nbsp;MB.
+          mascot and the person behind it, but equally products, locations, settings,
+          style shots. Every upload is analyzed and given a specific tag automatically,
+          so you never pick a category; if a tag or a subject flag comes back wrong,
+          correct it in the library below. Clear, well-lit shots of one subject work
+          best. PNG, JPEG or WEBP, at least 256px per side, up to 12&nbsp;MB.
         </p>
       </div>
 

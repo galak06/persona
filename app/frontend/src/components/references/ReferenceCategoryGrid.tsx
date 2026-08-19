@@ -1,13 +1,16 @@
 // The library as it stands: one block per category, editable tiles inside.
 //
-// Two things are correctable here, because the tags come from a model rather
-// than from the operator: the category a photo carries, and whether the
-// brand's own mascot is in it. Both are PATCHes, and a category change moves the
-// photo to another block under a NEW id — so every edit refetches instead of
-// patching local state.
+// Three things are correctable here, because the tags come from a model rather
+// than from the operator: the category a photo carries, and whether each of the
+// brand's own subjects — its mascot, and its persona, the person behind it — is
+// in it. All are PATCHes, and a category change moves the photo to another
+// block under a NEW id — so every edit refetches instead of patching local
+// state.
 //
-// Deleting is the only destructive action here and it is irreversible, so it
-// goes through ConfirmDialog rather than firing on click.
+// Two actions here need confirming before they fire, for different reasons.
+// Deleting is irreversible. "Re-tag all photos" is not destructive, but it
+// spends one AI call per photo in the library, so the dialog states the count
+// before the operator commits to it.
 
 import { useState } from "react";
 
@@ -15,6 +18,7 @@ import { getErrorMessage, isHttpStatus } from "../../api/client";
 import {
   deleteReferenceImage,
   importLegacyReference,
+  retagReferenceLibrary,
   updateReferenceImage,
 } from "../../api/referenceImages";
 import type { ImageUpdate, LibraryImage, LibraryResponse } from "../../api/referenceImages";
@@ -74,6 +78,8 @@ export default function ReferenceCategoryGrid({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [retagging, setRetagging] = useState(false);
+  const [confirmRetag, setConfirmRetag] = useState(false);
 
   const blocks = toBlocks(library);
   const options: CategoryOption[] = blocks.map(({ slug, label }) => ({ slug, label }));
@@ -128,6 +134,31 @@ export default function ReferenceCategoryGrid({
     }
   };
 
+  // Not destructive, but it is the one action here that costs money: one
+  // vision call per photo. The confirmation exists to state that count.
+  const handleRetag = async () => {
+    setConfirmRetag(false);
+    setRetagging(true);
+    setError("");
+    setNotice("");
+    try {
+      const summary = await retagReferenceLibrary();
+      const problems =
+        summary.skipped + summary.failed > 0
+          ? ` ${summary.skipped} skipped, ${summary.failed} failed.`
+          : "";
+      setNotice(
+        `Re-tagged ${summary.retagged} of ${summary.total} photos` +
+          ` (${summary.unchanged} already correct).${problems}`,
+      );
+      onChanged();
+    } catch (err) {
+      setError(getErrorMessage(err, "Could not re-tag the library."));
+    } finally {
+      setRetagging(false);
+    }
+  };
+
   const importButton = (
     <button
       type="button"
@@ -145,14 +176,28 @@ export default function ReferenceCategoryGrid({
         <h3 className="font-display text-base font-semibold text-slate-800">
           Reference library
         </h3>
-        {importButton}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={disabled || retagging || library.images.length === 0}
+            onClick={() => setConfirmRetag(true)}
+            title="Ask the tagger again about every photo already in the library"
+            className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-stone-50 disabled:opacity-50"
+          >
+            {retagging ? "Re-tagging…" : "Re-tag all photos"}
+          </button>
+          {importButton}
+        </div>
       </div>
 
-      <Alert status="info" title="Check the mascot flag on every photo">
-        A photo marked as showing the mascot is sent with an instruction to reproduce{" "}
-        <em>that exact subject</em>; every other photo is used only for setting, styling
-        and composition. Getting this wrong is the one mistake that shows up in generated
-        images, so correct a wrong tag or flag here.
+      <Alert status="info" title="Check the tag and both flags on every photo">
+        A photo marked as showing the persona or the mascot is sent with an instruction
+        to reproduce <em>those exact subjects</em>; every other photo is used only for
+        setting, styling and composition. The tag matters just as much: generation asks
+        this library for the tag that matches the scene it is drawing, and falls back
+        only to <code className="font-mono text-xs">general</code> &mdash; so a photo
+        under a tag nothing asks for is never used, and a vague tag gets used for scenes
+        it does not show. Both are the mistakes that show up in generated images.
       </Alert>
 
       {error && <Alert status="error">{error}</Alert>}
@@ -198,6 +243,21 @@ export default function ReferenceCategoryGrid({
           </section>
         ))
       )}
+
+      <ConfirmDialog
+        open={confirmRetag}
+        title="Re-tag every photo in this library?"
+        actions={[
+          { label: "Cancel", onClick: () => setConfirmRetag(false), variant: "secondary" },
+          { label: "Re-tag", onClick: () => void handleRetag(), variant: "primary" },
+        ]}
+        onClose={() => setConfirmRetag(false)}
+      >
+        This makes <strong>{library.images.length} AI vision calls</strong> &mdash; one
+        per photo &mdash; and overwrites each photo&rsquo;s tag, description and subject
+        flags with what the tagger sees now. Photos whose tag changes move between the
+        blocks below. Nothing is deleted.
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={pending !== null}

@@ -74,10 +74,11 @@ export default function ReferenceLibrarySection({
           Reference photos
         </h2>
         <p className="text-sm text-slate-500">
-          Real photos to ground generated imagery &mdash; the brand&rsquo;s mascot,
-          but also products, locations, people, settings, style shots. Every
-          upload is described, tagged and mascot-flagged automatically; image
-          generation then picks the reference whose tag matches what it is drawing.
+          Real photos to ground generated imagery &mdash; the brand&rsquo;s mascot and
+          the person behind it, but also products, locations, settings, style shots.
+          Every upload is described, given a specific tag, and flagged for whichever
+          of the two subjects is in it; image generation then picks the reference
+          whose tag matches what it is drawing.
           These uploads are the <strong>only</strong> photos allowed to anchor a
           generated image: with nothing here that matches, the post keeps its own
           hero image and nothing is generated. A fuller library means more posts get

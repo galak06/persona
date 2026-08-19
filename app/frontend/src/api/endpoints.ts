@@ -178,6 +178,9 @@ export const endpoints = {
 
   /** POST — copy the brand's legacy mascot asset in. 404 when there is none. */
   referenceImportLegacy: "/reference-images/import-legacy",
+
+  /** POST — re-run the tagger over every filed photo. One model call each. */
+  referenceRetag: "/reference-images/retag",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

@@ -7,6 +7,7 @@
 // only discovers when the library refetches.
 
 import type { LibraryImage } from "../../api/referenceImages";
+import { subjectsShown } from "./subjects";
 
 export type RowStatus = "pending" | "uploading" | "done" | "failed";
 
@@ -28,8 +29,16 @@ const STATUS_ROW: Record<RowStatus, { cls: string; text: string }> = {
   failed: { cls: "text-rose-700", text: "" },
 };
 
-/** The tagging result, spelled out — this is the operator's proof it ran. */
+/**
+ * The tagging result, spelled out — this is the operator's proof it ran.
+ *
+ * Both subject flags are reported, not just the mascot: a photo of the person
+ * behind the brand is exactly as load-bearing, and "neither" is a real and
+ * common answer (a trail, a porch, a shelf of products) that has to read as a
+ * decision rather than as a blank.
+ */
 function AnalysisSummary({ image }: { image: LibraryImage }): React.JSX.Element {
+  const anySubject = image.shows_mascot || image.shows_persona;
   return (
     <>
       <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
@@ -38,12 +47,12 @@ function AnalysisSummary({ image }: { image: LibraryImage }): React.JSX.Element 
         </span>
         <span
           className={
-            image.shows_mascot
+            anySubject
               ? "rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-800"
               : "rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-500"
           }
         >
-          {image.shows_mascot ? "shows the mascot" : "no mascot"}
+          {anySubject ? `shows ${subjectsShown(image)}` : "no persona or mascot"}
         </span>
       </p>
       {image.description && (
