@@ -818,6 +818,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/oauth/openart/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * OpenArt connection state
+         * @description Cheap UI pre-flight -- brand config plus the stored token record, no
+         *     network. `stored_auth_state` already accounts for expiry skew and counts
+         *     a stale-but-refreshable token as usable, so "missing" means a fresh
+         *     Authorize is genuinely needed. Always 200: the state is data, not an
+         *     error.
+         */
+        get: operations["openart_status_api_v1_oauth_openart_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/oauth/tokens": {
         parameters: {
             query?: never;
@@ -2810,6 +2834,17 @@ export interface components {
             truncated: boolean;
         };
         /**
+         * OpenArtStatus
+         * @description Connection state the Reels page renders before offering Compose.
+         */
+        OpenArtStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ok" | "missing" | "not_configured";
+        };
+        /**
          * PendingResponse
          * @description Envelope for ``GET /api/v1/pending``.
          */
@@ -4399,6 +4434,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    openart_status_api_v1_oauth_openart_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenArtStatus"];
                 };
             };
         };

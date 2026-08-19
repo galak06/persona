@@ -30,7 +30,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -174,7 +174,7 @@ def save_client_info(info: OAuthClientInformationFull, brand_id: str | None = No
 # ── Auth state / protocol adapter ─────────────────────────────────────────────
 
 
-def stored_auth_state(brand_id: str | None = None) -> str:
+def stored_auth_state(brand_id: str | None = None) -> Literal["ok", "missing"]:
     """'ok' when a stored token is fresh or refreshable, else 'missing'.
     Cheap pre-flight for the compose endpoint; cannot detect a *revoked*
     refresh token -- that surfaces mid-run as OpenArtAuthRequiredError."""

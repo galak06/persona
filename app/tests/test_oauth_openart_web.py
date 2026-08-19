@@ -287,3 +287,6 @@ def test_callback_reports_failed_exchange(
     )
     assert "openart=error" in response.headers["location"]
     assert "rejected" in response.headers["location"]
+
+
+# GET /openart/status tests live in test_oauth_openart_status.py (300-line rule).

@@ -14,6 +14,7 @@ import { useApiQuery } from "../hooks/useApiQuery";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
+import OpenArtConnect from "../components/OpenArtConnect";
 
 // Beat images are resolved per beat, so "mixed" (some AI, some hero) is a
 // normal middle state -- labelling such a reel "Fallback" would misreport it.
@@ -106,16 +107,21 @@ function ReelCard({ idea, onDecision, busy }: CardProps): React.JSX.Element {
   );
 }
 
-/** Note to show when landing back from the OpenArt OAuth callback
+/** One-shot confirmation of the OAuth round trip we just came back from
  * (`?openart=connected|error`). Read during state init rather than in an
- * effect so the first render already carries it. */
+ * effect so the first render already carries it.
+ *
+ * Deliberately phrased as a past-tense event, not a state: it is a transient
+ * banner that survives in `composeNote` long after the fact, and reading it
+ * as live status is exactly what made the always-visible connect link so
+ * confusing. Live state is `OpenArtConnect`'s job. */
 function readOpenArtNote(): string | null {
   const params = new URLSearchParams(window.location.search);
   const openart = params.get("openart");
   if (!openart) return null;
   return openart === "connected"
-    ? "OpenArt connected — new reels will use AI-generated images."
-    : `OpenArt not connected: ${params.get("reason") ?? "unknown error"}`;
+    ? "OpenArt authorization saved."
+    : `OpenArt authorization failed: ${params.get("reason") ?? "unknown error"}`;
 }
 
 export default function Reels(): React.JSX.Element {
@@ -233,16 +239,7 @@ export default function Reels(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
-          {/* Opt-in upgrade, deliberately understated: reels compose fine
-              without OpenArt, so this is never a warning or a next step. */}
-          <button
-            type="button"
-            onClick={handleAuthorizeOpenArt}
-            title="Optional: connect OpenArt to generate AI images for each beat instead of reusing the post's hero image"
-            className="text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600"
-          >
-            Connect OpenArt
-          </button>
+          <OpenArtConnect onAuthorize={handleAuthorizeOpenArt} />
           <button
             type="button"
             onClick={() => void handleCompose()}
