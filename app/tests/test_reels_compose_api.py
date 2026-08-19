@@ -31,11 +31,20 @@ def worker_state(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr("api.brand_context.current_brand_id", lambda: _BRAND)
     monkeypatch.setattr(reels_compose_api.worker_db, "get_one", lambda _d, _l, _b: state["row"])
 
-    def _record_start(_dir: str, label: str, brand: str) -> None:
-        state["row"] = {"status": "running", "last_run": "2026-08-12T00:00:00Z", "message": ""}
-        state["started"] = (label, brand)
+    def _record_queued(_dir: str, label: str, brand: str) -> None:
+        state["row"] = {"status": "queued", "last_run": "2026-08-12T00:00:00Z", "message": ""}
+        state["queued"] = (label, brand)
 
-    monkeypatch.setattr(reels_compose_api.worker_db, "record_start", _record_start)
+    def _record_start_forbidden(_dir: str, _label: str, _brand: str) -> None:
+        raise AssertionError(
+            "enqueue must write 'queued' via record_queued; 'running' is the "
+            "worker's own record_start at pickup (see 2026-08-17 dispatcher incident)"
+        )
+
+    monkeypatch.setattr(reels_compose_api.worker_db, "record_queued", _record_queued)
+    # The API must never claim 'running' itself -- and the fake also keeps an
+    # accidental regression from reaching the real Postgres-backed helper.
+    monkeypatch.setattr(reels_compose_api.worker_db, "record_start", _record_start_forbidden)
 
     class _FakeQueue:
         def __init__(self, worker: str, brand: str) -> None:
@@ -67,9 +76,21 @@ def test_compose_dispatches_to_the_worker_queue(worker_state: dict[str, Any]) ->
     assert payload["timeout_seconds"] == 1800
 
 
-def test_queued_run_reads_as_in_progress_not_a_failure(worker_state: dict[str, Any]) -> None:
-    """A job waiting for the worker must not look like a failed run."""
-    worker_state["row"] = {"status": "queued", "last_run": "2026-08-12T00:00:00Z", "message": ""}
+def test_dispatch_records_queued_not_running(worker_state: dict[str, Any]) -> None:
+    """The enqueue writes an honest 'queued': the worker hasn't picked the item
+    up yet, and its own record_start at pickup owns the -> 'running' flip."""
+    reels_compose_api.compose_reels()
+
+    assert worker_state["row"]["status"] == "queued"
+    assert worker_state["queued"] == (_LABEL, _BRAND)
+
+
+@pytest.mark.parametrize("db_status", ["queued", "running"])
+def test_in_flight_run_reads_as_in_progress_not_a_failure(
+    worker_state: dict[str, Any], db_status: str
+) -> None:
+    """A job waiting for or held by the worker must not look like a failed run."""
+    worker_state["row"] = {"status": db_status, "last_run": "2026-08-12T00:00:00Z", "message": ""}
 
     status = reels_compose_api.compose_status()
 
@@ -77,8 +98,22 @@ def test_queued_run_reads_as_in_progress_not_a_failure(worker_state: dict[str, A
     assert status.ok is None
 
 
+@pytest.mark.parametrize("db_status", ["queued", "running", "success"])
+def test_status_payload_carries_raw_status_and_timeout(
+    worker_state: dict[str, Any], db_status: str
+) -> None:
+    """The frontend gets the raw worker_runs status plus the run's time
+    ceiling, so it can distinguish waiting from composing and bound polling."""
+    worker_state["row"] = {"status": db_status, "last_run": "2026-08-12T00:00:00Z", "message": ""}
+
+    status = reels_compose_api.compose_status()
+
+    assert status.status == db_status
+    assert status.timeout_seconds == 1800
+
+
 def test_second_click_while_in_flight_gets_409(worker_state: dict[str, Any]) -> None:
-    reels_compose_api.compose_reels()  # row now 'running'
+    reels_compose_api.compose_reels()  # row now 'queued'
 
     with pytest.raises(HTTPException) as exc:
         reels_compose_api.compose_reels()
@@ -98,8 +133,10 @@ def test_a_new_run_is_allowed_once_the_last_one_finished(
 
 def test_status_with_no_history(worker_state: dict[str, Any]) -> None:
     status = reels_compose_api.compose_status()
+    assert status.status == "never"  # synthetic: no worker_runs row at all
     assert status.running is False
     assert status.ok is None
+    assert status.timeout_seconds == 1800
 
 
 def test_worker_failure_is_reported(worker_state: dict[str, Any]) -> None:

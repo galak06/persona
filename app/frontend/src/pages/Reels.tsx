@@ -8,10 +8,11 @@ import {
   composeReels,
   fetchComposeStatus,
 } from "../api/ideas";
-import type { IdeasResponse } from "../api/ideas";
+import type { GenerateStatus, IdeasResponse } from "../api/ideas";
 import { fetchOpenartStatus } from "../api/oauth";
 import type { OpenArtState } from "../api/oauth";
 import { useApiQuery } from "../hooks/useApiQuery";
+import ComposeProgress from "../components/ComposeProgress";
 import ReelCard from "../components/ReelCard";
 import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
@@ -34,6 +35,7 @@ export default function Reels(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [composing, setComposing] = useState(false);
+  const [composeStatus, setComposeStatus] = useState<GenerateStatus | null>(null);
   const [composeNote, setComposeNote] = useState<string | null>(readOpenArtNote);
   const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const { selectedBrand } = useBrand();
@@ -55,9 +57,11 @@ export default function Reels(): React.JSX.Element {
     stopPolling();
     pollRef.current = setInterval(() => {
       void fetchComposeStatus().then((s) => {
+        setComposeStatus(s); // keep the queued/running progress display live
         if (s.running) return;
         stopPolling();
         setComposing(false);
+        setComposeStatus(null);
         // A run without OpenArt is a plain success (hero images) -- never
         // flagged as degraded, never prompts to authorize anything.
         setComposeNote(s.ok ? "New reels composed." : `Compose failed: ${s.detail ?? "?"}`);
@@ -73,6 +77,7 @@ export default function Reels(): React.JSX.Element {
     void fetchComposeStatus().then((s) => {
       if (s.running) {
         setComposing(true);
+        setComposeStatus(s);
         startPolling();
       }
     });
@@ -130,6 +135,18 @@ export default function Reels(): React.JSX.Element {
 
   const pending = (data?.ideas ?? []).filter((i) => localStatuses[i.id] === undefined);
 
+  // Progress badge props, only while a dispatch is verifiably in flight.
+  const progress =
+    composeStatus?.running &&
+    (composeStatus.status === "queued" || composeStatus.status === "running") &&
+    composeStatus.started_at
+      ? {
+          status: composeStatus.status,
+          since: composeStatus.started_at,
+          timeoutSeconds: composeStatus.timeout_seconds ?? 1800,
+        }
+      : null;
+
   const handleDecision = useCallback(async (id: string, newStatus: string): Promise<void> => {
     setBusyIds((prev) => new Set(prev).add(id));
     try {
@@ -163,6 +180,13 @@ export default function Reels(): React.JSX.Element {
           <span className="text-sm text-slate-500">reels awaiting review</span>
         </div>
         <div className="flex items-center gap-2">
+          {progress && (
+            <ComposeProgress
+              status={progress.status}
+              since={progress.since}
+              timeoutSeconds={progress.timeoutSeconds}
+            />
+          )}
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
           {/* Opt-in upgrade, deliberately understated. When the token is
               missing, Compose pre-flights the connection and offers a
@@ -182,7 +206,7 @@ export default function Reels(): React.JSX.Element {
             disabled={composing}
             className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
           >
-            {composing ? "Composing… (runs several minutes)" : "🎬 Compose reels"}
+            {composing ? "Composing…" : "🎬 Compose reels"}
           </button>
           <button
             type="button"
