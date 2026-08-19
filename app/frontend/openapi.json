@@ -2619,6 +2619,17 @@
               }
             ],
             "title": "Shows Mascot"
+          },
+          "shows_persona": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Persona"
           }
         },
         "title": "ImageUpdate",
@@ -2717,6 +2728,11 @@
           "shows_mascot": {
             "default": false,
             "title": "Shows Mascot",
+            "type": "boolean"
+          },
+          "shows_persona": {
+            "default": false,
+            "title": "Shows Persona",
             "type": "boolean"
           },
           "source": {
@@ -2942,6 +2958,97 @@
           }
         },
         "title": "RejectBody",
+        "type": "object"
+      },
+      "RetagResult": {
+        "description": "What the re-tagger did to one photo.\n\n`new_id` differs from `image_id` whenever the category changed, because a\nre-tag moves the file and an id is `\"<category>/<filename>\"`.",
+        "properties": {
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "new_id": {
+            "title": "New Id",
+            "type": "string"
+          },
+          "shows_mascot": {
+            "default": false,
+            "title": "Shows Mascot",
+            "type": "boolean"
+          },
+          "shows_persona": {
+            "default": false,
+            "title": "Shows Persona",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_id",
+          "new_id",
+          "status"
+        ],
+        "title": "RetagResult",
+        "type": "object"
+      },
+      "RetagSummary": {
+        "description": "The whole re-tag run: per-photo results plus the counts worth showing.\n\nReported per image rather than as a single pass/fail because the run is\ndeliberately resilient -- a photo whose file vanished, or whose vision call\ncame back empty, is one bad row in an otherwise applied run.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/RetagResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "retagged": {
+            "title": "Retagged",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "retagged",
+          "unchanged",
+          "skipped",
+          "failed",
+          "results"
+        ],
+        "title": "RetagSummary",
         "type": "object"
       },
       "RunNowRequest": {
@@ -6013,7 +6120,7 @@
         ]
       },
       "patch": {
-        "description": "Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.\n\nRe-tagging MOVES the file, so the returned entry carries a different id\nthan the one in the URL -- callers must adopt it rather than reuse theirs.",
+        "description": "Re-tag a photo and/or flip either subject flag. 404 on an unknown id.\n\nRe-tagging MOVES the file, so the returned entry carries a different id\nthan the one in the URL -- callers must adopt it rather than reuse theirs.",
         "operationId": "patch_image_api_v1_reference_images_images__image_id__patch",
         "parameters": [
           {
@@ -6122,6 +6229,28 @@
           }
         },
         "summary": "Post Import Legacy",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/retag": {
+      "post": {
+        "description": "Re-run the vision tagger over every photo already in the library.\n\nOne vision call per photo and no partial-failure abort: a photo whose file\nvanished or whose call came back empty is reported as one bad row and the\nrest of the run still lands. Re-categorising MOVES files, so ids in the\nresponse differ from the ones the caller was holding -- refetch the\nlibrary rather than reusing them.\n\nOff the loop: the whole run is blocking, and long in proportion to the\nlibrary.",
+        "operationId": "post_retag_api_v1_reference_images_retag_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetagSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Retag",
         "tags": [
           "reference-images"
         ]

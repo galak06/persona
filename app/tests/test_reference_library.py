@@ -18,6 +18,7 @@ import pytest
 from PIL import Image
 
 from lib.brand_provisioning import REFERENCE_LIBRARY_DIRNAME
+from lib.crew.reference_legacy import resolve_reference_image_path
 from lib.crew.reference_library import (
     GENERAL_CATEGORY,
     LIBRARY_DIRNAME,
@@ -26,7 +27,6 @@ from lib.crew.reference_library import (
     manifest_path,
     read_manifest,
     resolve_reference,
-    resolve_reference_image_path,
     source_rank,
 )
 from lib.crew.reference_library_store import add_image, create_category, delete_image, import_legacy
@@ -107,9 +107,22 @@ def test_unknown_category_falls_back_to_general(tmp_path: Path) -> None:
     assert _id(tmp_path, "snowboarding") == f"{GENERAL_CATEGORY}/b.png"
 
 
-def test_empty_general_falls_back_to_any_non_empty_category(tmp_path: Path) -> None:
+def test_an_unmatched_tag_with_no_general_resolves_to_none(tmp_path: Path) -> None:
+    """The chain stops at `general`. It used to have a third tier -- "any other
+    non-empty category, alphabetically" -- which turned an unmatched request
+    into a SILENT SUBSTITUTION: ask for `products`, get whichever tag sorted
+    first. Once tags became specific that stopped being a near-miss and became
+    a portrait answering a request for a product shot. A missing anchor keeps
+    the post's own hero; a wrong one ships."""
     _write_library(tmp_path, [_entry("walking", "w.png")])
-    assert _id(tmp_path, "snowboarding") == "walking/w.png"
+    assert resolve_reference(tmp_path, "snowboarding") is None
+
+
+def test_general_is_still_the_deliberate_catch_all(tmp_path: Path) -> None:
+    """Removing the third tier does not remove the ability to have a blanket
+    fallback -- it makes having one a choice the operator makes by tagging."""
+    _write_library(tmp_path, [_entry("walking", "w.png"), _entry(GENERAL_CATEGORY, "g.png")])
+    assert _id(tmp_path, "snowboarding") == f"{GENERAL_CATEGORY}/g.png"
 
 
 def test_an_empty_library_resolves_to_none(tmp_path: Path) -> None:

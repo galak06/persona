@@ -150,23 +150,39 @@ def test_upload_stores_the_models_category_flag_and_description(
     client: TestClient, brand_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (brand_dir / "config.json").write_text(
-        json.dumps({"site": {"mascot_name": "Nalla", "mascot_kind": "dog"}})
+        json.dumps(
+            {
+                "site": {
+                    "mascot_name": "Nalla",
+                    "mascot_kind": "dog",
+                    "brand_persona": "Nalla's Dad",
+                }
+            }
+        )
     )
     client.post(f"{PREFIX}/categories", json={"label": "Eating"})
     seen: dict[str, Any] = {}
     stub_analysis(
-        monkeypatch, ImageAnalysis("Nalla eating from a bowl.", "Eating", True, False), seen
+        monkeypatch,
+        ImageAnalysis("Nalla eating from a bowl.", "Eating", True, False, shows_persona=True),
+        seen,
     )
 
     body = upload_untagged(client, png()).json()
 
     assert body["category"] == "eating"
     assert body["shows_mascot"] is True
+    assert body["shows_persona"] is True
     assert body["description"] == "Nalla eating from a bowl."
-    # The brand's own tags and mascot are what the model was asked about --
-    # including what KIND of thing that mascot is, which the engine may never
-    # assume for it (`lib.crew.mascot`).
-    assert seen == {"categories": ["Eating"], "mascot_name": "Nalla", "mascot_kind": "dog"}
+    # The brand's own tags and subjects are what the model was asked about --
+    # including what KIND of thing the mascot is and who the persona is,
+    # neither of which the engine may assume (`lib.crew.brand_identity`).
+    assert seen == {
+        "categories": ["Eating"],
+        "mascot_name": "Nalla",
+        "mascot_kind": "dog",
+        "persona_name": "Nalla's Dad",
+    }
     assert client.get(PREFIX).json()["images"][0]["description"] == "Nalla eating from a bowl."
 
 
@@ -179,6 +195,7 @@ def test_a_proposed_category_is_created_and_appears_in_the_listing(
 
     assert body["category"] == "dog-treats"
     assert body["shows_mascot"] is False
+    assert body["shows_persona"] is False
     listing = client.get(PREFIX).json()["categories"]
     assert {c["slug"]: (c["label"], c["count"]) for c in listing} == {
         "dog-treats": ("dog treats", 1)

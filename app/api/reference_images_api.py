@@ -4,6 +4,7 @@
   POST   /api/v1/reference-images/categories          -- declare a tag
   POST   /api/v1/reference-images/images              -- upload a photo (auto-tagged)
   POST   /api/v1/reference-images/import-legacy       -- copy in the legacy asset
+  POST   /api/v1/reference-images/retag               -- re-analyse the whole library
   PATCH  /api/v1/reference-images/images/{id}         -- re-tag / re-flag one photo
   DELETE /api/v1/reference-images/images/{id}         -- remove one photo
   GET    /api/v1/reference-images/images/{id}/raw     -- serve the bytes
@@ -16,13 +17,22 @@ response. Nothing here decides what a valid image is, or what one looks like
 on the wire.
 
 **Uploads tag themselves.** `lib.crew.reference_vision.analyze_for_brand` looks
-at the bytes and answers with a description, a category (reused from the brand's
-tags, or newly proposed and then created by the store) and a per-image
-`shows_mascot` flag -- so choosing a tag is an EDIT the operator may make
-afterwards, not a decision they must make first. That call is advisory in the
-strongest sense: any failure of it degrades to "filed under `general`,
-untagged", never to a failed upload. The `category` form field survives as an
-override for scripted callers, and wins when it is non-empty.
+at the bytes and answers with a description, a specific category (reused from
+the brand's tags, or newly proposed and then created by the store) and the two
+per-image `shows_mascot` / `shows_persona` flags -- so choosing a tag is an
+EDIT the operator may make afterwards, not a decision they must make first.
+That call is advisory in the strongest sense: any failure of it degrades to
+"filed under `general`, untagged", never to a failed upload. The `category`
+form field survives as an override for scripted callers, and wins when it is
+non-empty.
+
+**The re-tag route is the same pass, run again over photos already filed.** It
+exists because the tagger's prompt changed under a library that had already
+been filled, and re-uploading cannot fix that (content-addressed storage makes
+it a no-op). It is one vision call per photo, so it is the only route here
+that costs real quota per image -- the UI confirms the call count before
+firing, and the route reports one outcome per photo rather than one verdict
+for the run (`lib.crew.reference_retag`).
 
 Three things are load-bearing rather than incidental:
 
@@ -60,7 +70,9 @@ from api.reference_images_schemas import (
     ImageUpdate,
     LibraryImage,
     LibraryResponse,
+    RetagSummary,
     categories,
+    retag_summary,
     to_model,
 )
 from lib.crew.reference_library import library_root, read_manifest
@@ -72,6 +84,7 @@ from lib.crew.reference_library_store import (
     import_legacy,
     migrate_legacy_dirname,
 )
+from lib.crew.reference_retag import retag_library
 from lib.crew.reference_validate import (
     MAX_UPLOAD_BYTES,
     ImageValidationError,
@@ -192,9 +205,26 @@ async def post_image(
         label=label.strip() or result.label,
         source="upload",
         shows_mascot=bool(analysis and analysis.shows_mascot),
+        shows_persona=bool(analysis and analysis.shows_persona),
         description=analysis.description if analysis else "",
     )
     return to_model(entry)
+
+
+@router.post("/reference-images/retag", response_model=RetagSummary)
+async def post_retag() -> RetagSummary:
+    """Re-run the vision tagger over every photo already in the library.
+
+    One vision call per photo and no partial-failure abort: a photo whose file
+    vanished or whose call came back empty is reported as one bad row and the
+    rest of the run still lands. Re-categorising MOVES files, so ids in the
+    response differ from the ones the caller was holding -- refetch the
+    library rather than reusing them.
+
+    Off the loop: the whole run is blocking, and long in proportion to the
+    library.
+    """
+    return retag_summary(await run_in_threadpool(retag_library, _brand_dir()))
 
 
 @router.post("/reference-images/import-legacy", response_model=LibraryImage)
@@ -229,7 +259,7 @@ def get_image_raw(image_id: str) -> FileResponse:
 
 @router.patch("/reference-images/images/{image_id:path}", response_model=LibraryImage)
 def patch_image(image_id: str, body: ImageUpdate) -> LibraryImage:
-    """Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.
+    """Re-tag a photo and/or flip either subject flag. 404 on an unknown id.
 
     Re-tagging MOVES the file, so the returned entry carries a different id
     than the one in the URL -- callers must adopt it rather than reuse theirs.
@@ -237,7 +267,11 @@ def patch_image(image_id: str, body: ImageUpdate) -> LibraryImage:
     brand_dir = _brand_dir()
     _safe_target(brand_dir, image_id)
     entry = update_image(
-        brand_dir, image_id, category=body.category, shows_mascot=body.shows_mascot
+        brand_dir,
+        image_id,
+        category=body.category,
+        shows_mascot=body.shows_mascot,
+        shows_persona=body.shows_persona,
     )
     if entry is None:
         raise HTTPException(status_code=404, detail="image not found")

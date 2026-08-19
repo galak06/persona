@@ -1,10 +1,12 @@
 """Tagged reference-image library -- READ side.
 
 A brand may keep any number of real photos to ground its generated imagery,
-tagged by what they show (`eating`, `kitchen`, `ingredients`, ..., plus a
-catch-all `general`) -- NOT all mascot portraits: a reference may just as
-well be a product, a place, or a style plate. Generators pick the one whose
-tag matches the beat they render, not the one legacy photo below.
+tagged by what they show (`forest-trail`, `studio-mascot`, `products`, ...,
+plus a catch-all `general`) -- NOT all mascot portraits: a reference may just
+as well be a product, a place, or a style plate. Generators pick the one whose
+tag matches the beat they render, not the one legacy photo below. Tags are
+meant to be SPECIFIC -- see `lib.crew.reference_vision_prompt` on why a library
+that filed everything under `general` made `resolve_reference`'s pick arbitrary.
 
 Layout under `$BRAND_DIR`::
 
@@ -13,26 +15,25 @@ Layout under `$BRAND_DIR`::
       reference_images/
         library.json                 # manifest (see `read_manifest`)
         general/<sha256[:16]><ext>
-        eating/<sha256[:16]><ext>
+        forest-trail/<sha256[:16]><ext>
 
 Filenames are content-addressed, so the same bytes in the same category are
 one file; the uploader's filename never reaches the filesystem (it survives
 as the manifest entry's `label`).
 
-This module is imported by the worker on every generated beat, so it is
-deliberately dependency-light: **no Pillow, no FastAPI**. Byte validation
-lives in `lib.crew.reference_validate` (the only PIL importer) and writes in
-`lib.crew.reference_library_store`. The import direction is one-way --
-`lib.crew.wp_image` imports from here, never the reverse.
+Imported by the worker on every generated beat, so deliberately
+dependency-light: **no Pillow, no FastAPI**. Byte validation lives in
+`lib.crew.reference_validate` (the only PIL importer) and writes in
+`lib.crew.reference_library_store`; the import direction is one-way.
 
 **The library is the ONLY source of references.** Nothing uploaded elsewhere
 may anchor a generated image -- not the WP post's hero (routinely a Pexels
 stock photo), not the legacy `persona_mascot_reference.*` on disk, which is
-import-only (see `resolve_reference_image_path`).
+import-only (see `lib.crew.reference_legacy`).
 
 Every read is tolerant: a missing or malformed manifest reads as an empty
-library, an entry whose file vanished is skipped with a warning, a stray
-file with no entry is ignored. A brand with no library gets `None` from
+library, an entry whose file vanished is skipped with a warning, a stray file
+with no entry is ignored. A brand with no library gets `None` from
 `resolve_reference` -- "do not generate this image", not an error, and not a
 licence to substitute some other picture.
 """
@@ -55,9 +56,6 @@ LIBRARY_DIRNAME = "reference_images"
 GENERAL_CATEGORY = "general"
 MANIFEST_FILENAME = "library.json"
 MANIFEST_VERSION = 1
-
-LEGACY_REFERENCE_STEM = "persona_mascot_reference"
-LEGACY_REFERENCE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
 #: Canonical extension -> content type, for images whose entry carries none:
 #: a hand-edited manifest here, the legacy asset on `import_legacy`'s path.
@@ -90,14 +88,18 @@ class ReferenceImage:
     path: Path
     content_type: str
     label: str
-    #: Does this photo actually show the brand's persona/mascot? Decides which
-    #: prompt clause a generator attaches (`lib.crew.reference_clauses`).
-    #: Entries written before the vision tagger have no such key, so the
-    #: default is the SAFE reading: assume it is not a mascot portrait.
+    #: Does this photo actually show the brand's mascot? Decides which prompt
+    #: clause a generator attaches (`lib.crew.reference_clauses`). Entries
+    #: written before the vision tagger have no such key, so the default is
+    #: the SAFE reading: assume it is not a mascot portrait.
     shows_mascot: bool = False
     #: What the tagger saw, carried for logs and operator UI only -- never
     #: sent to the image model.
     description: str = ""
+    #: Does it show the brand's own PERSONA -- the person behind it? Judged
+    #: independently of `shows_mascot` (a photo may show either, both, or
+    #: neither), and defaulted the same defensive way for the same reason.
+    shows_persona: bool = False
 
 
 def slugify(label: str) -> str:
@@ -190,17 +192,24 @@ def resolve_reference(
 ) -> ReferenceImage | None:
     """Best UPLOADED photo for `category`, or `None` if the library has none.
 
-    Lookup order: exact `slugify(category)` match -> `general` -> any other
-    non-empty category (alphabetical, so the choice is reproducible) ->
-    `None`. That is the whole chain: the library is the only source of
-    references, so nothing outside it is ever reached for.
+    Lookup order: exact `slugify(category)` match -> `general` -> `None`.
+    That is the whole chain: the library is the only source of references, so
+    nothing outside it is ever reached for.
+
+    There used to be a third tier -- "any other non-empty category,
+    alphabetically" -- removed once the tagger started producing SPECIFIC
+    tags. It was never a fallback so much as a silent substitution: a request
+    for `products` that matched nothing returned whichever tag sorted first,
+    so a product beat came back anchored on a portrait. A wrong anchor ships;
+    a missing one does not. `general` survives as the deliberate catch-all, so
+    a blanket fallback is still one re-tag away.
 
     `None` therefore means "there is no photo this image may be anchored on",
     and every caller answers it by NOT generating: the reels beat and the
-    social hook keep the post's own hero as the finished picture, the WP hero
-    generates text2image with no reference. This used to fall through to the
-    legacy asset and callers then fell through again to the hero -- two
-    silent anchors nobody chose.
+    social hook keep the post's own hero, the WP hero generates text2image
+    with no reference. It is logged with the tag asked for and the tags that
+    exist, because an unmatched request is now usually a planner typo or a
+    vocabulary gap -- both fixable, neither visible without the log line.
 
     Within a category, uploads outrank WP-media harvests (`source_rank`) and
     the seeded pick happens inside the best tier only. `seed` is hashed to an
@@ -211,31 +220,15 @@ def resolve_reference(
     by_category = _existing_images_by_category(brand_dir)
     wanted = slugify(category or "")
 
-    ordered_slugs = [wanted, GENERAL_CATEGORY, *sorted(by_category)]
-    for slug in ordered_slugs:
+    for slug in (wanted, GENERAL_CATEGORY):
         candidates = by_category.get(slug) if slug else None
         if candidates:
             return _pick(_best_tier(candidates), seed)
-    return None
-
-
-def resolve_reference_image_path(brand_dir: Path) -> Path | None:
-    """The brand's optional LEGACY persona+mascot reference photo, if one
-    exists -- `$BRAND_DIR/data/assets/persona_mascot_reference.{png,jpg,jpeg}`.
-
-    IMPORT-ONLY. `resolve_reference` no longer consults it, so finding this
-    file does NOT mean an image will be grounded on it: the only caller that
-    acts on it is `reference_library_store.import_legacy`, behind the
-    operator's "Import legacy reference" button, which COPIES it into
-    `general` and leaves the original untouched. Until someone clicks that,
-    the asset anchors nothing. Kept here (not in `lib.crew.wp_image`, which
-    imports it as a delegating alias) so probe and library share one home.
-    """
-    directory = assets_dir(brand_dir)
-    for ext in LEGACY_REFERENCE_EXTENSIONS:
-        candidate = directory / f"{LEGACY_REFERENCE_STEM}{ext}"
-        if candidate.is_file():
-            return candidate
+    logger.info(
+        "reference_library_no_match",
+        requested=wanted or "(none)",
+        available=",".join(sorted(by_category)),
+    )
     return None
 
 
@@ -271,6 +264,7 @@ def _existing_images_by_category(brand_dir: Path) -> dict[str, list[_Candidate]]
             label=str(entry.get("label") or path.stem),
             shows_mascot=bool(entry.get("shows_mascot", False)),
             description=str(entry.get("description") or ""),
+            shows_persona=bool(entry.get("shows_persona", False)),
         )
         grouped.setdefault(slug, []).append((source_rank(str(entry.get("source", ""))), image))
     return grouped

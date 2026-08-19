@@ -59,8 +59,15 @@ def update_image(
     *,
     category: str | None = None,
     shows_mascot: bool | None = None,
+    shows_persona: bool | None = None,
+    description: str | None = None,
 ) -> dict[str, Any] | None:
     """Re-tag and/or re-flag one image. Returns its entry, or `None`.
+
+    Two callers, one mover: the operator's `PATCH .../images/{id}` and the
+    bulk re-tagger (`lib.crew.reference_retag`), which applies a fresh vision
+    answer to a photo already on disk. The re-tagger writes all four fields at
+    once; the PATCH writes whichever the operator touched.
 
     Args:
         brand_dir: The brand root; the library lives under `data/assets`.
@@ -69,6 +76,11 @@ def update_image(
             nothing) leaves the tag alone -- a PATCH omits what it does not
             change.
         shows_mascot: New per-image mascot flag. `None` leaves it alone.
+        shows_persona: New per-image persona flag, judged independently of the
+            mascot one. `None` leaves it alone.
+        description: New one-line description. `None` leaves it alone; `""`
+            deliberately CAN clear it, which is what a re-tag whose model
+            returned no sentence should do.
 
     Returns:
         The updated entry -- carrying its NEW id when the category changed,
@@ -90,6 +102,10 @@ def update_image(
             target = _retag(manifest, entry, slug, label=(category or slug).strip(), root=root)
         if shows_mascot is not None:
             target["shows_mascot"] = bool(shows_mascot)
+        if shows_persona is not None:
+            target["shows_persona"] = bool(shows_persona)
+        if description is not None:
+            target["description"] = str(description)
         updated = dict(target)
 
     logger.info(

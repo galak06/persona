@@ -5,7 +5,7 @@ the explicit `import_legacy` call behind it -- so there is one manifest shape
 and one on-disk layout no matter who is filing the image. Editing an image
 already in the library is its sibling, `lib.crew.reference_library_edit`
 (which reuses this module's `normalize_manifest`/`ensure_category`/`utc_now`);
-reads live in `lib.crew.reference_library`; byte validation in
+reads live in `lib.crew.reference_library`, byte validation in
 `lib.crew.reference_validate`.
 
 Two invariants hold every write together:
@@ -19,19 +19,14 @@ Two invariants hold every write together:
 * **Nothing here is provisioned.** `data/assets/` is not created by brand
   provisioning for existing brands, so every write `mkdir(parents=True,
   exist_ok=True)` first, writes bytes atomically (temp + `os.replace`), and
-  only then updates `library.json` inside `lib.io.jsonio.locked_json` --
-  an flock'd read-modify-write, so two concurrent uploads cannot lose each
-  other's entry.
+  only then updates `library.json` inside `lib.io.jsonio.locked_json` -- an
+  flock'd read-modify-write, so two concurrent uploads cannot lose each other.
 
-The LEGACY `data/assets/persona_mascot_reference.png` is never touched and
-never copied automatically: `import_legacy` COPIES it into `general`, leaving
-the original where it is, and is now the ONLY way it ever anchors a generated
-image -- `resolve_reference` no longer falls back to it.
-
-The same copy-only discipline covers the directory rename: the library used
-to live under `data/assets/mascot_refs/`, and `migrate_legacy_dirname` COPIES
-such a tree into `reference_images/` the first time this module touches a
-brand. The old tree is left byte-identical, forever -- see that function.
+Everything pre-existing is COPIED, never moved: `import_legacy` copies
+`data/assets/persona_mascot_reference.*` into `general` and leaves the
+original where it is (the only way that asset ever anchors a generated image
+now), and `migrate_legacy_dirname` copies a pre-rename `data/assets/mascot_refs/`
+tree into `reference_images/`, leaving the old one byte-identical forever.
 """
 
 from __future__ import annotations
@@ -44,6 +39,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from lib.crew.reference_legacy import resolve_reference_image_path
 from lib.crew.reference_library import (
     CONTENT_TYPE_BY_SUFFIX,
     GENERAL_CATEGORY,
@@ -53,7 +49,6 @@ from lib.crew.reference_library import (
     empty_manifest,
     library_root,
     manifest_path,
-    resolve_reference_image_path,
     slugify,
 )
 from lib.crew.reference_validate import EXTENSION_BY_CONTENT_TYPE, probe_dimensions, sniff_mime
@@ -108,6 +103,7 @@ def add_image(
     source: str,
     shows_mascot: bool = False,
     description: str = "",
+    shows_persona: bool = False,
 ) -> dict[str, Any]:
     """File `data` under `category` and return its manifest entry.
 
@@ -128,6 +124,9 @@ def add_image(
             it at upload time; the operator can flip it afterwards).
         description: One sentence about what is in the image, from the same
             vision pass. `""` whenever it could not be asked.
+        shows_persona: Does the brand's own persona -- the person behind it --
+            appear in THIS image? Same contract as `shows_mascot`, judged
+            independently of it: a photo may show either, both, or neither.
 
     Raises:
         ValueError: `content_type` is not one the library stores.
@@ -159,6 +158,7 @@ def add_image(
         "source": source,
         "label": label,
         "shows_mascot": bool(shows_mascot),
+        "shows_persona": bool(shows_persona),
         "description": description,
         "approved_at": now,
         "added_at": now,
@@ -231,10 +231,10 @@ def import_legacy(brand_dir: Path) -> dict[str, Any] | None:
 
     THE ONLY WAY that asset ever grounds a generated image: nothing resolves
     to it on disk any more, so this operator-driven copy is what turns it into
-    a usable reference, filed `source="upload"` -- which is what it now is.
-    Returns the new (or already-present) manifest entry, or `None` if there is
-    no legacy asset; the original is only read, so the import is repeatable
-    and never destructive.
+    a usable reference, filed `source="upload"`. Returns the new (or
+    already-present) manifest entry, or `None` if there is no legacy asset;
+    the original is only read, so the import is repeatable and never
+    destructive.
     """
     migrate_legacy_dirname(brand_dir)
     legacy = resolve_reference_image_path(brand_dir)

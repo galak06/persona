@@ -64,8 +64,8 @@ if str(_ENGINE_ROOT) not in sys.path:
 
 from lib import social_post_db
 from lib.crew import wp_source
+from lib.crew.brand_identity import read_brand_identity
 from lib.crew.context import brand_voice_summary
-from lib.crew.mascot import read_mascot
 from lib.crew.reference_library import list_category_labels
 from lib.crew.socialpost import (
     build_social_post_agent,
@@ -124,9 +124,10 @@ def _check_required_env(*, release_only: bool) -> list[str]:
 def _site_domain(brand_dir: Path) -> str:
     """`site.url`'s domain from the brand config, with a safe fallback.
 
-    The mascot half of this read moved to `lib.crew.mascot.read_mascot`, which
-    every generator now shares -- it answers both "what is it called" and
-    "what kind of thing is it", and nothing may assume the latter.
+    The identity half of this read moved to
+    `lib.crew.brand_identity.read_brand_identity`, which every generator now
+    shares -- it answers what the mascot is called, what KIND of thing it is,
+    and who the brand's persona is, and nothing here may assume any of them.
     """
     try:
         config = json.loads((brand_dir / "config.json").read_text())
@@ -154,7 +155,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     featured_media_id = int(post.get("featured_media") or 0)
 
     site_domain = _site_domain(brand_dir)
-    mascot = read_mascot(brand_dir)
+    identity = read_brand_identity(brand_dir)
     target_keyword = str(row.get("target_keyword") or "")
 
     agent = build_social_post_agent()
@@ -188,13 +189,13 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     if not social_post_db.claim(idea_id):
         return "skipped_claim_lost"
 
-    # Generation is grounded on the brand's own mascot photo (from the tagged
-    # library); the WP hero is the fallback image, and the reference only for
-    # brands with no library at all.
+    # Generation is grounded on a photo from the tagged library; the WP hero
+    # is the fallback image, for brands with no library at all.
     image_bytes, source = generate_hook_image(
         plan,
-        mascot_name=mascot.name,
-        mascot_kind=mascot.kind,
+        mascot_name=identity.mascot_name,
+        mascot_kind=identity.mascot_kind,
+        persona_name=identity.persona_name,
         hero_bytes=hero_bytes,
         brand_dir=brand_dir,
     )

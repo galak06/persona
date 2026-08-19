@@ -1018,7 +1018,7 @@ export interface paths {
         head?: never;
         /**
          * Patch Image
-         * @description Re-tag a photo and/or flip its mascot flag. 404 if the id is unknown.
+         * @description Re-tag a photo and/or flip either subject flag. 404 on an unknown id.
          *
          *     Re-tagging MOVES the file, so the returned entry carries a different id
          *     than the one in the URL -- callers must adopt it rather than reuse theirs.
@@ -1063,6 +1063,35 @@ export interface paths {
          *     404 when the brand has no legacy asset to import.
          */
         post: operations["post_import_legacy_api_v1_reference_images_import_legacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/retag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Retag
+         * @description Re-run the vision tagger over every photo already in the library.
+         *
+         *     One vision call per photo and no partial-failure abort: a photo whose file
+         *     vanished or whose call came back empty is reported as one bad row and the
+         *     rest of the run still lands. Re-categorising MOVES files, so ids in the
+         *     response differ from the ones the caller was holding -- refetch the
+         *     library rather than reusing them.
+         *
+         *     Off the loop: the whole run is blocking, and long in proportion to the
+         *     library.
+         */
+        post: operations["post_retag_api_v1_reference_images_retag_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2681,6 +2710,8 @@ export interface components {
             category?: string | null;
             /** Shows Mascot */
             shows_mascot?: boolean | null;
+            /** Shows Persona */
+            shows_persona?: boolean | null;
         };
         /** KeywordsResponse */
         KeywordsResponse: {
@@ -2733,6 +2764,11 @@ export interface components {
              * @default false
              */
             shows_mascot: boolean;
+            /**
+             * Shows Persona
+             * @default false
+             */
+            shows_persona: boolean;
             /**
              * Source
              * @default
@@ -2817,6 +2853,68 @@ export interface components {
         RejectBody: {
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * RetagResult
+         * @description What the re-tagger did to one photo.
+         *
+         *     `new_id` differs from `image_id` whenever the category changed, because a
+         *     re-tag moves the file and an id is `"<category>/<filename>"`.
+         */
+        RetagResult: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Image Id */
+            image_id: string;
+            /** New Id */
+            new_id: string;
+            /**
+             * Shows Mascot
+             * @default false
+             */
+            shows_mascot: boolean;
+            /**
+             * Shows Persona
+             * @default false
+             */
+            shows_persona: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
+         * RetagSummary
+         * @description The whole re-tag run: per-photo results plus the counts worth showing.
+         *
+         *     Reported per image rather than as a single pass/fail because the run is
+         *     deliberately resilient -- a photo whose file vanished, or whose vision call
+         *     came back empty, is one bad row in an otherwise applied run.
+         */
+        RetagSummary: {
+            /** Failed */
+            failed: number;
+            /** Results */
+            results: components["schemas"]["RetagResult"][];
+            /** Retagged */
+            retagged: number;
+            /** Skipped */
+            skipped: number;
+            /** Total */
+            total: number;
+            /** Unchanged */
+            unchanged: number;
         };
         /**
          * RunNowRequest
@@ -4632,6 +4730,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+        };
+    };
+    post_retag_api_v1_reference_images_retag_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetagSummary"];
                 };
             };
         };

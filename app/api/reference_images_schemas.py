@@ -15,11 +15,17 @@ the whole listing over one odd field.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel
 
 from lib.crew.reference_library import Manifest, slugify
+from lib.crew.reference_retag import FAILED, RETAGGED, SKIPPED, UNCHANGED, RetagOutcome
+
+#: The four statuses `RetagSummary` counts, named by the module that produces
+#: them so a new one cannot be added there and silently uncounted here.
+_RETAG_STATUSES = (RETAGGED, UNCHANGED, SKIPPED, FAILED)
 
 
 class CategorySummary(BaseModel):
@@ -43,6 +49,7 @@ class LibraryImage(BaseModel):
     source: str = ""  # how it got here; "upload" for everything written today
     label: str = ""  # display name; the uploader's filename by default
     shows_mascot: bool = False  # does the brand's own mascot appear in THIS photo?
+    shows_persona: bool = False  # does the brand's own persona (the person) appear?
     description: str = ""  # one sentence from the upload-time vision pass
     approved_at: str | None = None
     added_at: str | None = None
@@ -83,6 +90,40 @@ class ImageUpdate(BaseModel):
 
     category: str | None = None
     shows_mascot: bool | None = None
+    shows_persona: bool | None = None
+
+
+class RetagResult(BaseModel):
+    """What the re-tagger did to one photo.
+
+    `new_id` differs from `image_id` whenever the category changed, because a
+    re-tag moves the file and an id is `"<category>/<filename>"`.
+    """
+
+    image_id: str
+    new_id: str
+    status: str  # retagged | unchanged | skipped | failed
+    category: str = ""
+    shows_mascot: bool = False
+    shows_persona: bool = False
+    description: str = ""
+    detail: str = ""  # why it was skipped or how it failed; "" otherwise
+
+
+class RetagSummary(BaseModel):
+    """The whole re-tag run: per-photo results plus the counts worth showing.
+
+    Reported per image rather than as a single pass/fail because the run is
+    deliberately resilient -- a photo whose file vanished, or whose vision call
+    came back empty, is one bad row in an otherwise applied run.
+    """
+
+    total: int
+    retagged: int
+    unchanged: int
+    skipped: int
+    failed: int
+    results: list[RetagResult]
 
 
 def image_url(image_id: str) -> str:
@@ -113,11 +154,35 @@ def to_model(entry: dict[str, Any]) -> LibraryImage:
         source=str(entry.get("source") or ""),
         label=str(entry.get("label") or ""),
         shows_mascot=bool(entry.get("shows_mascot")),
+        shows_persona=bool(entry.get("shows_persona")),
         description=str(entry.get("description") or ""),
         approved_at=text("approved_at"),
         added_at=text("added_at"),
         url=image_url(image_id),
     )
+
+
+def retag_summary(outcomes: Sequence[RetagOutcome]) -> RetagSummary:
+    """`lib.crew.reference_retag` outcomes -> the response shape.
+
+    The counts are derived here rather than in the re-tagger, which reports
+    facts and leaves the arithmetic to whoever is presenting it.
+    """
+    results = [
+        RetagResult(
+            image_id=o.image_id,
+            new_id=o.new_id,
+            status=o.status,
+            category=o.category,
+            shows_mascot=o.shows_mascot,
+            shows_persona=o.shows_persona,
+            description=o.description,
+            detail=o.detail,
+        )
+        for o in outcomes
+    ]
+    counts = {status: sum(1 for o in outcomes if o.status == status) for status in _RETAG_STATUSES}
+    return RetagSummary(total=len(results), results=results, **counts)
 
 
 def categories(manifest: Manifest) -> list[CategorySummary]:

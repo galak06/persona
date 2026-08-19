@@ -89,11 +89,13 @@ def stub_analysis(
         existing_categories: Any,
         mascot_name: str = "",
         mascot_kind: str = "",
+        persona_name: str = "",
     ) -> ImageAnalysis | None:
         if seen is not None:
             seen["categories"] = list(existing_categories)
             seen["mascot_name"] = mascot_name
             seen["mascot_kind"] = mascot_kind
+            seen["persona_name"] = persona_name
         return analysis
 
     monkeypatch.setattr(vision_module, "analyze_image", _fake)

@@ -10,7 +10,7 @@ captions don't). Generation is Gemini via `lib.crew.wp_image`, conditioned on
 a real brand photo picked from the tagged library
 (`lib.crew.reference_library`) by the scene the plan says the image shows
 (`SocialPostPlan.reference_category`) -- and introduced to the model as what
-it actually is, mascot portrait or not (`lib.crew.reference_clauses`).
+it actually is -- mascot, persona, both or neither (`lib.crew.reference_clauses`).
 
 That reference used to be the WP post's OWN featured image, on the theory
 that it grounds the scene in this post's subject matter. It did -- but a hero
@@ -120,6 +120,7 @@ def generate_hook_image(
     hero_bytes: bytes,
     brand_dir: Path,
     mascot_kind: str = "",
+    persona_name: str = "",
 ) -> tuple[bytes, str]:
     """The single shared image: Gemini-generated from the plan's brief,
     conditioned on a photo from the brand's library (see `_reference`), with
@@ -146,10 +147,11 @@ def generate_hook_image(
             reference_image_bytes=reference_bytes,
             reference_image_mime=reference_mime,
             # A library photo of a product or a location must NOT be
-            # introduced as "the brand's mascot". `mascot_kind` is the
-            # brand's own word for what its mascot is -- this engine may
-            # never assume one (see `lib.crew.mascot`).
-            reference_clause=reference_clause(reference, mascot_name, mascot_kind),
+            # introduced as "the brand's mascot" -- and one showing the
+            # person behind the brand must name THEM, not the mascot. Both
+            # words are the brand's own; this engine may never assume either
+            # (see `lib.crew.brand_identity`).
+            reference_clause=reference_clause(reference, mascot_name, mascot_kind, persona_name),
         )
         if generated.bytes_:
             return generated.bytes_, "gemini"

@@ -71,7 +71,7 @@ def _resolved(brand_dir: Path) -> ReferenceImage:
     return reference
 
 
-def _image(*, shows_mascot: bool) -> ReferenceImage:
+def _image(*, shows_mascot: bool, shows_persona: bool = False) -> ReferenceImage:
     return ReferenceImage(
         id="x",
         category="eating",
@@ -79,22 +79,37 @@ def _image(*, shows_mascot: bool) -> ReferenceImage:
         content_type="image/png",
         label="x",
         shows_mascot=shows_mascot,
+        shows_persona=shows_persona,
     )
 
 
 # ── the manifest flags reach the resolved entry ──────────────────────────────
 
 
-def test_missing_keys_default_to_not_a_mascot_and_no_description(tmp_path: Path) -> None:
-    """Every entry written before the vision tagger lacks both keys. The
-    default has to be the SAFE reading -- assume it is not a mascot portrait --
+def test_missing_keys_default_to_neither_subject_and_no_description(tmp_path: Path) -> None:
+    """Every entry written before the vision tagger lacks these keys, and
+    every entry written before the persona flag lacks that one. The default
+    has to be the SAFE reading -- assume the photo shows neither subject --
     because the opposite default is exactly the bug being fixed."""
     _write_library(tmp_path, {})
 
     reference = _resolved(tmp_path)
 
     assert reference.shows_mascot is False
+    assert reference.shows_persona is False
     assert reference.description == ""
+
+
+def test_the_persona_flag_round_trips_independently(tmp_path: Path) -> None:
+    """An entry may carry the persona flag without the mascot one -- a photo
+    of the person alone -- and the pair has to survive the manifest read
+    unmixed."""
+    _write_library(tmp_path, {"shows_persona": True, "shows_mascot": False})
+
+    reference = _resolved(tmp_path)
+
+    assert reference.shows_persona is True
+    assert reference.shows_mascot is False
 
 
 def test_the_flags_round_trip_from_the_manifest(tmp_path: Path) -> None:
@@ -147,6 +162,69 @@ def test_a_non_mascot_reference_gets_the_grounding_clause() -> None:
     assert clause == grounding_clause()
     assert "EXACT SAME" not in clause
     assert "Nalla" not in clause
+
+
+# ── four flag combinations, four clauses ─────────────────────────────────────
+
+
+def test_a_persona_only_photo_names_the_person_and_not_the_mascot() -> None:
+    """The gap the persona flag closes. A photo of the person behind the brand
+    used to carry the grounding clause -- "this is not the brand's persona" --
+    which is precisely wrong, and the generated person drifted post to post."""
+    clause = reference_clause(
+        _image(shows_mascot=False, shows_persona=True), "Nalla", "dog", "Nalla's Dad"
+    )
+
+    assert "A reference photo of the brand's own persona is attached" in clause
+    assert "reproduce the EXACT SAME subject" in clause
+    assert "the persona is Nalla's Dad" in clause
+    assert "the mascot is" not in clause
+    assert "Nalla," not in clause, "the mascot is not in this picture to reproduce"
+    assert clause.endswith(" ")
+
+
+def test_a_mascot_only_photo_names_the_mascot_and_not_the_person() -> None:
+    clause = reference_clause(
+        _image(shows_mascot=True, shows_persona=False), "Nalla", "dog", "Nalla's Dad"
+    )
+
+    assert "A reference photo of the brand's own mascot is attached" in clause
+    assert "the mascot is Nalla, the brand's dog" in clause
+    assert "the persona is" not in clause
+    assert "Nalla's Dad" not in clause
+
+
+def test_a_photo_of_both_names_both_in_one_clause() -> None:
+    """One of the operator's ten photos is the person and the mascot together;
+    a clause naming only one of them under-constrains the other."""
+    clause = reference_clause(
+        _image(shows_mascot=True, shows_persona=True), "Nalla", "dog", "Nalla's Dad"
+    )
+
+    assert "A reference photo of the brand's own persona and mascot is attached" in clause
+    assert "reproduce the EXACT SAME subjects" in clause
+    assert "the persona is Nalla's Dad, and the mascot is Nalla, the brand's dog" in clause
+    assert "Do not substitute different ones." in clause
+
+
+def test_a_photo_of_neither_still_grounds() -> None:
+    clause = reference_clause(
+        _image(shows_mascot=False, shows_persona=False), "Nalla", "dog", "Nalla's Dad"
+    )
+
+    assert clause == grounding_clause()
+    assert "Nalla" not in clause
+
+
+def test_the_clause_stays_generic_when_the_brand_configured_no_names() -> None:
+    """A brand with neither field set still gets a usable instruction: the
+    attached photo is the description, and the engine may not invent one."""
+    clause = reference_clause(_image(shows_mascot=True, shows_persona=True), "", "", "")
+
+    assert "the brand's own persona and mascot" in clause
+    assert "distinguishing features)" in clause, "no dangling aside where names would be"
+    for word in ("dog", "animal", "pet", " he ", " she ", " man ", " woman "):
+        assert word not in clause.lower()
 
 
 def test_no_reference_at_all_stays_total_and_grounding() -> None:

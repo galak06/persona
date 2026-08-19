@@ -1,28 +1,33 @@
 """What is in this reference image? -- the upload-time vision pass.
 
 The library holds any photo that grounds generated imagery: the brand's
-mascot, but equally a product, a location, a person, a setting, a style plate.
-Asking the operator to tag each one was busywork, so every upload is described
-and tagged here instead, and the operator edits the result afterwards
-(`PATCH .../images/{id}`) rather than up front.
+mascot, the person behind the brand, but equally a product, a location, a
+setting, a style plate. Asking the operator to tag each one was busywork, so
+every upload is described and tagged here instead, and the operator edits the
+result afterwards (`PATCH .../images/{id}`) rather than up front.
 
-Three answers come back per image:
+Four answers come back per image:
 
 * `description` -- one short sentence about what is ACTUALLY in the frame,
   stored on the manifest entry so downstream generators can read it.
-* `category` -- reused from the brand's existing tags whenever one fits, and
-  otherwise a NEW short label the model proposes, which the caller then
-  creates. `is_new_category` says which of the two happened, and it is
-  computed HERE, from the caller's own list -- never taken from the model,
-  which has every incentive to claim its invention was on the list.
-* `shows_mascot` -- per image, because "the mascot appears in this photo" is
-  a property of the photo, not of the tag it happens to carry.
+* `category` -- a SPECIFIC tag describing the scene, reused from the brand's
+  existing tags when one genuinely fits and otherwise proposed fresh, which
+  the caller then creates. `is_new_category` says which of the two happened,
+  and it is computed HERE, from the caller's own list -- never taken from the
+  model, which has every incentive to claim its invention was on the list.
+  Why "specific" is load-bearing, and why `general` is a last resort, is the
+  whole subject of `lib.crew.reference_vision_prompt`.
+* `shows_mascot` / `shows_persona` -- per image and judged independently,
+  because "the mascot appears in this photo" is a property of the photo, not
+  of the tag it happens to carry, and because a photo may show the persona,
+  the mascot, both, or neither.
 
-`analyze_image` is the model call; `analyze_for_brand` is the seam routes
-use, which fills in the brand's own tag list and its own mascot. Nothing here
-assumes what that mascot IS -- the question is asked in the brand's own words
-(`site.mascot_name`, `site.mascot_kind`) or in general terms, never in terms
-of a species this engine picked.
+`analyze_image` is the model call; `analyze_for_brand` is the seam routes and
+the re-tagger use, which fills in the brand's own tag list and its own
+identity. Nothing here assumes what that mascot or persona IS -- the questions
+are asked in the brand's own words (`site.mascot_name`, `site.mascot_kind`,
+`site.brand_persona`) or in general terms, never in terms of a species or a
+person this engine picked.
 
 This is still an ADVISORY pass, not a content gate: nothing here decides
 whether the photo belongs in the library, because the person uploading it
@@ -49,8 +54,9 @@ from typing import Any
 
 import httpx
 
-from lib.crew.mascot import read_mascot
+from lib.crew.brand_identity import read_brand_identity
 from lib.crew.reference_library import list_category_labels
+from lib.crew.reference_vision_prompt import RESPONSE_SCHEMA, build_prompt
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -64,25 +70,16 @@ _TIMEOUT_SEC = 20.0
 #: fresh tag would be noise.
 FALLBACK_CATEGORY = "general"
 
-_RESPONSE_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "description": {"type": "STRING"},
-        "category": {"type": "STRING"},
-        "shows_mascot": {"type": "BOOLEAN"},
-    },
-    "required": ["description", "category", "shows_mascot"],
-}
-
 
 @dataclass(frozen=True)
 class ImageAnalysis:
     """One image, as the model sees it."""
 
     description: str  # one short sentence: what is actually in the image
-    category: str  # a label -- reused from existing_categories, or newly proposed
+    category: str  # a specific tag -- reused from existing_categories, or proposed
     shows_mascot: bool  # does the brand's own mascot appear in this image?
     is_new_category: bool  # True when `category` was not in existing_categories
+    shows_persona: bool = False  # does the brand's own persona appear in it?
 
 
 def vision_model() -> str:
@@ -97,6 +94,7 @@ def analyze_image(
     existing_categories: Sequence[str],
     mascot_name: str = "",
     mascot_kind: str = "",
+    persona_name: str = "",
 ) -> ImageAnalysis | None:
     """Describe and tag one image, or `None` if the model could not be asked.
 
@@ -114,6 +112,9 @@ def analyze_image(
             "delivery van", ...), from the brand's own `site.mascot_kind`.
             Also only a sharpener -- and never guessed, because this engine
             serves brands whose mascot is not an animal at all.
+        persona_name: The person behind the brand, from `site.brand_persona`.
+            Same contract: it sharpens `shows_persona`, and an empty value
+            still asks the question in terms of "the person behind this brand".
 
     Returns:
         An `ImageAnalysis`, or `None` for a missing key and every
@@ -136,13 +137,20 @@ def analyze_image(
                             "data": base64.b64encode(image_bytes).decode("ascii"),
                         }
                     },
-                    {"text": _prompt(labels, mascot_name.strip(), mascot_kind.strip())},
+                    {
+                        "text": build_prompt(
+                            labels,
+                            mascot_name.strip(),
+                            mascot_kind.strip(),
+                            persona_name.strip(),
+                        )
+                    },
                 ]
             }
         ],
         "generationConfig": {
             "responseMimeType": "application/json",
-            "responseSchema": _RESPONSE_SCHEMA,
+            "responseSchema": RESPONSE_SCHEMA,
         },
     }
 
@@ -167,24 +175,30 @@ def analyze_image(
 def analyze_for_brand(
     brand_dir: Path, image_bytes: bytes, content_type: str
 ) -> ImageAnalysis | None:
-    """`analyze_image` for one brand: its own tags, its own mascot.
+    """`analyze_image` for one brand: its own tags, its own identity.
 
-    The seam every route calls, so "which categories does this brand have"
-    and "what is its mascot" are answered in one place rather than at each
-    call site. Blocking (two small file reads plus the HTTP round trip), so
-    callers push it off the event loop.
+    The seam every caller uses -- the upload route and the bulk re-tagger --
+    so "which categories does this brand have" and "who is its mascot and
+    persona" are answered in one place rather than at each call site. The tag
+    list is re-read on every call, deliberately: during a bulk re-tag the
+    specific tags earlier photos created are then offered to later ones, which
+    is how a vocabulary builds instead of ten near-duplicates appearing.
+
+    Blocking (two small file reads plus the HTTP round trip), so callers push
+    it off the event loop.
 
     Total by construction: this catches everything `analyze_image` does not,
     because an upload must never fail on account of the advisory pass.
     """
     try:
-        mascot = read_mascot(brand_dir)
+        identity = read_brand_identity(brand_dir)
         return analyze_image(
             image_bytes,
             content_type,
             existing_categories=list_category_labels(brand_dir),
-            mascot_name=mascot.name,
-            mascot_kind=mascot.kind,
+            mascot_name=identity.mascot_name,
+            mascot_kind=identity.mascot_kind,
+            persona_name=identity.persona_name,
         )
     except Exception as exc:  # advisory call: no failure of it is worth an error
         logger.warning("reference_vision_analysis_failed", error=str(exc))
@@ -194,53 +208,13 @@ def analyze_for_brand(
 def brand_mascot_name(brand_dir: Path) -> str:
     """`site.mascot_name` from the brand config, or `""`.
 
-    A thin alias for `lib.crew.mascot.read_mascot(...).name`, kept because it
-    is the name this module has always exported. Defensive to the point of
-    indifference: a brand with no config, an unreadable one, or one that never
-    named a mascot simply gets asked the unnamed version of the mascot
-    question.
+    A thin alias for `lib.crew.brand_identity.read_brand_identity(...)`, kept
+    because it is the name this module has always exported. Defensive to the
+    point of indifference: a brand with no config, an unreadable one, or one
+    that never named a mascot simply gets asked the unnamed version of the
+    mascot question.
     """
-    return read_mascot(brand_dir).name
-
-
-def _mascot_terms(mascot_name: str, mascot_kind: str) -> tuple[str, str]:
-    """(how to name the mascot, what a stand-in for it would be called).
-
-    Species-free by construction: a brand that configured `site.mascot_kind`
-    gets its own word used, and a brand that did not is asked about "the
-    brand's own mascot" in the abstract. Nothing here may guess.
-    """
-    if mascot_name and mascot_kind:
-        subject = f'the brand\'s own mascot (the specific {mascot_kind} named "{mascot_name}")'
-    elif mascot_name:
-        subject = f'the brand\'s own mascot (the specific one named "{mascot_name}")'
-    elif mascot_kind:
-        subject = f"the brand's own mascot (its own specific {mascot_kind})"
-    else:
-        subject = "the brand's own mascot (the specific one this brand uses)"
-    return subject, (mascot_kind or "look-alike")
-
-
-def _prompt(labels: list[str], mascot_name: str, mascot_kind: str = "") -> str:
-    """Instruction half of the request -- the image is the other half."""
-    mascot, stand_in = _mascot_terms(mascot_name, mascot_kind)
-    options = ", ".join(f'"{label}"' for label in labels) if labels else "(no tags yet)"
-    return (
-        "You are tagging a photo for a brand's reference-image library. These photos "
-        "ground generated imagery, so they show anything the brand shoots: its mascot, "
-        "but also products, locations, people, settings, and style shots. "
-        "Answer three questions about the attached image. "
-        "(1) description: one short sentence saying what is actually in the image. "
-        f"(2) shows_mascot: true ONLY if {mascot} actually appears in this image. It is "
-        f"false for any other subject, false for a generic or stock {stand_in} that is "
-        "not that specific one, and false for an image that shows nothing of the kind "
-        "at all. "
-        f"(3) category: the ONE tag that best fits the image, from this list: {options}. "
-        "Prefer reusing a tag from the list over inventing a near-duplicate of one. Only "
-        "if none of them fits, propose a NEW tag of your own: at most two words, "
-        "lowercase, naming what the photo shows. "
-        'Reply as JSON: {"description": "...", "category": "...", "shows_mascot": true}.'
-    )
+    return read_brand_identity(brand_dir).mascot_name
 
 
 def _answer(response: httpx.Response) -> dict[str, Any] | None:
@@ -282,15 +256,20 @@ def _analysis(answer: dict[str, Any], labels: list[str]) -> ImageAnalysis:
     """
     description = str(answer.get("description") or "").strip()
     shows_mascot = bool(answer.get("shows_mascot"))
+    shows_persona = bool(answer.get("shows_persona"))
     category = str(answer.get("category") or "").strip()
     if not category:
         logger.warning("reference_vision_no_category")
-        return ImageAnalysis(description, FALLBACK_CATEGORY, shows_mascot, False)
+        return ImageAnalysis(
+            description, FALLBACK_CATEGORY, shows_mascot, False, shows_persona=shows_persona
+        )
 
     wanted = category.casefold()
     for label in labels:
         if label.casefold() == wanted:
             # The caller's spelling wins, so an answer of "eating" files under
             # their "Eating" instead of declaring a second, lookalike tag.
-            return ImageAnalysis(description, label, shows_mascot, False)
-    return ImageAnalysis(description, category, shows_mascot, True)
+            return ImageAnalysis(
+                description, label, shows_mascot, False, shows_persona=shows_persona
+            )
+    return ImageAnalysis(description, category, shows_mascot, True, shows_persona=shows_persona)

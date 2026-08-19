@@ -186,6 +186,26 @@ def test_patch_toggles_shows_mascot_without_moving_anything(
     assert client.get(PREFIX).json()["images"][0]["shows_mascot"] is True
 
 
+def test_patch_toggles_the_two_subject_flags_independently(
+    client: TestClient,
+) -> None:
+    """A photo may show the person, the mascot, both, or neither, so setting
+    one flag may never disturb the other -- and an omitted field is left
+    alone, which is what makes two separate checkboxes safe to click."""
+    entry = upload(client, png(), category="eating").json()
+    assert (entry["shows_mascot"], entry["shows_persona"]) == (False, False)
+
+    persona_on = client.patch(f"{PREFIX}/images/{entry['id']}", json={"shows_persona": True}).json()
+    assert (persona_on["shows_mascot"], persona_on["shows_persona"]) == (False, True)
+
+    both = client.patch(f"{PREFIX}/images/{entry['id']}", json={"shows_mascot": True}).json()
+    assert (both["shows_mascot"], both["shows_persona"]) == (True, True)
+
+    mascot_off = client.patch(f"{PREFIX}/images/{entry['id']}", json={"shows_mascot": False}).json()
+    assert (mascot_off["shows_mascot"], mascot_off["shows_persona"]) == (False, True)
+    assert client.get(PREFIX).json()["images"][0]["shows_persona"] is True
+
+
 def test_patch_into_a_category_that_already_holds_the_photo_merges(
     client: TestClient, brand_dir: Path
 ) -> None:

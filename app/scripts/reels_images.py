@@ -18,8 +18,8 @@ beat names the kind of scene it shows (`ReelBeat.reference_category`) and
 `lib.crew.reference_library.resolve_reference` answers with the photo that
 matches. One `ReferenceCache` is shared by the run, so N distinct photos cost
 N uploads, not five. **The prompt clause follows the photo**
-(`lib.crew.reference_clauses`): mascot identity only for photos that show the
-mascot, neutral scene-grounding for everything else.
+(`lib.crew.reference_clauses`): an identity instruction naming whichever of the
+brand's own subjects the photo shows, neutral scene-grounding for the rest.
 
 **No library photo, no generation.** Only an UPLOADED photo may anchor a
 generated image, so a beat the library can't answer for is never sent to
@@ -41,7 +41,7 @@ import anyio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from lib.crew.mascot import read_mascot
+from lib.crew.brand_identity import read_brand_identity
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.openart_client import ReferenceCache, ReferenceUpload, generate_image
 from lib.crew.reference_clauses import reference_clause
@@ -101,9 +101,9 @@ def _beat_reference(
     """The library photo grounding one beat, or None when there is none.
 
     Returns the upload AND the entry, because the caller needs the entry's
-    `shows_mascot` flag to pick this beat's prompt clause. `None` means this
-    beat is NOT generated (see `resolve_images`), so both ways of getting
-    there are logged -- distinguished by `reason`.
+    `shows_mascot` / `shows_persona` flags to pick this beat's prompt clause.
+    `None` means this beat is NOT generated (see `resolve_images`), so both
+    ways of getting there are logged -- distinguished by `reason`.
 
     `category` reaches the resolver verbatim: "" and an unrecognised label are
     its business, not this caller's. Seeding on `"{idea_id}:{index}"` spreads
@@ -139,6 +139,7 @@ def _beat_reference(
         # Which clause this beat will get, so a wrong-looking frame is
         # diagnosable from the log alone.
         shows_mascot=reference.shows_mascot,
+        shows_persona=reference.shows_persona,
     )
     # The file's REAL content type travels with it. The previous single-
     # reference call left OpenArt's default `image/jpeg` in place, so every
@@ -223,10 +224,11 @@ def resolve_images(
         )
         return all_hero
 
-    # A library photo is attached on EVERY call, but only some show the
-    # mascot: `reference_clause` sends the identity instruction for those and
-    # the neutral grounding one for the rest.
-    mascot = read_mascot(brand_dir)
+    # A library photo is attached on EVERY call, but only some show one of
+    # the brand's own subjects: `reference_clause` sends the identity
+    # instruction naming whichever of the mascot and the persona is really in
+    # the frame, and the neutral grounding one for the rest.
+    identity = read_brand_identity(brand_dir)
     seed = _run_seed(idea_id)
     # ONE cache for the run: the five beats routinely agree on a photo, and
     # without this each beat would re-upload the same bytes.
@@ -246,10 +248,15 @@ def resolve_images(
             images.append(hero_bytes)
             continue
         upload, resolved_reference = library
+        clause = reference_clause(
+            resolved_reference,
+            identity.mascot_name,
+            identity.mascot_kind,
+            identity.persona_name,
+        )
         try:
             generated = _generate_one_beat(
-                f"{reference_clause(resolved_reference, mascot.name, mascot.kind)}"
-                f"{beat.image_prompt}",
+                f"{clause}{beat.image_prompt}",
                 upload,
                 index=index,
                 seed=seed,

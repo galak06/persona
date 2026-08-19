@@ -45,8 +45,8 @@ if str(_ENGINE_ROOT) not in sys.path:
 
 from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
+from lib.crew.brand_identity import read_brand_identity
 from lib.crew.draft import DraftCreationError, create_wp_draft
-from lib.crew.mascot import read_mascot
 from lib.crew.reference_clauses import reference_clause
 from lib.crew.reference_library import resolve_reference
 from lib.crew.validate import ValidationResult, validate_draft
@@ -261,13 +261,13 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
         return 0
 
     print("\ncreating WordPress draft (real POST, status=draft)...")
-    mascot = read_mascot(brand_dir)
-    mascot_name = mascot.name
+    identity = read_brand_identity(brand_dir)
+    mascot_name = identity.mascot_name
     image_brief = build_image_brief(written_post.title, brief.mascot_angle)
     # The strategist tagged this post with the kind of scene its hero should
     # show; the library answers with the photo that matches. `""` and an
     # unrecognised label are passed through untouched -- the resolver falls
-    # back to `general`, then to any other tag, then to None.
+    # back to `general` and then to None, and logs the unmatched tag.
     #
     # None here is NOT the reels/social case: this hero is the image being
     # created, so there is no pre-existing picture to keep instead. It simply
@@ -280,7 +280,9 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # What the model is TOLD the photo is: a library image of a product or a
     # location must not be introduced as the brand's mascot. Ignored
     # downstream when there is no reference at all.
-    clause = reference_clause(reference, mascot.name, mascot.kind)
+    clause = reference_clause(
+        reference, identity.mascot_name, identity.mascot_kind, identity.persona_name
+    )
     if reference is not None:
         print(f"reference: {reference.path} [{reference.category}] mascot={reference.shows_mascot}")
     tag_names = list(
