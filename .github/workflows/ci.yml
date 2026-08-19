@@ -128,6 +128,8 @@ jobs:
           tests/test_reels_images.py tests/test_reels_images_references.py
           tests/test_socialpost_compose.py
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
+          lib/oauth/openart.py lib/oauth/openart_store.py
+          tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
 
       - name: Ruff format check
         run: >-
@@ -193,6 +195,8 @@ jobs:
           tests/test_reels_images.py tests/test_reels_images_references.py
           tests/test_socialpost_compose.py
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
+          lib/oauth/openart_store.py
+          tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
 
   typecheck:
     name: Type Check
@@ -248,6 +252,7 @@ jobs:
           lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
           lib/crew/reference_validate.py lib/crew/reference_vision.py
           api/reference_images_api.py api/reference_images_schemas.py
+          lib/oauth/openart.py lib/oauth/openart_store.py
           --ignore-missing-imports
 
   test:
@@ -442,6 +447,8 @@ jobs:
             tests/test_reels_images_references.py \
             tests/test_socialpost_compose.py \
             tests/test_oauth_openart_status.py \
+            tests/test_oauth_openart.py \
+            tests/test_oauth_openart_refresh.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \
