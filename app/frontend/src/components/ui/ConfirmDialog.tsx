@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 export interface DialogAction {
   label: string;
   onClick: () => void;
-  variant?: "primary" | "secondary" | "ghost";
+  variant?: "primary" | "secondary" | "ghost" | "danger";
 }
 
 export interface ConfirmDialogProps {
@@ -20,12 +20,20 @@ export interface ConfirmDialogProps {
 
 // Variants mirror the Reels toolbar buttons: primary = amber Compose,
 // secondary = bordered white Refresh, ghost = understated text link.
+//
+// danger is primary's geometry in the app's destructive hue — rose is what
+// every irreversible control already wears (the tile's own Delete link, the
+// error Alert). A confirm that undoes something must not read the same as one
+// that merely spends a call, so the two carry different colours, not just
+// different labels.
 const VARIANT_STYLES: Record<NonNullable<DialogAction["variant"]>, string> = {
   primary:
     "px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700",
   secondary:
     "px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50",
   ghost: "px-2 py-1.5 text-sm text-slate-500 underline underline-offset-2 hover:text-slate-700",
+  danger:
+    "px-3 py-1.5 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700",
 };
 
 export default function ConfirmDialog({

@@ -8,9 +8,11 @@
 // state.
 //
 // Two actions here need confirming before they fire, for different reasons.
-// Deleting is irreversible. "Re-tag all photos" is not destructive, but it
-// spends one AI call per photo in the library, so the dialog states the count
-// before the operator commits to it.
+// Deleting is irreversible, so its confirm is the `danger` variant. "Re-tag
+// all photos" is not destructive, but it spends one AI call per photo in the
+// library, so the dialog states the count before the operator commits to it —
+// and stays `primary`, because colouring it like the delete would spend the
+// warning on something that only costs money.
 
 import { useState } from "react";
 
@@ -264,7 +266,7 @@ export default function ReferenceCategoryGrid({
         title="Delete this reference photo?"
         actions={[
           { label: "Cancel", onClick: () => setPending(null), variant: "secondary" },
-          { label: "Delete", onClick: () => void handleDelete(), variant: "primary" },
+          { label: "Delete", onClick: () => void handleDelete(), variant: "danger" },
         ]}
         onClose={() => setPending(null)}
       >
