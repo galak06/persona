@@ -1,4 +1,9 @@
 import apiClient from "./client";
+import type { components } from "../types/openapi";
+
+/** Lifecycle of a compose dispatch, straight from the generated schema. */
+export type ComposeRunStatus =
+  components["schemas"]["api__reels_compose_api__ComposeStatus"]["status"];
 
 export interface ContentIdea {
   id: string;
@@ -88,6 +93,10 @@ export interface GenerateStatus {
   used_openart?: boolean | null;
   ai_images?: number | null;
   hero_images?: number | null;
+  /** Reels compose only: where the dispatch is in its lifecycle. */
+  status?: ComposeRunStatus;
+  /** Reels compose only: dispatch timeout — the stuck threshold while running. */
+  timeout_seconds?: number;
 }
 
 /** Starts a CrewAI scout run (Trends + Idea crews). 409 if one is in flight. */

@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from typing import Literal, cast
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -59,8 +60,20 @@ router = APIRouter(tags=["reels"])
 _dispatch_lock = threading.Lock()
 
 
+# `worker_db.WorkerRunStatus` plus the synthetic "never" this API layer
+# reports when the flow has no `worker_runs` row at all.
+ComposeRunStatus = Literal["queued", "running", "success", "error", "never"]
+
+
 class ComposeStatus(BaseModel):
+    # The raw run state, so the frontend can distinguish "waiting for the
+    # worker" (queued) from "actually composing" (running).
+    status: ComposeRunStatus
+    # Convenience flag, always `status in _IN_FLIGHT`.
     running: bool
+    # `_COMPOSE_TIMEOUT_SECONDS`: the worker kills the run past this, so the
+    # polling loop can bound its own patience instead of hardcoding it.
+    timeout_seconds: int
     started_at: str | None = None
     finished_at: str | None = None
     ok: bool | None = None
@@ -124,8 +137,9 @@ def compose_reels() -> dict[str, str]:
 
         # Recorded BEFORE the push so the status endpoint reports the run the
         # moment this returns, rather than a gap where it looks idle until the
-        # worker's own record_start lands.
-        worker_db.record_start(brand_dir, label, brand_id)
+        # worker picks the item up. `queued`, not `running`: the worker's own
+        # record_start at pickup provides the real queued->running transition.
+        worker_db.record_queued(brand_dir, label, brand_id)
         flow_queue.dispatch(
             schedule_task_id=label,
             script=_PIPELINE_SCRIPT,
@@ -148,19 +162,28 @@ def compose_status() -> ComposeStatus:
     brand_id, brand_dir = resolve_api_brand()
     row = worker_db.get_one(brand_dir, _label(brand_id), brand_id)
     if row is None:
-        return ComposeStatus(running=False)
+        return ComposeStatus(
+            status="never", running=False, timeout_seconds=_COMPOSE_TIMEOUT_SECONDS
+        )
 
-    status = str(row.get("status") or "")
+    status = cast("ComposeRunStatus", str(row.get("status") or ""))
     last_run = row.get("last_run")
     last_run_str = str(last_run) if last_run else None
     if status in _IN_FLIGHT:
         # Queued counts as in-progress: the user clicked, work is coming.
-        return ComposeStatus(running=True, started_at=last_run_str)
+        return ComposeStatus(
+            status=status,
+            running=True,
+            timeout_seconds=_COMPOSE_TIMEOUT_SECONDS,
+            started_at=last_run_str,
+        )
 
     message = str(row.get("message") or "")
     ai_images, hero_images = _image_counts(message)
     return ComposeStatus(
+        status=status,
         running=False,
+        timeout_seconds=_COMPOSE_TIMEOUT_SECONDS,
         finished_at=last_run_str,
         ok=status == "success",
         detail=message[-500:],

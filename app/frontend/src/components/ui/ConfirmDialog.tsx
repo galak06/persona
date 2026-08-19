@@ -1,11 +1,8 @@
-// Modal confirmation. The app had no dialog primitive at all — destructive
-// actions either fired immediately or leaned on `window.confirm` — so this is
-// the shared one: a backdrop, a labelled panel, and a caller-supplied action
-// row. Rendering is skipped entirely when `open` is false, which keeps the
-// caller's state model to a single "what is pending?" value.
+// Reusable confirmation dialog. Backdrop + panel follow the app's only
+// overlay precedent (the SideNav mobile drawer): blurred z-40 backdrop that
+// closes on click, z-50 centred panel on top.
 
-import { useEffect } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 
 export interface DialogAction {
   label: string;
@@ -13,18 +10,22 @@ export interface DialogAction {
   variant?: "primary" | "secondary" | "ghost";
 }
 
-interface ConfirmDialogProps {
+export interface ConfirmDialogProps {
   open: boolean;
   title: string;
-  children?: ReactNode;
+  children?: React.ReactNode;
   actions: DialogAction[];
   onClose: () => void;
 }
 
+// Variants mirror the Reels toolbar buttons: primary = amber Compose,
+// secondary = bordered white Refresh, ghost = understated text link.
 const VARIANT_STYLES: Record<NonNullable<DialogAction["variant"]>, string> = {
-  primary: "bg-rose-600 text-white hover:bg-rose-700",
-  secondary: "border border-stone-300 bg-white text-slate-700 hover:bg-stone-50",
-  ghost: "text-slate-500 hover:text-slate-700",
+  primary:
+    "px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700",
+  secondary:
+    "px-3 py-1.5 rounded-lg border border-brand-border bg-white text-sm font-medium text-slate-700 hover:bg-slate-50",
+  ghost: "px-2 py-1.5 text-sm text-slate-500 underline underline-offset-2 hover:text-slate-700",
 };
 
 export default function ConfirmDialog({
@@ -34,47 +35,58 @@ export default function ConfirmDialog({
   actions,
   onClose,
 }: ConfirmDialogProps): React.JSX.Element | null {
+  const firstActionRef = useRef<HTMLButtonElement | null>(null);
+
+  // Escape closes the dialog; the listener exists only while it is open.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
+
+  // Focus the first action when opened. A full focus trap (Tab cycling,
+  // focus restore on close) is intentionally out of scope for this dialog.
+  useEffect(() => {
+    if (open) firstActionRef.current?.focus();
+  }, [open]);
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-slate-900/40"
-        onClick={onClose}
-        aria-hidden="true"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="relative w-full max-w-md rounded-xl border border-stone-200 bg-white p-5 shadow-xl"
-      >
-        <h2 className="font-display text-lg font-semibold text-slate-800">{title}</h2>
-        {children && <div className="mt-2 text-sm text-slate-600">{children}</div>}
-        <div className="mt-5 flex items-center justify-end gap-2">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${
-                VARIANT_STYLES[action.variant ?? "secondary"]
-              }`}
-            >
-              {action.label}
-            </button>
-          ))}
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+
+      {/* Centred panel; the wrapper lets backdrop clicks pass through */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-dialog-title"
+          className="bg-white rounded-2xl shadow-floated max-w-sm w-full p-5 pointer-events-auto"
+        >
+          <h2 id="confirm-dialog-title" className="text-sm font-semibold text-slate-800">
+            {title}
+          </h2>
+          {children && <div className="mt-2 text-sm text-slate-600">{children}</div>}
+          <div className="mt-4 flex items-center justify-end gap-2">
+            {actions.map((action, i) => (
+              <button
+                key={action.label}
+                type="button"
+                ref={i === 0 ? firstActionRef : undefined}
+                onClick={action.onClick}
+                className={VARIANT_STYLES[action.variant ?? "secondary"]}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

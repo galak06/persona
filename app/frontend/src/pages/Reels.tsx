@@ -5,107 +5,17 @@ import { useBrand } from "../context/BrandContext";
 import {
   ideasUrl,
   updateIdeaStatus,
-  reelVideoUrl,
   composeReels,
   fetchComposeStatus,
 } from "../api/ideas";
-import type { ContentIdea, IdeasResponse } from "../api/ideas";
+import type { GenerateStatus, IdeasResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
+import ComposeProgress from "../components/ComposeProgress";
+import OpenArtConnect from "../components/OpenArtConnect";
+import ReelCard from "../components/ReelCard";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
-import OpenArtConnect from "../components/OpenArtConnect";
-
-// Beat images are resolved per beat, so "mixed" (some AI, some hero) is a
-// normal middle state -- labelling such a reel "Fallback" would misreport it.
-// All three are ordinary outcomes: understated styling, never an error look.
-const SOURCE_LABELS: Record<string, string> = {
-  openart: "AI images",
-  mixed: "Partly AI images",
-  fallback: "Hero image",
-};
-
-function sourceBadge(source: string | null): React.JSX.Element {
-  const cls =
-    source === "openart" || source === "mixed"
-      ? "bg-indigo-50 text-indigo-700"
-      : "bg-stone-100 text-slate-600";
-  return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {(source && SOURCE_LABELS[source]) ?? source ?? "unknown"}
-    </span>
-  );
-}
-
-interface CardProps {
-  idea: ContentIdea;
-  onDecision: (id: string, status: string) => void;
-  busy: boolean;
-}
-
-function ReelCard({ idea, onDecision, busy }: CardProps): React.JSX.Element {
-  const flags = idea.reel_validation_flags ?? [];
-
-  return (
-    <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card p-5 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-800 leading-snug">{idea.topic}</h3>
-          <div className="mt-1">{sourceBadge(idea.reel_source)}</div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(idea.id, "wp_published")}
-            className="px-3 py-1.5 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          >
-            Reject
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(idea.id, "social_done")}
-            className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
-          >
-            Approve
-          </button>
-        </div>
-      </div>
-
-      {flags.length > 0 && (
-        <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-          <span className="font-semibold">Flagged:</span> {flags.join(", ")}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Instagram
-          </div>
-          <video
-            controls
-            className="w-full aspect-[9/16] rounded-lg bg-black object-contain"
-            src={reelVideoUrl(apiOrigin, idea.id, "ig")}
-          />
-          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{idea.reel_ig_caption}</p>
-        </div>
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Facebook
-          </div>
-          <video
-            controls
-            className="w-full aspect-[9/16] rounded-lg bg-black object-contain"
-            src={reelVideoUrl(apiOrigin, idea.id, "fb")}
-          />
-          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{idea.reel_fb_caption}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** One-shot confirmation of the OAuth round trip we just came back from
  * (`?openart=connected|error`). Read during state init rather than in an
@@ -128,6 +38,7 @@ export default function Reels(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [composing, setComposing] = useState(false);
+  const [composeStatus, setComposeStatus] = useState<GenerateStatus | null>(null);
   const [composeNote, setComposeNote] = useState<string | null>(readOpenArtNote);
   const { selectedBrand } = useBrand();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -148,9 +59,11 @@ export default function Reels(): React.JSX.Element {
     stopPolling();
     pollRef.current = setInterval(() => {
       void fetchComposeStatus().then((s) => {
+        setComposeStatus(s); // keep the queued/running progress display live
         if (s.running) return;
         stopPolling();
         setComposing(false);
+        setComposeStatus(null);
         // A run without OpenArt is a plain success (hero images) -- never
         // flagged as degraded, never prompts to authorize anything.
         setComposeNote(s.ok ? "New reels composed." : `Compose failed: ${s.detail ?? "?"}`);
@@ -166,6 +79,7 @@ export default function Reels(): React.JSX.Element {
     void fetchComposeStatus().then((s) => {
       if (s.running) {
         setComposing(true);
+        setComposeStatus(s);
         startPolling();
       }
     });
@@ -182,6 +96,10 @@ export default function Reels(): React.JSX.Element {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, []);
 
+  // Compose never pre-flights the OpenArt connection: reels compose fine
+  // without it (hero images), and `OpenArtConnect` already surfaces a missing
+  // token as a standing, actionable button. Gating Compose behind a second
+  // prompt would ask the same question twice.
   const handleCompose = useCallback(async (): Promise<void> => {
     setComposing(true);
     setComposeNote(null);
@@ -204,6 +122,18 @@ export default function Reels(): React.JSX.Element {
   }, [selectedBrand]);
 
   const pending = (data?.ideas ?? []).filter((i) => localStatuses[i.id] === undefined);
+
+  // Progress badge props, only while a dispatch is verifiably in flight.
+  const progress =
+    composeStatus?.running &&
+    (composeStatus.status === "queued" || composeStatus.status === "running") &&
+    composeStatus.started_at
+      ? {
+          status: composeStatus.status,
+          since: composeStatus.started_at,
+          timeoutSeconds: composeStatus.timeout_seconds ?? 1800,
+        }
+      : null;
 
   const handleDecision = useCallback(async (id: string, newStatus: string): Promise<void> => {
     setBusyIds((prev) => new Set(prev).add(id));
@@ -238,6 +168,13 @@ export default function Reels(): React.JSX.Element {
           <span className="text-sm text-slate-500">reels awaiting review</span>
         </div>
         <div className="flex items-center gap-2">
+          {progress && (
+            <ComposeProgress
+              status={progress.status}
+              since={progress.since}
+              timeoutSeconds={progress.timeoutSeconds}
+            />
+          )}
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
           <OpenArtConnect onAuthorize={handleAuthorizeOpenArt} />
           <button
@@ -246,7 +183,7 @@ export default function Reels(): React.JSX.Element {
             disabled={composing}
             className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
           >
-            {composing ? "Composing… (runs several minutes)" : "🎬 Compose reels"}
+            {composing ? "Composing…" : "🎬 Compose reels"}
           </button>
           <button
             type="button"
