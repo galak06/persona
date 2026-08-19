@@ -27,8 +27,6 @@ import type { CategoryOption } from "./ReferenceImageTile";
 interface ReferenceCategoryGridProps {
   library: LibraryResponse;
   disabled?: boolean;
-  /** The mascot's real name, for the flag's copy. Empty/absent → generic. */
-  mascotName?: string;
   /** Refetch the library after an edit, a delete or an import. */
   onChanged: () => void;
 }
@@ -65,10 +63,8 @@ function toBlocks(library: LibraryResponse): CategoryBlock[] {
 export default function ReferenceCategoryGrid({
   library,
   disabled = false,
-  mascotName,
   onChanged,
 }: ReferenceCategoryGridProps): React.JSX.Element {
-  const mascot = mascotName?.trim() ?? "";
   // Cache-buster fixed at mount: the raw route is `no-store`, but a browser
   // that already painted a thumbnail can still reuse it in-memory after the
   // id is reused (the store is content-addressed per category).
@@ -152,14 +148,11 @@ export default function ReferenceCategoryGrid({
         {importButton}
       </div>
 
-      <Alert
-        status="info"
-        title={`Check the ${mascot || "mascot"} flag on every photo`}
-      >
-        A photo marked as showing {mascot || "the brand’s mascot"} is sent with an
-        instruction to reproduce <em>that exact subject</em>; every other photo is used
-        only for setting, styling and composition. Getting this wrong is the one mistake that
-        shows up in generated images, so correct a wrong tag or flag here.
+      <Alert status="info" title="Check the mascot flag on every photo">
+        A photo marked as showing the mascot is sent with an instruction to reproduce{" "}
+        <em>that exact subject</em>; every other photo is used only for setting, styling
+        and composition. Getting this wrong is the one mistake that shows up in generated
+        images, so correct a wrong tag or flag here.
       </Alert>
 
       {error && <Alert status="error">{error}</Alert>}
@@ -193,7 +186,6 @@ export default function ReferenceCategoryGrid({
                     key={image.id}
                     image={image}
                     options={options}
-                    mascotName={mascot}
                     bust={bust}
                     disabled={disabled}
                     saving={saving === image.id}

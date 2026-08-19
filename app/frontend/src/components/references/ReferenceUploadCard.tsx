@@ -34,13 +34,6 @@ interface QueuedFile {
 
 interface ReferenceUploadCardProps {
   disabled?: boolean;
-  /**
-   * The brand's mascot by name, so a finished row reads "shows <that name>"
-   * rather than "shows the mascot". Empty or absent (record still loading, or
-   * the brand never named one) falls back to the generic wording, which never
-   * guesses what kind of thing the mascot is.
-   */
-  mascotName?: string;
   /** Refetch the library after anything lands. */
   onUploaded: () => void;
 }
@@ -54,15 +47,7 @@ const STATUS_ROW: Record<RowStatus, { cls: string; text: string }> = {
 };
 
 /** The tagging result, spelled out — this is the operator's proof it ran. */
-function AnalysisSummary({
-  image,
-  mascot,
-}: {
-  image: LibraryImage;
-  /** Already trimmed; empty means fall back to the generic wording. */
-  mascot: string;
-}): React.JSX.Element {
-  const shown = mascot || "the mascot";
+function AnalysisSummary({ image }: { image: LibraryImage }): React.JSX.Element {
   return (
     <>
       <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
@@ -76,7 +61,7 @@ function AnalysisSummary({
               : "rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-500"
           }
         >
-          {image.shows_mascot ? `shows ${shown}` : `no ${shown}`}
+          {image.shows_mascot ? "shows the mascot" : "no mascot"}
         </span>
       </p>
       {image.description && (
@@ -88,10 +73,8 @@ function AnalysisSummary({
 
 export default function ReferenceUploadCard({
   disabled = false,
-  mascotName,
   onUploaded,
 }: ReferenceUploadCardProps): React.JSX.Element {
-  const mascot = mascotName?.trim() ?? "";
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [notice, setNotice] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -242,7 +225,7 @@ export default function ReferenceUploadCard({
                 <p className={`text-xs ${STATUS_ROW[row.status].cls}`}>
                   {STATUS_ROW[row.status].text || row.message}
                 </p>
-                {row.result && <AnalysisSummary image={row.result} mascot={mascot} />}
+                {row.result && <AnalysisSummary image={row.result} />}
               </div>
             </li>
           ))}
