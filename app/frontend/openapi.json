@@ -1375,7 +1375,7 @@
             ],
             "title": "Match Score"
           },
-          "nalla_context": {
+          "persona_context": {
             "anyOf": [
               {
                 "type": "string"
@@ -1384,7 +1384,7 @@
                 "type": "null"
               }
             ],
-            "title": "Nalla Context"
+            "title": "Persona Context"
           },
           "post_goal": {
             "anyOf": [

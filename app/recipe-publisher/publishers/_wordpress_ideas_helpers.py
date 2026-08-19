@@ -50,7 +50,12 @@ def call_gemini(idea: dict, enrichment: dict) -> str:
     suggested_title = e.get("suggested_title") or topic
     primary_keyword = e.get("primary_keyword") or idea.get("target_keyword") or ""
     secondary_keywords: list[str] = e.get("secondary_keywords") or []
-    nalla_angle = e.get("nalla_angle") or idea.get("nalla_context") or ""
+    # `idea` is a `content_ideas` row: the column is `persona_context` since the
+    # de-brand, `nalla_context` on databases that predate it. Read both or this
+    # angle silently goes blank.
+    nalla_angle = (
+        e.get("nalla_angle") or idea.get("persona_context") or idea.get("nalla_context") or ""
+    )
     post_goal = e.get("post_goal") or idea.get("post_goal") or ""
     input_ = idea.get("input") or ""
     outline = e.get("outline") or ""

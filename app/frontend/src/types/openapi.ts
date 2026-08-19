@@ -2169,8 +2169,8 @@ export interface components {
             input?: string | null;
             /** Match Score */
             match_score?: number | null;
-            /** Nalla Context */
-            nalla_context?: string | null;
+            /** Persona Context */
+            persona_context?: string | null;
             /** Post Goal */
             post_goal?: string | null;
             /** Reel Fb Caption */

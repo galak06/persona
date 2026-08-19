@@ -44,10 +44,9 @@ def idea_row(idea: IdeaCandidate, *, data_sufficient: bool) -> dict[str, Any]:
         "category": idea.category,
         "topic": idea.topic.strip(),
         "target_keyword": idea.target_keyword,
-        # Same real key `ideas_db.insert_idea` reads as `lib.gsc_scout._idea_row`
-        # uses (see that module's note on the `nalla_context`/`persona_context`
-        # drift) -- kept identical here so both scouts produce one row shape.
-        "nalla_context": idea.reasoning,
+        # Same key `ideas_db.insert_idea` reads as `lib.gsc_scout._idea_row`
+        # uses -- kept identical here so both scouts produce one row shape.
+        "persona_context": idea.reasoning,
         "post_goal": "topic_discovery"
         if idea.opportunity_type in DISCOVERY_TYPES
         else "seo_traffic",

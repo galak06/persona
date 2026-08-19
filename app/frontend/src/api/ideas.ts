@@ -5,7 +5,7 @@ export interface ContentIdea {
   category: string;
   topic: string;
   target_keyword: string | null;
-  nalla_context: string | null;
+  persona_context: string | null;
   post_goal: string | null;
   status: string;
   input: string | null;

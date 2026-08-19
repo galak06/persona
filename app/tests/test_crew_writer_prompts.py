@@ -17,7 +17,7 @@ _IDEA = {
     "topic": "Bone broth for dogs",
     "target_keyword": "bone broth for dogs",
     "category": "Nutrition",
-    "nalla_context": "Winter coat question keeps coming up.",
+    "persona_context": "Winter coat question keeps coming up.",
 }
 
 

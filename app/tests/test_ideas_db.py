@@ -41,7 +41,7 @@ def test_insert_idea_builds_row_from_sheet_style_keys(mock_execute: MagicMock) -
             "Category": "Recipes",
             "Topic": "Frozen dog treats",
             "Target_Keyword": "frozen dog treats",
-            "Nalla_Context": "Nalla loves these in summer",
+            "Persona_Context": "The mascot loves these in summer",
             "Post_Goal": "seo_traffic",
             "Input": '{"source": "manual"}',
         },
@@ -56,10 +56,39 @@ def test_insert_idea_builds_row_from_sheet_style_keys(mock_execute: MagicMock) -
     assert params["category"] == "Recipes"
     assert params["topic"] == "Frozen dog treats"
     assert params["target_keyword"] == "frozen dog treats"
-    assert params["nalla_context"] == "Nalla loves these in summer"
+    assert params["persona_context"] == "The mascot loves these in summer"
     assert params["status"] == "publish"  # default when Status absent
     assert params["brand_id"] == "dogfoodandfun"
     assert params["brand_name"] == "Dog Food & Fun"
+
+
+# ── persona_context (was nalla_context) — the additive rename ────────────────
+#
+# The column was renamed by ADDING `persona_context` and backfilling it from
+# `nalla_context`, which is never dropped (db/schema.sql). Three properties
+# have to hold for that to be safe, one test each:
+#   1. a write lands in the NEW column, whichever spelling the caller used;
+#   2. a read prefers the new column;
+#   3. a read falls back to the old one when the new one is null/absent —
+#      the case a rolled-back writer, or an un-migrated database, produces.
+
+
+@patch("lib.ideas_db.db.execute")
+def test_insert_idea_writes_persona_context_column_for_legacy_key(
+    mock_execute: MagicMock,
+) -> None:
+    """A caller still passing the pre-de-brand key writes the NEW column.
+
+    Un-updated callers (and payloads queued by an older container) must not
+    silently drop their context, and must not resurrect the old column.
+    """
+    ideas_db.insert_idea(
+        {"category": "Health", "topic": "Winter coats", "Nalla_Context": "legacy key"}
+    )
+    query, params = mock_execute.call_args[0]
+    assert params["persona_context"] == "legacy key"
+    assert "nalla_context" not in params
+    assert "nalla_context" not in query
 
 
 @patch("lib.ideas_db.db.execute")

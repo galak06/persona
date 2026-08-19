@@ -380,7 +380,15 @@ export default function WorkerCard({ worker, defaultLogOpen = false }: WorkerCar
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-slate-900 truncate">{effectiveWorker.title}</h2>
           <p className="text-xs text-slate-500 mt-0.5 font-mono">
-            com.persona.{effectiveWorker.label.replace(/^dogfood-/, "")}
+            {/* The raw `schedule_tasks.id` — the identifier every /workers
+                endpoint keys on. This used to render
+                `com.persona.{label minus a hardcoded "dogfood-" prefix}`,
+                which baked one brand's slug into the engine AND was wrong for
+                every other brand: only the legacy brand's rows carry that
+                prefix, so a brand provisioned since then rendered a launchd
+                label that does not exist. Showing the real label is both
+                brand-neutral and accurate. */}
+            {effectiveWorker.label}
           </p>
         </div>
 

@@ -100,7 +100,7 @@ def build_strategist_task_description(
 Topic: {idea.get("topic", "")}
 Target keyword: {idea.get("target_keyword", "")}
 Category: {idea.get("category", "")}
-Reasoning (why this idea was surfaced): {idea.get("nalla_context", "")}
+Reasoning (why this idea was surfaced): {idea.get("persona_context") or idea.get("nalla_context", "")}
 
 ## Real internal-link candidates (choose from these ONLY -- never invent a URL)
 {internal_link_candidates_json(link_candidates)}

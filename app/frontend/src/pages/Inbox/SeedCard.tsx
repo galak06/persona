@@ -2,7 +2,7 @@
  * Pending recipe seed — approve to trigger recipe generation, skip to discard.
  *
  * Shows seed_id code, timing, tags, first 5 ingredients (rest collapsible),
- * and a truncated dog-safety note.
+ * and a truncated safety note.
  */
 
 import { useState } from "react";
@@ -122,7 +122,7 @@ export function SeedCard({ item, onDecision }: Props): React.JSX.Element {
         {item.dog_safety_notes && (
           <div>
             <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">
-              Dog safety
+              Safety notes
             </div>
             <p className="text-sm text-slate-600 leading-relaxed">
               {truncate(item.dog_safety_notes, SAFETY_LIMIT)}

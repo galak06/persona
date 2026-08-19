@@ -55,7 +55,7 @@ def _idea_row(**overrides: Any) -> dict[str, Any]:
         "topic": "GPS Trackers Without the Monthly Bill",
         "target_keyword": "dog gps tracker without subscription",
         "category": "GPS/Gear",
-        "nalla_context": "Reddit threads show owners frustrated by subscription trackers.",
+        "persona_context": "Reddit threads show owners frustrated by subscription trackers.",
         "status": "publish",
         "input": json.dumps({"source": "crewai_scout", "priority_score": 85.0}),
         "created_at": "2026-08-01T00:00:00Z",

@@ -42,8 +42,14 @@ def _extract_content_signals(idea: dict) -> dict:
     """
     topic = (idea.get("topic", idea.get("Topic", "")) or "").lower()
     keyword = (idea.get("keyword", idea.get("Target_Keyword", "")) or "").lower()
-    nalla = (idea.get("Nalla_Context", idea.get("nalla_context", "")) or "").lower()
-    combined = f"{topic} {keyword} {nalla}"
+    context = (
+        idea.get("Persona_Context")
+        or idea.get("persona_context")
+        or idea.get("Nalla_Context")
+        or idea.get("nalla_context")
+        or ""
+    ).lower()
+    combined = f"{topic} {keyword} {context}"
 
     return {
         # Content format signals
@@ -99,7 +105,15 @@ def _extract_content_signals(idea: dict) -> dict:
             w in combined
             for w in ["lost", "refused", "broke", "surprised", "discovered", "noticed"]
         ),
-        "has_specific_nalla": "nalla" in combined and len(nalla) > 20,
+        # Was `"nalla" in combined and len(nalla) > 20` -- one brand's mascot
+        # name hardcoded into the engine's scoring, which made this signal
+        # permanently False for every other brand. The persona angle is what
+        # the signal was ever after, and `persona_context` IS that field, so a
+        # substantial context is the brand-neutral test. Signal names are
+        # consumed generically (Counter over `content_signals` keys), never by
+        # literal, so renaming the key breaks no reader; history rows written
+        # under the old name simply stop being counted.
+        "has_specific_persona_angle": len(context) > 20,
     }
 
 
@@ -120,7 +134,9 @@ def record_decision(idea: dict, decision: str, notes: str = "") -> None:
             "score": idea.get("score", 0),
             "decision": decision,
             "notes": notes,
-            "nalla_context": idea.get("Nalla_Context", "")[:100],
+            "persona_context": (idea.get("Persona_Context") or idea.get("Nalla_Context") or "")[
+                :100
+            ],
             "seasonal": idea.get("seasonal", False),
             "evidence": idea.get("evidence", {}),
             "content_signals": signals,
