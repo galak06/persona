@@ -109,17 +109,15 @@ def test_a_false_flag_stays_false(tmp_path: Path) -> None:
     assert reference.description == "a bowl of kibble"
 
 
-def test_the_legacy_asset_is_a_mascot_photo_by_definition(tmp_path: Path) -> None:
-    """`persona_mascot_reference.png` has no manifest entry to tag, but the
-    filename IS the tag -- brands that never migrate keep the identity clause."""
+def test_the_legacy_asset_never_becomes_a_resolved_reference(tmp_path: Path) -> None:
+    """It used to arrive as a synthetic `category="legacy"`, `shows_mascot=True`
+    entry -- an anchor nobody uploaded. `resolve_reference` cannot produce that
+    shape any more, so no clause is ever built for it."""
     assets = tmp_path / "data" / "assets"
     assets.mkdir(parents=True)
     (assets / "persona_mascot_reference.png").write_bytes(b"legacy")
 
-    reference = resolve_reference(tmp_path, "eating")
-
-    assert reference is not None
-    assert (reference.category, reference.shows_mascot) == ("legacy", True)
+    assert resolve_reference(tmp_path, "eating") is None
 
 
 # ── the clause follows the flag ──────────────────────────────────────────────
@@ -143,10 +141,11 @@ def test_a_non_mascot_reference_gets_the_grounding_clause() -> None:
     assert "Nalla" not in clause
 
 
-def test_no_reference_at_all_also_gets_the_grounding_clause() -> None:
-    """A deliberate behaviour change: `None` means the caller falls back to the
-    WP hero, whose content nobody has looked at and which is routinely stock.
-    Grounding on it is all it can honestly support."""
+def test_no_reference_at_all_stays_total_and_grounding() -> None:
+    """`None` is vestigial now -- the reels and social generators stop before
+    building a clause when nothing matches -- but the function must stay TOTAL:
+    a missing reference may never become a raise, and if one ever does reach a
+    prompt, grounding is the only thing it can honestly support."""
     assert reference_clause(None, "Nalla") == grounding_clause()
 
 

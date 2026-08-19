@@ -2,17 +2,23 @@
 
 The contract both ways, which is the whole point of the module:
 
-  * **authorized → OpenArt is genuinely used.** A valid stored token must
-    actually produce AI-generated beat images; the fallback must not
-    short-circuit that.
+  * **authorized + a library photo → OpenArt is genuinely used.** A valid
+    stored token must actually produce AI-generated beat images; the fallback
+    must not short-circuit that.
   * **unauthorized / unconfigured / broken → hero image, run continues.**
     Never raises, never a partial set.
+
+Every test here therefore gives the brand a library: only an UPLOADED photo
+may anchor a generated image, so a beat with no library match is never sent to
+OpenArt at all. That rule and its zero-call consequences are pinned in
+`test_reference_uploads_only.py`; this file is about what happens once a beat
+IS eligible to be generated.
 
 DB-free: `openart_enabled` / `stored_auth_state` / `generate_image` are all
 stubbed on the module under test.
 
 Which library photo each beat is grounded on lives next door in
-`test_reels_images_references.py`; this file is about the fallback contract.
+`test_reels_images_references.py`.
 """
 # ruff: noqa: S101
 
@@ -27,8 +33,11 @@ from lib.crew.reels.models import ReelBeat, ReelPlan
 from lib.crew.reference_clauses import grounding_clause
 from lib.crew.reference_library import ReferenceImage
 from lib.oauth.openart import OpenArtAuthRequiredError
+from tests._reference_library_fakes import write_library
 
 _HERO = b"hero-image-bytes"
+_REFERENCE = b"library-photo-bytes"
+_MASCOT = b"mascot-reference-bytes"
 
 
 def _plan(beats: int = 5) -> ReelPlan:
@@ -49,7 +58,26 @@ def authorized(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(reels_images, "stored_auth_state", lambda: "ok")
 
 
-def _resolve(plan: ReelPlan, brand_dir: Path = Path("/brand")) -> reels_images.ResolvedImages:
+@pytest.fixture()
+def brand(tmp_path: Path) -> Path:
+    """A brand holding one uploaded, NON-mascot library photo.
+
+    Not incidental scaffolding: a beat the library can't answer for is never
+    generated, so without this there would be nothing for these tests to
+    exercise the failure paths of.
+    """
+    write_library(tmp_path, {"general": _REFERENCE.decode()})
+    return tmp_path
+
+
+@pytest.fixture()
+def with_mascot(tmp_path: Path) -> Path:
+    """A library whose single photo IS the brand's dog (`shows_mascot`)."""
+    write_library(tmp_path, {"general": _MASCOT.decode()}, shows_mascot=True)
+    return tmp_path
+
+
+def _resolve(plan: ReelPlan, brand_dir: Path) -> reels_images.ResolvedImages:
     return reels_images.resolve_images(plan, _HERO, brand_dir=brand_dir, idea_id="idea-1")
 
 
@@ -58,8 +86,8 @@ def _beat_prompt(prompt: str) -> str:
 
     Every OpenArt prompt is prefixed with a clause about the attached photo
     (see `test_reels_images_references.py`); these tests care about the text
-    underneath. `/brand` has no library and no legacy asset, so the reference
-    is the hero -- an unknown photo, hence the grounding clause.
+    underneath. The `brand` fixture's photo is not tagged `shows_mascot`,
+    hence the grounding clause.
     """
     return prompt.removeprefix(grounding_clause())
 
@@ -68,24 +96,23 @@ def _beat_prompt(prompt: str) -> str:
 
 
 def test_authorized_generates_images_via_openart(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     prompts: list[str] = []
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
         prompts.append(prompt)
-        # `/brand` has no library and no legacy asset, so the reference
-        # degrades to the hero -- the pre-existing behavior, kept for brands
-        # without either.
+        # The reference is the library photo -- never the hero, which is the
+        # FALLBACK picture and is not allowed to anchor a generation.
         references = kwargs["references"]
         assert isinstance(references, list)
-        assert [r.data for r in references] == [_HERO]
+        assert [r.data for r in references] == [_REFERENCE]
         return f"ai-{prompt}".encode()
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
     plan = _plan()
 
-    resolved = _resolve(plan)
+    resolved = _resolve(plan, brand)
 
     assert resolved.source == "openart"
     # One call per beat, each carrying that beat's own prompt.
@@ -98,7 +125,7 @@ def test_authorized_generates_images_via_openart(
 
 
 def test_openart_is_retried_per_idea_not_cached_off(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A failure for one idea must not disable OpenArt for the next: the
     'try once, fail, fall back forever' regression."""
@@ -115,9 +142,9 @@ def test_openart_is_retried_per_idea_not_cached_off(
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
     ideas_seen.append("first")
-    first = _resolve(_plan(beats=1))
+    first = _resolve(_plan(beats=1), brand)
     ideas_seen.append("second")
-    second = _resolve(_plan(beats=1))
+    second = _resolve(_plan(beats=1), brand)
 
     assert first.source == "fallback"
     assert second.source == "openart"  # attempted again, succeeded
@@ -130,18 +157,6 @@ def test_openart_is_retried_per_idea_not_cached_off(
 # image was being passed as OpenArt's image2image reference, and a hero is
 # routinely a Pexels stock dog -- so every beat was grounded on a stranger's
 # dog. Reference and fallback are two different pictures.
-
-_MASCOT = b"mascot-reference-bytes"
-
-
-@pytest.fixture()
-def with_mascot(tmp_path: Path) -> Path:
-    """A brand dir holding only the LEGACY asset -- no tagged library. The
-    resolver must still find it, so brands that never migrate keep working."""
-    assets = tmp_path / "data" / "assets"
-    assets.mkdir(parents=True)
-    (assets / "persona_mascot_reference.png").write_bytes(_MASCOT)
-    return tmp_path
 
 
 def _reference_data(kwargs: dict[str, object]) -> bytes:
@@ -187,28 +202,12 @@ def test_a_failed_beat_still_falls_back_to_the_hero_not_the_mascot(
     assert resolved.source == "fallback"
 
 
-def test_a_brand_without_the_asset_keeps_using_the_hero_as_reference(
+def test_an_unreadable_reference_is_skipped_rather_than_substituted(
     authorized: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Brand-agnostic: most brands have neither a library nor the legacy
-    asset, and for them nothing about this pipeline changes."""
-    seen: list[object] = []
-
-    async def _generate(prompt: str, **kwargs: object) -> bytes:
-        seen.append(_reference_data(kwargs))
-        return b"ai"
-
-    monkeypatch.setattr(reels_images, "generate_image", _generate)
-
-    _resolve(_plan(beats=2), tmp_path)  # empty brand dir: nothing to resolve
-
-    assert seen == [_HERO, _HERO]
-
-
-def test_an_unreadable_mascot_asset_degrades_instead_of_raising(
-    authorized: None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """A reference that resolves but can't be read must not abort the reel."""
+    """A reference that resolves but can't be read must not abort the reel --
+    and must not silently promote the hero into the reference slot either. The
+    beat is simply not generated."""
     gone = ReferenceImage(
         id="gone",
         category="general",
@@ -217,25 +216,23 @@ def test_an_unreadable_mascot_asset_degrades_instead_of_raising(
         label="gone",
     )
     monkeypatch.setattr(reels_images, "resolve_reference", lambda *_a, **_k: gone)
-    seen: list[object] = []
 
     async def _generate(prompt: str, **kwargs: object) -> bytes:
-        seen.append(_reference_data(kwargs))
-        return b"ai"
+        raise AssertionError("an unreadable reference must not be generated around")
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan(beats=1))
+    resolved = _resolve(_plan(beats=1), tmp_path)
 
-    assert seen == [_HERO]
-    assert resolved.source == "openart"
+    assert resolved.images == [_HERO]
+    assert resolved.source == "fallback"
 
 
 # ── unavailable: hero fallback, never an exception ────────────────────────────
 
 
 def test_auth_required_falls_back_and_does_not_raise(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A revoked token surfaces only at call time. The run must continue with
     hero images rather than aborting the batch."""
@@ -246,13 +243,15 @@ def test_auth_required_falls_back_and_does_not_raise(
     monkeypatch.setattr(reels_images, "generate_image", _generate)
     plan = _plan()
 
-    resolved = _resolve(plan)
+    resolved = _resolve(plan, brand)
 
     assert resolved.source == "fallback"
     assert resolved.images == [_HERO] * 5
 
 
-def test_not_configured_skips_openart_entirely(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_not_configured_skips_openart_entirely(
+    brand: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """No OpenArt traffic at all when the brand hasn't enabled it."""
     monkeypatch.setattr(reels_images, "openart_enabled", lambda _d: False)
 
@@ -262,13 +261,15 @@ def test_not_configured_skips_openart_entirely(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(reels_images, "generate_image", _boom)
     monkeypatch.setattr(reels_images, "stored_auth_state", _boom)
 
-    resolved = _resolve(_plan())
+    resolved = _resolve(_plan(), brand)
 
     assert resolved.source == "fallback"
     assert resolved.images == [_HERO] * 5
 
 
-def test_unauthorized_skips_the_network_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unauthorized_skips_the_network_round_trip(
+    brand: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(reels_images, "openart_enabled", lambda _d: True)
     monkeypatch.setattr(reels_images, "stored_auth_state", lambda: "missing")
 
@@ -277,11 +278,11 @@ def test_unauthorized_skips_the_network_round_trip(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(reels_images, "generate_image", _boom)
 
-    assert _resolve(_plan()).source == "fallback"
+    assert _resolve(_plan(), brand).source == "fallback"
 
 
 def test_failed_beat_falls_back_alone_keeping_the_others(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """THE regression this module exists for. A single beat failing used to
     discard every image already generated, so a user who paid and waited for
@@ -298,7 +299,7 @@ def test_failed_beat_falls_back_alone_keeping_the_others(
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan())
+    resolved = _resolve(_plan(), brand)
 
     assert resolved.images[3] == _HERO  # only the failed beat
     for index in (0, 1, 2, 4):
@@ -308,7 +309,7 @@ def test_failed_beat_falls_back_alone_keeping_the_others(
 
 
 def test_failed_beat_is_retried_before_falling_back(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The observed failure was a transient submit timeout, so one retry
     should rescue the beat rather than degrade the reel."""
@@ -323,7 +324,7 @@ def test_failed_beat_is_retried_before_falling_back(
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan())
+    resolved = _resolve(_plan(), brand)
 
     assert attempts.count("prompt 0") == 2  # retried once
     assert resolved.images[0] == b"ai-prompt 0"  # rescued, no fallback
@@ -332,7 +333,7 @@ def test_failed_beat_is_retried_before_falling_back(
 
 
 def test_auth_loss_midway_keeps_images_already_generated(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A revoked token mid-run must not retroactively discard earlier beats,
     and must not keep calling for the remaining ones."""
@@ -347,7 +348,7 @@ def test_auth_loss_midway_keeps_images_already_generated(
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan())
+    resolved = _resolve(_plan(), brand)
 
     assert resolved.images[0] == b"ai-prompt 0"
     assert resolved.images[1] == b"ai-prompt 1"
@@ -357,14 +358,14 @@ def test_auth_loss_midway_keeps_images_already_generated(
 
 
 def test_all_beats_failing_reports_pure_fallback(
-    authorized: None, monkeypatch: pytest.MonkeyPatch
+    authorized: None, brand: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def _generate(_prompt: str, **_kw: object) -> bytes:
         raise RuntimeError("quota exhausted")
 
     monkeypatch.setattr(reels_images, "generate_image", _generate)
 
-    resolved = _resolve(_plan())
+    resolved = _resolve(_plan(), brand)
 
     assert resolved.images == [_HERO] * 5
     assert resolved.ai_count == 0

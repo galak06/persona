@@ -7,10 +7,13 @@ unauthorized, a beat failing); this file pins the other half:
     `""` and unrecognised labels reach the resolver verbatim and land on
     `general` -- callers never second-guess it
   * the upload carries the file's REAL name and content type (the old single-
-    reference call left OpenArt's `image/jpeg` default on every PNG) -- for
-    the hero fallback too, which has no filename and must be sniffed
+    reference call left OpenArt's `image/jpeg` default on every PNG)
   * the prompt clause matches the photo: mascot identity only for a mascot
     photo, grounding otherwise; one seed and ONE `ReferenceCache` per run
+
+Every reference here is a library upload, because those are the only images
+allowed to anchor a generation at all -- what happens when there is no such
+photo is `test_reference_uploads_only.py`'s subject.
 
 Real files under a `tmp_path` brand dir; only OpenArt itself is stubbed.
 """
@@ -27,7 +30,7 @@ from scripts import reels_images
 
 from lib.crew.reels.models import ReelBeat, ReelPlan
 from lib.crew.reference_clauses import grounding_clause, identity_clause
-from lib.crew.reference_library import library_root, manifest_path
+from tests._reference_library_fakes import write_library as _write_library
 
 _HERO = b"hero-image-bytes"
 
@@ -45,41 +48,6 @@ def _plan(categories: list[str]) -> ReelPlan:
         ],
         ig_caption="ig",
         fb_caption="fb",
-    )
-
-
-def _write_library(
-    brand_dir: Path, files: dict[str, str], *, ext: str = ".png", shows_mascot: bool = False
-) -> None:
-    """`{category: distinctive-bytes}` -> a one-image-per-category library. The
-    bytes double as the assertion handle: whichever photo a beat picks is
-    identifiable from the `ReferenceUpload` alone."""
-    root = library_root(brand_dir)
-    entries: list[dict[str, Any]] = []
-    for category, marker in files.items():
-        (root / category).mkdir(parents=True, exist_ok=True)
-        filename = f"{marker}{ext}"
-        (root / category / filename).write_bytes(marker.encode())
-        entries.append(
-            {
-                "id": f"{category}-1",
-                "category": category,
-                "filename": filename,
-                "content_type": "image/png" if ext == ".png" else "image/jpeg",
-                "source": "upload",
-                "label": marker,
-                "shows_mascot": shows_mascot,
-            }
-        )
-    manifest_path(brand_dir).write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "categories": [{"slug": c, "label": c.title()} for c in files],
-                "images": entries,
-            }
-        ),
-        encoding="utf-8",
     )
 
 
@@ -163,45 +131,16 @@ def test_the_upload_carries_the_real_filename_and_content_type(
     assert upload.content_type == "image/png"
 
 
-def test_the_legacy_asset_is_uploaded_as_a_png_too(
+def test_a_jpeg_upload_is_announced_as_a_jpeg(
     authorized: None, calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """Brands that never migrate get the content-type fix as well."""
-    assets = tmp_path / "data" / "assets"
-    assets.mkdir(parents=True)
-    (assets / "persona_mascot_reference.png").write_bytes(b"legacy-bytes")
+    """The type follows the FILE, so the fix is not PNG-specific."""
+    _write_library(tmp_path, {"general": "gen-bytes"}, ext=".jpg")
 
-    _resolve(_plan(["eating"]), tmp_path)
-
-    upload = calls[0]["references"][0]
-    assert (upload.data, upload.filename) == (b"legacy-bytes", "persona_mascot_reference.png")
-    assert upload.content_type == "image/png"
-
-
-def test_a_png_hero_fallback_is_uploaded_as_a_png(
-    authorized: None, calls: list[dict[str, Any]], tmp_path: Path
-) -> None:
-    """The SAME mislabel, on the last fallback. A brand with no library and no
-    legacy asset grounds every beat on the WP hero -- a PNG arriving as bare
-    bytes, so its type has to be sniffed rather than read off a filename."""
-    png = b"\x89PNG\r\n\x1a\n" + b"hero-image-bytes"
-
-    reels_images.resolve_images(_plan(["general"]), png, brand_dir=tmp_path, idea_id="idea-1")
-
-    upload = calls[0]["references"][0]
-    assert upload.data == png
-    assert (upload.filename, upload.content_type) == ("reference.png", "image/png")
-
-
-def test_an_unsniffable_hero_keeps_the_dataclass_defaults(
-    authorized: None, calls: list[dict[str, Any]], tmp_path: Path
-) -> None:
-    """Sniffing is best-effort: bytes matching no known magic keep
-    `ReferenceUpload`'s defaults rather than failing a beat over a label."""
     _resolve(_plan(["general"]), tmp_path)
 
     upload = calls[0]["references"][0]
-    assert (upload.filename, upload.content_type) == ("reference.jpg", "image/jpeg")
+    assert (upload.filename, upload.content_type) == ("gen-bytes.jpg", "image/jpeg")
 
 
 # ── prompt, seed and cache are run-wide ───────────────────────────────────────
@@ -236,17 +175,6 @@ def test_a_non_mascot_photo_prefixes_the_grounding_clause(
     assert calls[0]["prompt"] == f"{grounding_clause()}prompt 0"
     assert "EXACT SAME" not in calls[0]["prompt"]
     assert "Nalla" not in calls[0]["prompt"]
-
-
-def test_the_hero_fallback_prefixes_the_grounding_clause(
-    authorized: None, calls: list[dict[str, Any]], tmp_path: Path
-) -> None:
-    """No library and no legacy asset: the reference is the WP hero, routinely
-    a Pexels stock dog. Identity over it IS the 'stranger's dog' bug."""
-    _resolve(_plan(["general"]), tmp_path)
-
-    assert calls[0]["prompt"] == f"{grounding_clause()}prompt 0"
-    assert "EXACT SAME" not in calls[0]["prompt"]
 
 
 def test_one_seed_reaches_every_beat(

@@ -112,30 +112,9 @@ def test_empty_general_falls_back_to_any_non_empty_category(tmp_path: Path) -> N
     assert _id(tmp_path, "snowboarding") == "walking/w.png"
 
 
-def test_empty_library_falls_back_to_legacy_png(tmp_path: Path) -> None:
-    legacy = _legacy(tmp_path)
-    resolved = resolve_reference(tmp_path, "eating")
-    assert resolved is not None
-    assert (resolved.path, resolved.category) == (legacy, "legacy")
-    # Pins the PNG-mislabel fix: a .png asset is never announced as anything
-    # but image/png.
-    assert resolved.content_type == "image/png"
-
-
-def test_legacy_jpg_reports_jpeg_content_type(tmp_path: Path) -> None:
-    _legacy(tmp_path, ".jpg")
-    resolved = resolve_reference(tmp_path, None)
-    assert resolved is not None
-    assert resolved.content_type == "image/jpeg"
-
-
-def test_library_wins_over_legacy(tmp_path: Path) -> None:
-    _legacy(tmp_path)
-    _write_library(tmp_path, [_entry("eating", "a.png")])
-    assert _id(tmp_path, "eating") == "eating/a.png"
-
-
-def test_no_library_and_no_legacy_returns_none(tmp_path: Path) -> None:
+def test_an_empty_library_resolves_to_none(tmp_path: Path) -> None:
+    """The chain ends at `None`; what every caller does with that, and why the
+    legacy asset is no longer a tier, lives in `test_reference_uploads_only`."""
     assert resolve_reference(tmp_path, "eating") is None
     assert resolve_reference_image_path(tmp_path) is None
 

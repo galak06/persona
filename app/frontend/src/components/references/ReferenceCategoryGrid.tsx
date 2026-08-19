@@ -168,7 +168,7 @@ export default function ReferenceCategoryGrid({
       {library.images.length === 0 ? (
         <EmptyState
           title="No reference photos yet"
-          description="Upload a few clear shots above. Until then, image generation falls back to whatever single legacy asset the brand has."
+          description="Only photos uploaded here can be used to generate an image. Until you add some, posts keep their own hero image and no AI image is generated."
         />
       ) : (
         blocks.map((block) => (

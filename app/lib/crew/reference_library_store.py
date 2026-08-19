@@ -13,10 +13,9 @@ Two invariants hold every write together:
 * **Content-addressed storage.** A file is named `sha256(bytes)[:16]` plus
   the canonical extension for its SNIFFED content type, under its category
   directory. The uploader's filename never reaches the filesystem -- it
-  survives only as the manifest entry's `label`. Re-adding identical bytes
-  to the same category is therefore an idempotent no-op that returns the
-  existing entry; the same photo may legitimately live in two categories
-  (two ids, two files, one hash).
+  survives only as the manifest entry's `label`. Re-adding identical bytes to
+  the same category is an idempotent no-op returning the existing entry; the
+  same photo may legitimately live in two categories (two ids, one hash).
 * **Nothing here is provisioned.** `data/assets/` is not created by brand
   provisioning for existing brands, so every write `mkdir(parents=True,
   exist_ok=True)` first, writes bytes atomically (temp + `os.replace`), and
@@ -25,15 +24,14 @@ Two invariants hold every write together:
   other's entry.
 
 The LEGACY `data/assets/persona_mascot_reference.png` is never touched and
-never copied automatically: `import_legacy` is an explicit, operator-driven
-call that COPIES it into `general` and leaves the original exactly where it
-is, because `resolve_reference_image_path` still falls back to it.
+never copied automatically: `import_legacy` COPIES it into `general`, leaving
+the original where it is, and is now the ONLY way it ever anchors a generated
+image -- `resolve_reference` no longer falls back to it.
 
 The same copy-only discipline covers the directory rename: the library used
-to live under `data/assets/mascot_refs/`, and `migrate_legacy_dirname`
-COPIES such a tree into `reference_images/` the first time this module
-touches a brand. The old tree is left byte-identical, forever -- see that
-function.
+to live under `data/assets/mascot_refs/`, and `migrate_legacy_dirname` COPIES
+such a tree into `reference_images/` the first time this module touches a
+brand. The old tree is left byte-identical, forever -- see that function.
 """
 
 from __future__ import annotations
@@ -231,10 +229,12 @@ def create_category(brand_dir: Path, label: str) -> dict[str, Any]:
 def import_legacy(brand_dir: Path) -> dict[str, Any] | None:
     """COPY the legacy `persona_mascot_reference.*` into `general`.
 
-    Returns the new (or already-present) manifest entry, or `None` if the
-    brand has no legacy asset. The original file is only read: it stays on
-    disk, unmodified, because it remains the last-resort fallback for brands
-    that never populate the library.
+    THE ONLY WAY that asset ever grounds a generated image: nothing resolves
+    to it on disk any more, so this operator-driven copy is what turns it into
+    a usable reference, filed `source="upload"` -- which is what it now is.
+    Returns the new (or already-present) manifest entry, or `None` if there is
+    no legacy asset; the original is only read, so the import is repeatable
+    and never destructive.
     """
     migrate_legacy_dirname(brand_dir)
     legacy = resolve_reference_image_path(brand_dir)

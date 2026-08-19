@@ -15,8 +15,8 @@ onto its response:
 3. Pillow `verify()` + re-open for `.size`       -> 422
 4. dimensions 256..8000 on both axes             -> 422
 
-Step 2 generalizes `lib.crew.socialpost.compose._sniff_mime` (JPEG-vs-PNG
-from the first two bytes) to the three formats the library accepts. Step 3
+Step 2 generalizes the JPEG-vs-PNG check that used to live in
+`lib.crew.socialpost.compose` to the three formats the library accepts. Step 3
 is what catches a PDF renamed `.png` -- and Pillow's own
 `DecompressionBombError`, since these bytes arrive from a browser upload.
 The declared filename is never trusted for anything: it is sanitized into a

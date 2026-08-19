@@ -267,11 +267,19 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # The strategist tagged this post with the kind of scene its hero should
     # show; the library answers with the photo that matches. `""` and an
     # unrecognised label are passed through untouched -- the resolver falls
-    # back to `general`, then to the legacy asset, then to no reference.
+    # back to `general`, then to any other tag, then to None.
+    #
+    # None here is NOT the reels/social case: this hero is the image being
+    # created, so there is no pre-existing picture to keep instead. It simply
+    # generates text2image (`generate_wp_image` takes its Imagen tiers when
+    # `reference_image_bytes` is None, and `_style_suffix` then emits no
+    # reference clause) -- no non-uploaded image is used as an anchor, which
+    # is all "uploads only" asks.
     reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
     reference_image_path = reference.path if reference is not None else None
     # What the model is TOLD the photo is: a library image of a bowl or a
-    # kitchen must not be introduced as the brand's dog.
+    # kitchen must not be introduced as the brand's dog. Ignored downstream
+    # when there is no reference at all.
     clause = reference_clause(reference, mascot_name)
     if reference is not None:
         print(f"reference: {reference.path} [{reference.category}] mascot={reference.shows_mascot}")

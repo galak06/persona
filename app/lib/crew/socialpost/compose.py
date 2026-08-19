@@ -15,10 +15,13 @@ it actually is, mascot portrait or not (`lib.crew.reference_clauses`).
 That reference used to be the WP post's OWN featured image, on the theory
 that it grounds the scene in this post's subject matter. It did -- but a hero
 is routinely a Pexels stock dog, so the "brand's dog" in every generated hook
-image was a stranger's. Same bug the reels pipeline had, third home. The hero
-now serves only as the FALLBACK output image when generation fails
-(`source='fallback'`), and as the reference only for brands whose library is
-empty. Overlays are applied either way.
+image was a stranger's. Same bug the reels pipeline had, third home.
+
+**Only an uploaded photo may anchor a generated image.** The hero is now
+purely the FALLBACK OUTPUT (`source='fallback'`): it is what the post ships
+when generation fails -- and when the library has no photo for this plan's
+scene, in which case Gemini is never called at all. Overlays are applied
+either way, so the post looks finished regardless.
 """
 
 from __future__ import annotations
@@ -39,12 +42,6 @@ logger = get_logger(__name__)
 
 _RECIPE_PUBLISHER_ROOT = Path(__file__).resolve().parents[3] / "recipe-publisher"
 PENDING_DIR = "state/social_posts_pending"
-
-
-def _sniff_mime(image_bytes: bytes) -> str:
-    """JPEG vs PNG from magic bytes -- the WP hero arrives as raw bytes with
-    no filename to go by."""
-    return "image/jpeg" if image_bytes[:2] == b"\xff\xd8" else "image/png"
 
 
 def center_crop_square(image_bytes: bytes) -> bytes:
@@ -77,50 +74,65 @@ def center_crop_square(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def _reference(
-    plan: SocialPostPlan, brand_dir: Path, hero_bytes: bytes
-) -> tuple[bytes, str, ReferenceImage | None]:
-    """(bytes, mime, entry) to condition generation on: the library photo
-    matching `plan.reference_category`, or the WP hero when the brand has no
-    library. The entry travels with it so the caller can pick the prompt
-    clause from `shows_mascot`; `None` means "this is the hero".
+def _reference(plan: SocialPostPlan, brand_dir: Path) -> tuple[bytes, str, ReferenceImage] | None:
+    """(bytes, mime, entry) to condition generation on -- the library photo
+    matching `plan.reference_category` -- or `None` when there is no such
+    photo, which means DON'T GENERATE. The entry travels with the bytes so
+    the caller can pick the prompt clause from `shows_mascot`.
 
     The category is passed to the resolver verbatim -- "" and an unrecognised
     label are its business (it falls through to `general`, then to any other
-    tag, then to the legacy asset), not this caller's.
+    tag), not this caller's.
     """
     reference = resolve_reference(brand_dir, plan.reference_category)
-    if reference is not None:
-        try:
-            data = reference.path.read_bytes()
-        except OSError as exc:
-            logger.warning(
-                "social_posts_reference_unreadable", path=str(reference.path), error=str(exc)
-            )
-        else:
-            logger.info(
-                "social_posts_reference_selected",
-                requested_category=plan.reference_category,
-                category=reference.category,
-                image_id=reference.id,
-                shows_mascot=reference.shows_mascot,
-            )
-            return data, reference.content_type, reference
-    return hero_bytes, _sniff_mime(hero_bytes), None
+    if reference is None:
+        logger.info(
+            "social_posts_reference_unmatched",
+            requested_category=plan.reference_category,
+            reason="no_library_match",
+        )
+        return None
+    try:
+        data = reference.path.read_bytes()
+    except OSError as exc:
+        logger.warning(
+            "social_posts_reference_unmatched",
+            requested_category=plan.reference_category,
+            reason="unreadable",
+            path=str(reference.path),
+            error=str(exc),
+        )
+        return None
+    logger.info(
+        "social_posts_reference_selected",
+        requested_category=plan.reference_category,
+        category=reference.category,
+        image_id=reference.id,
+        shows_mascot=reference.shows_mascot,
+    )
+    return data, reference.content_type, reference
 
 
 def generate_hook_image(
     plan: SocialPostPlan, *, mascot_name: str, hero_bytes: bytes, brand_dir: Path
 ) -> tuple[bytes, str]:
     """The single shared image: Gemini-generated from the plan's brief,
-    conditioned on the brand's own mascot photo (see `_reference`), with the
-    WP hero used directly as the image on any failure. Returns (bytes, source)
+    conditioned on a photo from the brand's library (see `_reference`), with
+    the WP hero used directly as the image otherwise. Returns (bytes, source)
     with source in ('gemini', 'fallback').
+
+    `fallback` covers both ways of not getting a generated image: generation
+    failed, or the library had no photo to anchor it on -- in which case
+    nothing is generated, because only an uploaded photo may serve as the
+    reference and the hero (routinely stock) is not one.
 
     Passing a reference deliberately routes `generate_wp_image` past the
     Imagen tiers to `gemini-3-pro-image-preview` -- the only tier that
     accepts image input (see that function's docstring)."""
-    reference_bytes, reference_mime, reference = _reference(plan, brand_dir, hero_bytes)
+    resolved = _reference(plan, brand_dir)
+    if resolved is None:
+        return hero_bytes, "fallback"
+    reference_bytes, reference_mime, reference = resolved
     try:
         generated = generate_wp_image(
             plan.image_brief,
@@ -128,8 +140,8 @@ def generate_hook_image(
             mascot_name=mascot_name,
             reference_image_bytes=reference_bytes,
             reference_image_mime=reference_mime,
-            # A library photo of a bowl or a kitchen must NOT be introduced as
-            # "the brand's dog"; nor must the hero, which is often stock.
+            # A library photo of a bowl or a kitchen must NOT be introduced
+            # as "the brand's dog".
             reference_clause=reference_clause(reference, mascot_name),
         )
         if generated.bytes_:

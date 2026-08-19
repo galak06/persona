@@ -58,9 +58,11 @@ export default function ReferenceLibrarySection({
           Real photos to ground generated imagery &mdash; the brand&rsquo;s own dog,
           but also ingredients, kitchens, products, locations, style shots. Every
           upload is described, tagged and mascot-flagged automatically; image
-          generation then picks the reference whose tag matches what it is drawing,
-          so a fuller library means generated images that stay anchored to the real
-          thing.
+          generation then picks the reference whose tag matches what it is drawing.
+          These uploads are the <strong>only</strong> photos allowed to anchor a
+          generated image: with nothing here that matches, the post keeps its own
+          hero image and nothing is generated. A fuller library means more posts get
+          real generated imagery.
         </p>
       </header>
 

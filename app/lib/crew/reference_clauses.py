@@ -66,17 +66,21 @@ def grounding_clause() -> str:
 def reference_clause(reference: ReferenceImage | None, mascot_name: str) -> str:
     """The clause that matches whatever photo is actually attached.
 
-    Three cases, one rule -- "say only what this picture supports":
+    Two cases, one rule -- "say only what this picture supports":
 
     * a library image tagged `shows_mascot` -> `identity_clause`.
     * any other library image -> `grounding_clause`; it is a dish, a place or
       a product, and there is no mascot in it to reuse.
-    * `None` -> `grounding_clause`, DELIBERATELY. No library reference means
-      the caller falls back to the WP post's hero image, whose content is
-      unknown and is routinely a Pexels stock photo. Asserting mascot identity
-      over that is the original "stranger's dog" bug in a new costume, so the
-      hero is grounded on, never identified with. This is a behaviour change
-      from the previous unconditional identity clause.
+
+    `None` is the third, now-vestigial case. It used to mean "the caller fell
+    back to the WP hero as the reference", which is exactly what "only
+    uploaded photos may anchor a generated image" abolished: with no library
+    match the reels and social generators no longer generate at all, so they
+    never build a clause for a `None` reference. The WP-hero pipeline still
+    passes one unconditionally, and `lib.crew.wp_image._style_suffix` drops it
+    when there is no reference to describe. Kept TOTAL -- `grounding_clause`,
+    never a raise -- so no caller can turn a missing reference into a crash,
+    and so the answer stays the honest one if a `None` ever reaches a prompt.
     """
     if reference is not None and reference.shows_mascot:
         return identity_clause(mascot_name)

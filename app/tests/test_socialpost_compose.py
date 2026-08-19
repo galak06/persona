@@ -4,8 +4,9 @@ The "stranger's dog" bug in its third home. `generate_hook_image` used to
 condition Gemini on the WP post's own featured image, which is routinely a
 Pexels stock dog, so the brand's mascot in every hook image was someone
 else's. It now resolves the brand's real photo from the tagged library by the
-plan's `reference_category`; the hero stays the FALLBACK output image, and
-serves as the reference only for brands with no library at all.
+plan's `reference_category`, and ONLY that: with no library match nothing is
+generated and the hero ships as-is. The hero is the fallback OUTPUT, never a
+reference.
 
 Real files under a `tmp_path` brand dir; only `generate_wp_image` is stubbed.
 """
@@ -13,16 +14,16 @@ Real files under a `tmp_path` brand dir; only `generate_wp_image` is stubbed.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from lib.crew.reference_clauses import grounding_clause, identity_clause
-from lib.crew.reference_library import library_root, manifest_path
+from lib.crew.reference_library import library_root
 from lib.crew.socialpost import compose
 from lib.crew.socialpost.models import SocialPostPlan
+from tests._reference_library_fakes import write_library as _write_library
 
 _HERO = b"\xff\xd8hero-jpeg-bytes"  # real JPEG magic, so _sniff_mime agrees
 
@@ -39,36 +40,6 @@ def _plan(reference_category: str = "") -> SocialPostPlan:
         image_alt_text="alt",
         target_question="what should my dog eat?",
         comment_keyword="RECIPE",
-    )
-
-
-def _write_library(brand_dir: Path, files: dict[str, str], *, shows_mascot: bool = False) -> None:
-    """`{category: distinctive-bytes}` -- see `tests/test_reels_images_references`."""
-    root = library_root(brand_dir)
-    entries: list[dict[str, Any]] = []
-    for category, marker in files.items():
-        (root / category).mkdir(parents=True, exist_ok=True)
-        (root / category / f"{marker}.png").write_bytes(marker.encode())
-        entries.append(
-            {
-                "id": f"{category}-1",
-                "category": category,
-                "filename": f"{marker}.png",
-                "content_type": "image/png",
-                "source": "upload",
-                "label": marker,
-                "shows_mascot": shows_mascot,
-            }
-        )
-    manifest_path(brand_dir).write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "categories": [{"slug": c, "label": c.title()} for c in files],
-                "images": entries,
-            }
-        ),
-        encoding="utf-8",
     )
 
 
@@ -116,17 +87,18 @@ def test_an_empty_category_lands_on_general(calls: list[dict[str, Any]], tmp_pat
     assert calls[0]["reference_image_bytes"] == b"gen-bytes"
 
 
-def test_the_hero_is_the_reference_only_when_the_library_is_empty(
+def test_an_empty_library_ships_the_hero_without_generating(
     calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """Brand-agnostic: with no library and no legacy asset this is exactly the
-    previous behavior, hero bytes and sniffed mime included."""
-    compose.generate_hook_image(
+    """ONLY UPLOADED PHOTOS MAY ANCHOR A GENERATED IMAGE. The hero used to be
+    handed to Gemini as the reference here; now no library match means no
+    generation call at all, and the post keeps its own hero."""
+    image, source = compose.generate_hook_image(
         _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
     )
 
-    assert calls[0]["reference_image_bytes"] == _HERO
-    assert calls[0]["reference_image_mime"] == "image/jpeg"
+    assert calls == []  # Gemini was never called
+    assert (image, source) == (_HERO, "fallback")
 
 
 def test_the_hero_remains_the_fallback_image_on_failure(
@@ -181,23 +153,30 @@ def test_a_non_mascot_photo_gets_the_grounding_clause(
     assert "Nalla" not in calls[0]["reference_clause"]
 
 
-def test_the_hero_reference_gets_the_grounding_clause(
+def test_the_legacy_asset_alone_is_not_enough_to_generate(
     calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
-    """No library -> the reference is the hero, routinely a Pexels stock dog.
-    Identity must not be asserted over a photo nobody has looked at."""
-    compose.generate_hook_image(
+    """It used to resolve as a mascot reference straight off disk. Now only an
+    operator's "Import legacy reference" click puts it in the library, so until
+    then the hook image is the post's own hero."""
+    assets = tmp_path / "data" / "assets"
+    assets.mkdir(parents=True)
+    (assets / "persona_mascot_reference.png").write_bytes(b"legacy-bytes")
+
+    image, source = compose.generate_hook_image(
         _plan("eating"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
     )
 
-    assert calls[0]["reference_clause"] == grounding_clause()
+    assert calls == []
+    assert (image, source) == (_HERO, "fallback")
 
 
-def test_an_unreadable_reference_degrades_to_the_hero(
+def test_an_unreadable_reference_ships_the_hero_rather_than_grounding_on_it(
     calls: list[dict[str, Any]], tmp_path: Path
 ) -> None:
     """A manifest entry whose file was deleted between read and use must not
-    take down the post."""
+    take down the post -- and must not promote the hero into the reference
+    slot either."""
     _write_library(tmp_path, {"general": "gen-bytes"})
     (library_root(tmp_path) / "general" / "gen-bytes.png").unlink()
 
@@ -205,5 +184,5 @@ def test_an_unreadable_reference_degrades_to_the_hero(
         _plan("general"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path
     )
 
-    assert calls[0]["reference_image_bytes"] == _HERO
-    assert (image, source) == (b"gemini-image", "gemini")
+    assert calls == []
+    assert (image, source) == (_HERO, "fallback")

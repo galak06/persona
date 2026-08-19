@@ -25,11 +25,16 @@ lives in `lib.crew.reference_validate` (the only PIL importer) and writes in
 `lib.crew.reference_library_store`. The import direction is one-way --
 `lib.crew.wp_image` imports from here, never the reverse.
 
+**The library is the ONLY source of references.** Nothing uploaded elsewhere
+may anchor a generated image -- not the WP post's hero (routinely a Pexels
+stock photo), not the legacy `persona_mascot_reference.*` on disk, which is
+import-only (see `resolve_reference_image_path`).
+
 Every read is tolerant: a missing or malformed manifest reads as an empty
 library, an entry whose file vanished is skipped with a warning, a stray
-file with no entry is ignored. A brand with no library keeps the legacy
-behaviour; a brand with neither gets `None` -- "generate without a
-reference", not an error.
+file with no entry is ignored. A brand with no library gets `None` from
+`resolve_reference` -- "do not generate this image", not an error, and not a
+licence to substitute some other picture.
 """
 
 from __future__ import annotations
@@ -48,15 +53,14 @@ logger = get_logger(__name__)
 
 LIBRARY_DIRNAME = "reference_images"
 GENERAL_CATEGORY = "general"
-LEGACY_CATEGORY = "legacy"
 MANIFEST_FILENAME = "library.json"
 MANIFEST_VERSION = 1
 
 LEGACY_REFERENCE_STEM = "persona_mascot_reference"
 LEGACY_REFERENCE_EXTENSIONS = (".png", ".jpg", ".jpeg")
 
-#: Canonical extension -> content type. Only the legacy file needs it (it
-#: has no manifest entry); library images carry their sniffed type.
+#: Canonical extension -> content type, for images whose entry carries none:
+#: a hand-edited manifest here, the legacy asset on `import_legacy`'s path.
 CONTENT_TYPE_BY_SUFFIX = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -82,7 +86,7 @@ class ReferenceImage:
     """One resolved reference photo, ready to read off disk."""
 
     id: str
-    category: str  # resolved slug, or "legacy"
+    category: str  # resolved slug
     path: Path
     content_type: str
     label: str
@@ -184,11 +188,19 @@ def list_category_labels(brand_dir: Path) -> list[str]:
 def resolve_reference(
     brand_dir: Path, category: str | None, *, seed: str = ""
 ) -> ReferenceImage | None:
-    """Best reference photo for `category`, or `None` if the brand has none.
+    """Best UPLOADED photo for `category`, or `None` if the library has none.
 
     Lookup order: exact `slugify(category)` match -> `general` -> any other
     non-empty category (alphabetical, so the choice is reproducible) ->
-    the legacy `persona_mascot_reference.{png,jpg,jpeg}` -> `None`.
+    `None`. That is the whole chain: the library is the only source of
+    references, so nothing outside it is ever reached for.
+
+    `None` therefore means "there is no photo this image may be anchored on",
+    and every caller answers it by NOT generating: the reels beat and the
+    social hook keep the post's own hero as the finished picture, the WP hero
+    generates text2image with no reference. This used to fall through to the
+    legacy asset and callers then fell through again to the hero -- two
+    silent anchors nobody chose.
 
     Within a category, uploads outrank WP-media harvests (`source_rank`) and
     the seeded pick happens inside the best tier only. `seed` is hashed to an
@@ -204,20 +216,6 @@ def resolve_reference(
         candidates = by_category.get(slug) if slug else None
         if candidates:
             return _pick(_best_tier(candidates), seed)
-
-    legacy = resolve_reference_image_path(brand_dir)
-    if legacy is not None:
-        return ReferenceImage(
-            id=legacy.name,
-            category=LEGACY_CATEGORY,
-            path=legacy,
-            content_type=CONTENT_TYPE_BY_SUFFIX.get(legacy.suffix.lower(), _FALLBACK_CONTENT_TYPE),
-            label=legacy.stem,
-            # `persona_mascot_reference.*` is a photo of the brand's mascot by
-            # definition -- that is the entire meaning of the filename -- so it
-            # keeps the identity clause even though it has no manifest entry.
-            shows_mascot=True,
-        )
     return None
 
 
@@ -225,11 +223,13 @@ def resolve_reference_image_path(brand_dir: Path) -> Path | None:
     """The brand's optional LEGACY persona+mascot reference photo, if one
     exists -- `$BRAND_DIR/data/assets/persona_mascot_reference.{png,jpg,jpeg}`.
 
-    Moved here from `lib.crew.wp_image` (which now imports it back as a
-    delegating alias) so the legacy probe and the tagged library share one
-    home. `None` means "generate without a reference" -- the pre-existing,
-    generic behaviour -- not an error: this pipeline is brand-agnostic and
-    most brands have no such asset.
+    IMPORT-ONLY. `resolve_reference` no longer consults it, so finding this
+    file does NOT mean an image will be grounded on it: the only caller that
+    acts on it is `reference_library_store.import_legacy`, behind the
+    operator's "Import legacy reference" button, which COPIES it into
+    `general` and leaves the original untouched. Until someone clicks that,
+    the asset anchors nothing. Kept here (not in `lib.crew.wp_image`, which
+    imports it as a delegating alias) so probe and library share one home.
     """
     directory = assets_dir(brand_dir)
     for ext in LEGACY_REFERENCE_EXTENSIONS:
