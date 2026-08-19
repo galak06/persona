@@ -5,106 +5,18 @@ import { useBrand } from "../context/BrandContext";
 import {
   ideasUrl,
   updateIdeaStatus,
-  reelVideoUrl,
   composeReels,
   fetchComposeStatus,
 } from "../api/ideas";
-import type { ContentIdea, IdeasResponse } from "../api/ideas";
+import type { IdeasResponse } from "../api/ideas";
+import { fetchOpenartStatus } from "../api/oauth";
+import type { OpenArtState } from "../api/oauth";
 import { useApiQuery } from "../hooks/useApiQuery";
+import ReelCard from "../components/ReelCard";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
-
-// Beat images are resolved per beat, so "mixed" (some AI, some hero) is a
-// normal middle state -- labelling such a reel "Fallback" would misreport it.
-// All three are ordinary outcomes: understated styling, never an error look.
-const SOURCE_LABELS: Record<string, string> = {
-  openart: "AI images",
-  mixed: "Partly AI images",
-  fallback: "Hero image",
-};
-
-function sourceBadge(source: string | null): React.JSX.Element {
-  const cls =
-    source === "openart" || source === "mixed"
-      ? "bg-indigo-50 text-indigo-700"
-      : "bg-stone-100 text-slate-600";
-  return (
-    <span className={`rounded px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {(source && SOURCE_LABELS[source]) ?? source ?? "unknown"}
-    </span>
-  );
-}
-
-interface CardProps {
-  idea: ContentIdea;
-  onDecision: (id: string, status: string) => void;
-  busy: boolean;
-}
-
-function ReelCard({ idea, onDecision, busy }: CardProps): React.JSX.Element {
-  const flags = idea.reel_validation_flags ?? [];
-
-  return (
-    <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card p-5 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-800 leading-snug">{idea.topic}</h3>
-          <div className="mt-1">{sourceBadge(idea.reel_source)}</div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(idea.id, "wp_published")}
-            className="px-3 py-1.5 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-          >
-            Reject
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => onDecision(idea.id, "social_done")}
-            className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
-          >
-            Approve
-          </button>
-        </div>
-      </div>
-
-      {flags.length > 0 && (
-        <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-          <span className="font-semibold">Flagged:</span> {flags.join(", ")}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Instagram
-          </div>
-          <video
-            controls
-            className="w-full aspect-[9/16] rounded-lg bg-black object-contain"
-            src={reelVideoUrl(apiOrigin, idea.id, "ig")}
-          />
-          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{idea.reel_ig_caption}</p>
-        </div>
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Facebook
-          </div>
-          <video
-            controls
-            className="w-full aspect-[9/16] rounded-lg bg-black object-contain"
-            src={reelVideoUrl(apiOrigin, idea.id, "fb")}
-          />
-          <p className="mt-2 text-xs text-slate-600 whitespace-pre-wrap">{idea.reel_fb_caption}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /** Note to show when landing back from the OpenArt OAuth callback
  * (`?openart=connected|error`). Read during state init rather than in an
@@ -123,6 +35,7 @@ export default function Reels(): React.JSX.Element {
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [composing, setComposing] = useState(false);
   const [composeNote, setComposeNote] = useState<string | null>(readOpenArtNote);
+  const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const { selectedBrand } = useBrand();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -176,7 +89,7 @@ export default function Reels(): React.JSX.Element {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, []);
 
-  const handleCompose = useCallback(async (): Promise<void> => {
+  const runCompose = useCallback(async (): Promise<void> => {
     setComposing(true);
     setComposeNote(null);
     try {
@@ -191,6 +104,24 @@ export default function Reels(): React.JSX.Element {
       setComposeNote(getErrorMessage(err, "Compose failed."));
     }
   }, [startPolling]);
+
+  // Pre-flight the OpenArt connection so a "missing" token gets a one-click
+  // Authorize offer before composing. "ok" and "not_configured" compose as
+  // today, and a broken status check fails open — it must never block compose.
+  const handleComposeClick = useCallback(async (): Promise<void> => {
+    if (composing) return; // guard double-clicks while the status fetch is in flight
+    let state: OpenArtState = "ok";
+    try {
+      state = (await fetchOpenartStatus()).state;
+    } catch {
+      // Fail-open: a broken status check must never block compose.
+    }
+    if (state === "missing") {
+      setShowConnectPrompt(true);
+      return;
+    }
+    await runCompose();
+  }, [composing, runCompose]);
 
   const handleAuthorizeOpenArt = useCallback((): void => {
     const returnTo = `${window.location.origin}/reels`;
@@ -233,8 +164,10 @@ export default function Reels(): React.JSX.Element {
         </div>
         <div className="flex items-center gap-2">
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
-          {/* Opt-in upgrade, deliberately understated: reels compose fine
-              without OpenArt, so this is never a warning or a next step. */}
+          {/* Opt-in upgrade, deliberately understated. When the token is
+              missing, Compose pre-flights the connection and offers a
+              one-time Connect/skip prompt; this link is the always-visible
+              way in. Reels still compose fine without OpenArt. */}
           <button
             type="button"
             onClick={handleAuthorizeOpenArt}
@@ -245,7 +178,7 @@ export default function Reels(): React.JSX.Element {
           </button>
           <button
             type="button"
-            onClick={() => void handleCompose()}
+            onClick={() => void handleComposeClick()}
             disabled={composing}
             className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
           >
@@ -279,6 +212,27 @@ export default function Reels(): React.JSX.Element {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={showConnectPrompt}
+        title="Connect OpenArt?"
+        onClose={() => setShowConnectPrompt(false)}
+        actions={[
+          { label: "Connect OpenArt", variant: "primary", onClick: handleAuthorizeOpenArt },
+          {
+            label: "Compose without it",
+            variant: "secondary",
+            onClick: () => {
+              setShowConnectPrompt(false);
+              void runCompose();
+            },
+          },
+          { label: "Cancel", variant: "ghost", onClick: () => setShowConnectPrompt(false) },
+        ]}
+      >
+        OpenArt generates AI images for each reel beat; without it, reels use each post's hero
+        image — that works fine too.
+      </ConfirmDialog>
     </div>
   );
 }

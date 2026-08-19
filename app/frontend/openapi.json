@@ -2553,6 +2553,25 @@
         "title": "LogTailResponse",
         "type": "object"
       },
+      "OpenArtStatus": {
+        "description": "Connection state the Reels page renders before offering Compose.",
+        "properties": {
+          "state": {
+            "enum": [
+              "ok",
+              "missing",
+              "not_configured"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "OpenArtStatus",
+        "type": "object"
+      },
       "PendingResponse": {
         "description": "Envelope for ``GET /api/v1/pending``.",
         "properties": {
@@ -5428,6 +5447,28 @@
           }
         },
         "summary": "Start OpenArt OAuth flow",
+        "tags": [
+          "oauth"
+        ]
+      }
+    },
+    "/api/v1/oauth/openart/status": {
+      "get": {
+        "description": "Cheap UI pre-flight -- brand config plus the stored token record, no\nnetwork. `stored_auth_state` already accounts for expiry skew and counts\na stale-but-refreshable token as usable, so \"missing\" means a fresh\nAuthorize is genuinely needed. Always 200: the state is data, not an\nerror.",
+        "operationId": "openart_status_api_v1_oauth_openart_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenArtStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "OpenArt connection state",
         "tags": [
           "oauth"
         ]
