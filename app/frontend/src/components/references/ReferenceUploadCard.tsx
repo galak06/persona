@@ -19,56 +19,13 @@ import {
 } from "../../api/referenceImages";
 import type { LibraryImage } from "../../api/referenceImages";
 import Alert from "../ui/Alert";
-
-type RowStatus = "pending" | "uploading" | "done" | "failed";
-
-interface QueuedFile {
-  key: string;
-  file: File;
-  previewUrl: string;
-  status: RowStatus;
-  message: string;
-  /** The filed entry, once the server answers — what the model decided. */
-  result?: LibraryImage;
-}
+import UploadQueueRow from "./UploadQueueRow";
+import type { QueuedFile, RowStatus } from "./UploadQueueRow";
 
 interface ReferenceUploadCardProps {
   disabled?: boolean;
   /** Refetch the library after anything lands. */
   onUploaded: () => void;
-}
-
-/** Per-status tone, plus fixed text for the states that carry no message. */
-const STATUS_ROW: Record<RowStatus, { cls: string; text: string }> = {
-  pending: { cls: "text-slate-500", text: "Ready to upload" },
-  uploading: { cls: "text-amber-700", text: "Analyzing and filing…" },
-  done: { cls: "text-emerald-700", text: "" },
-  failed: { cls: "text-rose-700", text: "" },
-};
-
-/** The tagging result, spelled out — this is the operator's proof it ran. */
-function AnalysisSummary({ image }: { image: LibraryImage }): React.JSX.Element {
-  return (
-    <>
-      <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-        <span className="rounded bg-stone-100 px-1.5 py-0.5 font-semibold text-slate-700">
-          {image.category}
-        </span>
-        <span
-          className={
-            image.shows_mascot
-              ? "rounded bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-800"
-              : "rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-500"
-          }
-        >
-          {image.shows_mascot ? "shows the mascot" : "no mascot"}
-        </span>
-      </p>
-      {image.description && (
-        <p className="mt-0.5 text-xs text-slate-500">{image.description}</p>
-      )}
-    </>
-  );
 }
 
 export default function ReferenceUploadCard({
@@ -85,6 +42,9 @@ export default function ReferenceUploadCard({
   // revoke off `queue` instead would tear down URLs still on screen: each
   // per-file status update replaces the array and would fire the cleanup.
   const objectUrls = useRef<string[]>([]);
+  // Rows dropped since the current batch started, so the upload loop's snapshot
+  // can skip anything the operator has since taken out of the list.
+  const removedKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => () => objectUrls.current.forEach((u) => URL.revokeObjectURL(u)), []);
 
@@ -128,8 +88,14 @@ export default function ReferenceUploadCard({
     if (pending.length === 0 || disabled) return;
     setBusy(true);
     setNotice("");
+    removedKeys.current.clear();
     let landed = 0;
     for (const row of pending) {
+      // `pending` is a snapshot, so a row the operator X-ed out after the batch
+      // started is still in it. Skip it, or the file lands on the server while
+      // its row is gone from the list — the same lie the X is disabled to avoid
+      // on the row already in flight.
+      if (removedKeys.current.has(row.key)) continue;
       markRow(row.key, "uploading", "");
       try {
         const entry = await uploadReferenceImage(row.file);
@@ -143,18 +109,36 @@ export default function ReferenceUploadCard({
     if (landed > 0) onUploaded();
   };
 
-  const clearFinished = () => {
-    // Revoke as we drop them; the unmount cleanup is the backstop, not the
-    // only pass, or a long session's previews accumulate for nothing.
-    const done = queue.filter((row) => row.status === "done");
-    done.forEach((row) => URL.revokeObjectURL(row.previewUrl));
-    objectUrls.current = objectUrls.current.filter(
-      (url) => !done.some((row) => row.previewUrl === url),
+  // The one way a row ever leaves the queue — the X, "Clear finished" and
+  // "Clear all" are all just different predicates over this. Revoke as we drop
+  // them; the unmount cleanup is the backstop, not the only pass, or a long
+  // session's previews accumulate for nothing.
+  //
+  // An uploading row is never dropped, whatever the predicate says: taking it
+  // out would not cancel the request in flight, so the file would still land
+  // while the list pretended otherwise.
+  const dropRows = (shouldDrop: (row: QueuedFile) => boolean) => {
+    const dropped = queue.filter(
+      (row) => row.status !== "uploading" && shouldDrop(row),
     );
-    setQueue((prev) => prev.filter((row) => row.status !== "done"));
+    if (dropped.length === 0) return;
+    dropped.forEach((row) => {
+      URL.revokeObjectURL(row.previewUrl);
+      removedKeys.current.add(row.key);
+    });
+    objectUrls.current = objectUrls.current.filter(
+      (url) => !dropped.some((row) => row.previewUrl === url),
+    );
+    const gone = new Set(dropped.map((row) => row.key));
+    setQueue((prev) => prev.filter((row) => !gone.has(row.key)));
   };
 
   const pendingCount = queue.filter((row) => row.status === "pending").length;
+  const doneCount = queue.filter((row) => row.status === "done").length;
+  // "Clear finished" only earns a slot while it would do something "Clear all"
+  // wouldn't: keep the failures on screen for inspection, drop the successes.
+  // Once every row is done the two are the same action, so only show one.
+  const showClearFinished = doneCount > 0 && doneCount < queue.length;
 
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
@@ -211,28 +195,16 @@ export default function ReferenceUploadCard({
       {queue.length > 0 && (
         <ul className="space-y-2">
           {queue.map((row) => (
-            <li
+            <UploadQueueRow
               key={row.key}
-              className="flex items-start gap-3 rounded-lg border border-stone-200 p-2"
-            >
-              <img
-                src={row.previewUrl}
-                alt={row.file.name}
-                className="h-12 w-12 shrink-0 rounded object-cover border border-stone-200"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-slate-700">{row.file.name}</p>
-                <p className={`text-xs ${STATUS_ROW[row.status].cls}`}>
-                  {STATUS_ROW[row.status].text || row.message}
-                </p>
-                {row.result && <AnalysisSummary image={row.result} />}
-              </div>
-            </li>
+              row={row}
+              onRemove={(key) => dropRows((r) => r.key === key)}
+            />
           ))}
         </ul>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           disabled={disabled || busy || pendingCount === 0}
@@ -241,16 +213,38 @@ export default function ReferenceUploadCard({
         >
           {busy ? "Uploading…" : `Upload ${pendingCount || ""}`.trim()}
         </button>
-        {queue.some((row) => row.status === "done") && (
+        {showClearFinished && (
           <button
             type="button"
-            onClick={clearFinished}
+            onClick={() => dropRows((row) => row.status === "done")}
+            title="Take the filed ones out of this list and leave the rest"
             className="text-xs text-slate-500 hover:text-slate-700"
           >
             Clear finished
           </button>
         )}
+        {queue.length > 0 && (
+          <button
+            type="button"
+            // Disabled mid-batch so the label stays honest: an uploading row
+            // can't be dropped, and "Clear all" must not leave rows behind.
+            disabled={busy}
+            onClick={() => dropRows(() => true)}
+            aria-label="Clear all photos from this upload list"
+            title="Empty this upload list — photos already filed are not touched"
+            className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40 disabled:hover:text-slate-500"
+          >
+            Clear all
+          </button>
+        )}
       </div>
+
+      {queue.length > 0 && (
+        <p className="text-[11px] text-slate-400">
+          Removing a photo here, or clearing the list, only empties this staging
+          list &mdash; nothing that has already been filed leaves the library below.
+        </p>
+      )}
     </div>
   );
 }
