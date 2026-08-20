@@ -100,6 +100,7 @@ jobs:
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
+          tests/test_crew_products_compliance.py
           tests/test_backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           tests/test_crew_reels.py tests/test_reels_openart_client.py
@@ -180,6 +181,7 @@ jobs:
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
+          tests/test_crew_products_compliance.py
           tests/test_backfill_blog_product_blocks.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
@@ -443,6 +445,7 @@ jobs:
             tests/test_crew_products_stage.py \
             tests/test_crew_products_select.py \
             tests/test_crew_products_block.py \
+            tests/test_crew_products_compliance.py \
             tests/test_crew_products_blog_backfill.py \
             tests/test_backfill_blog_product_blocks.py \
             tests/test_crew_reels.py \

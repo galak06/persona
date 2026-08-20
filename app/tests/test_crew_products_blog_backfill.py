@@ -183,6 +183,17 @@ class TestRenderForMode:
         assert "blog-picks-block" not in new
         assert "<li>old</li>" not in new
 
+    def test_an_unpublished_draft_gets_a_campaign_id_derived_from_its_title(self):
+        """WordPress reports `slug: ""` for an unpublished post, and this
+        module can address drafts by id -- so `post.slug` is empty for exactly
+        the posts the drafting crew produces. Rendering with it wrote a dead
+        `ascsubtag=blog-` onto two live posts (4289, 4295)."""
+        draft = WpPost(id=1, slug="", title="Best Dog GPS Trackers 2026", content=_BODY, meta={})
+        block, _ = render_for_mode(draft, [_POOL["gps-tracker"]], "insert", "dff-20")
+        assert "ascsubtag=blog-best-dog-gps-trackers-2026" in block
+        assert "ascsubtag=blog-&" not in block
+        assert 'ascsubtag=blog-"' not in block
+
     def test_disclosure_is_omitted_when_the_posts_own_prose_has_one(self):
         body = _BODY + "<p>Affiliate disclosure: we may earn a commission.</p>"
         block, _ = render_for_mode(self._post(body), [_POOL["gps-tracker"]], "insert", "dff-20")

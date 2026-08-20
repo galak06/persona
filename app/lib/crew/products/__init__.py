@@ -18,17 +18,24 @@ A second, backfill-facing path serves ALREADY-PUBLISHED posts
 `blog_selection.select_products_for_existing_post` runs the same agent but
 skips (never falls back) on failure, `block` renders the blog picks block,
 and `blog_backfill` holds the WordPress-side helpers.
+
+`compliance` is shared by both paths: it is the single implementation of
+"every Amazon link on this post carries `rel`, `target`, an `ascsubtag`
+campaign id, and the Amazon Associates statement", and it is idempotent so
+a drafting run and a later repair of the same post cannot fight.
 """
 
 from lib.crew.products.block import (
     BLOG_BLOCK_CLOSE,
     BLOG_BLOCK_OPEN,
+    blog_campaign_id,
     has_blog_block,
     insert_or_replace_blog_block,
     render_blog_block,
 )
 from lib.crew.products.blog_selection import select_products_for_existing_post
 from lib.crew.products.brief_from_post import synthesize_brief
+from lib.crew.products.compliance import enforce_affiliate_compliance, slug_for
 from lib.crew.products.discovery import load_discovered_products
 from lib.crew.products.models import ProductSelection, SelectedProduct
 from lib.crew.products.pool import load_candidate_pool
@@ -46,6 +53,8 @@ __all__ = [
     "ProductSelection",
     "SelectedProduct",
     "SelectorExecuteFn",
+    "blog_campaign_id",
+    "enforce_affiliate_compliance",
     "has_blog_block",
     "insert_or_replace_blog_block",
     "load_candidate_pool",
@@ -55,5 +64,6 @@ __all__ = [
     "render_blog_block",
     "select_products_for_existing_post",
     "select_products_for_post",
+    "slug_for",
     "synthesize_brief",
 ]

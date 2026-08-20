@@ -270,6 +270,44 @@ def test_a_writer_that_used_no_keys_still_gets_the_picks_into_the_post(
     assert (brand_dir / "state" / "product_usage.jsonl").exists()
 
 
+def test_a_body_that_already_links_a_pick_still_gets_the_compliance_surface(
+    brand_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """THE regression: 14 live posts, 2026-08-14 to 2026-08-19.
+
+    Once the writer had a real per-post catalog it started linking picks
+    inline, `_already_referenced` fired, and `ensure_product_block` returned
+    the body untouched -- which silently dropped `rel="sponsored nofollow"`,
+    the `ascsubtag` campaign id and the Amazon Associates statement, because
+    all three only ever existed inside the picks block. In-context links do
+    read better than an appended block; they just may not cost compliance.
+    """
+    monkeypatch.setenv("BRAND_DIR", str(brand_dir))
+    monkeypatch.setenv("AMAZON_ASSOCIATES_TAG", "test-tag-20")
+    inline = '<a href="https://www.amazon.com/dp/B000000001?tag=test-tag-20">PawTrack</a>'
+    fake_writer = _FakeWriter(
+        _written_post(body_html=f"<p>{_DISCLOSURE}</p><p>We use the {inline}.</p>")
+    )
+
+    post = write_post_from_brief(
+        brand_dir,
+        _brief(),
+        execute_fn=fake_writer,
+        product_execute_fn=_FakeSelector(_selection("gps-tracker")),
+    )
+
+    assert post is not None
+    # The editorial call is unchanged: the pick is already in context, so no
+    # block is stapled on and the key is still recorded as placed.
+    assert "blog-picks-block:v1" not in post.body_html
+    assert post.affiliate_keys_used == ["gps-tracker"]
+    # ...but the compliance surface is now there regardless.
+    assert 'rel="sponsored nofollow"' in post.body_html
+    assert 'target="_blank"' in post.body_html
+    assert "ascsubtag=blog-best-no-subscription-gps-trackers-2026" in post.body_html
+    assert "As an Amazon Associate" in post.body_html
+
+
 def test_no_usage_is_recorded_when_the_selector_picked_nothing(
     brand_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
