@@ -78,3 +78,26 @@ def read_brand_identity(brand_dir: Path) -> BrandIdentity:
         mascot_kind=str(site.get("mascot_kind") or "").strip(),
         persona_name=str(site.get("brand_persona") or "").strip(),
     )
+
+
+def site_domain(brand_dir: Path) -> str:
+    """`site.url`'s domain, e.g. `"example.com"`, with the folder name as the
+    fallback -- what a caption may name the site as, spelled in words.
+
+    Here rather than beside its callers for the reason this module exists at
+    all: `scripts.crewai_social_posts_pipeline` and `lib.crew.socialpost.retry`
+    both build the SAME writer prompt for the same post, so a divergence
+    between two copies of this read would show up as a retried caption naming
+    the site differently from the composed one.
+
+    Tolerant on the same terms as `read_brand_identity`: a missing or malformed
+    config yields the folder name, never an exception.
+    """
+    try:
+        config = json.loads((brand_dir / "config.json").read_text(encoding="utf-8"))
+        site = config.get("site") if isinstance(config, dict) else None
+        url = str((site or {}).get("url", "")).rstrip("/")
+    except (OSError, ValueError, AttributeError) as exc:
+        logger.warning("brand_site_domain_unreadable", brand_dir=str(brand_dir), error=str(exc))
+        return brand_dir.name
+    return url.split("//", 1)[-1] if url else brand_dir.name

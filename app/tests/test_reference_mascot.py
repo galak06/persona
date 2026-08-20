@@ -22,7 +22,7 @@ from lib.crew.reference_clauses import (
     paired_reference_clause,
 )
 from lib.crew.reference_library import manifest_path, resolve_reference
-from lib.crew.reference_mascot import mascot_anchor
+from lib.crew.reference_mascot import any_mascot_photo, mascot_anchor
 from tests._reference_library_fakes import write_library as _write_library
 
 
@@ -166,3 +166,28 @@ def test_the_paired_clause_keeps_the_persona_identity_on_a_persona_scene(
     assert "the persona is Nalla's Dad" in clause
     assert "the mascot is Nalla, the brand's dog" in clause
     assert grounding_clause() not in clause
+
+
+# ── the anchor, asked for on its own ─────────────────────────────────────────
+
+
+def test_any_mascot_photo_answers_without_a_scene(tmp_path: Path) -> None:
+    """`mascot_anchor` refuses a `None` scene on purpose -- an anchor may never
+    become the scene by DEFAULT. An operator clicking Retry is not a default,
+    and `lib.crew.socialpost.retry` needs the mascot photo with no scene to
+    hang it off, so the two questions are separate functions."""
+    _mixed_library(tmp_path, mascot_a="studio-mascot")
+
+    assert mascot_anchor(tmp_path, None) is None
+    photo = any_mascot_photo(tmp_path)
+    assert photo is not None
+    assert photo.shows_mascot is True
+    assert photo.category == "studio-mascot"
+
+
+def test_any_mascot_photo_is_none_when_the_brand_uploaded_none(tmp_path: Path) -> None:
+    """Still nothing may be substituted for a mascot photo that does not exist
+    -- the retry reports that it cannot help rather than anchoring on a porch."""
+    _write_library(tmp_path, {"home-exterior": "porch-bytes"})
+
+    assert any_mascot_photo(tmp_path) is None

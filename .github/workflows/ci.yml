@@ -109,6 +109,11 @@ jobs:
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
+          lib/social_post_retry_db.py scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
+          tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
+          tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
+          tests/_socialpost_retry_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
@@ -181,6 +186,11 @@ jobs:
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
+          lib/social_post_retry_db.py scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
+          tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
+          tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
+          tests/_socialpost_retry_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
@@ -252,8 +262,10 @@ jobs:
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
-          lib/social_post_slots.py
+          lib/social_post_slots.py lib/social_post_retry_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
+          scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
           lib/brand_secrets.py scripts/brand_secrets.py
           api/ideas_generate_api.py
           scripts/pg_backup.py
@@ -441,6 +453,10 @@ jobs:
             tests/test_social_post_db.py \
             tests/test_social_post_slots.py \
             tests/test_social_posts_api.py \
+            tests/test_social_posts_compose_api.py \
+            tests/test_social_posts_retry_api.py \
+            tests/test_socialpost_retry.py \
+            tests/test_socialpost_retry_safety.py \
             tests/test_brand_secrets.py \
             tests/test_ideas_generate_api.py \
             tests/test_managed_flow_ids_consistency.py \

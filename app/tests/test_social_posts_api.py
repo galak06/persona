@@ -189,6 +189,35 @@ def test_list_social_posts_filters_by_track_status(monkeypatch: pytest.MonkeyPat
     assert resp.posts[0].fb_caption == "fb"
 
 
+def test_a_post_being_re_imaged_stays_in_the_review_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retry claims the row 'queued' -> 'composing' for the ~60s it runs. If
+    the listing dropped it the card would vanish mid-retry and come back, which
+    reads as a bug and loses the reviewer's place."""
+    rows = [_queued_idea(social_post_status="composing")]
+    monkeypatch.setattr(social_posts_api.ideas_db, "list_ideas", lambda **_kw: rows)
+
+    resp = social_posts_api.list_social_posts(status="queued", brand_id=None, limit=100)
+
+    assert resp.total == 1
+    assert resp.posts[0].regenerating is True
+
+
+def test_a_first_composition_is_not_in_the_review_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """'composing' with NO image is a post being made for the first time: no
+    captions, no image, nothing to review. The image path is what separates the
+    two, and it must keep separating them."""
+    rows = [_queued_idea(social_post_status="composing", social_post_image_path=None)]
+    monkeypatch.setattr(social_posts_api.ideas_db, "list_ideas", lambda **_kw: rows)
+
+    resp = social_posts_api.list_social_posts(status="queued", brand_id=None, limit=100)
+
+    assert resp.total == 0
+
+
 def test_list_social_posts_rejects_unknown_status(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(HTTPException) as exc:
         social_posts_api.list_social_posts(status="nope", brand_id=None, limit=100)

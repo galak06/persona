@@ -1,4 +1,5 @@
 import apiClient from "./client";
+import type { components } from "../types/openapi";
 
 export interface SocialPost {
   id: string;
@@ -14,11 +15,26 @@ export interface SocialPost {
   ig_post_url: string | null;
   fb_due_at: string | null;
   ig_due_at: string | null;
+  /** This post's image is being regenerated right now. */
+  regenerating?: boolean;
 }
 
 export interface SocialPostsResponse {
   posts: SocialPost[];
   total: number;
+}
+
+/**
+ * The `social_post_source` a post carries once its image was actually
+ * generated. Anything else — `fallback` after a failed or unanchored
+ * generation, or no source at all on a row composed before the column
+ * existed — means the reader is looking at the WordPress hero.
+ */
+export const GENERATED_IMAGE_SOURCE = "gemini";
+
+/** Would a retry get this post a better image than it has? */
+export function hasGeneratedImage(post: SocialPost): boolean {
+  return post.source === GENERATED_IMAGE_SOURCE;
 }
 
 export function socialPostsUrl(status = "queued"): string {
@@ -74,6 +90,39 @@ export async function composeSocialPosts(): Promise<void> {
 export async function fetchComposeStatus(): Promise<ComposeStatus> {
   const { data } = await apiClient.get<ComposeStatus>(
     "/social-posts/compose/status",
+  );
+  return data;
+}
+
+/** Which collection to anchor the regenerated image on; "" lets the run decide. */
+export type RetryImageRequest = components["schemas"]["RetryImageRequest"];
+export type RetryImageStatus = components["schemas"]["RetryImageStatus"];
+
+/**
+ * Replace one queued post's hook image, keeping both captions.
+ *
+ * Runs on the worker (a fresh image brief plus one generation, ~1 minute), so
+ * this returns as soon as the run is queued — poll `fetchRetryImageStatus`.
+ * It cannot publish: the dispatched script has no publisher in it at all.
+ *
+ * 409 when the post is no longer queued (already approved, rejected, or
+ * already being retried), 422 when `referenceCategory` names a collection the
+ * brand keeps no photos under.
+ */
+export async function retrySocialPostImage(
+  id: string,
+  referenceCategory = "",
+): Promise<void> {
+  await apiClient.post(`/social-posts/${encodeURIComponent(id)}/retry-image`, {
+    reference_category: referenceCategory,
+  } satisfies RetryImageRequest);
+}
+
+export async function fetchRetryImageStatus(
+  id: string,
+): Promise<RetryImageStatus> {
+  const { data } = await apiClient.get<RetryImageStatus>(
+    `/social-posts/${encodeURIComponent(id)}/retry-image/status`,
   );
   return data;
 }

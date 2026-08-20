@@ -64,7 +64,7 @@ if str(_ENGINE_ROOT) not in sys.path:
 
 from lib import social_post_db
 from lib.crew import wp_source
-from lib.crew.brand_identity import read_brand_identity
+from lib.crew.brand_identity import read_brand_identity, site_domain
 from lib.crew.context import brand_voice_summary
 from lib.crew.reference_library import list_category_labels
 from lib.crew.socialpost import (
@@ -121,23 +121,6 @@ def _check_required_env(*, release_only: bool) -> list[str]:
     return [name for name in required if not os.environ.get(name, "").strip()]
 
 
-def _site_domain(brand_dir: Path) -> str:
-    """`site.url`'s domain from the brand config, with a safe fallback.
-
-    The identity half of this read moved to
-    `lib.crew.brand_identity.read_brand_identity`, which every generator now
-    shares -- it answers what the mascot is called, what KIND of thing it is,
-    and who the brand's persona is, and nothing here may assume any of them.
-    """
-    try:
-        config = json.loads((brand_dir / "config.json").read_text())
-        url = str(config.get("site", {}).get("url", "")).rstrip("/")
-        return url.split("//", 1)[-1] if url else brand_dir.name
-    except Exception as exc:
-        logger.warning("social_posts_config_read_failed", error=str(exc))
-        return brand_dir.name
-
-
 def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str:
     idea_id = str(row["id"])
     wp_post_id = row.get("wp_post_id")
@@ -154,7 +137,6 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
     featured_media_id = int(post.get("featured_media") or 0)
 
-    site_domain = _site_domain(brand_dir)
     identity = read_brand_identity(brand_dir)
     target_keyword = str(row.get("target_keyword") or "")
 
@@ -163,7 +145,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         title=title,
         body=body,
         target_keyword=target_keyword,
-        site_domain=site_domain,
+        site_domain=site_domain(brand_dir),
         brand_voice=brand_voice_summary(brand_dir),
         # The agent may only tag the image with a category the brand actually
         # keeps photos under -- `with_photos` is what makes that true, since a

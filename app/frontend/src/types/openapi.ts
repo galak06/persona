@@ -1271,6 +1271,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/social-posts/{idea_id}/retry-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Social Post Image
+         * @description Dispatch one image regeneration to the worker. 202 immediately; poll
+         *     /social-posts/{id}/retry-image/status.
+         *
+         *     Deliberately not restricted to `source='fallback'` rows. What must be true
+         *     is that the post is still QUEUED — that is the state the whole operation is
+         *     guarded on. Which queued posts are worth the credits is a judgement the
+         *     review page makes (it offers this on posts with no generated image), and
+         *     baking that policy in here too would mean two places to change it.
+         */
+        post: operations["retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/retry-image/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retry Image Status
+         * @description Is this post's image being regenerated, and how did the last run end?
+         */
+        get: operations["retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/social-posts/{idea_id}/unschedule": {
         parameters: {
             query?: never;
@@ -2952,6 +2999,36 @@ export interface components {
             unchanged: number;
         };
         /**
+         * RetryImageRequest
+         * @description Which reference collection to anchor the new image on.
+         *
+         *     Empty means "decide for me": the fresh plan's own category if the library
+         *     can match it, otherwise any photo of the brand's mascot. A slug the brand
+         *     has no photos under is rejected rather than silently ignored — it would
+         *     resolve to nothing and the retry would reproduce the fallback it was
+         *     clicked to escape.
+         */
+        RetryImageRequest: {
+            /**
+             * Reference Category
+             * @default
+             */
+            reference_category: string;
+        };
+        /** RetryImageStatus */
+        RetryImageStatus: {
+            /** Detail */
+            detail?: string | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Running */
+            running: boolean;
+            /** Source */
+            source?: string | null;
+            /** Status */
+            status: string;
+        };
+        /**
          * RunNowRequest
          * @description Optional body for `POST /brands/{id}/flows/{flow_id}/run`.
          *
@@ -3089,6 +3166,11 @@ export interface components {
             ig_post_url?: string | null;
             /** Image Alt */
             image_alt?: string | null;
+            /**
+             * Regenerating
+             * @default false
+             */
+            regenerating: boolean;
             /** Social Post Status */
             social_post_status: string;
             /** Source */
@@ -4996,6 +5078,74 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RetryImageRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryImageStatus"];
                 };
             };
             /** @description Validation Error */

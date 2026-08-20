@@ -121,6 +121,7 @@ from api.schedule_config import label_for_task_id, load_schedule_config, task_fo
 from api.session_status_api import router as _session_status_router
 from api.social_posts_api import router as _social_posts_router
 from api.social_posts_compose_api import router as _social_posts_compose_router
+from api.social_posts_retry_api import router as _social_posts_retry_router
 from api.tiktok_candidates_api import router as _tiktok_router
 from lib import activity_log, groups_db, groups_queue, schedule_db
 from lib.config import default_brand_dir, settings
@@ -159,6 +160,7 @@ app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_social_posts_compose_router, prefix="/api/v1", tags=["social-posts"])
+app.include_router(_social_posts_retry_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_ideas_generate_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_keywords_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_reference_images_router, prefix="/api/v1", tags=["reference-images"])

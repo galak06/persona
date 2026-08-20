@@ -21,7 +21,7 @@ import pytest
 
 from lib.crew.reference_clauses import grounding_clause, identity_clause
 from lib.crew.reference_library import library_root
-from lib.crew.socialpost import compose
+from lib.crew.socialpost import compose, hook_render
 from lib.crew.socialpost.models import SocialPostPlan
 from tests._reference_library_fakes import write_library as _write_library
 
@@ -57,7 +57,9 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         recorded.append({"brief": brief, **kwargs})
         return _Generated(b"gemini-image")
 
-    monkeypatch.setattr(compose, "generate_wp_image", _generate)
+    # The image model is called from `hook_render`, the module compose and
+    # retry share -- see that file on why the split exists.
+    monkeypatch.setattr(hook_render, "generate_wp_image", _generate)
     return recorded
 
 
@@ -111,7 +113,7 @@ def test_the_hero_remains_the_fallback_image_on_failure(
     def _boom(_brief: str, **_kwargs: Any) -> _Generated:
         raise RuntimeError("gemini is down")
 
-    monkeypatch.setattr(compose, "generate_wp_image", _boom)
+    monkeypatch.setattr(hook_render, "generate_wp_image", _boom)
 
     image, source = compose.generate_hook_image(
         _plan("general"), mascot_name="Nalla", hero_bytes=_HERO, brand_dir=tmp_path

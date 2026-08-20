@@ -33,7 +33,7 @@ from scripts import reels_images
 from lib.crew.reels.models import ReelBeat, ReelPlan
 from lib.crew.reference_library import resolve_reference
 from lib.crew.reference_library_store import import_legacy
-from lib.crew.socialpost import compose
+from lib.crew.socialpost import compose, hook_render
 from lib.crew.socialpost.models import SocialPostPlan
 from tests._reference_library_fakes import write_legacy_asset as _legacy
 from tests._reference_library_fakes import write_library as _write_library
@@ -102,7 +102,8 @@ def gemini_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
         recorded.append({"brief": brief, **kwargs})
         return _Generated()
 
-    monkeypatch.setattr(compose, "generate_wp_image", _generate)
+    # Called from `hook_render`, the module compose shares with the retry path.
+    monkeypatch.setattr(hook_render, "generate_wp_image", _generate)
     return recorded
 
 

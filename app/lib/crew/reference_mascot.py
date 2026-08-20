@@ -57,6 +57,29 @@ def _mascot_candidates(brand_dir: Path) -> list[Candidate]:
     ]
 
 
+def any_mascot_photo(brand_dir: Path, *, seed: str = "") -> ReferenceImage | None:
+    """The best photo of the brand's mascot the library holds, or `None`.
+
+    No scene and no category: this answers "show me the brand's own
+    `mascot_kind`", which is a question the planner's tag cannot answer and an
+    operator sometimes has to ask directly. It is what
+    `lib.crew.socialpost.retry` falls back to when the plan named a collection
+    the library cannot match -- an empty `reference_category` resolves to no
+    photo, generation is skipped, and the post ships the WP hero. Re-running
+    the same resolution would reproduce that outcome exactly, so a retry that
+    cannot reach past the tag is a button that cannot succeed.
+
+    Ranking matches `resolve_reference` -- uploads before WP-media harvests
+    (`source_rank`), seeded pick inside the best tier only -- so the same
+    `seed` picks the same photo, and a varying one spreads across the mascot
+    photos the brand actually keeps.
+    """
+    candidates = _mascot_candidates(brand_dir)
+    if not candidates:
+        return None
+    return pick(best_tier(candidates), seed)
+
+
 def mascot_anchor(
     brand_dir: Path, scene: ReferenceImage | None, *, seed: str = ""
 ) -> ReferenceImage | None:
@@ -68,19 +91,16 @@ def mascot_anchor(
       second would only give the model two versions of the same subject.
     * `scene` is `None` -- there is no generation to add a reference to (the
       caller does not generate at all without a scene photo, and an anchor may
-      never become the scene by default: the planner's tag decides the scene).
+      never become the scene by DEFAULT: the planner's tag decides the scene).
+      An operator asking for a different outcome is not a default, which is why
+      `any_mascot_photo` exists beside this and is called only from the retry
+      path.
     * the library holds no `shows_mascot` photo -- nothing may substitute for
       one, exactly as `resolve_reference` refuses to substitute for a category.
-
-    Ranking matches `resolve_reference` -- uploads before WP-media harvests
-    (`source_rank`), seeded pick inside the best tier only -- so the same brand
-    with the same `seed` anchors on the same photo every run, and different
-    posts spread across the mascot photos the brand actually keeps.
     """
     if scene is None or scene.shows_mascot:
         return None
-    candidates = _mascot_candidates(brand_dir)
-    if not candidates:
+    anchor = any_mascot_photo(brand_dir, seed=seed)
+    if anchor is None:
         logger.info("reference_library_no_mascot_photo", scene_category=scene.category)
-        return None
-    return pick(best_tier(candidates), seed)
+    return anchor

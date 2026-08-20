@@ -3070,6 +3070,69 @@
         "title": "RetagSummary",
         "type": "object"
       },
+      "RetryImageRequest": {
+        "description": "Which reference collection to anchor the new image on.\n\nEmpty means \"decide for me\": the fresh plan's own category if the library\ncan match it, otherwise any photo of the brand's mascot. A slug the brand\nhas no photos under is rejected rather than silently ignored \u2014 it would\nresolve to nothing and the retry would reproduce the fallback it was\nclicked to escape.",
+        "properties": {
+          "reference_category": {
+            "default": "",
+            "title": "Reference Category",
+            "type": "string"
+          }
+        },
+        "title": "RetryImageRequest",
+        "type": "object"
+      },
+      "RetryImageStatus": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "running",
+          "status"
+        ],
+        "title": "RetryImageStatus",
+        "type": "object"
+      },
       "RunNowRequest": {
         "description": "Optional body for `POST /brands/{id}/flows/{flow_id}/run`.\n\n`headless=None` (the default -- omit the field entirely) leaves the\nworker container's own `PLAYWRIGHT_HEADLESS` env var in effect.\nExplicitly `False` requests a visible browser for this one run only --\nonly meaningful where the worker process actually has a display (e.g.\nlocal dev); a bare Docker container has none, so Playwright will raise\na clear \"Missing X server\" error, visible via the flow's log, rather\nthan silently doing nothing.",
         "properties": {
@@ -3386,6 +3449,11 @@
               }
             ],
             "title": "Image Alt"
+          },
+          "regenerating": {
+            "default": false,
+            "title": "Regenerating",
+            "type": "boolean"
           },
           "social_post_status": {
             "title": "Social Post Status",
@@ -6592,6 +6660,115 @@
           }
         },
         "summary": "Reject Social Post",
+        "tags": [
+          "social-posts",
+          "social-posts"
+        ]
+      }
+    },
+    "/api/v1/social-posts/{idea_id}/retry-image": {
+      "post": {
+        "description": "Dispatch one image regeneration to the worker. 202 immediately; poll\n/social-posts/{id}/retry-image/status.\n\nDeliberately not restricted to `source='fallback'` rows. What must be true\nis that the post is still QUEUED \u2014 that is the state the whole operation is\nguarded on. Which queued posts are worth the credits is a judgement the\nreview page makes (it offers this on posts with no generated image), and\nbaking that policy in here too would mean two places to change it.",
+        "operationId": "retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "idea_id",
+            "required": true,
+            "schema": {
+              "title": "Idea Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RetryImageRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Retry Social Post Image Api V1 Social Posts  Idea Id  Retry Image Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Social Post Image",
+        "tags": [
+          "social-posts",
+          "social-posts"
+        ]
+      }
+    },
+    "/api/v1/social-posts/{idea_id}/retry-image/status": {
+      "get": {
+        "description": "Is this post's image being regenerated, and how did the last run end?",
+        "operationId": "retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "idea_id",
+            "required": true,
+            "schema": {
+              "title": "Idea Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryImageStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Image Status",
         "tags": [
           "social-posts",
           "social-posts"

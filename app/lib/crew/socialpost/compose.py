@@ -17,7 +17,9 @@ it actually is -- mascot, persona, both or neither (`lib.crew.reference_clauses`
 hold the brand's animal, and the plan only ever names one collection: asked
 for `home-exterior`, the model got a porch and invented a dog to put in the
 kitchen the brief described. The scene photo and the mascot photo now travel
-together, labelled by position in the prompt.
+together, labelled by position in the prompt -- see
+`lib.crew.socialpost.hook_render`, which owns everything downstream of the
+choice and is shared with `lib.crew.socialpost.retry`.
 
 That reference used to be the WP post's OWN featured image, on the theory
 that it grounds the scene in this post's subject matter. It did -- but a hero
@@ -39,11 +41,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from lib.crew.reference_clauses import paired_reference_clause, reference_clause
 from lib.crew.reference_library import ReferenceImage, resolve_reference
-from lib.crew.reference_mascot import mascot_anchor
+from lib.crew.socialpost.hook_render import render_from_reference
 from lib.crew.socialpost.models import SocialPostPlan
-from lib.crew.wp_image import ReferencePhoto, generate_wp_image
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -82,36 +82,13 @@ def center_crop_square(image_bytes: bytes) -> bytes:
     return out.getvalue()
 
 
-def _read(reference: ReferenceImage, *, requested_category: str, role: str) -> bytes | None:
-    """The photo's bytes, or `None` (logged) if it vanished since the manifest
-    was read. Never fatal and never a licence to substitute another picture:
-    the caller drops the scene photo's whole generation, or drops the anchor.
-    """
-    try:
-        return reference.path.read_bytes()
-    except OSError as exc:
-        logger.warning(
-            "social_posts_reference_unmatched",
-            requested_category=requested_category,
-            reason="unreadable",
-            role=role,
-            path=str(reference.path),
-            error=str(exc),
-        )
-        return None
-
-
-def _reference(
-    plan: SocialPostPlan, brand_dir: Path, *, idea_id: str
-) -> tuple[bytes, str, ReferenceImage] | None:
-    """(bytes, mime, entry) to condition generation on -- the library photo
-    matching `plan.reference_category` -- or `None` when there is no such
-    photo, which means DON'T GENERATE. The entry travels with the bytes so
-    the caller can pick the prompt clause from `shows_mascot`.
+def _reference(plan: SocialPostPlan, brand_dir: Path, *, idea_id: str) -> ReferenceImage | None:
+    """The library photo matching `plan.reference_category`, or `None` when
+    there is no such photo -- which means DON'T GENERATE.
 
     The category is passed to the resolver verbatim -- "" and an unrecognised
-    label are its business (it falls through to `general`, then to any other
-    tag), not this caller's.
+    label are its business (it falls through to `general`, then to nothing),
+    not this caller's.
 
     `idea_id` is the resolver's `seed`. Without one every post naming a
     category got that category's first photo by id, forever -- a brand with
@@ -127,9 +104,6 @@ def _reference(
             reason="no_library_match",
         )
         return None
-    data = _read(reference, requested_category=plan.reference_category, role="scene")
-    if data is None:
-        return None
     logger.info(
         "social_posts_reference_selected",
         requested_category=plan.reference_category,
@@ -141,33 +115,7 @@ def _reference(
         # grounded one are indistinguishable without opening `library.json`.
         shows_persona=reference.shows_persona,
     )
-    return data, reference.content_type, reference
-
-
-def _anchor(
-    scene: ReferenceImage, brand_dir: Path, *, idea_id: str
-) -> tuple[ReferencePhoto, ReferenceImage] | None:
-    """The extra photo that grounds the brand's mascot, or `None`.
-
-    `None` whenever the scene photo already shows the mascot, the library
-    holds no photo that does, or the one it holds cannot be read -- in every
-    case generation still happens, with the scene photo alone, exactly as
-    before this existed.
-    """
-    anchor = mascot_anchor(brand_dir, scene, seed=idea_id)
-    if anchor is None:
-        return None
-    data = _read(anchor, requested_category=anchor.category, role="mascot_anchor")
-    if data is None:
-        return None
-    logger.info(
-        "social_posts_mascot_anchor_attached",
-        scene_image_id=scene.id,
-        image_id=anchor.id,
-        category=anchor.category,
-        shows_persona=anchor.shows_persona,
-    )
-    return ReferencePhoto(data, anchor.content_type), anchor
+    return reference
 
 
 def generate_hook_image(
@@ -190,50 +138,29 @@ def generate_hook_image(
     nothing is generated, because only an uploaded photo may serve as the
     reference and the hero (routinely stock) is not one.
 
-    **A second photo goes with it whenever the first cannot carry the
-    mascot.** The plan names ONE collection, and a scene collection ("home
-    exterior") is a porch, not the brand's animal -- so the mascot in the
-    finished image was invented every time the planner named anything but a
-    mascot collection. `_anchor` adds a `shows_mascot` photo alongside the
-    scene photo, and `paired_reference_clause` tells the model which is which.
-    Nothing extra is attached when the scene photo already shows the mascot,
-    or when the brand keeps no such photo.
+    That second case is a dead end for the operator as well as for the run:
+    the post lands in the review queue carrying a stock image, and re-running
+    this function against the same plan reproduces it exactly. Escaping it is
+    `lib.crew.socialpost.retry`'s job, not this one's -- an unattended run may
+    not go looking for some other photo when the plan's tag matched nothing
+    (see `lib.crew.reference_library.resolve_reference` on why silent
+    substitution is worse than a visible fallback).
 
-    Passing a reference deliberately routes `generate_wp_image` past the
-    Imagen tiers to `gemini-3-pro-image-preview` -- the only tier that
-    accepts image input (see that function's docstring)."""
-    resolved = _reference(plan, brand_dir, idea_id=idea_id)
-    if resolved is None:
+    Everything after the photo is chosen lives in
+    `lib.crew.socialpost.hook_render`, shared with that retry path."""
+    reference = _reference(plan, brand_dir, idea_id=idea_id)
+    if reference is None:
         return hero_bytes, "fallback"
-    reference_bytes, reference_mime, reference = resolved
-    anchored = _anchor(reference, brand_dir, idea_id=idea_id)
-    # A library photo of a product or a location must NOT be introduced as
-    # "the brand's mascot" -- and one showing the person behind the brand
-    # must name THEM, not the mascot. Both words are the brand's own; this
-    # engine may never assume either (see `lib.crew.brand_identity`).
-    clause = (
-        reference_clause(reference, mascot_name, mascot_kind, persona_name)
-        if anchored is None
-        else paired_reference_clause(reference, anchored[1], mascot_name, mascot_kind, persona_name)
+    generated = render_from_reference(
+        plan,
+        reference,
+        brand_dir=brand_dir,
+        seed=idea_id,
+        mascot_name=mascot_name,
+        mascot_kind=mascot_kind,
+        persona_name=persona_name,
     )
-    try:
-        generated = generate_wp_image(
-            plan.image_brief,
-            alt_hint=plan.image_alt_text,
-            mascot_name=mascot_name,
-            reference_image_bytes=reference_bytes,
-            reference_image_mime=reference_mime,
-            # Order is the contract `paired_reference_clause` describes:
-            # PHOTO 1 is the scene, PHOTO 2 the mascot anchor.
-            extra_reference_images=() if anchored is None else (anchored[0],),
-            reference_clause=clause,
-        )
-        if generated.bytes_:
-            return generated.bytes_, "gemini"
-        logger.warning("social_posts_image_no_bytes", provider=generated.provider)
-    except Exception as exc:
-        logger.warning("social_posts_image_generation_failed", error=str(exc))
-    return hero_bytes, "fallback"
+    return (generated, "gemini") if generated else (hero_bytes, "fallback")
 
 
 def compose_image(
@@ -243,10 +170,19 @@ def compose_image(
     image_bytes: bytes,
     brand_dir: Path,
     ig_handle: str,
+    filename_stem: str = "",
 ) -> str | None:
     """Overlay headline/subcopy + CTA ribbon + follow badge onto the image and
     write it under `$BRAND_DIR/state/social_posts_pending/`. Returns the
     BRAND_DIR-relative path, or None on failure.
+
+    `filename_stem` defaults to `idea_id`, which is what composition wants: one
+    post, one file, overwritten if the post is ever composed twice. A REGENERATED
+    image must not take that name -- overwriting is a destructive act against the
+    image the operator is currently reviewing, performed before the replacement is
+    known to be good and before the DB has agreed to it. `lib.crew.socialpost.retry`
+    therefore passes a distinct stem, and only unlinks the superseded file once
+    the row points at the new one.
 
     `text_overlay` lives in the recipe-publisher tree, which is not a package
     on this side's import path -- so extend `sys.path` the same way
@@ -277,7 +213,7 @@ def compose_image(
         composed = apply_site_cta_ribbon(composed, plan.cta_ribbon_text)
         composed = apply_follow_badge(composed, handle=ig_handle)
 
-        relative = f"{PENDING_DIR}/{idea_id}.jpg"
+        relative = f"{PENDING_DIR}/{filename_stem or idea_id}.jpg"
         target = brand_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(composed)

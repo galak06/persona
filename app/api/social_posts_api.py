@@ -36,6 +36,9 @@ from lib import ideas_db, social_post_db, social_post_slots
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+#: The status a row holds while its image is being (re)made. See `_in_review`.
+_COMPOSING = "composing"
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["social-posts"])
@@ -64,6 +67,10 @@ class SocialPost(BaseModel):
     ig_post_url: str | None = None
     fb_due_at: str | None = None
     ig_due_at: str | None = None
+    # This post's image is being regenerated right now
+    # (``api.social_posts_retry_api``). Approve/Reject are refused while it is
+    # true, because both are guarded on 'queued' and the row is 'composing'.
+    regenerating: bool = False
 
 
 class SocialPostsResponse(BaseModel):
@@ -86,6 +93,28 @@ def _to_model(r: dict[str, Any]) -> SocialPost:
         ig_post_url=r.get("ig_post_url"),
         fb_due_at=str(r["social_post_fb_due_at"]) if r.get("social_post_fb_due_at") else None,
         ig_due_at=str(r["social_post_ig_due_at"]) if r.get("social_post_ig_due_at") else None,
+        regenerating=r.get("social_post_status") == _COMPOSING,
+    )
+
+
+def _in_review(row: dict[str, Any], status: str) -> bool:
+    """Does this row belong in a listing filtered to `status`?
+
+    Exactly the status asked for, plus one addition: a review listing also
+    keeps posts currently being RE-imaged. Those rows are 'composing' — the
+    state ``api.social_posts_retry_api`` claims them into — and dropping them
+    would make a card vanish from the page for the ~60s a retry runs and then
+    reappear, which reads as a bug and loses the operator's place.
+
+    A first composition is 'composing' too and must NOT show: it has no image,
+    no captions and nothing to review yet. The image path is what tells the two
+    apart, so the rule is "composing WITH an image is a post being re-imaged".
+    """
+    row_status = row.get("social_post_status")
+    if row_status == status:
+        return True
+    return (
+        status == "queued" and row_status == _COMPOSING and bool(row.get("social_post_image_path"))
     )
 
 
@@ -101,11 +130,9 @@ def list_social_posts(
             status_code=422,
             detail=f"Invalid status '{status}'. Valid: {sorted(social_post_db.STATUSES)}",
         )
-    rows = [
-        r
-        for r in ideas_db.list_ideas(brand_id=brand_id, limit=1000)
-        if r.get("social_post_status") == status
-    ][:limit]
+    rows = [r for r in ideas_db.list_ideas(brand_id=brand_id, limit=1000) if _in_review(r, status)][
+        :limit
+    ]
     posts = [_to_model(r) for r in rows]
     return SocialPostsResponse(posts=posts, total=len(posts))
 
