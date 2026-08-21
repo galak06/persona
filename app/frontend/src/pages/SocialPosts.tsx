@@ -1,132 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiOrigin, getErrorMessage, isHttpStatus } from "../api/client";
+import { getErrorMessage, isHttpStatus } from "../api/client";
 import {
   socialPostsUrl,
-  socialPostImageUrl,
   approveSocialPost,
   rejectSocialPost,
   composeSocialPosts,
   fetchComposeStatus,
 } from "../api/socialPosts";
-import type { SocialPost, SocialPostsResponse } from "../api/socialPosts";
+import type { SocialPostsResponse } from "../api/socialPosts";
+import { fetchReferenceLibrary } from "../api/referenceImages";
+import type { CategorySummary } from "../api/referenceImages";
 import { useApiQuery } from "../hooks/useApiQuery";
+import { useImageRetries } from "../hooks/useImageRetries";
+import SocialPostCard from "../components/SocialPostCard";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
-
-function sourceBadge(source: string | null): React.JSX.Element {
-  const cls =
-    source === "gemini"
-      ? "bg-indigo-50 text-indigo-700"
-      : "bg-stone-100 text-slate-600";
-  return (
-    <span
-      className={`rounded px-2 py-0.5 text-xs font-medium capitalize ${cls}`}
-    >
-      {source ?? "unknown"}
-    </span>
-  );
-}
-
-function formatSlot(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-interface CardProps {
-  post: SocialPost;
-  onDecision: (id: string, approve: boolean) => void;
-  busy: boolean;
-  scheduledFor?: string;
-}
-
-function SocialPostCard({
-  post,
-  onDecision,
-  busy,
-  scheduledFor,
-}: CardProps): React.JSX.Element {
-  const flags = post.validation_flags ?? [];
-
-  return (
-    <div className="bg-brand-surface rounded-2xl border border-brand-border shadow-card p-5 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-800 leading-snug">
-            {post.topic}
-          </h3>
-          <div className="mt-1">{sourceBadge(post.source)}</div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {scheduledFor ? (
-            <span className="px-3 py-1.5 rounded bg-emerald-50 text-emerald-700 text-xs font-medium">
-              Scheduled {formatSlot(scheduledFor)}
-            </span>
-          ) : (
-            <>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onDecision(post.id, false)}
-                className="px-3 py-1.5 rounded border border-stone-200 bg-white text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-              >
-                Reject
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => onDecision(post.id, true)}
-                className="px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 disabled:opacity-40"
-              >
-                Approve
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {flags.length > 0 && (
-        <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-          <span className="font-semibold">Flagged:</span> {flags.join(", ")}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Image (both platforms)
-          </div>
-          <img
-            className="w-full aspect-square rounded-lg bg-stone-100 object-cover"
-            src={socialPostImageUrl(apiOrigin, post.id)}
-            alt={post.image_alt ?? post.topic}
-          />
-        </div>
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Facebook — posts in its slot
-          </div>
-          <p className="text-xs text-slate-600 whitespace-pre-wrap">
-            {post.fb_caption}
-          </p>
-        </div>
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-            Instagram — 4h after Facebook
-          </div>
-          <p className="text-xs text-slate-600 whitespace-pre-wrap">
-            {post.ig_caption}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function SocialPosts(): React.JSX.Element {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -139,10 +28,15 @@ export default function SocialPosts(): React.JSX.Element {
   // Published articles with no posts yet. Drives the button's own label, so a
   // click that could only be a no-op says so before you make it.
   const [candidates, setCandidates] = useState<number | null>(null);
+  // The reference collections a retry may anchor on. Fetched once: the library
+  // is a handful of curated photos, not a feed.
+  const [categories, setCategories] = useState<CategorySummary[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data, loading, error, refetch } =
     useApiQuery<SocialPostsResponse>(socialPostsUrl());
+
+  const retries = useImageRetries(() => void refetch());
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -207,8 +101,24 @@ export default function SocialPosts(): React.JSX.Element {
     }
   }, [startPolling]);
 
+  useEffect(() => {
+    void fetchReferenceLibrary().then((library) =>
+      setCategories(library.categories),
+    );
+  }, []);
+
   const visible = (data?.posts ?? []).filter((p) => !rejected.has(p.id));
   const awaiting = visible.filter((p) => slots[p.id] === undefined);
+
+  // A run this tab did not start — another tab, or a reload mid-retry. The
+  // server marks those rows `regenerating`, so pick them back up rather than
+  // showing a live regeneration as an idle card.
+  const { adopt } = retries;
+  useEffect(() => {
+    const inFlight = visible.filter((p) => p.regenerating).map((p) => p.id);
+    if (inFlight.length > 0) adopt(inFlight);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, adopt]);
 
   const handleDecision = useCallback(
     async (id: string, approve: boolean): Promise<void> => {
@@ -309,7 +219,12 @@ export default function SocialPosts(): React.JSX.Element {
               key={post.id}
               post={post}
               onDecision={(id, approve) => void handleDecision(id, approve)}
+              onRetry={(id, category) => void retries.start(id, category)}
               busy={busyIds.has(post.id)}
+              retrying={retries.isRetrying(post.id) || post.regenerating === true}
+              retryNote={retries.noteFor(post.id)}
+              imageVersion={retries.versionFor(post.id)}
+              categories={categories}
               scheduledFor={slots[post.id] ?? post.fb_due_at ?? undefined}
             />
           ))}

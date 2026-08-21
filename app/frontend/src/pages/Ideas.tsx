@@ -139,8 +139,8 @@ function IdeaRow({ idea, rowNumber, onDecision, busy, expanded, onToggle }: RowP
           )}
         </td>
         <td className="py-2.5 pr-3 text-xs text-slate-500 max-w-[160px] hidden md:table-cell">
-          <span className="line-clamp-3" title={idea.nalla_context ?? undefined}>
-            {idea.nalla_context ?? "—"}
+          <span className="line-clamp-3" title={idea.persona_context ?? undefined}>
+            {idea.persona_context ?? "—"}
           </span>
         </td>
         <td className="py-2.5 pr-3 whitespace-nowrap text-xs hidden lg:table-cell">
@@ -417,7 +417,7 @@ export default function Ideas(): React.JSX.Element {
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400">#</th>
                   <th className="px-0 py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Category</th>
                   <th className="px-0 py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400">Topic / Keyword</th>
-                  <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden md:table-cell">Nalla context</th>
+                  <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden md:table-cell">Persona context</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden lg:table-cell">Goal</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 hidden 2xl:table-cell">Search signal</th>
                   <th className="py-3 pr-3 text-xs font-semibold uppercase tracking-wider text-slate-400 text-right">Score</th>

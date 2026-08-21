@@ -34,6 +34,7 @@ from lib.crew.products.block import (
     render_blog_block,
     strip_blog_block,
 )
+from lib.crew.products.compliance import slug_for
 from lib.observability import get_logger
 from lib.recipe_products import block_renderer as recipe_block
 
@@ -66,6 +67,19 @@ class WpPost:
     title: str
     content: str
     meta: Mapping[str, Any]
+
+    @property
+    def campaign_slug(self) -> str:
+        """The slug to build this post's `ascsubtag` from.
+
+        WordPress reports `slug: ""` for an UNPUBLISHED post, and this module
+        is deliberately able to address drafts by id -- so `post.slug` is
+        empty for exactly the posts the drafting crew produces. Rendering
+        with it produced a dead `ascsubtag=blog-` on two live posts (4289 and
+        4295; their backup files are literally named `4289-.html`). Fall back
+        to the title, the same way the drafting path derives it.
+        """
+        return self.slug or slug_for(self.title)
 
 
 def to_post(row: Mapping[str, Any]) -> WpPost:
@@ -171,7 +185,7 @@ def render_for_mode(
     if mode == MODE_REFRESH_RECIPE:
         block = render_blog_block(
             products,
-            post.slug,
+            post.campaign_slug,
             associates_tag=tag,
             heading=RECIPE_HEADING,
             intro=RECIPE_INTRO,
@@ -182,7 +196,7 @@ def render_for_mode(
         return block, recipe_block.insert_or_replace_block(post.content, block)
     block = render_blog_block(
         products,
-        post.slug,
+        post.campaign_slug,
         associates_tag=tag,
         heading=BLOG_HEADING,
         intro=BLOG_INTRO,

@@ -307,6 +307,30 @@
         "title": "BlogPostItem",
         "type": "object"
       },
+      "Body_post_image_api_v1_reference_images_images_post": {
+        "properties": {
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_post_image_api_v1_reference_images_images_post",
+        "type": "object"
+      },
       "BrandCreateRequest": {
         "description": "Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.",
         "properties": {
@@ -438,10 +462,7 @@
             "type": "string"
           },
           "keywords": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Keywords",
-            "type": "object"
+            "$ref": "#/components/schemas/BrandKeywords"
           },
           "mascot_name": {
             "default": "",
@@ -485,9 +506,43 @@
         "required": [
           "id",
           "name",
+          "keywords",
           "status"
         ],
         "title": "BrandDetail",
+        "type": "object"
+      },
+      "BrandKeywords": {
+        "description": "The `keywords` JSONB blob in the shape the HTTP layer ALWAYS emits.\n\nStorage is deliberately sparse: `lib.brand_templates._render_keywords`\nomits a category the operator supplied nothing for, because an absent\nkey means \"score against the broad DEFAULT_* list\" while a present-but-\nempty list would shadow those defaults and collapse every relevance\nscore to ~0. A freshly onboarded brand therefore stores `keywords: {}`.\n\nThat sparseness must not reach the wire. Clients render one field per\ncategory and read each list unconditionally, so every category is\nREQUIRED here and normalised out of the row exactly once, in\n`from_row()`. Round-tripping an empty list back through\n`PATCH /brands/{id}/settings` re-omits it at the storage layer, so the\nsparse-storage invariant survives an edit untouched.",
+        "properties": {
+          "competitor_mentions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Competitor Mentions",
+            "type": "array"
+          },
+          "primary_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Primary Keywords",
+            "type": "array"
+          },
+          "secondary_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Secondary Keywords",
+            "type": "array"
+          }
+        },
+        "required": [
+          "primary_keywords",
+          "secondary_keywords",
+          "competitor_mentions"
+        ],
+        "title": "BrandKeywords",
         "type": "object"
       },
       "BrandListResponse": {
@@ -575,10 +630,7 @@
             "type": "string"
           },
           "keywords": {
-            "additionalProperties": true,
-            "default": {},
-            "title": "Keywords",
-            "type": "object"
+            "$ref": "#/components/schemas/BrandKeywords"
           },
           "mascot_name": {
             "default": "",
@@ -636,6 +688,7 @@
         "required": [
           "id",
           "name",
+          "keywords",
           "status",
           "brand_dir",
           "files_written",
@@ -1071,6 +1124,63 @@
         "title": "CandidatesResponse",
         "type": "object"
       },
+      "CategoryCreate": {
+        "description": "Request body for declaring a new tag.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "CategoryCreate",
+        "type": "object"
+      },
+      "CategoryCreated": {
+        "description": "The declared tag, slugified.",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "label"
+        ],
+        "title": "CategoryCreated",
+        "type": "object"
+      },
+      "CategorySummary": {
+        "description": "One tag, with how many photos currently carry it.",
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "label",
+          "count"
+        ],
+        "title": "CategorySummary",
+        "type": "object"
+      },
       "CommentItem": {
         "additionalProperties": true,
         "description": "A Facebook / Instagram / WordPress engagement comment.\n\nLegacy schema \u2014 engagement comments no longer flow through the web UI,\nbut the model is retained so the autonomous pipeline (comment_poster)\nand legacy items in ``comment_queue.json`` can still validate.",
@@ -1265,7 +1375,7 @@
             ],
             "title": "Match Score"
           },
-          "nalla_context": {
+          "persona_context": {
             "anyOf": [
               {
                 "type": "string"
@@ -1274,7 +1384,7 @@
                 "type": "null"
               }
             ],
-            "title": "Nalla Context"
+            "title": "Persona Context"
           },
           "post_goal": {
             "anyOf": [
@@ -2485,6 +2595,46 @@
         "title": "IdeasResponse",
         "type": "object"
       },
+      "ImageUpdate": {
+        "description": "PATCH body. Every field is optional; an omitted one is left unchanged.\n\n`category` re-homes the photo (its id is `\"<category>/<filename>\"`), so a\nPATCH that changes it gets a different id back than it sent.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "shows_mascot": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Mascot"
+          },
+          "shows_persona": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shows Persona"
+          }
+        },
+        "title": "ImageUpdate",
+        "type": "object"
+      },
       "KeywordsResponse": {
         "properties": {
           "active_limit": {
@@ -2512,6 +2662,127 @@
           "active_limit"
         ],
         "title": "KeywordsResponse",
+        "type": "object"
+      },
+      "LibraryImage": {
+        "description": "A manifest entry as the UI consumes it, plus its `raw` URL.",
+        "properties": {
+          "added_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "bytes": {
+            "default": 0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "height": {
+            "default": 0,
+            "title": "Height",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          },
+          "shows_mascot": {
+            "default": false,
+            "title": "Shows Mascot",
+            "type": "boolean"
+          },
+          "shows_persona": {
+            "default": false,
+            "title": "Shows Persona",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          },
+          "width": {
+            "default": 0,
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "filename",
+          "content_type"
+        ],
+        "title": "LibraryImage",
+        "type": "object"
+      },
+      "LibraryResponse": {
+        "description": "The whole library in one payload -- it is a handful of photos.",
+        "properties": {
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/CategorySummary"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/LibraryImage"
+            },
+            "title": "Images",
+            "type": "array"
+          }
+        },
+        "required": [
+          "categories",
+          "images"
+        ],
+        "title": "LibraryResponse",
         "type": "object"
       },
       "LogTailResponse": {
@@ -2706,6 +2977,160 @@
           }
         },
         "title": "RejectBody",
+        "type": "object"
+      },
+      "RetagResult": {
+        "description": "What the re-tagger did to one photo.\n\n`new_id` differs from `image_id` whenever the category changed, because a\nre-tag moves the file and an id is `\"<category>/<filename>\"`.",
+        "properties": {
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "detail": {
+            "default": "",
+            "title": "Detail",
+            "type": "string"
+          },
+          "image_id": {
+            "title": "Image Id",
+            "type": "string"
+          },
+          "new_id": {
+            "title": "New Id",
+            "type": "string"
+          },
+          "shows_mascot": {
+            "default": false,
+            "title": "Shows Mascot",
+            "type": "boolean"
+          },
+          "shows_persona": {
+            "default": false,
+            "title": "Shows Persona",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_id",
+          "new_id",
+          "status"
+        ],
+        "title": "RetagResult",
+        "type": "object"
+      },
+      "RetagSummary": {
+        "description": "The whole re-tag run: per-photo results plus the counts worth showing.\n\nReported per image rather than as a single pass/fail because the run is\ndeliberately resilient -- a photo whose file vanished, or whose vision call\ncame back empty, is one bad row in an otherwise applied run.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/RetagResult"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "retagged": {
+            "title": "Retagged",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unchanged": {
+            "title": "Unchanged",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "retagged",
+          "unchanged",
+          "skipped",
+          "failed",
+          "results"
+        ],
+        "title": "RetagSummary",
+        "type": "object"
+      },
+      "RetryImageRequest": {
+        "description": "Which reference collection to anchor the new image on.\n\nEmpty means \"decide for me\": the fresh plan's own category if the library\ncan match it, otherwise any photo of the brand's mascot. A slug the brand\nhas no photos under is rejected rather than silently ignored \u2014 it would\nresolve to nothing and the retry would reproduce the fallback it was\nclicked to escape.",
+        "properties": {
+          "reference_category": {
+            "default": "",
+            "title": "Reference Category",
+            "type": "string"
+          }
+        },
+        "title": "RetryImageRequest",
+        "type": "object"
+      },
+      "RetryImageStatus": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "running": {
+            "title": "Running",
+            "type": "boolean"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "running",
+          "status"
+        ],
+        "title": "RetryImageStatus",
         "type": "object"
       },
       "RunNowRequest": {
@@ -3024,6 +3449,11 @@
               }
             ],
             "title": "Image Alt"
+          },
+          "regenerating": {
+            "default": false,
+            "title": "Regenerating",
+            "type": "boolean"
           },
           "social_post_status": {
             "title": "Social Post Status",
@@ -5674,6 +6104,284 @@
         ]
       }
     },
+    "/api/v1/reference-images": {
+      "get": {
+        "description": "Every declared tag and every filed photo for the active brand.\n\nThe only READ that runs the pre-rename directory migration: an operator\nopening this page is the first thing that touches a brand carried over\nfrom before the rename, and it must show them their existing photos.",
+        "operationId": "get_library_api_v1_reference_images_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Library",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/categories": {
+      "post": {
+        "description": "Declare a tag. Re-declaring an existing slug returns it unchanged.",
+        "operationId": "post_category_api_v1_reference_images_categories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Category",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/images": {
+      "post": {
+        "description": "File an uploaded photo, tagged by the vision pass.\n\n`category` is an OPTIONAL override: supply it and it wins, leave it out\n(as the UI does) and the model's choice is used -- a tag it reused from\nthe brand's list, or a new one the store declares on the way in. If the\nmodel could not be asked at all, the photo still lands, under `general`.\n\nContent-addressed, so re-uploading identical bytes to the same category\nreturns the existing entry rather than a duplicate.",
+        "operationId": "post_image_api_v1_reference_images_images_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_post_image_api_v1_reference_images_images_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Image",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/images/{image_id}": {
+      "delete": {
+        "description": "Drop a photo from the manifest and unlink its file. 404 if absent.",
+        "operationId": "remove_image_api_v1_reference_images_images__image_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Image",
+        "tags": [
+          "reference-images"
+        ]
+      },
+      "patch": {
+        "description": "Re-tag a photo and/or flip either subject flag. 404 on an unknown id.\n\nRe-tagging MOVES the file, so the returned entry carries a different id\nthan the one in the URL -- callers must adopt it rather than reuse theirs.",
+        "operationId": "patch_image_api_v1_reference_images_images__image_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Image",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/images/{image_id}/raw": {
+      "get": {
+        "description": "Serve one photo's bytes, uncached (the library is edited live).",
+        "operationId": "get_image_raw_api_v1_reference_images_images__image_id__raw_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "title": "Image Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Image Raw",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/import-legacy": {
+      "post": {
+        "description": "Copy `data/assets/persona_mascot_reference.*` into `general`.\n\nThe original is only read -- it stays on disk as the last-resort fallback.\n404 when the brand has no legacy asset to import.",
+        "operationId": "post_import_legacy_api_v1_reference_images_import_legacy_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryImage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Import Legacy",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
+    "/api/v1/reference-images/retag": {
+      "post": {
+        "description": "Re-run the vision tagger over every photo already in the library.\n\nOne vision call per photo and no partial-failure abort: a photo whose file\nvanished or whose call came back empty is reported as one bad row and the\nrest of the run still lands. Re-categorising MOVES files, so ids in the\nresponse differ from the ones the caller was holding -- refetch the\nlibrary rather than reusing them.\n\nOff the loop: the whole run is blocking, and long in proportion to the\nlibrary.",
+        "operationId": "post_retag_api_v1_reference_images_retag_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetagSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Post Retag",
+        "tags": [
+          "reference-images"
+        ]
+      }
+    },
     "/api/v1/sessions": {
       "get": {
         "operationId": "get_session_status_api_v1_sessions_get",
@@ -5952,6 +6660,115 @@
           }
         },
         "summary": "Reject Social Post",
+        "tags": [
+          "social-posts",
+          "social-posts"
+        ]
+      }
+    },
+    "/api/v1/social-posts/{idea_id}/retry-image": {
+      "post": {
+        "description": "Dispatch one image regeneration to the worker. 202 immediately; poll\n/social-posts/{id}/retry-image/status.\n\nDeliberately not restricted to `source='fallback'` rows. What must be true\nis that the post is still QUEUED \u2014 that is the state the whole operation is\nguarded on. Which queued posts are worth the credits is a judgement the\nreview page makes (it offers this on posts with no generated image), and\nbaking that policy in here too would mean two places to change it.",
+        "operationId": "retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "idea_id",
+            "required": true,
+            "schema": {
+              "title": "Idea Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/RetryImageRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Retry Social Post Image Api V1 Social Posts  Idea Id  Retry Image Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Social Post Image",
+        "tags": [
+          "social-posts",
+          "social-posts"
+        ]
+      }
+    },
+    "/api/v1/social-posts/{idea_id}/retry-image/status": {
+      "get": {
+        "description": "Is this post's image being regenerated, and how did the last run end?",
+        "operationId": "retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "idea_id",
+            "required": true,
+            "schema": {
+              "title": "Idea Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryImageStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Image Status",
         "tags": [
           "social-posts",
           "social-posts"

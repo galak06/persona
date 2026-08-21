@@ -247,9 +247,14 @@ def test_provider_is_given_the_real_token_endpoint(monkeypatch: pytest.MonkeyPat
     assert str(metadata.token_endpoint) == "https://openart.ai/suite/api/auth/oauth/token"
 
 
-def test_metadata_failure_leaves_provider_usable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Discovery is best-effort: a network failure must not break provider
-    construction (it just falls back to the SDK's own behaviour)."""
+def test_metadata_failure_falls_back_to_the_real_token_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A discovery blip must not re-arm the 404. Leaving `oauth_metadata`
+    unset sends the SDK's refresh to `https://mcp.openart.ai/token`, which
+    404s, clears the tokens and demands a manual re-authorization -- an
+    absurd price for one unreachable well-known URL. The static fallback
+    keeps refresh pointed at the real endpoint."""
     monkeypatch.setattr(openart, "_cached_metadata", None)
 
     def _boom(*_a: object, **_k: object) -> None:
@@ -259,4 +264,28 @@ def test_metadata_failure_leaves_provider_usable(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
     provider = openart.build_openart_oauth_provider()
-    assert provider.context.oauth_metadata is None
+
+    metadata = provider.context.oauth_metadata
+    assert metadata is not None
+    assert str(metadata.token_endpoint) == "https://openart.ai/suite/api/auth/oauth/token"
+
+
+def test_metadata_non_200_also_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Same for a reachable-but-broken discovery document (5xx, HTML error
+    page): status is checked, not assumed."""
+    monkeypatch.setattr(openart, "_cached_metadata", None)
+
+    class _Response:
+        status_code = 503
+
+        @staticmethod
+        def json() -> dict[str, object]:  # pragma: no cover - must not be reached
+            raise AssertionError("json() must not be parsed on a non-200")
+
+    monkeypatch.setattr(openart.httpx, "get", lambda *_a, **_k: _Response())
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    metadata = openart.build_openart_oauth_provider().context.oauth_metadata
+
+    assert metadata is not None
+    assert str(metadata.token_endpoint) == "https://openart.ai/suite/api/auth/oauth/token"

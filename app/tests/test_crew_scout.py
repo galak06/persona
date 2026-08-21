@@ -94,13 +94,13 @@ def test_idea_row_shape_matches_gsc_scout_convention() -> None:
         "category",
         "topic",
         "target_keyword",
-        "nalla_context",
+        "persona_context",
         "post_goal",
         "status",
         "input",
     }
     assert row["status"] == "publish"
-    assert row["nalla_context"] == idea.reasoning
+    assert row["persona_context"] == idea.reasoning
     assert row["post_goal"] == "topic_discovery"  # web_discovery -> topic_discovery
     parsed_input = json.loads(row["input"])
     assert parsed_input["source"] == "crewai_scout"

@@ -43,6 +43,10 @@ jobs:
       # api/oauth_api.py: lint- and format-clean, but also transitively
       # imports lib/oauth/* -- included in both lists here, excluded from
       # the mypy list below for the same reason as fb_group_scout.py.
+      # api/oauth_openart_api.py: same deal -- clean itself, but imports
+      # lib/oauth/openart_web.py, which has pre-existing mypy errors.
+      # lib/oauth/openart.py is lint-clean with pre-existing format drift,
+      # so it is lint-list only; lib/oauth/openart_store.py is clean on both.
       # lib/engagement/pipeline.py: lint-clean, but has pre-existing
       # (unrelated) ruff-format drift and transitively imports pre-existing
       # mypy-dirty modules (lib/engagement/history.py, lib/engagement/log.py)
@@ -96,6 +100,7 @@ jobs:
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
+          tests/test_crew_products_compliance.py
           tests/test_backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           tests/test_crew_reels.py tests/test_reels_openart_client.py
@@ -105,11 +110,37 @@ jobs:
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
+          lib/social_post_retry_db.py scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
+          tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
+          tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
+          tests/_socialpost_retry_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
           tests/test_managed_flow_ids_consistency.py
           scripts/pg_backup.py tests/test_pg_backup.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
+          api/reference_images_api.py api/reference_images_schemas.py
+          tests/test_reference_library.py tests/test_reference_validate.py
+          tests/test_reference_library_migration.py
+          tests/test_reference_images_api.py tests/test_reference_vision.py
+          tests/test_reference_images_edit_api.py tests/_reference_images_fakes.py
+          tests/test_reference_clauses.py tests/test_reference_mascot.py
+          tests/_reference_library_fakes.py
+          tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
+          lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
+          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
+          tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
+          tests/test_reels_images.py tests/test_reels_images_references.py
+          tests/test_socialpost_compose.py
+          api/oauth_openart_api.py tests/test_oauth_openart_status.py
+          lib/oauth/openart.py lib/oauth/openart_store.py
+          tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
 
       - name: Ruff format check
         run: >-
@@ -150,17 +181,44 @@ jobs:
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
+          tests/test_crew_products_compliance.py
           tests/test_backfill_blog_product_blocks.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
           lib/social_post_slots.py tests/test_social_post_slots.py
           tests/test_crew_socialpost.py tests/test_social_post_db.py
           tests/test_social_posts_api.py
+          lib/social_post_retry_db.py scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
+          tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
+          tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
+          tests/_socialpost_retry_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
           tests/test_managed_flow_ids_consistency.py
           scripts/pg_backup.py tests/test_pg_backup.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
+          api/reference_images_api.py api/reference_images_schemas.py
+          tests/test_reference_library.py tests/test_reference_validate.py
+          tests/test_reference_library_migration.py
+          tests/test_reference_images_api.py tests/test_reference_vision.py
+          tests/test_reference_images_edit_api.py tests/_reference_images_fakes.py
+          tests/test_reference_clauses.py tests/test_reference_mascot.py
+          tests/_reference_library_fakes.py
+          tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
+          lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
+          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
+          tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
+          tests/test_reels_images.py tests/test_reels_images_references.py
+          tests/test_socialpost_compose.py
+          api/oauth_openart_api.py tests/test_oauth_openart_status.py
+          lib/oauth/openart_store.py
+          tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
 
   typecheck:
     name: Type Check
@@ -206,12 +264,22 @@ jobs:
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
-          lib/social_post_slots.py
+          lib/social_post_slots.py lib/social_post_retry_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
+          scripts/social_post_retry_image.py
+          api/social_posts_compose_api.py api/social_posts_retry_api.py
           lib/brand_secrets.py scripts/brand_secrets.py
           api/ideas_generate_api.py
           scripts/pg_backup.py
           api/reels_compose_api.py
+          lib/crew/reference_library.py lib/crew/reference_library_store.py
+          lib/crew/reference_library_edit.py lib/crew/reference_clauses.py
+          lib/crew/reference_validate.py lib/crew/reference_vision.py
+          lib/crew/reference_mascot.py
+          lib/crew/wp_image.py lib/crew/wp_image_providers.py
+          api/reference_images_api.py api/reference_images_schemas.py
+          lib/oauth/openart.py lib/oauth/openart_store.py
+          lib/crew/reference_vocabulary.py
           --ignore-missing-imports
 
   test:
@@ -377,6 +445,7 @@ jobs:
             tests/test_crew_products_stage.py \
             tests/test_crew_products_select.py \
             tests/test_crew_products_block.py \
+            tests/test_crew_products_compliance.py \
             tests/test_crew_products_blog_backfill.py \
             tests/test_backfill_blog_product_blocks.py \
             tests/test_crew_reels.py \
@@ -387,11 +456,35 @@ jobs:
             tests/test_social_post_db.py \
             tests/test_social_post_slots.py \
             tests/test_social_posts_api.py \
+            tests/test_social_posts_compose_api.py \
+            tests/test_social_posts_retry_api.py \
+            tests/test_socialpost_retry.py \
+            tests/test_socialpost_retry_safety.py \
             tests/test_brand_secrets.py \
             tests/test_ideas_generate_api.py \
             tests/test_managed_flow_ids_consistency.py \
             tests/test_pg_backup.py \
             tests/test_reels_compose_api.py \
+            tests/test_reference_library.py \
+            tests/test_reference_library_migration.py \
+            tests/test_reference_validate.py \
+            tests/test_reference_images_api.py \
+            tests/test_reference_images_edit_api.py \
+            tests/test_reference_vision.py \
+            tests/test_reference_clauses.py \
+            tests/test_reference_mascot.py \
+            tests/test_crew_wp_image.py \
+            tests/test_crew_wp_image_references.py \
+            tests/test_reference_vocabulary.py \
+            tests/test_crew_writer_prompts.py \
+            tests/test_crew_socialpost_prompts.py \
+            tests/test_reels_openart_generate.py \
+            tests/test_reels_images.py \
+            tests/test_reels_images_references.py \
+            tests/test_socialpost_compose.py \
+            tests/test_oauth_openart_status.py \
+            tests/test_oauth_openart.py \
+            tests/test_oauth_openart_refresh.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
             --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \

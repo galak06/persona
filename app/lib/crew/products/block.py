@@ -68,10 +68,21 @@ _FAQ_HEADING_RE: Final[re.Pattern[str]] = re.compile(
 )
 
 
+def blog_campaign_id(slug: str) -> str:
+    """The `ascsubtag` value for a blog placement on `slug`.
+
+    Public because it is the ONE definition of that campaign id: the picks
+    block renders it here, `lib.crew.products.compliance` stamps the same
+    value onto links the block never rendered, and
+    `lib.crew.writer.assemble` hands it to `resolve_html` so a placeholder
+    carries it at source. The `blog-` prefix keeps Amazon reporting able to
+    separate these placements from the recipe block's `recipe-` ones.
+    """
+    return f"blog-{slug}"
+
+
 def _affiliate_url(asin: str, tag: str, slug: str) -> str:
-    """`blog-` ascsubtag prefix so Amazon reporting separates these
-    placements from the recipe block's `recipe-` ones."""
-    return f"https://www.amazon.com/dp/{asin}?tag={tag}&ascsubtag=blog-{slug}"
+    return f"https://www.amazon.com/dp/{asin}?tag={tag}&ascsubtag={blog_campaign_id(slug)}"
 
 
 def _detail_text(product: ProductEntry) -> str:

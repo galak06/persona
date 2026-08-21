@@ -23,6 +23,7 @@ from fastapi import status as http_status
 from api.brand_schemas import (
     BrandCreateRequest,
     BrandDetail,
+    BrandKeywords,
     BrandListResponse,
     BrandProvisionResponse,
     BrandSummary,
@@ -63,7 +64,7 @@ def _spec_from_row(row: dict[str, Any]) -> BrandSpec:
     they're stashed in `extra` at creation time (see `create_brand`) purely
     so this round trip is possible.
     """
-    keywords = row.get("keywords") or {}
+    keywords = BrandKeywords.from_row(row)
     extra = row.get("extra") or {}
     return BrandSpec(
         name=str(row.get("name") or ""),
@@ -74,9 +75,9 @@ def _spec_from_row(row: dict[str, Any]) -> BrandSpec:
         brand_persona=str(row.get("persona") or ""),
         instagram_profile_url=str(extra.get("instagram_profile_url") or ""),
         facebook_page_url=str(extra.get("facebook_page_url") or ""),
-        primary_keywords=list(keywords.get("primary_keywords") or []),
-        secondary_keywords=list(keywords.get("secondary_keywords") or []),
-        competitor_mentions=list(keywords.get("competitor_mentions") or []),
+        primary_keywords=list(keywords.primary_keywords),
+        secondary_keywords=list(keywords.secondary_keywords),
+        competitor_mentions=list(keywords.competitor_mentions),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         headless=bool(row.get("headless", True)),
         enabled_flows=list(row.get("enabled_flows") or brands_db.default_enabled_flows()),
@@ -96,7 +97,7 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         niche=str(row.get("niche") or ""),
         mascot_name=str(row.get("mascot_name") or ""),
         target_audience=str(row.get("target_audience") or ""),
-        keywords=dict(row.get("keywords") or {}),
+        keywords=BrandKeywords.from_row(row),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),
@@ -217,7 +218,7 @@ def get_brand(brand_id: str) -> BrandDetail:
         niche=str(row.get("niche") or ""),
         mascot_name=str(row.get("mascot_name") or ""),
         target_audience=str(row.get("target_audience") or ""),
-        keywords=dict(row.get("keywords") or {}),
+        keywords=BrandKeywords.from_row(row),
         competitor_accounts=list(row.get("competitor_accounts") or []),
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),

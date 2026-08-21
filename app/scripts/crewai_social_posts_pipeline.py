@@ -64,7 +64,9 @@ if str(_ENGINE_ROOT) not in sys.path:
 
 from lib import social_post_db
 from lib.crew import wp_source
+from lib.crew.brand_identity import read_brand_identity, site_domain
 from lib.crew.context import brand_voice_summary
+from lib.crew.reference_library import list_category_labels
 from lib.crew.socialpost import (
     build_social_post_agent,
     build_social_post_task,
@@ -119,19 +121,6 @@ def _check_required_env(*, release_only: bool) -> list[str]:
     return [name for name in required if not os.environ.get(name, "").strip()]
 
 
-def _site_identity(brand_dir: Path) -> tuple[str, str]:
-    """(site_domain, mascot_name) from the brand config, with safe fallbacks."""
-    try:
-        config = json.loads((brand_dir / "config.json").read_text())
-        site = config.get("site", {})
-        url = str(site.get("url", "")).rstrip("/")
-        domain = url.split("//", 1)[-1] if url else brand_dir.name
-        return domain, str(site.get("mascot_name", ""))
-    except Exception as exc:
-        logger.warning("social_posts_config_read_failed", error=str(exc))
-        return brand_dir.name, ""
-
-
 def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str:
     idea_id = str(row["id"])
     wp_post_id = row.get("wp_post_id")
@@ -148,7 +137,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:_BODY_TRUNCATE_CHARS]
     featured_media_id = int(post.get("featured_media") or 0)
 
-    site_domain, mascot_name = _site_identity(brand_dir)
+    identity = read_brand_identity(brand_dir)
     target_keyword = str(row.get("target_keyword") or "")
 
     agent = build_social_post_agent()
@@ -156,8 +145,13 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         title=title,
         body=body,
         target_keyword=target_keyword,
-        site_domain=site_domain,
+        site_domain=site_domain(brand_dir),
         brand_voice=brand_voice_summary(brand_dir),
+        # The agent may only tag the image with a category the brand actually
+        # keeps photos under -- `with_photos` is what makes that true, since a
+        # declared-but-empty tag resolves to no image at all. No stocked
+        # category means an empty list, which drops the section entirely.
+        reference_categories=list_category_labels(brand_dir, with_photos=True),
     )
     task = build_social_post_task(agent, description)
     plan = execute_social_post_crew(agent, task, target_keyword=target_keyword)
@@ -179,9 +173,20 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     if not social_post_db.claim(idea_id):
         return "skipped_claim_lost"
 
-    # The WP hero doubles as the generation reference (mascot consistency +
-    # grounding in this post's real subject) and the fallback image.
-    image_bytes, source = generate_hook_image(plan, mascot_name=mascot_name, hero_bytes=hero_bytes)
+    # Generation is grounded on a photo from the tagged library -- the scene
+    # the plan asked for, plus a mascot photo when that one shows no mascot.
+    # The WP hero is the fallback image, for brands with no library at all.
+    # `idea_id` seeds the pick, so two posts naming one collection do not
+    # both take its first photo (and a re-run of one post reproduces it).
+    image_bytes, source = generate_hook_image(
+        plan,
+        mascot_name=identity.mascot_name,
+        mascot_kind=identity.mascot_kind,
+        persona_name=identity.persona_name,
+        hero_bytes=hero_bytes,
+        brand_dir=brand_dir,
+        idea_id=idea_id,
+    )
     # Same convention as worker_post_stories.py: IG_USERNAME env, brand-folder
     # name as the fallback (for this brand that IS the IG handle).
     ig_handle = f"@{os.environ.get('IG_USERNAME', brand_dir.name)}"

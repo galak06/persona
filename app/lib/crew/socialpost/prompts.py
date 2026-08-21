@@ -32,9 +32,21 @@ model's instincts:
 - **Hashtags: none on FB, 3-5 on IG.** Note this is deliberately fewer than the
   6-8 in `app/CLAUDE.md`, which predates keywords-in-captions displacing hashtags
   as Instagram's discovery mechanism.
+- **`reference_category` only when the brand has a reference-photo library.** The
+  hook image is generated from the brand's own real photos, so naming the collection
+  whose scenes match the brief is what makes that reference ground the scene instead
+  of fighting it. Nothing here may assume the brand HAS a dog -- or a mascot at all
+  (`lib.crew.brand_identity`); the mascot is anchored in code, on a `shows_mascot`
+  photo (`lib.crew.reference_mascot`), precisely so this prompt does not have to ask
+  for one. A brand with no library passes nothing and gets a prompt byte-identical to
+  the one that predates the field.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
+
+from lib.crew.reference_vocabulary import catch_all_clause
 
 MAX_HEADLINE_LINE_CHARS = 18
 MAX_SUBCOPY_CHARS = 40
@@ -44,6 +56,32 @@ IG_HASHTAG_MIN = 3
 IG_HASHTAG_MAX = 5
 
 
+def _reference_category_section(categories: Sequence[str]) -> str:
+    """The `reference_category` instructions -- empty string when the brand has
+    no reference-photo library, so the prompt stays byte-identical to what it
+    was before this field existed."""
+    if not categories:
+        return ""
+    listed = "\n".join(f"  - {label}" for label in categories)
+    return f"""
+## Reference-photo collection (`reference_category`)
+That image is generated from the brand's own real photos. The brand keeps several \
+collections of them, one collection per kind of scene:
+{listed}
+Set `reference_category` to the ONE collection whose scenes best match the \
+`image_brief` you just wrote, copied verbatim from the list above. That collection \
+supplies the SETTING, so the closer it matches the scene, the more the finished image \
+looks like this brand's own place -- a couch reference dragged into a kitchen scene \
+fights the brief instead of grounding it. (The brand's mascot is anchored separately, \
+on a photo that actually shows it, so you never have to pick a collection just to get \
+the mascot right.) Those collections are the only ones that exist: there is no "none of \
+the above", and a name that is not on that list means no image gets generated at all -- \
+the post falls back to a stock photo. So when nothing is a clean match, still pick the \
+CLOSEST one on the list; a near-miss reference is still a real photo of this brand, \
+which beats no reference every time.{catch_all_clause(categories)}
+"""
+
+
 def build_social_post_task_description(
     *,
     title: str,
@@ -51,6 +89,7 @@ def build_social_post_task_description(
     target_keyword: str,
     site_domain: str,
     brand_voice: str,
+    reference_categories: Sequence[str] = (),
 ) -> str:
     """The full prompt handed to the Social Post Writer's `Task`.
 
@@ -158,4 +197,4 @@ the image (e.g. "FULL GUIDE  ->  {site_domain.upper()}").
 `image_alt_text` describes the finished image in plain language for screen readers. \
 It is also indexed by search, so write it as a real sentence including the topic -- \
 not a keyword list.
-"""
+{_reference_category_section(reference_categories)}"""

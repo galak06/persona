@@ -62,6 +62,11 @@ class SocialPostPlan(BaseModel):
         "subject, setting, mood, composition -- grounded in what this post actually "
         "says. Never a surface carrying readable text or branding."
     )
+    reference_category: str = Field(
+        default="",
+        description="Which of the brand's reference-photo collections best matches this "
+        "scene -- copy one value verbatim from the list supplied in the task, or leave empty.",
+    )
     cta_ribbon_text: str = Field(
         description="Very short all-caps CTA for the ribbon across the bottom of the "
         "image, e.g. 'FULL GUIDE -> DOGFOODANDFUN.COM'."

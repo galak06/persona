@@ -206,7 +206,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
             value={form.brand_persona}
             onChange={update("brand_persona")}
             rows={3}
-            placeholder="e.g. a dog owner and software engineer, not a vet"
+            placeholder="e.g. a hands-on hobbyist and engineer, not a certified expert"
             className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
           />
         </div>
@@ -227,7 +227,7 @@ export default function BrandForm({ onCreated }: BrandFormProps): React.JSX.Elem
                   type="text"
                   value={form[field.key]}
                   onChange={update(field.key)}
-                  placeholder="e.g. grain-free, raw diet, joint health"
+                  placeholder="e.g. beginner guides, budget picks, durability"
                   className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
                 />
               </label>

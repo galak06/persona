@@ -2,13 +2,19 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import { endpoints } from "../api/endpoints";
-import type { Brand, BrandCreateResponse, BrandSettingsRequest } from "../api/brands";
+import type {
+  Brand,
+  BrandCreateResponse,
+  BrandKeywords,
+  BrandSettingsRequest,
+} from "../api/brands";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useApiMutation } from "../hooks/useApiMutation";
 import { useToast } from "../components/ui/Toast";
 import Alert from "../components/ui/Alert";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
+import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -40,14 +46,32 @@ function parseList(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Render one list field, tolerating a list the response didn't carry. */
+function toCsv(values: readonly string[] | undefined): string {
+  return values ? values.join(", ") : "";
+}
+
+/**
+ * `brand` is an unchecked CAST of network JSON (`useApiQuery<Brand>`), not a
+ * validated value — so a list the schema marks required can still arrive
+ * missing from an API one deploy behind, and reading it unguarded throws
+ * during render and takes the whole page down. That is precisely how this
+ * function crashed: the backend used to hand `keywords` straight through as
+ * an untyped dict, and a brand onboarded without keywords stores `{}`, so
+ * `keywords.primary_keywords.join(", ")` hit `undefined`. The schema is
+ * honest now (every category is required and always emitted), and every list
+ * read here still goes through `toCsv`, so a missing one degrades to an empty
+ * field instead of a blank page.
+ */
 function formStateFromBrand(brand: Brand): FormState {
+  const keywords: Partial<BrandKeywords> = brand.keywords ?? {};
   return {
     headless: brand.headless,
-    primary_keywords: brand.keywords.primary_keywords.join(", "),
-    secondary_keywords: brand.keywords.secondary_keywords.join(", "),
-    competitor_mentions: brand.keywords.competitor_mentions.join(", "),
-    competitor_accounts: brand.competitor_accounts.join(", "),
-    enabled_flows: brand.enabled_flows,
+    primary_keywords: toCsv(keywords.primary_keywords),
+    secondary_keywords: toCsv(keywords.secondary_keywords),
+    competitor_mentions: toCsv(keywords.competitor_mentions),
+    competitor_accounts: toCsv(brand.competitor_accounts),
+    enabled_flows: brand.enabled_flows ?? [],
     group_join_limit: String(brand.group_join_limit),
   };
 }
@@ -233,6 +257,8 @@ export default function BrandSettings(): React.JSX.Element {
           </button>
         </form>
       )}
+
+      <ReferenceLibrarySection brandId={id} />
 
       {result && (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-2">

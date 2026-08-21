@@ -5,20 +5,34 @@ get -- its own OpenArt-generated image, or the WP post's hero image?
 
 **The fallback is per beat, never per run.** An earlier revision discarded
 every generated image when any single beat failed, so one slow generation
-turned four paid-for AI images into a reel of the same hero image repeated
-five times -- the user paid and waited for nothing. Each beat now keeps
-whatever it got: successful beats use their own image, and only the beats
-that actually failed fall back to the hero image.
+turned four paid-for AI images into a reel of the same hero repeated five
+times. Each beat now keeps whatever it got: only the beats that actually
+failed fall back to the hero image.
 
 **OpenArt remains an optional enhancement.** Not configured, not authorized,
 out of credits, erroring -- all of it degrades gracefully to hero images and
-the reel still composes. Authorization is an opt-in upgrade, never a
-prerequisite, so a run without it is a plain success.
+the reel still composes; a run without it is a plain success.
+
+**The reference is picked per beat, from the brand's tagged library.** Each
+beat names the kind of scene it shows (`ReelBeat.reference_category`) and
+`lib.crew.reference_library.resolve_reference` answers with the photo that
+matches. One `ReferenceCache` is shared by the run, so N distinct photos cost
+N uploads, not five. **The prompt clause follows the photo**
+(`lib.crew.reference_clauses`): an identity instruction naming whichever of the
+brand's own subjects the photo shows, neutral scene-grounding for the rest.
+
+**No library photo, no generation.** Only an UPLOADED photo may anchor a
+generated image, so a beat the library can't answer for is never sent to
+OpenArt -- it keeps the hero, exactly as a failed beat does. The hero used to
+be uploaded as that beat's reference, telling OpenArt to match whatever the
+post's featured image happened to be (routinely a Pexels stock photo). An
+entirely unmatched reel costs nothing and reports `source="fallback"`.
 """
 
 from __future__ import annotations
 
 import functools
+import hashlib
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -27,9 +41,11 @@ import anyio
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from lib.crew.brand_identity import read_brand_identity
 from lib.crew.reels.models import ReelPlan
-from lib.crew.reels.openart_client import generate_image
-from lib.crew.wp_image import resolve_reference_image_path
+from lib.crew.reels.openart_client import ReferenceCache, ReferenceUpload, generate_image
+from lib.crew.reference_clauses import reference_clause
+from lib.crew.reference_library import ReferenceImage, resolve_reference
 from lib.oauth.openart import OpenArtAuthRequiredError, openart_enabled
 from lib.oauth.openart_store import stored_auth_state
 from lib.observability import get_logger
@@ -41,6 +57,10 @@ logger = get_logger(__name__)
 # needless hero fallback. Bounded at 2 attempts so a genuine outage (or an
 # exhausted quota) still degrades quickly instead of hammering the API.
 _ATTEMPTS_PER_BEAT = 2
+
+#: Seeds are sent to an external image model; keep them inside a signed 32-bit
+#: range, the widest value every provider we've seen accepts.
+_SEED_MODULUS = 2**31
 
 
 class ResolvedImages(NamedTuple):
@@ -64,32 +84,79 @@ class ResolvedImages(NamedTuple):
         return "mixed"
 
 
-def _load_mascot_reference(brand_dir: Path) -> bytes | None:
-    """The brand's real persona+mascot photo, for OpenArt's image2image
-    grounding -- or None when the brand has no such asset.
+def _run_seed(idea_id: str) -> int:
+    """One seed for the whole reel, derived from the idea it belongs to.
 
-    Reuses `lib.crew.wp_image.resolve_reference_image_path`, the same
-    resolver the WP hero-image generator already uses, so both pipelines
-    agree on where a brand's mascot reference lives
-    (`$BRAND_DIR/data/assets/persona_mascot_reference.{png,jpg,jpeg}`).
+    Five beats generated with one seed look like one shoot; five random
+    seeds look like five unrelated pictures. Deriving it from `idea_id`
+    (rather than randomizing) gives all three properties at once: consistent
+    within a reel, different between reels, reproducible across re-runs.
     """
-    path = resolve_reference_image_path(brand_dir)
-    if path is None:
+    return int(hashlib.sha256(idea_id.encode("utf-8")).hexdigest()[:8], 16) % _SEED_MODULUS
+
+
+def _beat_reference(
+    brand_dir: Path, category: str, *, idea_id: str, index: int
+) -> tuple[ReferenceUpload, ReferenceImage] | None:
+    """The library photo grounding one beat, or None when there is none.
+
+    Returns the upload AND the entry, because the caller needs the entry's
+    `shows_mascot` / `shows_persona` flags to pick this beat's prompt clause.
+    `None` means this beat is NOT generated (see `resolve_images`), so both
+    ways of getting there are logged -- distinguished by `reason`.
+
+    `category` reaches the resolver verbatim: "" and an unrecognised label are
+    its business, not this caller's. Seeding on `"{idea_id}:{index}"` spreads
+    a reel's beats across the photos a category holds, re-runs identical.
+    """
+    reference = resolve_reference(brand_dir, category, seed=f"{idea_id}:{index}")
+    which: dict[str, object] = {
+        "idea_id": idea_id,
+        "beat_index": index,
+        "requested_category": category,
+    }
+    if reference is None:
+        logger.info("reels_reference_unmatched", **which, reason="no_library_match")
         return None
     try:
-        return path.read_bytes()
+        data = reference.path.read_bytes()
     except OSError as exc:
-        # Never fatal: a missing/unreadable reference degrades to the hero
-        # image, exactly as a brand without the asset already does.
-        logger.warning("reels_mascot_reference_unreadable", path=str(path), error=str(exc))
+        # Never fatal, and never a substitute reference: the beat keeps the
+        # hero image, exactly as an unmatched category does.
+        logger.warning(
+            "reels_reference_unmatched",
+            **which,
+            reason="unreadable",
+            path=str(reference.path),
+            error=str(exc),
+        )
         return None
+    logger.info(
+        "reels_reference_selected",
+        **which,
+        category=reference.category,
+        image_id=reference.id,
+        # Which clause this beat will get, so a wrong-looking frame is
+        # diagnosable from the log alone.
+        shows_mascot=reference.shows_mascot,
+        shows_persona=reference.shows_persona,
+    )
+    # The file's REAL content type travels with it. The previous single-
+    # reference call left OpenArt's default `image/jpeg` in place, so every
+    # PNG reference -- including the legacy `persona_mascot_reference.png` --
+    # was uploaded mislabelled.
+    return ReferenceUpload(data, reference.path.name, reference.content_type), reference
 
 
-def _generate_one_beat(prompt: str, reference_bytes: bytes, *, index: int) -> bytes | None:
+def _generate_one_beat(
+    prompt: str, reference: ReferenceUpload, *, index: int, seed: int, cache: ReferenceCache
+) -> bytes | None:
     """One beat's image, or None if it couldn't be generated.
 
-    `reference_bytes` is OpenArt's image2image grounding, NOT the fallback
-    image -- see `resolve_images` for why those are two different pictures.
+    `reference` is OpenArt's image2image grounding, NOT the fallback image --
+    see `resolve_images` for why those are two different pictures. `cache` is
+    the run's shared `ReferenceCache`, so a photo several beats agree on is
+    uploaded once.
 
     Retries once on an ordinary failure. `OpenArtAuthRequiredError`
     propagates: authorization is a run-wide condition, so retrying it per
@@ -98,7 +165,13 @@ def _generate_one_beat(prompt: str, reference_bytes: bytes, *, index: int) -> by
     for attempt in range(1, _ATTEMPTS_PER_BEAT + 1):
         try:
             return anyio.run(
-                functools.partial(generate_image, prompt, reference_image=reference_bytes)
+                functools.partial(
+                    generate_image,
+                    prompt,
+                    references=[reference],
+                    seed=seed,
+                    reference_cache=cache,
+                )
             )
         except OpenArtAuthRequiredError:
             raise
@@ -123,17 +196,16 @@ def resolve_images(
 
     Two different pictures, previously conflated into one:
 
-      * the FALLBACK image, shown verbatim when a beat can't be generated --
-        the post's own hero, which is correct: it is what the article shows.
-      * the REFERENCE image, which grounds what OpenArt draws. This must be
-        the brand's mascot. Passing the hero here (the prior behavior) told
-        OpenArt to keep the reel "visually consistent" with whatever the
-        post's featured image happened to be -- routinely a Pexels stock
-        dog -- so every generated beat looked like a stranger's dog rather
-        than the brand's own. Live-reported: reels not matching the mascot.
+      * the FALLBACK image, shown verbatim when a beat isn't generated -- the
+        post's own hero, which is correct: it is what the article shows.
+      * the REFERENCE image, which grounds what OpenArt draws, resolved PER
+        BEAT from the brand's tagged library (`ReelBeat.reference_category`).
+        Passing the hero here (the prior behavior) told OpenArt to match the
+        post's featured image -- routinely a Pexels stock dog.
 
-    Brands without the asset fall back to the hero as the reference, i.e.
-    exactly the previous behavior, so this stays brand-agnostic.
+    A beat the library can't answer for therefore takes the fallback WITHOUT
+    a generation call: there is no second-choice anchor to reach for, so a
+    brand with no library gets a reel of hero images at zero cost.
     """
     total = len(plan.beats)
     all_hero = ResolvedImages([hero_bytes] * total, 0, total)
@@ -152,13 +224,15 @@ def resolve_images(
         )
         return all_hero
 
-    mascot_bytes = _load_mascot_reference(brand_dir)
-    reference_bytes = mascot_bytes if mascot_bytes is not None else hero_bytes
-    logger.info(
-        "reels_reference_image_selected",
-        idea_id=idea_id,
-        source="brand_mascot" if mascot_bytes is not None else "wp_hero",
-    )
+    # A library photo is attached on EVERY call, but only some show one of
+    # the brand's own subjects: `reference_clause` sends the identity
+    # instruction naming whichever of the mascot and the persona is really in
+    # the frame, and the neutral grounding one for the rest.
+    identity = read_brand_identity(brand_dir)
+    seed = _run_seed(idea_id)
+    # ONE cache for the run: the five beats routinely agree on a photo, and
+    # without this each beat would re-upload the same bytes.
+    cache = ReferenceCache()
 
     images: list[bytes] = []
     ai_count = 0
@@ -167,8 +241,27 @@ def resolve_images(
         if authorization_lost:
             images.append(hero_bytes)
             continue
+        library = _beat_reference(brand_dir, beat.reference_category, idea_id=idea_id, index=index)
+        if library is None:
+            # Nothing uploaded may anchor this beat, so it is never generated
+            # (`_beat_reference` logged why). The hero counts as a hero image.
+            images.append(hero_bytes)
+            continue
+        upload, resolved_reference = library
+        clause = reference_clause(
+            resolved_reference,
+            identity.mascot_name,
+            identity.mascot_kind,
+            identity.persona_name,
+        )
         try:
-            generated = _generate_one_beat(beat.image_prompt, reference_bytes, index=index)
+            generated = _generate_one_beat(
+                f"{clause}{beat.image_prompt}",
+                upload,
+                index=index,
+                seed=seed,
+                cache=cache,
+            )
         except OpenArtAuthRequiredError:
             # Run-wide: a stored token whose refresh is rejected only fails
             # at call time. Stop calling; remaining beats use the hero image.
@@ -190,5 +283,7 @@ def resolve_images(
         source=resolved.source,
         ai_images=ai_count,
         hero_images=total - ai_count,
+        # Distinct photos actually uploaded this run -- the cache's whole job.
+        references_uploaded=len(cache),
     )
     return resolved

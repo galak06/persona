@@ -2,7 +2,8 @@
 
 The last step before a draft becomes WordPress-ready: fix the writer's
 invalid nesting, strip invented same-site links, inject `lib.blog_jsonld`
-schema, and resolve `[AFFILIATE:key]` placeholders into real Amazon URLs.
+schema, resolve `[AFFILIATE:key]` placeholders into real Amazon URLs, and
+enforce the FTC/Associates surface on every Amazon link in the result.
 
 Split out of `orchestrator` -- which owns *running the crews* -- because this
 is a separate job (turning a `WrittenPost` into publishable HTML) and the
@@ -38,8 +39,10 @@ def assemble_final_html(
     HTML5 that corrupts WordPress's rendering, see
     `lib.crew.writer.context.unwrap_lists_from_paragraphs`), strip any
     invented same-site link straight from the HTML body, inject JSON-LD
-    (`lib.blog_jsonld`), and resolve `[AFFILIATE:key]` placeholders
-    (`lib.affiliate_resolver.resolve_html`).
+    (`lib.blog_jsonld`), resolve `[AFFILIATE:key]` placeholders
+    (`lib.affiliate_resolver.resolve_html`, with this post's `ascsubtag`
+    campaign id), and make every Amazon link compliant
+    (`lib.crew.products.compliance.enforce_affiliate_compliance`).
 
     Deliberately does NOT catch `AffiliateResolverError` -- see module
     docstring. Callers that want a clean CLI message catch it themselves.
@@ -79,9 +82,28 @@ def assemble_final_html(
     body_with_schema = f"{body_html.rstrip()}\n\n{jsonld_block}\n"
 
     # Merged-pool default: the selector may pick recipe-catalog keys too.
-    from lib.crew.products import load_candidate_pool  # runtime import: avoids cycle
+    from lib.crew.products import (  # runtime import: avoids cycle
+        blog_campaign_id,
+        enforce_affiliate_compliance,
+        load_candidate_pool,
+        slug_for,
+    )
 
     catalog = catalog if catalog is not None else load_candidate_pool(brand_dir)
-    return resolve_html(
-        body_with_schema, catalog=catalog, drop_unknown=drop_unknown_affiliates
+    # Derived from the TITLE, never a WordPress `slug` field: WP reports
+    # `slug: ""` for an unpublished draft and this pipeline only ever creates
+    # drafts, which is how two live posts ended up with a dead
+    # `ascsubtag=blog-`. `written_post.title` (not the brief's) is what
+    # `create_wp_draft` posts, so it is what WP will slugify.
+    slug = slug_for(written_post.title)
+    resolved = resolve_html(
+        body_with_schema,
+        catalog=catalog,
+        campaign_id=blog_campaign_id(slug),
+        drop_unknown=drop_unknown_affiliates,
     )
+    # Last word on compliance: `resolve_html` only substitutes URLs, so the
+    # anchors the writer wrote around them still have no `rel`/`target`, and
+    # an Amazon link the writer typed out in full carries no campaign id at
+    # all. Idempotent, so the picks block's already-correct links are a no-op.
+    return enforce_affiliate_compliance(resolved, slug)

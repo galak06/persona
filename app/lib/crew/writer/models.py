@@ -50,6 +50,11 @@ class ContentBrief(BaseModel):
         description="How the brand's mascot/voice fits THIS specific topic -- grounded in the "
         "idea's own reasoning and the brand voice guide, not generic."
     )
+    reference_category: str = Field(
+        default="",
+        description="Which of the brand's reference-photo collections best matches this "
+        "scene -- copy one value verbatim from the list supplied in the task, or leave empty.",
+    )
 
 
 class FaqPair(BaseModel):

@@ -85,12 +85,11 @@ def _idea_row(opportunity: GscOpportunity, *, data_sufficient: bool) -> dict[str
         "category": opportunity.category,
         "topic": opportunity.keyword.strip().capitalize(),
         "target_keyword": opportunity.keyword,
-        # `ideas_db.insert_idea()` reads the dict key `nalla_context` (confirmed
-        # against lib/ideas_db.py and recipe-publisher/workers/worker_content_ideator.py's
-        # existing call site) -- the plan's Slice 2 prose names `persona_context`
-        # (matching create_supabase_schema.sql's column), but that is not what the
-        # live insert path actually writes. This follows the real code.
-        "nalla_context": opportunity.reason,
+        # `ideas_db.insert_idea()` reads the dict key `persona_context` and
+        # writes the column of the same name. It still accepts the legacy
+        # `nalla_context` spelling from un-updated callers, but new rows are
+        # built with the de-branded key.
+        "persona_context": opportunity.reason,
         "post_goal": "seo_traffic"
         if opportunity.opportunity_type != "discovery"
         else "topic_discovery",

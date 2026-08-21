@@ -85,12 +85,12 @@ def build_nudge(brief: dict) -> str:
     topic = brief.get("title") or brief.get("topic") or "(untitled)"
     keyword = brief.get("target_keyword") or brief.get("keywords", [""])[0]
     score = brief.get("score", "?")
-    nalla = brief.get("nalla_context", "")
+    context = brief.get("persona_context") or brief.get("nalla_context", "")
     return (
         "📝 Daily WP Draft Ready\n\n"
         f"Topic: {topic}\n"
         f"Keyword: {keyword} | Score: {score}/12\n\n"
-        f"Nalla angle: {nalla[:200]}{'…' if len(nalla) > 200 else ''}\n\n"
+        f"Persona angle: {context[:200]}{'…' if len(context) > 200 else ''}\n\n"
         "Run `wp-post-creator` in Claude Code to draft."
     )
 

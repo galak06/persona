@@ -27,6 +27,13 @@ type Channel = NonNullable<components["schemas"]["BlogPostItem"]["channel"]>;
 
 const enc = (id: string): string => encodeURIComponent(id);
 
+/**
+ * Encode a multi-segment id for a FastAPI `{x:path}` route — each segment is
+ * escaped, but the `/` separators survive. `enc()` would percent-encode them
+ * and collapse the id into a single segment the `:path` converter never sees.
+ */
+const encPath = (id: string): string => id.split("/").map(enc).join("/");
+
 export interface ActivityParams {
   limit?: number;
   platform?: string;
@@ -161,6 +168,22 @@ export const endpoints = {
 
   /** GET — FB/IG browser-session (login) status for the active brand. */
   sessionStatus: "/sessions",
+
+  /** GET — the active brand's reference-image library (categories + images). */
+  referenceLibrary: "/reference-images",
+
+  /** POST — upload one reference photo. multipart/form-data, not JSON. */
+  referenceImages: "/reference-images/images",
+
+  /** DELETE — drop one photo. `imageId` is `"<category>/<filename>"`. */
+  referenceImage: (imageId: string): string =>
+    `/reference-images/images/${encPath(imageId)}`,
+
+  /** POST — copy the brand's legacy mascot asset in. 404 when there is none. */
+  referenceImportLegacy: "/reference-images/import-legacy",
+
+  /** POST — re-run the tagger over every filed photo. One model call each. */
+  referenceRetag: "/reference-images/retag",
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

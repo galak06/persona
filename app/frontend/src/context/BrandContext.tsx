@@ -1,9 +1,22 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { fetchBrands } from "../api/brands";
 
 interface BrandContextType {
   selectedBrand: string;
+  /** Switch brands: persist, then hard-reload so nothing fetched under the
+   *  previous brand survives on screen. */
   setSelectedBrand: (brand: string) => void;
+  /**
+   * Align the context with a brand the app is ALREADY acting as — a
+   * brand-scoped page that claimed an empty selection for itself, so that the
+   * `X-Brand` header and the sidebar selector name the same brand.
+   *
+   * Deliberately does NOT reload, which is the whole difference from
+   * `setSelectedBrand`: nothing on screen was fetched under a different brand,
+   * so there is no stale state to clear — and a reload fired from a mount-time
+   * adoption would bounce the page on every fresh browser.
+   */
+  adoptBrand: (brand: string) => void;
   availableBrands: string[];
 }
 
@@ -55,11 +68,20 @@ export function BrandProvider({ children }: { children: React.ReactNode }) {
     window.location.reload(); // Hard reload to clear all react-query/state and re-init client
   };
 
+  // Stable identity: callers adopt from an effect, and a fresh function every
+  // render would re-fire that effect on every render.
+  const adoptBrand = useCallback((brand: string) => {
+    if (!brand) return;
+    localStorage.setItem(BRAND_STORAGE_KEY, brand);
+    setSelectedBrandState((current) => (current === brand ? current : brand));
+  }, []);
+
   return (
     <BrandContext.Provider
       value={{
         selectedBrand,
         setSelectedBrand,
+        adoptBrand,
         availableBrands,
       }}
     >

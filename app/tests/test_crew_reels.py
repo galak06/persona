@@ -68,6 +68,72 @@ def test_build_reels_task_description_missing_voice_fallback() -> None:
     assert "(no voice guide available)" in description
 
 
+# ── reference_category (optional reference-photo library) ────────────────
+
+
+def test_reel_beat_parses_payload_without_reference_category() -> None:
+    """Back-compat: plans are re-parsed from LLM JSON every run, and a model
+    that simply omits the new field must still validate."""
+    output = _parse_structured_output(_plan_json(REEL_BEAT_COUNT), ReelPlan, event="test_event")
+    assert output is not None
+    assert all(beat.reference_category == "" for beat in output.beats)
+
+
+def test_reel_beat_keeps_reference_category_when_the_model_sets_one() -> None:
+    beat = ReelBeat(headline="H", subcopy="S", image_prompt="P", reference_category="Eating")
+    assert beat.reference_category == "Eating"
+
+
+def test_build_reels_task_description_omits_reference_section_without_a_library() -> None:
+    """A brand with no reference-photo collections gets the prompt it always
+    got -- the section is not rendered at all, not rendered empty."""
+    description = build_reels_task_description(title="T", body="B", brand_voice="V")
+    assert "reference_category" not in description
+    assert "Reference-photo collection" not in description
+
+
+def test_build_reels_task_description_lists_reference_categories_when_given() -> None:
+    description = build_reels_task_description(
+        title="T",
+        body="B",
+        brand_voice="V",
+        reference_categories=("Eating", "Outdoors"),
+    )
+    assert "## Reference-photo collection (`reference_category`)" in description
+    assert "- Eating" in description
+    assert "- Outdoors" in description
+    # The per-beat instruction and the no-clean-match rule are both spelled out.
+    assert "For each beat" in description
+    assert "closest" in description.lower()
+    assert "copied verbatim from the list above" in description
+
+
+def test_build_reels_task_description_never_offers_an_unlisted_catch_all() -> None:
+    """The live bug: the section closed with *if none of them fits, use
+    "general"* -- naming a collection that was not in the list it had just
+    supplied. The planner took that exit on 2 of 5 beats and both resolved to
+    no image at all."""
+    description = build_reels_task_description(
+        title="T",
+        body="B",
+        brand_voice="V",
+        reference_categories=("forest-trail", "home-exterior", "studio-mascot"),
+    )
+    assert "general" not in description.lower()
+
+
+def test_build_reels_task_description_offers_a_catch_all_the_brand_actually_has() -> None:
+    """A brand that keeps a stocked catch-all still gets it offered -- and by
+    the exact label it was handed, because the model is told to copy verbatim."""
+    description = build_reels_task_description(
+        title="T",
+        body="B",
+        brand_voice="V",
+        reference_categories=("forest-trail", "General"),
+    )
+    assert '"General"' in description
+
+
 # ── build_reels_agent / build_reels_task ─────────────────────────────────
 
 

@@ -257,7 +257,14 @@ def brand_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[o
     from lib import config
     from lib.brand_context import BrandContext
 
-    for sub in ("data/config", "data/trackers", "data/cache", "state", "logs"):
+    for sub in (
+        "data/config",
+        "data/trackers",
+        "data/cache",
+        "data/assets/reference_images",
+        "state",
+        "logs",
+    ):
         (tmp_path / sub).mkdir(parents=True, exist_ok=True)
 
     # A brand without a config.json is not a brand `lib.config` can load, so

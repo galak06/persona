@@ -50,12 +50,32 @@ OPENART_MCP_URL = "https://mcp.openart.ai/mcp"
 CLI_REDIRECT_URI = "http://localhost:8734/callback"
 _ASM_URL = "https://mcp.openart.ai/.well-known/oauth-authorization-server"
 
+# The endpoints OpenArt's RFC 8414 document actually serves. Discovery is
+# still preferred (it is authoritative and would show a migration), but these
+# are the floor: without them a failed fetch leaves `oauth_metadata` unset,
+# and the SDK's fallback is `<server_base>/token` -- the 404 that used to
+# destroy refreshable tokens. A static document deserves a static fallback.
+_FALLBACK_METADATA = OAuthMetadata.model_validate(
+    {
+        "issuer": "https://openart.ai",
+        "authorization_endpoint": "https://openart.ai/suite/api/auth/oauth/authorize",
+        "token_endpoint": "https://openart.ai/suite/api/auth/oauth/token",
+        "registration_endpoint": "https://openart.ai/suite/api/auth/oauth/register",
+        "revocation_endpoint": "https://openart.ai/suite/api/auth/oauth/revoke",
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "response_types_supported": ["code"],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": ["none"],
+        "scopes_supported": ["full_access"],
+    }
+)
+
 # Process-level cache: the document is static, and the provider is rebuilt
 # once per generated image (5x per reel).
 _cached_metadata: OAuthMetadata | None = None
 
 
-def _authorization_server_metadata() -> OAuthMetadata | None:
+def _authorization_server_metadata() -> OAuthMetadata:
     """OpenArt's RFC 8414 metadata, fetched once per process.
 
     **Load-bearing for silent token refresh.** `mcp` 1.28's `_refresh_token()`
@@ -70,7 +90,12 @@ def _authorization_server_metadata() -> OAuthMetadata | None:
     reels. Pre-populating the real endpoint
     (`https://openart.ai/suite/api/auth/oauth/token`) is what makes refresh work.
 
-    Returns None on any failure -- the provider then behaves exactly as before.
+    Never returns None. Discovery is one GET against a static document, and it
+    used to be allowed to fail soft -- but "soft" meant leaving `oauth_metadata`
+    unset, which re-armed the 404 above and would cost the operator a manual
+    re-authorization over what was only a transient network blip. On any
+    failure we fall back to `_FALLBACK_METADATA` instead, so a refreshable
+    token is never discarded because a well-known URL was briefly unreachable.
     """
     global _cached_metadata
     if _cached_metadata is not None:
@@ -79,8 +104,12 @@ def _authorization_server_metadata() -> OAuthMetadata | None:
         response = httpx.get(_ASM_URL, timeout=15.0)
         if response.status_code == 200:
             _cached_metadata = OAuthMetadata.model_validate(response.json())
+        else:
+            logger.warning("openart_asm_discovery_failed", status=response.status_code)
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("openart_asm_discovery_failed", error=str(exc))
+    if _cached_metadata is None:
+        _cached_metadata = _FALLBACK_METADATA
     return _cached_metadata
 
 

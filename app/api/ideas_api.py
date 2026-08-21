@@ -208,7 +208,7 @@ class ContentIdea(BaseModel):
     category: str
     topic: str
     target_keyword: str | None = None
-    nalla_context: str | None = None
+    persona_context: str | None = None
     post_goal: str | None = None
     status: str
     input: str | None = None
@@ -278,7 +278,12 @@ def list_ideas(
             category=r.get("category") or "",
             topic=r.get("topic") or "",
             target_keyword=r.get("target_keyword"),
-            nalla_context=r.get("nalla_context"),
+            # New column first, legacy column as fallback: `SELECT *` returns
+            # whichever of the two a given database has (a rolled-back writer
+            # may still be filling only the old one), and the additive
+            # migration guarantees the new one is populated for every row that
+            # existed before the rename.
+            persona_context=r.get("persona_context") or r.get("nalla_context"),
             post_goal=r.get("post_goal"),
             status=r.get("status") or "publish",
             input=r.get("input"),

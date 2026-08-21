@@ -240,11 +240,20 @@ CREATE INDEX IF NOT EXISTS idx_published_content_position   ON published_content
 -- different points in time; the UNIQUE index below on (lower(topic),
 -- brand_id) is what actually prevents duplicate topics, not the primary key.
 --
--- Column is named `nalla_context`, NOT `persona_context` as in the old
--- scripts/create_supabase_schema.sql:198-218 -- that file's column name was
--- never what the real insert_idea() code (or any caller, e.g.
--- lib/gsc_scout.py) has ever read/written; this follows the live code, not
--- the stale schema file.
+-- `persona_context` was called `nalla_context` until the de-brand: one
+-- brand's mascot name had no business being a column name in a multi-brand
+-- engine. `persona_context` is not a new coinage -- it is the name the old
+-- scripts/create_supabase_schema.sql:198-218 used, and the name CLAUDE.md
+-- documents for the Google Sheet `posts` tab's matching column
+-- (`Persona_Context`). The rename aligns the DB with vocabulary that already
+-- existed on both sides rather than inventing a third name.
+--
+-- The rename is ADDITIVE, never destructive: the ALTER + backfill below adds
+-- `persona_context` and copies `nalla_context` into it, and the old column is
+-- deliberately left in place and never dropped. Every reader takes
+-- `persona_context` with a fallback to `nalla_context`, so an old container
+-- and a new one can run against the same database during a rollout, and a
+-- rollback finds its data exactly where it left it.
 --
 -- brand_id is NOT a FK to brands(id) here, matching published_content /
 -- engagements / schedule_tasks above (unlike fb_groups, whose brand_id is
@@ -256,7 +265,7 @@ CREATE TABLE IF NOT EXISTS content_ideas (
     category               TEXT        NOT NULL,
     topic                  TEXT        NOT NULL,
     target_keyword         TEXT,
-    nalla_context          TEXT,
+    persona_context        TEXT,
     post_goal              TEXT,
     status                 TEXT        NOT NULL DEFAULT 'publish',
     input                  TEXT,
@@ -279,6 +288,27 @@ CREATE TABLE IF NOT EXISTS content_ideas (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- nalla_context -> persona_context, additively. On a fresh database the
+-- CREATE TABLE above already made `persona_context` and `nalla_context` never
+-- exists, so the ALTER no-ops and the backfill is skipped. On an existing
+-- database the ALTER adds the new column and the backfill copies every
+-- non-null legacy value across. Re-running matches zero rows (the guard is
+-- `persona_context IS NULL`), so this is idempotent -- which it must be: this
+-- file is replayed both by the postgres container's initdb mount and by
+-- tests/conftest.py. The legacy column is intentionally NOT dropped.
+ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS persona_context TEXT;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'content_ideas' AND column_name = 'nalla_context'
+    ) THEN
+        EXECUTE 'UPDATE content_ideas SET persona_context = nalla_context '
+                'WHERE persona_context IS NULL AND nalla_context IS NOT NULL';
+    END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_content_ideas_topic_brand
     ON content_ideas (lower(topic), COALESCE(brand_id, ''));

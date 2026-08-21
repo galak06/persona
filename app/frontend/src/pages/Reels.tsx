@@ -9,26 +9,29 @@ import {
   fetchComposeStatus,
 } from "../api/ideas";
 import type { GenerateStatus, IdeasResponse } from "../api/ideas";
-import { fetchOpenartStatus } from "../api/oauth";
-import type { OpenArtState } from "../api/oauth";
 import { useApiQuery } from "../hooks/useApiQuery";
 import ComposeProgress from "../components/ComposeProgress";
+import OpenArtConnect from "../components/OpenArtConnect";
 import ReelCard from "../components/ReelCard";
-import ConfirmDialog from "../components/ui/ConfirmDialog";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 
-/** Note to show when landing back from the OpenArt OAuth callback
+/** One-shot confirmation of the OAuth round trip we just came back from
  * (`?openart=connected|error`). Read during state init rather than in an
- * effect so the first render already carries it. */
+ * effect so the first render already carries it.
+ *
+ * Deliberately phrased as a past-tense event, not a state: it is a transient
+ * banner that survives in `composeNote` long after the fact, and reading it
+ * as live status is exactly what made the always-visible connect link so
+ * confusing. Live state is `OpenArtConnect`'s job. */
 function readOpenArtNote(): string | null {
   const params = new URLSearchParams(window.location.search);
   const openart = params.get("openart");
   if (!openart) return null;
   return openart === "connected"
-    ? "OpenArt connected — new reels will use AI-generated images."
-    : `OpenArt not connected: ${params.get("reason") ?? "unknown error"}`;
+    ? "OpenArt authorization saved."
+    : `OpenArt authorization failed: ${params.get("reason") ?? "unknown error"}`;
 }
 
 export default function Reels(): React.JSX.Element {
@@ -37,7 +40,6 @@ export default function Reels(): React.JSX.Element {
   const [composing, setComposing] = useState(false);
   const [composeStatus, setComposeStatus] = useState<GenerateStatus | null>(null);
   const [composeNote, setComposeNote] = useState<string | null>(readOpenArtNote);
-  const [showConnectPrompt, setShowConnectPrompt] = useState(false);
   const { selectedBrand } = useBrand();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -94,7 +96,11 @@ export default function Reels(): React.JSX.Element {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, []);
 
-  const runCompose = useCallback(async (): Promise<void> => {
+  // Compose never pre-flights the OpenArt connection: reels compose fine
+  // without it (hero images), and `OpenArtConnect` already surfaces a missing
+  // token as a standing, actionable button. Gating Compose behind a second
+  // prompt would ask the same question twice.
+  const handleCompose = useCallback(async (): Promise<void> => {
     setComposing(true);
     setComposeNote(null);
     try {
@@ -109,24 +115,6 @@ export default function Reels(): React.JSX.Element {
       setComposeNote(getErrorMessage(err, "Compose failed."));
     }
   }, [startPolling]);
-
-  // Pre-flight the OpenArt connection so a "missing" token gets a one-click
-  // Authorize offer before composing. "ok" and "not_configured" compose as
-  // today, and a broken status check fails open — it must never block compose.
-  const handleComposeClick = useCallback(async (): Promise<void> => {
-    if (composing) return; // guard double-clicks while the status fetch is in flight
-    let state: OpenArtState = "ok";
-    try {
-      state = (await fetchOpenartStatus()).state;
-    } catch {
-      // Fail-open: a broken status check must never block compose.
-    }
-    if (state === "missing") {
-      setShowConnectPrompt(true);
-      return;
-    }
-    await runCompose();
-  }, [composing, runCompose]);
 
   const handleAuthorizeOpenArt = useCallback((): void => {
     const returnTo = `${window.location.origin}/reels`;
@@ -188,21 +176,10 @@ export default function Reels(): React.JSX.Element {
             />
           )}
           {composeNote && <span className="text-xs text-slate-500">{composeNote}</span>}
-          {/* Opt-in upgrade, deliberately understated. When the token is
-              missing, Compose pre-flights the connection and offers a
-              one-time Connect/skip prompt; this link is the always-visible
-              way in. Reels still compose fine without OpenArt. */}
+          <OpenArtConnect onAuthorize={handleAuthorizeOpenArt} />
           <button
             type="button"
-            onClick={handleAuthorizeOpenArt}
-            title="Optional: connect OpenArt to generate AI images for each beat instead of reusing the post's hero image"
-            className="text-xs text-slate-400 underline underline-offset-2 hover:text-slate-600"
-          >
-            Connect OpenArt
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleComposeClick()}
+            onClick={() => void handleCompose()}
             disabled={composing}
             className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50"
           >
@@ -236,27 +213,6 @@ export default function Reels(): React.JSX.Element {
           ))}
         </div>
       )}
-
-      <ConfirmDialog
-        open={showConnectPrompt}
-        title="Connect OpenArt?"
-        onClose={() => setShowConnectPrompt(false)}
-        actions={[
-          { label: "Connect OpenArt", variant: "primary", onClick: handleAuthorizeOpenArt },
-          {
-            label: "Compose without it",
-            variant: "secondary",
-            onClick: () => {
-              setShowConnectPrompt(false);
-              void runCompose();
-            },
-          },
-          { label: "Cancel", variant: "ghost", onClick: () => setShowConnectPrompt(false) },
-        ]}
-      >
-        OpenArt generates AI images for each reel beat; without it, reels use each post's hero
-        image — that works fine too.
-      </ConfirmDialog>
     </div>
   );
 }

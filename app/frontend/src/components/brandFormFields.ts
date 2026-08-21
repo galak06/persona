@@ -43,9 +43,12 @@ export const FIELD_SECTIONS: FieldSection[] = [
     title: "Identity",
     description: "The basics — used across every generated config file and post.",
     fields: [
-      { key: "name", label: "Name", required: true, placeholder: "Dog Food and Fun" },
+      // Placeholders show the SHAPE of an answer, never a real brand's — this
+      // form is how any new brand is created, so an example from one of them
+      // reads as a template to copy rather than a hint.
+      { key: "name", label: "Name", required: true, placeholder: "e.g. Acme Trail Co." },
       { key: "site_url", label: "Site URL", required: true, placeholder: "https://example.com" },
-      { key: "niche", label: "Niche", required: true, placeholder: "Dog food & gear reviews" },
+      { key: "niche", label: "Niche", required: true, placeholder: "e.g. gear reviews & how-tos" },
       { key: "target_audience", label: "Target audience" },
       { key: "mascot_name", label: "Mascot name" },
     ],

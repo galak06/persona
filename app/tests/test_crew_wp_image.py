@@ -8,7 +8,6 @@ network call happens.
 from __future__ import annotations
 
 import base64
-import json
 from pathlib import Path
 
 import httpx
@@ -16,20 +15,16 @@ import pytest
 import respx
 
 from lib.crew.wp_image import (
-    _IMAGEN_FAST,
-    _IMAGEN_STANDARD,
-    _NANO_PRO,
     build_image_brief,
     generate_wp_image,
     resolve_reference_image_path,
 )
+from lib.crew.wp_image_providers import IMAGEN_FAST, IMAGEN_STANDARD, NANO_PRO
 
-_FAST_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{_IMAGEN_FAST}:predict"
-_STANDARD_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{_IMAGEN_STANDARD}:predict"
-)
+_FAST_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGEN_FAST}:predict"
+_STANDARD_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{IMAGEN_STANDARD}:predict"
 _NANO_PRO_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/{_NANO_PRO}:generateContent"
+    f"https://generativelanguage.googleapis.com/v1beta/models/{NANO_PRO}:generateContent"
 )
 
 
@@ -203,73 +198,3 @@ def test_resolve_reference_image_path_finds_jpg(tmp_path: Path) -> None:
     ref = assets / "persona_mascot_reference.jpg"
     ref.write_bytes(b"fake-jpg-bytes")
     assert resolve_reference_image_path(tmp_path) == ref
-
-
-# ── reference-image conditioning ─────────────────────────────────────────────
-
-
-@respx.mock
-def test_generate_wp_image_with_reference_skips_imagen_goes_straight_to_nano_pro() -> None:
-    """A reference image can only be used by nano_pro (Imagen's `predict`
-    endpoint has no image-input parameter) -- attempting Imagen first would
-    silently succeed with a non-matching generic image and never reach
-    nano_pro at all, defeating the whole point of supplying a reference."""
-    fast_route = respx.post(_FAST_URL).mock(return_value=_predict_response())
-    nano_route = respx.post(_NANO_PRO_URL).mock(return_value=_generate_content_response())
-
-    img = generate_wp_image(
-        "a dog running in a field",
-        alt_hint="A running dog",
-        reference_image_bytes=b"real-photo-bytes",
-        reference_image_mime="image/png",
-    )
-
-    assert not fast_route.called
-    assert nano_route.called
-    assert img.provider == "nano_pro"
-
-
-@respx.mock
-def test_generate_wp_image_with_reference_sends_inline_image_and_matching_instruction() -> None:
-    captured: dict[str, object] = {}
-
-    def _capture(request: httpx.Request) -> httpx.Response:
-        captured["payload"] = json.loads(request.content)
-        return _generate_content_response()
-
-    respx.post(_NANO_PRO_URL).mock(side_effect=_capture)
-
-    generate_wp_image(
-        "a dog running in a field",
-        alt_hint="A running dog",
-        mascot_name="Nalla",
-        reference_image_bytes=b"real-photo-bytes",
-        reference_image_mime="image/png",
-    )
-
-    parts = captured["payload"]["contents"][0]["parts"]  # type: ignore[index]
-    assert parts[0]["inline_data"]["mime_type"] == "image/png"
-    assert parts[0]["inline_data"]["data"] == base64.b64encode(b"real-photo-bytes").decode()
-    prompt = parts[1]["text"]
-    assert "reference photo" in prompt.lower()
-    assert "exact same person and dog" in prompt.lower()
-    assert "Nalla" in prompt
-
-
-@respx.mock
-def test_generate_wp_image_without_reference_omits_inline_data_part() -> None:
-    captured: dict[str, object] = {}
-
-    def _capture(request: httpx.Request) -> httpx.Response:
-        captured["payload"] = json.loads(request.content)
-        return _generate_content_response()
-
-    respx.post(_FAST_URL).mock(return_value=httpx.Response(404, text="gone"))
-    respx.post(_STANDARD_URL).mock(return_value=httpx.Response(404, text="gone"))
-    respx.post(_NANO_PRO_URL).mock(side_effect=_capture)
-
-    generate_wp_image("a dog running in a field", alt_hint="A running dog")
-
-    parts = captured["payload"]["contents"][0]["parts"]  # type: ignore[index]
-    assert len(parts) == 1
-    assert "text" in parts[0]

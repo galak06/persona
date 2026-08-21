@@ -78,7 +78,12 @@ def insert_idea(
     """Insert one idea row. Returns the new ``id`` or None on error.
 
     ``idea`` keys match Google Sheet columns (case-insensitive):
-        Category, Topic, Target_Keyword, Nalla_Context, Post_Goal, Status, Input
+        Category, Topic, Target_Keyword, Persona_Context, Post_Goal, Status, Input
+
+    ``Persona_Context`` was ``Nalla_Context`` before the de-brand. Both legacy
+    spellings are still accepted here so a caller that has not been updated (or
+    a queued payload written by an older container) still lands its value --
+    but the value is always WRITTEN to the ``persona_context`` column.
 
     Plain INSERT, not an upsert -- a true duplicate ``(lower(topic), brand_id)``
     trips the unique index and is caught below, returning None (matching the
@@ -91,7 +96,12 @@ def insert_idea(
             "category": idea.get("Category") or idea.get("category", ""),
             "topic": idea.get("Topic") or idea.get("topic", ""),
             "target_keyword": idea.get("Target_Keyword") or idea.get("target_keyword"),
-            "nalla_context": idea.get("Nalla_Context") or idea.get("nalla_context"),
+            "persona_context": (
+                idea.get("Persona_Context")
+                or idea.get("persona_context")
+                or idea.get("Nalla_Context")
+                or idea.get("nalla_context")
+            ),
             "post_goal": idea.get("Post_Goal") or idea.get("post_goal"),
             "status": idea.get("Status") or idea.get("status") or "publish",
             "input": idea.get("Input") or idea.get("input"),

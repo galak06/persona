@@ -89,7 +89,7 @@ export default function CommentCard({ item, onResolved }: CommentCardProps) {
           <div className="p-6 flex flex-col bg-brand-surface">
             <div className="flex items-center justify-between gap-3 mb-3">
               <h3 className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-                Draft reply (Nalla&apos;s Dad)
+                Draft reply (persona voice)
               </h3>
               <span className="text-xs text-slate-400">
                 {editedText.length} chars

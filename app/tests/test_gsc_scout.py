@@ -133,7 +133,7 @@ def test_run_scout_inserts_scored_ideas_with_expected_shape(brand_dir: Path) -> 
         "category",
         "topic",
         "target_keyword",
-        "nalla_context",  # ideas_db.insert_idea's real dict key -- see lib/gsc_scout.py's note
+        "persona_context",  # ideas_db.insert_idea's real dict key -- see lib/gsc_scout.py's note
         "post_goal",
         "status",
         "input",

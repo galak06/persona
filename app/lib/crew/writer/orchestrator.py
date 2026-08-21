@@ -29,6 +29,7 @@ from crewai import Agent, Task
 
 from lib import ideas_db
 from lib.crew.context import brand_identity_summary, brand_voice_summary
+from lib.crew.reference_library import list_category_labels
 from lib.crew.writer.agent import (
     build_strategist_agent,
     build_strategist_task,
@@ -123,6 +124,10 @@ def build_content_brief(
         mascot_facts=mascot_facts_summary(brand_dir),
         link_candidates=link_candidates,
         year=date.today().year,
+        # The strategist may only tag the post with a category the brand
+        # actually keeps photos under -- `with_photos` is what makes that
+        # true; an empty result drops the section entirely.
+        reference_categories=list_category_labels(brand_dir, with_photos=True),
     )
     agent = build_strategist_agent()
     task = build_strategist_task(agent, description)
@@ -155,10 +160,12 @@ def write_post_from_brief(
 
     Whatever the catalog ends up being, the selector's picks are guaranteed
     into the body (`lib.crew.products.ensure_block`) rather than left to the
-    writer to reference or ignore, and `affiliate_keys_used` is rewritten to
-    what actually landed in the post.
+    writer to reference or ignore, `affiliate_keys_used` is rewritten to what
+    actually landed in the post, and every Amazon link the body carries comes
+    back FTC/Associates-compliant whether a block was appended or not.
     """
     from lib.crew.products import record_usage, select_products_for_post  # break import cycle
+    from lib.crew.products.compliance import slug_for
     from lib.crew.products.ensure_block import ensure_product_block
 
     config = read_brand_config(brand_dir)
@@ -184,7 +191,12 @@ def write_post_from_brief(
     if written_post is None:
         return None
 
-    body_html, block_keys = ensure_product_block(written_post.body_html, catalog, brief)
+    # The slug WordPress will derive comes from the post's own title, not the
+    # brief's suggestion the writer was free to improve on -- so the block's
+    # `ascsubtag` and the inline links' agree on one campaign id.
+    body_html, block_keys = ensure_product_block(
+        written_post.body_html, catalog, brief, slug=slug_for(written_post.title)
+    )
     used_keys = list(dict.fromkeys([*written_post.affiliate_keys_used, *block_keys]))
     if used_keys:
         record_usage(brief.suggested_title, used_keys)

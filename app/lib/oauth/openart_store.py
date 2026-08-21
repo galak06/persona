@@ -30,7 +30,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -124,8 +124,24 @@ def load_token_record(brand_id: str | None = None) -> tuple[OAuthToken, float | 
 
 def save_token_record(token: OAuthToken, brand_id: str | None = None) -> None:
     """Persist a token with a fresh absolute expiry stamp. DB is authoritative;
-    on DB failure the legacy JSON file is written so the grant isn't lost."""
+    on DB failure the legacy JSON file is written so the grant isn't lost.
+
+    Carries the stored refresh token forward when the incoming one has none.
+    RFC 6749 §6 says a client MUST retain its existing refresh token unless the
+    server issues a replacement, and `mcp` 1.28's `_handle_refresh_response()`
+    does not honour that -- it validates the refresh response into a fresh
+    `OAuthToken` and persists it wholesale. OpenArt does return a refresh token
+    on refresh today, but the day it stops, saving that response as-is would
+    silently drop our only long-lived credential and turn the very next expiry
+    into a manual re-authorization -- exactly the hourly-reauth failure this
+    module exists to prevent, arriving from a new direction.
+    """
     brand = brand_id or resolve_brand_id()
+    if not token.refresh_token:
+        previous = load_token_record(brand)
+        if previous is not None and previous[0].refresh_token:
+            token = token.model_copy(update={"refresh_token": previous[0].refresh_token})
+            logger.info("openart_refresh_token_carried_forward", brand_id=brand)
     expires_at = time.time() + token.expires_in if token.expires_in else None
     record = {"expires_at": expires_at, "token": token.model_dump()}
     if _set_secret_json(brand, TOKENS_KEY, record):
@@ -174,10 +190,21 @@ def save_client_info(info: OAuthClientInformationFull, brand_id: str | None = No
 # ── Auth state / protocol adapter ─────────────────────────────────────────────
 
 
-def stored_auth_state(brand_id: str | None = None) -> str:
+def stored_auth_state(brand_id: str | None = None) -> Literal["ok", "missing"]:
     """'ok' when a stored token is fresh or refreshable, else 'missing'.
-    Cheap pre-flight for the compose endpoint; cannot detect a *revoked*
-    refresh token -- that surfaces mid-run as OpenArtAuthRequiredError."""
+
+    Deliberately does NOT distinguish "valid" from "refreshable". The only
+    question its callers ask -- the Reels page deciding whether to offer
+    Connect, the compose pre-flight -- is "does a human have to do something
+    before this works?", and a stale-but-refreshable token needs no human:
+    the silent refresh is wired and proven. Reporting 'missing' for one would
+    nag the operator into a re-authorization that changes nothing, which is
+    the same class of lie as an always-visible connect link.
+
+    Cheap: no network. It therefore cannot detect a *revoked* refresh token --
+    that surfaces mid-run as OpenArtAuthRequiredError, which is the right
+    place for it, since only an actual refresh attempt can prove revocation.
+    """
     record = load_token_record(brand_id)
     if record is None:
         return "missing"

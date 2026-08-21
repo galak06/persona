@@ -951,6 +951,177 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/reference-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Library
+         * @description Every declared tag and every filed photo for the active brand.
+         *
+         *     The only READ that runs the pre-rename directory migration: an operator
+         *     opening this page is the first thing that touches a brand carried over
+         *     from before the rename, and it must show them their existing photos.
+         */
+        get: operations["get_library_api_v1_reference_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Category
+         * @description Declare a tag. Re-declaring an existing slug returns it unchanged.
+         */
+        post: operations["post_category_api_v1_reference_images_categories_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Image
+         * @description File an uploaded photo, tagged by the vision pass.
+         *
+         *     `category` is an OPTIONAL override: supply it and it wins, leave it out
+         *     (as the UI does) and the model's choice is used -- a tag it reused from
+         *     the brand's list, or a new one the store declares on the way in. If the
+         *     model could not be asked at all, the photo still lands, under `general`.
+         *
+         *     Content-addressed, so re-uploading identical bytes to the same category
+         *     returns the existing entry rather than a duplicate.
+         */
+        post: operations["post_image_api_v1_reference_images_images_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/images/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Image
+         * @description Drop a photo from the manifest and unlink its file. 404 if absent.
+         */
+        delete: operations["remove_image_api_v1_reference_images_images__image_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Image
+         * @description Re-tag a photo and/or flip either subject flag. 404 on an unknown id.
+         *
+         *     Re-tagging MOVES the file, so the returned entry carries a different id
+         *     than the one in the URL -- callers must adopt it rather than reuse theirs.
+         */
+        patch: operations["patch_image_api_v1_reference_images_images__image_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/reference-images/images/{image_id}/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Image Raw
+         * @description Serve one photo's bytes, uncached (the library is edited live).
+         */
+        get: operations["get_image_raw_api_v1_reference_images_images__image_id__raw_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/import-legacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Import Legacy
+         * @description Copy `data/assets/persona_mascot_reference.*` into `general`.
+         *
+         *     The original is only read -- it stays on disk as the last-resort fallback.
+         *     404 when the brand has no legacy asset to import.
+         */
+        post: operations["post_import_legacy_api_v1_reference_images_import_legacy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reference-images/retag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Retag
+         * @description Re-run the vision tagger over every photo already in the library.
+         *
+         *     One vision call per photo and no partial-failure abort: a photo whose file
+         *     vanished or whose call came back empty is reported as one bad row and the
+         *     rest of the run still lands. Re-categorising MOVES files, so ids in the
+         *     response differ from the ones the caller was holding -- refetch the
+         *     library rather than reusing them.
+         *
+         *     Off the loop: the whole run is blocking, and long in proportion to the
+         *     library.
+         */
+        post: operations["post_retag_api_v1_reference_images_retag_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions": {
         parameters: {
             query?: never;
@@ -1094,6 +1265,53 @@ export interface paths {
          *     query and it would be regenerated (LLM + image spend) on every run.
          */
         post: operations["reject_social_post_api_v1_social_posts__idea_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/retry-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retry Social Post Image
+         * @description Dispatch one image regeneration to the worker. 202 immediately; poll
+         *     /social-posts/{id}/retry-image/status.
+         *
+         *     Deliberately not restricted to `source='fallback'` rows. What must be true
+         *     is that the post is still QUEUED — that is the state the whole operation is
+         *     guarded on. Which queued posts are worth the credits is a judgement the
+         *     review page makes (it offers this on posts with no generated image), and
+         *     baking that policy in here too would mean two places to change it.
+         */
+        post: operations["retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-posts/{idea_id}/retry-image/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Retry Image Status
+         * @description Is this post's image being regenerated, and how did the last run end?
+         */
+        get: operations["retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1465,6 +1683,21 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** Body_post_image_api_v1_reference_images_images_post */
+        Body_post_image_api_v1_reference_images_images_post: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /** File */
+            file: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
         /**
          * BrandCreateRequest
          * @description Onboarding-form input. Field names mirror `lib.brand_templates.BrandSpec` 1:1.
@@ -1566,13 +1799,7 @@ export interface components {
             headless: boolean;
             /** Id */
             id: string;
-            /**
-             * Keywords
-             * @default {}
-             */
-            keywords: {
-                [key: string]: unknown;
-            };
+            keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
              * @default
@@ -1607,6 +1834,31 @@ export interface components {
              * @default
              */
             updated_at: string;
+        };
+        /**
+         * BrandKeywords
+         * @description The `keywords` JSONB blob in the shape the HTTP layer ALWAYS emits.
+         *
+         *     Storage is deliberately sparse: `lib.brand_templates._render_keywords`
+         *     omits a category the operator supplied nothing for, because an absent
+         *     key means "score against the broad DEFAULT_* list" while a present-but-
+         *     empty list would shadow those defaults and collapse every relevance
+         *     score to ~0. A freshly onboarded brand therefore stores `keywords: {}`.
+         *
+         *     That sparseness must not reach the wire. Clients render one field per
+         *     category and read each list unconditionally, so every category is
+         *     REQUIRED here and normalised out of the row exactly once, in
+         *     `from_row()`. Round-tripping an empty list back through
+         *     `PATCH /brands/{id}/settings` re-omits it at the storage layer, so the
+         *     sparse-storage invariant survives an edit untouched.
+         */
+        BrandKeywords: {
+            /** Competitor Mentions */
+            competitor_mentions: string[];
+            /** Primary Keywords */
+            primary_keywords: string[];
+            /** Secondary Keywords */
+            secondary_keywords: string[];
         };
         /** BrandListResponse */
         BrandListResponse: {
@@ -1666,13 +1918,7 @@ export interface components {
             id: string;
             /** Ig Login Command */
             ig_login_command: string;
-            /**
-             * Keywords
-             * @default {}
-             */
-            keywords: {
-                [key: string]: unknown;
-            };
+            keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
              * @default
@@ -1925,6 +2171,36 @@ export interface components {
             total: number;
         };
         /**
+         * CategoryCreate
+         * @description Request body for declaring a new tag.
+         */
+        CategoryCreate: {
+            /** Label */
+            label: string;
+        };
+        /**
+         * CategoryCreated
+         * @description The declared tag, slugified.
+         */
+        CategoryCreated: {
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
+         * CategorySummary
+         * @description One tag, with how many photos currently carry it.
+         */
+        CategorySummary: {
+            /** Count */
+            count: number;
+            /** Label */
+            label: string;
+            /** Slug */
+            slug: string;
+        };
+        /**
          * CommentItem
          * @description A Facebook / Instagram / WordPress engagement comment.
          *
@@ -1993,8 +2269,8 @@ export interface components {
             input?: string | null;
             /** Match Score */
             match_score?: number | null;
-            /** Nalla Context */
-            nalla_context?: string | null;
+            /** Persona Context */
+            persona_context?: string | null;
             /** Post Goal */
             post_goal?: string | null;
             /** Reel Fb Caption */
@@ -2493,6 +2769,21 @@ export interface components {
             /** Total */
             total: number;
         };
+        /**
+         * ImageUpdate
+         * @description PATCH body. Every field is optional; an omitted one is left unchanged.
+         *
+         *     `category` re-homes the photo (its id is `"<category>/<filename>"`), so a
+         *     PATCH that changes it gets a different id back than it sent.
+         */
+        ImageUpdate: {
+            /** Category */
+            category?: string | null;
+            /** Shows Mascot */
+            shows_mascot?: boolean | null;
+            /** Shows Persona */
+            shows_persona?: boolean | null;
+        };
         /** KeywordsResponse */
         KeywordsResponse: {
             /** Active Limit */
@@ -2501,6 +2792,79 @@ export interface components {
             curated: components["schemas"]["CuratedKeyword"][];
             /** Discovered */
             discovered: components["schemas"]["DiscoveredKeyword"][];
+        };
+        /**
+         * LibraryImage
+         * @description A manifest entry as the UI consumes it, plus its `raw` URL.
+         */
+        LibraryImage: {
+            /** Added At */
+            added_at?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /**
+             * Bytes
+             * @default 0
+             */
+            bytes: number;
+            /** Category */
+            category: string;
+            /** Content Type */
+            content_type: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Shows Mascot
+             * @default false
+             */
+            shows_mascot: boolean;
+            /**
+             * Shows Persona
+             * @default false
+             */
+            shows_persona: boolean;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+        };
+        /**
+         * LibraryResponse
+         * @description The whole library in one payload -- it is a handful of photos.
+         */
+        LibraryResponse: {
+            /** Categories */
+            categories: components["schemas"]["CategorySummary"][];
+            /** Images */
+            images: components["schemas"]["LibraryImage"][];
         };
         /**
          * LogTailResponse
@@ -2571,6 +2935,98 @@ export interface components {
         RejectBody: {
             /** Reason */
             reason?: string | null;
+        };
+        /**
+         * RetagResult
+         * @description What the re-tagger did to one photo.
+         *
+         *     `new_id` differs from `image_id` whenever the category changed, because a
+         *     re-tag moves the file and an id is `"<category>/<filename>"`.
+         */
+        RetagResult: {
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+            /** Image Id */
+            image_id: string;
+            /** New Id */
+            new_id: string;
+            /**
+             * Shows Mascot
+             * @default false
+             */
+            shows_mascot: boolean;
+            /**
+             * Shows Persona
+             * @default false
+             */
+            shows_persona: boolean;
+            /** Status */
+            status: string;
+        };
+        /**
+         * RetagSummary
+         * @description The whole re-tag run: per-photo results plus the counts worth showing.
+         *
+         *     Reported per image rather than as a single pass/fail because the run is
+         *     deliberately resilient -- a photo whose file vanished, or whose vision call
+         *     came back empty, is one bad row in an otherwise applied run.
+         */
+        RetagSummary: {
+            /** Failed */
+            failed: number;
+            /** Results */
+            results: components["schemas"]["RetagResult"][];
+            /** Retagged */
+            retagged: number;
+            /** Skipped */
+            skipped: number;
+            /** Total */
+            total: number;
+            /** Unchanged */
+            unchanged: number;
+        };
+        /**
+         * RetryImageRequest
+         * @description Which reference collection to anchor the new image on.
+         *
+         *     Empty means "decide for me": the fresh plan's own category if the library
+         *     can match it, otherwise any photo of the brand's mascot. A slug the brand
+         *     has no photos under is rejected rather than silently ignored — it would
+         *     resolve to nothing and the retry would reproduce the fallback it was
+         *     clicked to escape.
+         */
+        RetryImageRequest: {
+            /**
+             * Reference Category
+             * @default
+             */
+            reference_category: string;
+        };
+        /** RetryImageStatus */
+        RetryImageStatus: {
+            /** Detail */
+            detail?: string | null;
+            /** Ok */
+            ok?: boolean | null;
+            /** Running */
+            running: boolean;
+            /** Source */
+            source?: string | null;
+            /** Status */
+            status: string;
         };
         /**
          * RunNowRequest
@@ -2710,6 +3166,11 @@ export interface components {
             ig_post_url?: string | null;
             /** Image Alt */
             image_alt?: string | null;
+            /**
+             * Regenerating
+             * @default false
+             */
+            regenerating: boolean;
             /** Social Post Status */
             social_post_status: string;
             /** Source */
@@ -4216,6 +4677,227 @@ export interface operations {
             };
         };
     };
+    get_library_api_v1_reference_images_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryResponse"];
+                };
+            };
+        };
+    };
+    post_category_api_v1_reference_images_categories_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CategoryCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CategoryCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_image_api_v1_reference_images_images_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_post_image_api_v1_reference_images_images_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_image_api_v1_reference_images_images__image_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_image_api_v1_reference_images_images__image_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImageUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_raw_api_v1_reference_images_images__image_id__raw_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_import_legacy_api_v1_reference_images_import_legacy_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LibraryImage"];
+                };
+            };
+        };
+    };
+    post_retag_api_v1_reference_images_retag_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetagSummary"];
+                };
+            };
+        };
+    };
     get_session_status_api_v1_sessions_get: {
         parameters: {
             query?: never;
@@ -4396,6 +5078,74 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_social_post_image_api_v1_social_posts__idea_id__retry_image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RetryImageRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_image_status_api_v1_social_posts__idea_id__retry_image_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RetryImageStatus"];
                 };
             };
             /** @description Validation Error */

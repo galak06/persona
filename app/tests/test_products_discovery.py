@@ -162,14 +162,24 @@ def test_an_in_context_recommendation_is_left_alone(monkeypatch: pytest.MonkeyPa
 def test_an_already_resolved_link_also_counts_as_referenced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Placeholders may already be substituted upstream; match the ASIN too."""
+    """Placeholders may already be substituted upstream; match the ASIN too.
+
+    Still no appended block -- but the link keeps the compliance surface it
+    used to lose with it. This assertion USED to be `body == original`, which
+    is the bug: 14 posts shipped with bare `?tag=` links because "leave the
+    in-context recommendation alone" also meant "leave it non-compliant".
+    """
     monkeypatch.setenv("AMAZON_ASSOCIATES_TAG", _TAG)
     original = f'<p>See the <a href="https://www.amazon.com/dp/B0FH8HQS3V?tag={_TAG}">Fi</a>.</p>'
 
     body, keys = ensure_product_block(original, _catalog(), _brief())
 
-    assert body == original
     assert keys == ["fi-collar"]
+    assert "blog-picks-block:v1" not in body
+    assert 'rel="sponsored nofollow"' in body
+    assert "ascsubtag=blog-dog-food-recall-2026-what-to-stop-feeding" in body
+    assert "As an Amazon Associate" in body
+    assert ">Fi</a>" in body, "the writer's own anchor text is never rewritten"
 
 
 def test_no_associates_tag_means_no_block_rather_than_naked_links(
