@@ -57,16 +57,23 @@ class LikeOutcome:
 class CommentOutcome:
     """Per-post result of the inline comment step.
 
-    `failed` means the comment was drafted and submitted but the adapter
-    could not post it (e.g. `lib/ig/comment_post.py`'s selector chain
-    missed). That is a routine, transient outcome — distinct from
-    `declined` (the agent chose not to engage), which is terminal.
+    `failed` means the comment was drafted, claimed and SUBMITTED, and the
+    adapter did not confirm it. It does not mean "did not post": an exception
+    raised after the submit click is flattened into a failure, so the comment
+    may well be live. The claim taken before the submit is what keeps that
+    ambiguity safe.
+
+    `blocked` means nothing was submitted at all — no claim could be taken
+    (the store is down, the collaborator cannot claim, or someone else owns
+    the post). Both are retryable; `declined` (the agent chose not to engage)
+    is terminal.
     """
 
     attempted: bool = False
     posted: bool = False
     declined: bool = False
     failed: bool = False
+    blocked: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,14 +88,28 @@ class PostOutcome:
     comment_posted: bool = False
     comment_declined: bool = False
     comment_failed: bool = False
+    comment_blocked: bool = False
 
     @property
     def is_retryable(self) -> bool:
         """True when this visit should NOT be recorded as seen.
 
-        Only a failed comment submission is retryable: the post was worth
-        commenting on and we never managed to, so the next run must be
-        allowed to open it again. Every other outcome — pre-filtered, low
-        score, agent-declined, liked, commented — is terminal.
+        Two outcomes qualify, for two different reasons:
+
+        - `comment_blocked` — nothing was submitted at all: no claim could be
+          taken (store down, collaborator can't claim, or the post is already
+          owned). The post was worth commenting on and we never tried, so the
+          next run must be allowed to open it again.
+        - `comment_failed` — the comment WAS submitted and came back
+          unconfirmed. Withholding the seen-mark is no longer what prevents a
+          duplicate here: the `pending` claim taken before the submit already
+          holds the post out of reach, and `lib/scan_dedup.py`'s
+          `is_duplicate` consults it first. What withholding the mark buys is
+          RELEASE — a `completed_tasks` seen-mark is permanent, so writing one
+          would make `scripts/comment_verify.py`'s release a no-op and retire
+          a post whose comment never actually landed.
+
+        Every other outcome — pre-filtered, low score, agent-declined, liked,
+        commented — is terminal.
         """
-        return self.comment_failed
+        return self.comment_failed or self.comment_blocked

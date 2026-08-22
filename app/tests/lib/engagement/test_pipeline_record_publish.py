@@ -2,11 +2,12 @@
 
 Two contracts split out of ``test_pipeline_inline_comment.py`` (300-line cap):
 
-  1. Every posted AND every failed comment submission is persisted to
-     ``lib.engagements_db`` (``record_publish``) and — when posted — to the
-     JSONL engagement log with the canonical ``comment`` action and full
-     attribution fields. These records used to exist only on the retired
-     two-stage queue path (GAP-2/GAP-3 of the fb-engager cutover).
+  1. Every POSTED comment is persisted to ``lib.engagements_db``
+     (``record_publish``) and to the JSONL engagement log with the canonical
+     ``comment`` action and full attribution fields. These records used to
+     exist only on the retired two-stage queue path (GAP-2/GAP-3 of the
+     fb-engager cutover). An unconfirmed submission writes NOTHING — its
+     ``failed`` row shared a primary key with the ``posted`` row and erased it.
   2. An injected ``CommentGate`` (e.g. the FB first-comment approval gate)
      vetoes the COMMENT only: the like still lands, the drafter is never
      consulted, and the post is marked seen (terminal, not retryable).
@@ -22,7 +23,7 @@ from typing import Any
 
 import pytest
 
-import lib.engagement.inline_comment as inline_comment
+import lib.engagement.comment_submit as comment_submit
 from lib.engagement.adapters.fake import FakeAdapter
 from tests.lib.engagement._pipeline_fakes import (
     FakeCommentGate,
@@ -45,7 +46,7 @@ def _capture_record_publish(
     """Recorder for ``record_publish`` (overrides the conftest autouse stub)."""
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        inline_comment.engagements_db,
+        comment_submit.engagements_db,
         "record_publish",
         lambda **kwargs: calls.append(kwargs),
     )
@@ -73,10 +74,17 @@ def test_posted_comment_is_recorded_in_engagements_db(
     assert row["posted_at"], "a posted row must carry its timestamp"
 
 
-def test_failed_comment_submission_is_recorded_as_failed(
+def test_unconfirmed_comment_submission_writes_no_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A drafted comment the adapter could not post still leaves a row."""
+    """An UNCONFIRMED submission must not touch ``engagements`` at all.
+
+    This used to write ``record_publish(status="failed", ref=post.post_id)``,
+    and that write was actively destructive: ``repository.py`` upserts on
+    ``dedup_id(platform, kind, ref)``, the same primary key as the ``posted``
+    row, so reporting the failure erased the evidence that an earlier
+    attempt's comment had landed. The pending claim is the durable record now.
+    """
     calls = _capture_record_publish(monkeypatch)
     run(
         _ig_adapter(1, comment_should_fail=True),
@@ -84,14 +92,7 @@ def test_failed_comment_submission_is_recorded_as_failed(
         inline_comment=True,
     )
 
-    assert len(calls) == 1
-    row = calls[0]
-    assert row["kind"] == "comment"
-    assert row["status"] == "failed"
-    assert row["ref"] == "p0"
-    # CommentResult.failed prefixes its outcome tag: "failed:<reason>".
-    assert row["error"] == "failed:fake_failure"
-    assert "posted_at" not in row, "a failed submission has no posted-at time"
+    assert calls == []
 
 
 def test_dry_run_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,7 +118,7 @@ def test_posted_comment_logs_action_comment_with_full_fields(
     and carries the attribution fields the history/reporting readers key on."""
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     monkeypatch.setattr(
-        inline_comment,
+        comment_submit,
         "log_engagement",
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
@@ -138,10 +139,10 @@ def test_posted_comment_logs_action_comment_with_full_fields(
 def test_failed_comment_is_not_logged_as_an_engagement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Only a POSTED comment is a JSONL engagement; failures go to record_publish."""
+    """Only a POSTED comment is a JSONL engagement; an unconfirmed one is silent."""
     calls: list[object] = []
     monkeypatch.setattr(
-        inline_comment,
+        comment_submit,
         "log_engagement",
         lambda *args, **kwargs: calls.append(args),
     )

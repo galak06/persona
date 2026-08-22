@@ -3,10 +3,11 @@
 The single-pass seen-mark contract, split out of
 ``test_pipeline_inline_comment.py`` (300-line cap):
 
-  1. A comment that was ATTEMPTED and FAILED must leave the post
-     retryable. The seen-mark used to be written immediately after the
-     duplicate gate, so a post whose comment submission missed was retired
-     forever without ever having been commented on.
+  1. A comment that was ATTEMPTED and came back UNCONFIRMED, or that was
+     BLOCKED before submission, must leave the post retryable. The seen-mark
+     used to be written immediately after the duplicate gate, so a post whose
+     comment submission missed was retired forever without ever having been
+     commented on.
   2. Every other outcome is terminal: commented, low-score and
      pre-filtered posts are ALL marked seen, the mark sticks across runs,
      and a dedup collaborator without the optional ``mark_seen``
@@ -47,11 +48,14 @@ def _ig_adapter(*, comment_should_fail: bool = False) -> FakeAdapter:
 
 
 def test_failed_comment_leaves_the_post_unmarked() -> None:
-    """A comment we tried and failed to post must stay retryable.
+    """An UNCONFIRMED submission must leave the post unmarked — to allow RELEASE.
 
-    ``lib/ig/comment_post.py`` returns False whenever its selector chain
-    misses — a routine outcome, not a decision. Marking such a post seen
-    would retire it forever without ever having commented on it.
+    Withholding the seen-mark is no longer what prevents a duplicate: the
+    ``pending`` claim taken before the submit already holds the post out of
+    reach (``lib/scan_dedup.py``'s ``is_duplicate`` reads the outbox first).
+    What it buys is the opposite direction — a ``completed_tasks`` seen-mark is
+    permanent, so writing one here would make ``scripts/comment_verify.py``'s
+    release a no-op and retire a post whose comment may never have landed.
     """
     adapter = _ig_adapter(comment_should_fail=True)
     dedup = FakeIterateOnceDedup()
@@ -59,13 +63,43 @@ def test_failed_comment_leaves_the_post_unmarked() -> None:
 
     assert adapter.comments != [], "fixture assumption: the post was attempted"
     assert report.comments_posted == 0
-    assert dedup.seen_marked == [], "a failed comment burned the post"
+    assert dedup.seen_marked == [], "an unconfirmed comment burned the post"
 
 
-def test_failed_comment_is_retried_on_the_next_run() -> None:
-    """The point of leaving it unmarked: the next scan gets another go."""
+def test_blocked_comment_leaves_the_post_unmarked() -> None:
+    """A comment BLOCKED before submission is retryable for the simpler reason.
+
+    No claim could be taken, so nothing was submitted at all: the post was
+    worth commenting on and we never tried. It must stay eligible.
+    """
+    adapter = _ig_adapter()
+    dedup = FakeIterateOnceDedup()
+    dedup.claim_grants = False
+    report, _d, _rt, _dr = run(adapter, dedup=dedup, inline_comment=True)
+
+    assert adapter.comments == [], "a blocked comment must never be submitted"
+    assert report.comments_posted == 0
+    assert dedup.seen_marked == [], "a blocked comment burned the post"
+
+
+def test_an_unconfirmed_comment_is_not_retried_until_its_claim_is_released() -> None:
+    """The next scan does NOT get a free second go — that was the bug.
+
+    An unconfirmed submission may already be live on the post, so the very
+    next run must be refused by the claim. Only ``scripts/comment_verify.py``,
+    which goes and LOOKS at the post, may release the claim; the unmarked post
+    is what lets that release put the post back in play.
+    """
     dedup = FakeIterateOnceDedup()
     run(_ig_adapter(comment_should_fail=True), dedup=dedup, inline_comment=True)
+
+    blocked = _ig_adapter()
+    report, _d, _rt, _dr = run(blocked, dedup=dedup, inline_comment=True)
+    assert blocked.comments == [], "the claim must refuse the immediate retry"
+    assert report.comments_posted == 0
+
+    # The reconciler looked at the post, found no comment, released the claim.
+    dedup.claimed.discard(("instagram", "p0"))
 
     retry = _ig_adapter()
     report, _d, _rt, _dr = run(retry, dedup=dedup, inline_comment=True)
@@ -90,12 +124,14 @@ def test_every_opened_post_is_marked_seen_whatever_the_outcome() -> None:
     """Commented, low-score and pre-filtered posts all get marked."""
     src = make_src("s1")
     posts = [
-        make_post("p_ok", "food question?"),        # commented
-        make_post("p_low", "boring question?"),     # below candidate threshold
-        make_post("p_pre", "food question?"),       # pre-filtered
+        make_post("p_ok", "food question?"),  # commented
+        make_post("p_low", "boring question?"),  # below candidate threshold
+        make_post("p_pre", "food question?"),  # pre-filtered
     ]
     adapter = FakeAdapter(
-        "instagram", [src], {"s1": posts},
+        "instagram",
+        [src],
+        {"s1": posts},
         pre_filter_overrides={"p_pre": "competitor"},
     )
     dedup = FakeIterateOnceDedup()

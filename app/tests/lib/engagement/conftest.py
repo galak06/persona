@@ -5,6 +5,7 @@ Thin shim over ``_env_builders``: this module exposes the public
 ``_env_builders.py`` to keep both files under the 300-line cap.
 
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -29,22 +30,22 @@ def _hermetic_engagement_sinks(monkeypatch: pytest.MonkeyPatch) -> None:
     per comment). Neither side effect belongs in a unit test, so both are
     stubbed by default. Tests that ASSERT on them re-patch with a recorder
     — a test-applied ``monkeypatch.setattr`` overrides this fixture's.
-    """
-    import lib.engagement.inline_comment as inline_comment
 
-    monkeypatch.setattr(inline_comment, "log_engagement", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        inline_comment.engagements_db, "record_publish", lambda **_k: None
-    )
+    Both sinks moved from ``inline_comment`` to ``comment_submit`` when the
+    claim steps split "decide" from "do"; ``log_engagement`` is a name bound
+    in that module's globals, so it must be patched there.
+    """
+    import lib.engagement.comment_submit as comment_submit
+
+    monkeypatch.setattr(comment_submit, "log_engagement", lambda *_a, **_k: None)
+    monkeypatch.setattr(comment_submit.engagements_db, "record_publish", lambda **_k: None)
 
 
 # --- FB fixture -------------------------------------------------------------
 
 
 @pytest.fixture
-def fb_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[dict[str, Path]]:
+def fb_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Path]]:
     """Wire fb_engager (single-pass) state into ``tmp_path`` + stub collaborators.
 
     Patches the AppSettings singleton paths AND the module-level path
@@ -64,9 +65,7 @@ def fb_environment(
 
 
 @pytest.fixture
-def ig_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Iterator[dict[str, Path]]:
+def ig_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Path]]:
     """Wire ig_engager (single-pass) state into ``tmp_path`` + stub collaborators.
 
     Yields ``{"state_dir", "tmp_path", "config_path", "rate_path",

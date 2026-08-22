@@ -74,18 +74,20 @@ def process_post(
         drafter=drafter,
         comment_gate=comment_gate,
     )
-    # Iterate-once, marked AFTER the visit so a failed comment stays
-    # retryable (see `PostOutcome.is_retryable`). The tradeoff: a crash
-    # mid-run now costs re-visits next run rather than silently burning
-    # posts we never actually engaged with. Re-visiting is the cheap,
+    # Iterate-once, marked AFTER the visit so an unconfirmed or blocked
+    # comment stays retryable (see `PostOutcome.is_retryable`). The tradeoff:
+    # a crash mid-run now costs re-visits next run rather than silently
+    # burning posts we never actually engaged with. Re-visiting is the cheap,
     # self-correcting direction; a permanently skipped post is not.
     #
-    # Withholding the mark only restores eligibility if nothing ELSE marks
-    # the post, so the collaborator's duplicate gate has to agree. Both
-    # engagers pass `lib.scan_dedup.ScanDedup`, which asks
-    # `already_commented` rather than a presence-only `is_duplicate` —
-    # otherwise the like this visit just recorded would make the post a
-    # duplicate forever and the retry below would never happen.
+    # What withholding the mark does NOT do any more is prevent a duplicate
+    # comment. That job belongs to the claim `comment_submit.py` takes before
+    # the submit: `lib/scan_dedup.py`'s `is_duplicate` reads the outbox first,
+    # so a post whose comment came back unconfirmed is already unreachable.
+    # The mark is withheld so `scripts/comment_verify.py` can RELEASE that
+    # claim if the comment turns out never to have landed — a
+    # `completed_tasks` seen-mark is permanent, and writing one here would
+    # make the release a no-op and retire the post regardless.
     if not outcome.is_retryable:
         mark_seen(dedup, platform, post.post_id, log=log, dry_run=dry_run)
     return outcome
@@ -148,6 +150,7 @@ def _visit_post(
         comment_posted=comment.posted,
         comment_declined=comment.declined,
         comment_failed=comment.failed,
+        comment_blocked=comment.blocked,
     )
 
 

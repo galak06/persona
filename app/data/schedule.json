@@ -172,6 +172,24 @@
     },
     {
       "depends_on": [],
+      "description": "Reconcile unsettled comment claims (comment_claims) against the platforms -- settle lost ACKs, release comments that never landed",
+      "id": "comment-verify",
+      "inputs": [],
+      "order": 55,
+      "output_file": null,
+      "re_run_guard": false,
+      "requires_approval": false,
+      "requires_browser": true,
+      "schedule": {
+        "cadence": "daily",
+        "cron": "0 12 * * *"
+      },
+      "script": "scripts/comment_verify.py",
+      "skill": null,
+      "telegram_notify": true
+    },
+    {
+      "depends_on": [],
       "description": "Weekly content-pipeline ideate stage \u2014 generate post ideas, append to Google Sheet",
       "id": "content-ideator",
       "inputs": [],

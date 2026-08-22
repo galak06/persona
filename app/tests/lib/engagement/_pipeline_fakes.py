@@ -20,14 +20,29 @@ from lib.engagement.post import Post
 
 
 class FakeDedup:
-    """In-test dedup double matching the pipeline's call signatures."""
+    """In-test dedup double matching the pipeline's call signatures.
+
+    Implements `SupportsCommentClaim` as well, backed by in-memory sets —
+    without it every inline-comment test would stop commenting, because
+    `comment_submit._claim` refuses any collaborator that cannot reserve a
+    post. The claim semantics mirror `lib.scan_dedup.ScanDedup`: a claimed
+    post is a duplicate from then on, and a second claim on it is refused.
+    """
 
     def __init__(self, seen: set[str] | None = None) -> None:
         self.seen = seen or set()
         self.engaged: list[tuple[str, str, str, str | None]] = []
+        # Every claim_comment call, in order, as (platform, post_id).
+        self.claims: list[tuple[str, str]] = []
+        self.claimed: set[tuple[str, str]] = set()
+        self.settled: set[tuple[str, str]] = set()
+        # Knobs for the outage/refusal paths.
+        self.claims_ok = True
+        self.claim_grants = True
+        self.settle_ok = True
 
     def is_duplicate(self, platform: str, post_id: str) -> bool:
-        return post_id in self.seen
+        return (platform, post_id) in self.claimed or post_id in self.seen
 
     def mark_engaged(
         self,
@@ -38,6 +53,32 @@ class FakeDedup:
         status: str = "engaged",
     ) -> None:
         self.engaged.append((platform, post_id, action, group_or_hashtag))
+
+    def claims_available(self) -> bool:
+        return self.claims_ok
+
+    def claim_comment(
+        self,
+        platform: str,
+        post_id: str,
+        *,
+        post_url: str = "",
+        target_name: str = "",
+        content: str = "",
+    ) -> bool:
+        self.claims.append((platform, post_id))
+        if not self.claims_ok or not self.claim_grants:
+            return False
+        if (platform, post_id) in self.claimed:
+            return False
+        self.claimed.add((platform, post_id))
+        return True
+
+    def settle_comment(self, platform: str, post_id: str) -> bool:
+        if not self.settle_ok:
+            return False
+        self.settled.add((platform, post_id))
+        return True
 
 
 class FakeIterateOnceDedup(FakeDedup):

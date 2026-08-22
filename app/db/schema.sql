@@ -176,6 +176,68 @@ CREATE INDEX IF NOT EXISTS idx_completed_tasks_brand ON completed_tasks(brand, t
 CREATE INDEX IF NOT EXISTS idx_completed_tasks_at    ON completed_tasks(completed_at DESC);
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- comment_claims (lib/comment_outbox.py -- the transactional outbox that stops
+-- the IG/FB engagers commenting twice on the same post)
+--
+-- The duplicate-comment bug of 2026-08. `lib/engagement/inline_comment.py:199`
+-- called `commenter.comment()` and marked the post deduped only AFTER that call
+-- returned posted=True. That ordering assumes the posting primitives can tell
+-- "submitted" from "failed". They cannot:
+--
+--   * `lib/ig/comment_post.py:66-85` types the comment, clicks Post, sleeps 3s
+--     and returns True UNCONDITIONALLY -- it never reads the page back, so a
+--     submit that silently failed is reported as success.
+--   * `lib/engagement/adapters/instagram.py:237-238` maps ANY exception to
+--     `CommentResult.failed(f"exception:{...}")`, including exceptions raised
+--     AFTER the submit click landed (navigation teardown, a timeout while the
+--     comment was already in flight).
+--
+-- The second case is the damaging one. A comment that actually landed but was
+-- reported failed skipped the dedup mark, `PostOutcome.is_retryable` kept the
+-- post eligible, and the next run commented on it a second time.
+--
+-- The fix is ordering, not better detection: the ROW IS THE CLAIM. It is
+-- INSERTed before the network call ever happens, and the primary key -- not any
+-- inspection of the result -- is what refuses the second attempt. That holds
+-- across processes AND across containers, which `lib/runtime/singleton.py`'s
+-- `SingletonLock` cannot do: its lock dir is engine-relative
+-- (`.claude/state/locks/`, resolved from `__file__`), so the api container and
+-- the worker container each get their own private lock file and neither sees
+-- the other. A shared database row is the only mutual exclusion both can see.
+--
+-- Status is `pending` (claimed, outcome unknown) or `posted` (settled). A
+-- `posted` row has NO TTL and is never swept -- unlike `lib/deduplication.py`'s
+-- 60-day rolling JSON cache, which forgets, and would let a post become
+-- commentable again purely by aging. "Never comment twice" is permanent.
+--
+-- `content` and `target_name` are load-bearing, not audit decoration: the
+-- reconciler (`scripts/comment_verify.py`) resolves a stale `pending` row by
+-- reopening `post_url` and searching the post DOM for that exact comment text,
+-- which is the only way to learn whether the comment landed. Losing the text
+-- loses the ability to ever settle the claim.
+--
+-- No separate (brand, platform) index: the composite PK's leading columns
+-- already serve `claimed_post_ids`. The partial index below exists only for the
+-- reconciler's `pending`-and-old sweep, which the PK cannot answer.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS comment_claims (
+    brand        VARCHAR(100)  NOT NULL,
+    platform     VARCHAR(20)   NOT NULL,
+    post_id      VARCHAR(255)  NOT NULL,
+    status       VARCHAR(20)   NOT NULL DEFAULT 'pending',
+    post_url     TEXT          NOT NULL DEFAULT '',
+    target_name  VARCHAR(255)  NOT NULL DEFAULT '',
+    content      TEXT          NOT NULL DEFAULT '',
+    worker_label VARCHAR(100)  NOT NULL DEFAULT '',
+    claimed_at   TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+    settled_at   TIMESTAMPTZ,
+    PRIMARY KEY (brand, platform, post_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_comment_claims_pending
+    ON comment_claims (brand, claimed_at) WHERE status = 'pending';
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- flow_templates (from profiles/*.json -- brand-agnostic flow catalog read by
 -- lib/brand_provisioning.py when onboarding a new brand; seeded/reseeded via
 -- scripts/backfill_flow_templates.py)

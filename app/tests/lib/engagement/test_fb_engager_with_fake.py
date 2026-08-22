@@ -46,8 +46,12 @@ def _stub_skill_drafter(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     def _fake_draft(
-        *, platform: str, post_text: str, group_or_hashtag: str | None,
-        post_url: str, site_context: str | None = None,
+        *,
+        platform: str,
+        post_text: str,
+        group_or_hashtag: str | None,
+        post_url: str,
+        site_context: str | None = None,
     ) -> str:
         return f"DRAFT-{post_url or '?'}"
 
@@ -188,11 +192,11 @@ def test_fb_scan_records_publish_row(
     fb_environment: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A posted inline comment is persisted via ``record_publish``."""
-    import lib.engagement.inline_comment as inline_comment
+    import lib.engagement.comment_submit as comment_submit
 
     rows: list[dict[str, Any]] = []
     monkeypatch.setattr(
-        inline_comment.engagements_db,
+        comment_submit.engagements_db,
         "record_publish",
         lambda **kwargs: rows.append(kwargs),
     )

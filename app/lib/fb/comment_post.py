@@ -4,7 +4,22 @@ Extracted from ``scripts/comment_poster.py`` so the FB comment action
 (``scripts/fb_engager.py`` via ``lib/engagement/adapters/facebook.py``)
 and any other caller share one posting path
 instead of duplicating the brittle FB DOM walk. The caller owns the browser
-context/session; this function only drives one post → comment-box → submit.
+context/session; this function only drives one post → comment-box → submit →
+**confirm**.
+
+The confirm step is new and load-bearing. This function used to click Send,
+``time.sleep(3)`` and ``return True`` unconditionally, so a submit that never
+landed reported success and a submit that landed then raised reported failure —
+``lib/engagement/adapters/facebook.py:338-339`` maps any exception to
+``CommentResult.failed(...)``. That ambiguity is what put two comments on one
+Instagram post, and this module has the same shape. Now the return value means
+"our text is visible in the thread": True lets
+``lib/engagement/comment_submit.py`` settle the claim immediately, False leaves
+the claim ``pending`` for ``scripts/comment_verify.py`` to adjudicate.
+
+The confirmation itself lives in ``lib/engagement/comment_confirm.py``, shared
+with the Instagram half: the two used to carry byte-identical copies of it, and
+that is exactly the shape that lets one platform's fix silently miss the other.
 """
 
 from __future__ import annotations
@@ -12,17 +27,22 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
+from lib.engagement.comment_confirm import comment_landed
+
 if TYPE_CHECKING:
     from playwright.sync_api import Page
 
 
 def post_comment_fb(page: Page, post_url: str, comment: str) -> bool:
-    """Navigate to ``post_url`` and submit ``comment``. Returns True on success.
+    """Navigate to ``post_url`` and submit ``comment``. True == CONFIRMED live.
 
     Best-effort DOM walk with multiple fallbacks (FB markup shifts across group
     types and profile-vs-page): click the placeholder to activate the editor,
-    locate the ``contenteditable`` textbox, type, then click Send (or Enter).
-    Returns False if the comment box can't be found.
+    locate the ``contenteditable`` textbox, type, click Send (or Enter), then
+    poll the open page until the comment appears in the thread. Returns False
+    if the comment box can't be found, or if the submit could not be confirmed
+    — the caller treats that as "unconfirmed", not "did not post" (see the
+    module docstring).
     """
     page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
     time.sleep(5)
@@ -75,13 +95,14 @@ def post_comment_fb(page: Page, post_url: str, comment: str) -> bool:
         if submit_btn.is_visible():
             submit_btn.click()
             print("    Submit: clicked", flush=True)
-            time.sleep(3)
-            return True
+        else:
+            print("    Submit: not_found, pressing Enter", flush=True)
+            page.keyboard.press("Enter")
 
-        print("    Submit: not_found, pressing Enter", flush=True)
-        page.keyboard.press("Enter")
-        time.sleep(3)
-        return True
+        time.sleep(1)
+        landed = comment_landed(page, comment, label="FB")
+        print(f"    FB confirm: {'found' if landed else 'not_found'}", flush=True)
+        return landed
     except Exception as e:
         print(f"    Error during typing/submit: {e}", flush=True)
         return False
