@@ -1,0 +1,23 @@
+{
+  "_comment": "Demo brand for `python cli.py demo`. Fictional — copy app/config.example.json to start your own.",
+  "_version": "1.0",
+
+  "site": {
+    "name": "Bean & Bloom",
+    "url": "https://example.com",
+    "brand_persona": "Mia, who roasts at home and writes like she's texting a friend",
+    "mascot_name": "Pip",
+    "_mascot_kind": "Left blank on purpose: prompts then say 'the brand's mascot' and never guess a species.",
+    "mascot_kind": "",
+    "niche": "specialty coffee brewing at home",
+    "target_audience": "home brewers who own a grinder and want better results"
+  },
+
+  "social_channels": {
+    "instagram": {
+      "enabled": true,
+      "profile_url": "https://www.instagram.com/example",
+      "ig_username": "beanandbloom"
+    }
+  }
+}
