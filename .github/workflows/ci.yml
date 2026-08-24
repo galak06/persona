@@ -6,10 +6,14 @@ on:
   push:
     paths:
       - "app/**"
+      - "cli.py"
+      - "examples/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "app/**"
+      - "cli.py"
+      - "examples/**"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -141,6 +145,7 @@ jobs:
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
           lib/oauth/openart.py lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
+          studio/ tests/test_studio.py ../cli.py
 
       - name: Ruff format check
         run: >-
@@ -219,6 +224,7 @@ jobs:
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
           lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
+          studio/ tests/test_studio.py ../cli.py
 
   typecheck:
     name: Type Check
@@ -280,6 +286,7 @@ jobs:
           api/reference_images_api.py api/reference_images_schemas.py
           lib/oauth/openart.py lib/oauth/openart_store.py
           lib/crew/reference_vocabulary.py
+          studio/ tests/test_studio.py ../cli.py
           --ignore-missing-imports
 
   test:
@@ -399,6 +406,7 @@ jobs:
         run: |
           timeout --signal=ABRT 600 pytest \
             --timeout=90 --timeout-method=thread \
+            tests/test_studio.py \
             tests/test_db.py \
             tests/test_groups_db.py \
             tests/test_engagements_db.py \
