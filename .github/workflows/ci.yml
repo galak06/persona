@@ -67,6 +67,13 @@ jobs:
       # strict errors (log.py:15, log.py:69, history.py:34) that any file
       # importing it inherits. Same reason lib/comment_verify_sessions.py is
       # here but not there.
+      # Scan-funnel instrumentation slice (extraction status, per-post score
+      # log, ScanReport funnel, shared run summary): all of it lint- AND
+      # format-clean, so the whole slice is in both lists -- and absent from
+      # the mypy list for the same package reason as the comment-outbox files
+      # above. The one exception is
+      # tests/lib/engagement/test_ig_engager_with_fake.py, which carries
+      # pre-existing (unrelated) ruff-format drift: lint- and pytest-list only.
       - name: Ruff check (lint)
         run: >-
           ruff check
@@ -167,6 +174,13 @@ jobs:
           tests/lib/engagement/test_pipeline_retry.py
           tests/lib/engagement/_env_builders.py
           tests/lib/engagement/conftest.py
+          lib/engagement/extraction.py lib/engagement/scan_logging.py
+          lib/engagement/run_summary.py
+          lib/engagement/adapters/instagram_extract.py
+          lib/engagement/adapters/instagram.py
+          tests/lib/engagement/test_instagram_extract.py
+          tests/lib/engagement/test_scan_funnel.py
+          tests/lib/engagement/test_ig_engager_with_fake.py
           tests/lib/runtime/test_singleton.py
 
       - name: Ruff format check
@@ -266,6 +280,12 @@ jobs:
           tests/lib/engagement/_env_builders.py
           tests/lib/engagement/conftest.py
           tests/lib/engagement/test_fb_engager_with_fake.py
+          lib/engagement/extraction.py lib/engagement/scan_logging.py
+          lib/engagement/run_summary.py
+          lib/engagement/adapters/instagram_extract.py
+          lib/engagement/adapters/instagram.py
+          tests/lib/engagement/test_instagram_extract.py
+          tests/lib/engagement/test_scan_funnel.py
           tests/lib/runtime/test_singleton.py
 
   typecheck:
@@ -544,6 +564,9 @@ jobs:
             tests/lib/engagement/test_own_comment_lookup.py \
             tests/lib/engagement/test_pipeline_inline_comment.py \
             tests/lib/engagement/test_pipeline_retry.py \
+            tests/lib/engagement/test_instagram_extract.py \
+            tests/lib/engagement/test_scan_funnel.py \
+            tests/lib/engagement/test_ig_engager_with_fake.py \
             tests/lib/runtime/test_singleton.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \

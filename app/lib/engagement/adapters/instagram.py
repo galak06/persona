@@ -26,9 +26,9 @@ from lib.engagement.adapters.instagram_dom import (
     CLICK_LIKE_JS,
     COMPETITOR_ACCOUNTS,
     EXTRACT_HASHTAG_POSTS_JS,
-    EXTRACT_POST_DETAILS_JS,
     OWN_ACCOUNT,
 )
+from lib.engagement.adapters.instagram_extract import extract_post_details
 from lib.engagement.adapters.instagram_parsing import (
     parse_author_from_caption,
     parse_comment_count,
@@ -37,6 +37,7 @@ from lib.engagement.adapters.instagram_parsing import (
     should_scan_today,
 )
 from lib.engagement.adapters.instagram_session import InstagramSession
+from lib.engagement.extraction import EXTRACTION_STATUS_KEY
 from lib.engagement.post import Post
 from lib.engagement.result import CommentResult, LikeResult
 from lib.ig.comment_post import post_comment_ig
@@ -143,10 +144,11 @@ class InstagramHashtagAdapter:
                 except Exception:
                     pass
             self._session.dismiss_overlays()
-            try:
-                details = page.evaluate(EXTRACT_POST_DETAILS_JS) or {}
-            except Exception:
-                details = {"caption": "", "like_text": "", "comment_text": "", "author": ""}
+            # Returns the substitute empty-detail map on failure, exactly as
+            # the inline try/except here used to -- but says so in the log and
+            # hands back a status the run summary counts. See
+            # lib/engagement/adapters/instagram_extract.py.
+            details, extraction = extract_post_details(page, post_url)
 
             caption = (details.get("caption") or "")[:800]
             author = (details.get("author") or "").strip().strip("/").lower()
@@ -170,6 +172,7 @@ class InstagramHashtagAdapter:
                     "comment_count": comment_count,
                     "weeks_old": weeks_old,
                     "category": source.category,
+                    EXTRACTION_STATUS_KEY: extraction,
                 },
             )
 

@@ -25,6 +25,7 @@ from lib.engagement.inline_comment import maybe_comment
 from lib.engagement.like_step import run_like_step
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.scan_logging import log_near_miss, log_scanned, log_scored
 from lib.engagement.scan_results import CommentOutcome, PostOutcome
 
 
@@ -56,9 +57,11 @@ def process_post(
 ) -> PostOutcome:
     """Score, like, optionally comment, and mark one post."""
     platform = adapter.platform
-    _log_scanned(post, source, platform, log)
+    log_scanned(post, source, platform, log)
     if dedup.is_duplicate(platform, post.post_id):
-        return PostOutcome()
+        # Same early return as before -- `duplicate` only NAMES the branch so
+        # the run summary can report how many posts left the funnel here.
+        return PostOutcome(duplicate=True)
 
     outcome = _visit_post(
         post=post,
@@ -115,8 +118,9 @@ def _visit_post(
         return PostOutcome(pre_filter_reason=reason)
 
     score = adapter.adjust_score(post, score_relevance(post))
+    log_scored(post, platform, score, log)
     if not policy.is_candidate(score):
-        return PostOutcome()
+        return PostOutcome(scored_below_threshold=True)
 
     like = run_like_step(
         post=post,
@@ -175,7 +179,7 @@ def _run_comment_step(
     report counts them even when no comment lands.
     """
     if not _is_comment_candidate(platform, post, score, policy):
-        _log_near_miss(post, platform, score, log)
+        log_near_miss(post, platform, score, log)
         return CommentOutcome(), None
 
     log.info(
@@ -203,30 +207,6 @@ def _run_comment_step(
         comment_gate=comment_gate,
     )
     return outcome, score
-
-
-def _log_scanned(post: Post, source: Source, platform: str, log: Log) -> None:
-    """Log that this post was enumerated, before any gate runs."""
-    log.info(
-        "post_scanned platform=%s post_id=%s source=%s url=%s",
-        platform,
-        post.post_id,
-        source.name or "",
-        post.post_url,
-    )
-
-
-def _log_near_miss(post: Post, platform: str, score: float, log: Log) -> None:
-    """Log near-miss posts so users can see why they were skipped."""
-    if score < 0.5:
-        return
-    log.info(
-        "post_skipped platform=%s post_id=%s score=%.2f url=%s",
-        platform,
-        post.post_id,
-        score,
-        post.post_url,
-    )
 
 
 def _is_comment_candidate(

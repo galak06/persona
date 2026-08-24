@@ -39,6 +39,11 @@ from lib.engagement.collaborators import (
 from lib.engagement.collaborators import (
     SupportsMarkSeen as _SupportsMarkSeen,
 )
+from lib.engagement.extraction import (
+    EXTRACTION_EMPTY_CAPTION,
+    EXTRACTION_FAILED,
+    extraction_status,
+)
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.engagement.post_processor import gate_source, process_post
@@ -168,12 +173,22 @@ class _Counters:
         self.comments_attempted = 0
         self.comments_posted = 0
         self.comments_declined = 0
+        self.duplicates = 0
+        self.extraction_failed = 0
+        self.empty_caption = 0
+        self.scored_below_threshold = 0
         self.pre_filtered: dict[str, int] = {}
         self.pre_filtered_posts: list[tuple[str, str]] = []
 
     def add(self, post: Post, outcome: PostOutcome) -> None:
         """Fold one post's outcome into the running totals."""
         self.posts_scanned += 1
+        # Scrape health is a property of the POST, not of the gate it left
+        # through, so it is counted before any early return -- a run whose
+        # extraction broke must report that even if every post was a duplicate.
+        self._add_extraction(post)
+        self.duplicates += int(outcome.duplicate)
+        self.scored_below_threshold += int(outcome.scored_below_threshold)
         if outcome.pre_filter_reason is not None:
             self._add_pre_filtered(post, outcome.pre_filter_reason)
             return
@@ -184,6 +199,14 @@ class _Counters:
         self.comments_declined += int(outcome.comment_declined)
         if outcome.candidate_score is not None:
             self.candidate_count += 1
+
+    def _add_extraction(self, post: Post) -> None:
+        """Count the adapter's self-reported scrape outcome for one post."""
+        status = extraction_status(post)
+        if status == EXTRACTION_FAILED:
+            self.extraction_failed += 1
+        elif status == EXTRACTION_EMPTY_CAPTION:
+            self.empty_caption += 1
 
     def _add_pre_filtered(self, post: Post, reason: str) -> None:
         """Record one adapter rejection, by reason and by post."""
@@ -209,4 +232,8 @@ class _Counters:
             comments_attempted=self.comments_attempted,
             comments_posted=self.comments_posted,
             comments_declined=self.comments_declined,
+            duplicates=self.duplicates,
+            extraction_failed=self.extraction_failed,
+            empty_caption=self.empty_caption,
+            scored_below_threshold=self.scored_below_threshold,
         )

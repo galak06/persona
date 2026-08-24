@@ -25,6 +25,12 @@ class ScanReport:
     "own_account", "too_old") to count of posts dropped for that reason.
     `pre_filtered_posts` lists the (post_id, reason) pairs for those drops so
     callers can act on individual posts (e.g. permanently dedup-mark them).
+
+    The counters below `pre_filtered_posts` exist to make the run's FUNNEL
+    legible: every post `posts_scanned` counted left through exactly one exit,
+    and until these fields existed most of those exits were unnamed. A scan
+    that produced no candidates was indistinguishable from a scan whose post
+    extraction had silently broken -- see `lib/engagement/extraction.py`.
     """
 
     platform: str
@@ -43,6 +49,15 @@ class ScanReport:
     comments_attempted: int = 0
     comments_posted: int = 0
     comments_declined: int = 0
+    # Funnel exits. `duplicates` left at the dedup gate; `extraction_failed`
+    # and `empty_caption` are adapter-reported scrape health (counted for
+    # every enumerated post, whatever gate it later left through, so they
+    # measure the SCRAPE and not the funnel); `scored_below_threshold` failed
+    # `EngagementPolicy.is_candidate`.
+    duplicates: int = 0
+    extraction_failed: int = 0
+    empty_caption: int = 0
+    scored_below_threshold: int = 0
 
 
 @dataclass(frozen=True)
@@ -81,6 +96,11 @@ class PostOutcome:
     """Per-post counters returned by `process_post`."""
 
     pre_filter_reason: str | None = None
+    # Which gate the post left through, when it left early. Both are pure
+    # labels on branches that already existed -- nothing acts on them except
+    # the report's funnel counters.
+    duplicate: bool = False
+    scored_below_threshold: bool = False
     like_attempted: bool = False
     like_succeeded: bool = False
     candidate_score: float | None = None

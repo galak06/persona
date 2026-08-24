@@ -51,6 +51,7 @@ from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy, thresholds_from_config
 from lib.engagement.post import Post
+from lib.engagement.run_summary import build_summary, log_funnel
 from lib.engagement.warm_sources import WarmFilteredAdapter
 from lib.io.jsonio import read_json, write_json
 from lib.notifier import skill_finished, skill_skipped, skill_started
@@ -193,22 +194,15 @@ def run_fb_engager_scan(
         }
         write_json(LAST_RUN_FILE, last_run)
 
-    quota = daily_limit("facebook", "comment")
-    if dry_run:
-        summary = (
-            f"DRY RUN (nothing liked, commented or recorded) | "
-            f"Groups: {report.sources_visited} | "
-            f"Would like: {report.likes_attempted} | "
-            f"Would comment: {report.comments_attempted}/{quota} | "
-            f"Agent declined: {report.comments_declined}"
-        )
-    else:
-        summary = (
-            f"Groups: {report.sources_visited} | "
-            f"Liked: {report.likes_succeeded} | "
-            f"Commented: {report.comments_posted}/{quota} | "
-            f"Agent declined: {report.comments_declined}"
-        )
+    # The funnel goes to BOTH sinks: the summary is what a human reads in
+    # Telegram, the log line is what survives to be grepped afterwards.
+    log_funnel(report, log)
+    summary = build_summary(
+        report,
+        source_label="Groups",
+        comment_quota=daily_limit("facebook", "comment"),
+        dry_run=dry_run,
+    )
     skill_finished("fb-engager", summary)
     print_status()
     return report
