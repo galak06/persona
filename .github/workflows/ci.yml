@@ -113,6 +113,7 @@ jobs:
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/writer/context.py lib/crew/writer/link_guard.py
+          lib/crew/reference_manifest.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
@@ -224,6 +225,7 @@ jobs:
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
           lib/crew/writer/context.py lib/crew/writer/link_guard.py
+          lib/crew/reference_manifest.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py

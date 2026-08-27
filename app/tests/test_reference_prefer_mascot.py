@@ -88,25 +88,57 @@ def test_without_the_flag_behaviour_is_unchanged(brand_dir: Path) -> None:
     assert got.label in {"trail-scene", "trail-with-dog"}
 
 
-def test_category_without_a_mascot_photo_is_not_substituted(brand_dir: Path) -> None:
-    """The module deliberately rejects cross-category fallback -- a wrong
-    anchor ships, a missing one does not. That bargain holds here too: the
-    ordinary pick stands rather than silently reaching into studio-mascot.
+def test_category_without_a_mascot_photo_falls_back_to_one_that_has_her(
+    brand_dir: Path,
+) -> None:
+    """The module refuses cross-category substitution everywhere else, and
+    `prefer_mascot` is the deliberate exception.
+
+    The bargain is different once a caller has said the subject IS the mascot:
+    the alternative is not "no anchor" but "an anchor without her in it",
+    which produces a confidently wrong dog -- a terrier fronting a post about
+    a shepherd mix. A studio portrait in the wrong setting is the lesser
+    error, and unlike an invented dog it is obvious enough to notice. This
+    brand will not have a mascot photo in every collection, so this is the
+    normal path, not a rare one.
     """
     got = resolve_reference(brand_dir, "home-exterior", seed="x", prefer_mascot=True)
     assert got is not None
-    assert got.category == "home-exterior"
-    assert got.shows_mascot is False
+    assert got.shows_mascot is True
+    assert got.category == "studio-mascot"
+
+
+def test_in_category_mascot_photo_beats_the_fallback(brand_dir: Path) -> None:
+    """Substitution is the last resort: a category holding its own mascot
+    photo keeps it, so the requested scene survives whenever it can."""
+    got = resolve_reference(brand_dir, "forest-trail", seed="x", prefer_mascot=True)
+    assert got is not None
+    assert got.category == "forest-trail"
+    assert got.shows_mascot is True
+
+
+def test_unknown_category_falls_back_rather_than_generating_unanchored(
+    brand_dir: Path,
+) -> None:
+    """A planner typo or a tag the library has never seen used to mean no
+    anchor at all, which is the worst outcome: a fully invented dog."""
+    got = resolve_reference(brand_dir, "no-such-tag", seed="x", prefer_mascot=True)
+    assert got is not None
+    assert got.shows_mascot is True
+
+
+def test_a_library_with_no_mascot_photo_anywhere_still_returns_nothing(
+    tmp_path: Path,
+) -> None:
+    """The fallback cannot invent what the library does not hold."""
+    _write_mixed_library(tmp_path, [("home-exterior", "house-only", False)])
+    assert resolve_reference(tmp_path, "kitchen", seed="x", prefer_mascot=True) is None
 
 
 def test_all_mascot_category_is_unaffected(brand_dir: Path) -> None:
     got = resolve_reference(brand_dir, "studio-mascot", seed="x", prefer_mascot=True)
     assert got is not None
     assert got.shows_mascot is True
-
-
-def test_unknown_category_still_resolves_to_nothing(brand_dir: Path) -> None:
-    assert resolve_reference(brand_dir, "no-such-tag", seed="x", prefer_mascot=True) is None
 
 
 def test_seeded_pick_is_reproducible_under_the_preference(brand_dir: Path) -> None:

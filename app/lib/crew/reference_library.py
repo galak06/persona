@@ -40,131 +40,54 @@ licence to substitute some other picture.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import re
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from lib.io.jsonio import read_json
+from lib.crew.reference_manifest import (
+    CONTENT_TYPE_BY_SUFFIX,
+    GENERAL_CATEGORY,
+    LIBRARY_DIRNAME,
+    MANIFEST_FILENAME,
+    Candidate,
+    Manifest,
+    ReferenceImage,
+    assets_dir,
+    best_tier,
+    empty_manifest,
+    existing_images_by_category,
+    library_root,
+    manifest_path,
+    pick,
+    read_manifest,
+    slugify,
+    source_rank,
+)
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
 
-LIBRARY_DIRNAME = "reference_images"
-GENERAL_CATEGORY = "general"
-MANIFEST_FILENAME = "library.json"
-MANIFEST_VERSION = 1
-
-#: Canonical extension -> content type, for images whose entry carries none:
-#: a hand-edited manifest here, the legacy asset on `import_legacy`'s path.
-CONTENT_TYPE_BY_SUFFIX = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-}
-_FALLBACK_CONTENT_TYPE = "image/png"
-
-#: Hand-uploaded photos are user-curated ground truth; WP-media harvests
-#: were machine-tagged and merely approved. Uploads therefore win outright:
-#: `resolve_reference` picks *within the best-ranked tier a category holds*,
-#: so a harvest surfaces only where there is no upload at all.
-SOURCE_PRIORITY: dict[str, int] = {"upload": 0, "wp_media": 1}
-_UNKNOWN_SOURCE_RANK = 2
-
-#: `{"version": 1, "categories": [...], "images": [...]}` -- kept a plain
-#: dict so the store can mutate it in place inside `locked_json`.
-Manifest = dict[str, Any]
-
-
-@dataclass(frozen=True)
-class ReferenceImage:
-    """One resolved reference photo, ready to read off disk."""
-
-    id: str
-    category: str  # resolved slug
-    path: Path
-    content_type: str
-    label: str
-    #: Does this photo actually show the brand's mascot? Decides which prompt
-    #: clause a generator attaches (`lib.crew.reference_clauses`). Entries
-    #: written before the vision tagger have no such key, so the default is
-    #: the SAFE reading: assume it is not a mascot portrait.
-    shows_mascot: bool = False
-    #: What the tagger saw, carried for logs and operator UI only -- never
-    #: sent to the image model.
-    description: str = ""
-    #: Does it show the brand's own PERSONA -- the person behind it? Judged
-    #: independently of `shows_mascot` (a photo may show either, both, or
-    #: neither), and defaulted the same defensive way for the same reason.
-    shows_persona: bool = False
-
-
-def slugify(label: str) -> str:
-    """Lowercase, hyphenate, strip non-alphanumerics -- same shape as
-    `lib.groups_db.models.slugify`."""
-    return re.sub(r"[^a-z0-9]+", "-", (label or "").strip().lower()).strip("-")
-
-
-def source_rank(source: str) -> int:
-    """Priority of an image's `source` (lower wins). Shared by the store and
-    API phases so every consumer orders candidates identically."""
-    return SOURCE_PRIORITY.get(source or "", _UNKNOWN_SOURCE_RANK)
-
-
-def assets_dir(brand_dir: Path) -> Path:
-    """`$BRAND_DIR/data/assets` -- holds both the legacy file and the library."""
-    return brand_dir / "data" / "assets"
-
-
-def library_root(brand_dir: Path) -> Path:
-    """`$BRAND_DIR/data/assets/reference_images`. May not exist."""
-    return assets_dir(brand_dir) / LIBRARY_DIRNAME
-
-
-def manifest_path(brand_dir: Path) -> Path:
-    """`<library_root>/library.json`. May not exist."""
-    return library_root(brand_dir) / MANIFEST_FILENAME
-
-
-def empty_manifest() -> Manifest:
-    """A fresh, valid, empty manifest."""
-    return {"version": MANIFEST_VERSION, "categories": [], "images": []}
-
-
-def read_manifest(brand_dir: Path) -> Manifest:
-    """Read `library.json`, normalized and never raising.
-
-    A missing file, unreadable file, malformed JSON, or a JSON document of
-    the wrong shape all degrade to `empty_manifest()` -- the library is an
-    optional enhancement, and a corrupt manifest must not take down image
-    generation. Entries missing the fields the resolver needs are dropped.
-    """
-    path = manifest_path(brand_dir)
-    try:
-        raw = read_json(path, None)
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("reference_library_manifest_unreadable", path=str(path), error=str(exc))
-        return empty_manifest()
-    if not isinstance(raw, dict):
-        if raw is not None:
-            logger.warning("reference_library_manifest_not_an_object", path=str(path))
-        return empty_manifest()
-
-    def dicts(key: str) -> list[dict[str, Any]]:
-        values = raw.get(key) if isinstance(raw, dict) else None
-        return [v for v in values if isinstance(v, dict)] if isinstance(values, list) else []
-
-    categories = [c for c in dicts("categories") if c.get("slug")]
-    images = [i for i in dicts("images") if i.get("id") and i.get("category") and i.get("filename")]
-    version = raw.get("version")
-    return {
-        "version": version if isinstance(version, int) else MANIFEST_VERSION,
-        "categories": categories,
-        "images": images,
-    }
+#: Re-exported so the modules that imported these from here keep working --
+#: the split moved storage into `reference_manifest`, not out of the package.
+__all__ = [
+    "CONTENT_TYPE_BY_SUFFIX",
+    "GENERAL_CATEGORY",
+    "LIBRARY_DIRNAME",
+    "MANIFEST_FILENAME",
+    "Candidate",
+    "Manifest",
+    "ReferenceImage",
+    "assets_dir",
+    "best_tier",
+    "empty_manifest",
+    "existing_images_by_category",
+    "library_root",
+    "list_category_labels",
+    "manifest_path",
+    "pick",
+    "read_manifest",
+    "resolve_reference",
+    "slugify",
+    "source_rank",
+]
 
 
 def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[str]:
@@ -226,14 +149,12 @@ def resolve_reference(
     beats across different photos while a re-run reproduces them exactly;
     `seed=""` always takes the first candidate.
 
-    `prefer_mascot` narrows to `shows_mascot` photos WITHIN the requested
-    category before that seeded pick. A category can hold a mix
-    (`forest-trail` was 2 of 4), and a resolved-but-mascot-less anchor is the
-    quiet failure: image2image still runs and the scene grounds correctly
-    while the model invents a different dog -- that shipped a terrier as the
-    hero of a post about a 50 lb shepherd mix. A filter, never a
-    substitution: no mascot photo in the category leaves the ordinary pick,
-    per the same bargain above.
+    `prefer_mascot` narrows to `shows_mascot` photos within the requested
+    category, then falls back to any category that has one (`_any_mascot_photo`).
+    A resolved-but-mascot-less anchor is the quiet failure: image2image runs,
+    the scene grounds, and the model invents a different dog -- that shipped a
+    terrier as the hero of a post about a 50 lb shepherd mix. It is the one
+    exception to the no-substitution rule above; see `_any_mascot_photo`.
     """
     by_category = existing_images_by_category(brand_dir)
     wanted = slugify(category or "")
@@ -246,12 +167,24 @@ def resolve_reference(
             with_mascot = [c for c in candidates if c[1].shows_mascot]
             if with_mascot:
                 return pick(best_tier(with_mascot), seed)
-            logger.warning(
-                "reference_library_no_mascot_photo_in_category",
-                requested=slug,
-                candidates=len(candidates),
-            )
+            fallback = _any_mascot_photo(by_category, seed)
+            if fallback is not None:
+                logger.warning(
+                    "reference_library_mascot_fallback",
+                    requested=slug,
+                    anchored_on=fallback.category,
+                )
+                return fallback
         return pick(best_tier(candidates), seed)
+    if prefer_mascot:
+        fallback = _any_mascot_photo(by_category, seed)
+        if fallback is not None:
+            logger.warning(
+                "reference_library_mascot_fallback",
+                requested=wanted or "(none)",
+                anchored_on=fallback.category,
+            )
+            return fallback
     # Warning, not info: an unanchored generation looks successful and only
     # reveals itself in the finished image, so this needs to be visible
     # without going looking for it.
@@ -263,60 +196,32 @@ def resolve_reference(
     return None
 
 
-#: One candidate as a resolver carries it: its `source` rank paired with the
-#: image. Public with the three helpers below: `reference_mascot` reuses them.
-Candidate = tuple[int, ReferenceImage]
+def _any_mascot_photo(
+    by_category: dict[str, list[Candidate]], seed: str
+) -> ReferenceImage | None:
+    """Any photo in the library that shows the mascot, or None.
 
+    The cross-category substitution this module otherwise refuses, allowed
+    ONLY under `prefer_mascot`. The bargain differs once a caller says the
+    subject IS the mascot: the alternative is not "no anchor" but "an anchor
+    without her in it", which yields a confidently wrong dog. A portrait in
+    the wrong setting is the lesser error, and unlike an invented dog it is
+    obvious enough to notice. Most brands will not have a mascot photo in
+    every collection, so this is the normal path.
 
-def existing_images_by_category(brand_dir: Path) -> dict[str, list[Candidate]]:
-    """Manifest entries grouped by category, dropping any whose file is gone."""
-    root = library_root(brand_dir)
-    grouped: dict[str, list[Candidate]] = {}
-    for entry in read_manifest(brand_dir)["images"]:
-        slug = slugify(str(entry.get("category", "")))
-        if not slug:
-            continue
-        path = root / slug / str(entry.get("filename", ""))
-        if not path.is_file():
-            logger.warning(
-                "reference_library_entry_file_missing",
-                image_id=str(entry.get("id")),
-                path=str(path),
-            )
-            continue
-        image = ReferenceImage(
-            id=str(entry.get("id")),
-            category=slug,
-            path=path,
-            content_type=str(
-                entry.get("content_type")
-                or CONTENT_TYPE_BY_SUFFIX.get(path.suffix.lower(), _FALLBACK_CONTENT_TYPE)
-            ),
-            label=str(entry.get("label") or path.stem),
-            shows_mascot=bool(entry.get("shows_mascot", False)),
-            description=str(entry.get("description") or ""),
-            shows_persona=bool(entry.get("shows_persona", False)),
-        )
-        grouped.setdefault(slug, []).append((source_rank(str(entry.get("source", ""))), image))
-    return grouped
-
-
-def best_tier(candidates: list[Candidate]) -> list[ReferenceImage]:
-    """Only the highest-priority `source` tier present, sorted by id.
-
-    Uploads never lose to harvested images: with 3 uploads and 5 harvests in
-    one category the seeded pick chooses among the 3 uploads, and a harvest
-    surfaces only once the category holds no uploads at all. Sorting by id
-    (not manifest order) keeps the result stable across manifest re-orderings.
+    Mascot-only collections rank first, so a turnaround sheet beats a trail
+    photo that merely happens to include her; ties break on name for
+    determinism.
     """
-    ranked = sorted(candidates, key=lambda c: (c[0], c[1].id))
-    best = ranked[0][0]
-    return [image for rank, image in ranked if rank == best]
-
-
-def pick(candidates: list[ReferenceImage], seed: str) -> ReferenceImage:
-    """Deterministic index from `seed` -- no `random`, so re-runs reproduce."""
-    if not seed:
-        return candidates[0]
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-    return candidates[int(digest, 16) % len(candidates)]
+    ranked = sorted(
+        by_category.items(),
+        key=lambda kv: (
+            -sum(1 for c in kv[1] if c[1].shows_mascot) / max(len(kv[1]), 1),
+            kv[0],
+        ),
+    )
+    for _slug, candidates in ranked:
+        with_mascot = [c for c in candidates if c[1].shows_mascot]
+        if with_mascot:
+            return pick(best_tier(with_mascot), seed)
+    return None
