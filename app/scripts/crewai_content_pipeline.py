@@ -275,7 +275,13 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # `reference_image_bytes` is None, and `_style_suffix` then emits no
     # reference clause) -- no non-uploaded image is used as an anchor, which
     # is all "uploads only" asks.
-    reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
+    # `prefer_mascot`: the hero is the first thing a reader sees, and this
+    # brand's whole claim is that the dog is real. A scene-only anchor still
+    # grounds the setting while the model invents the dog -- which shipped a
+    # terrier as the hero of a post about a 50 lb shepherd mix.
+    reference = resolve_reference(
+        brand_dir, brief.reference_category, seed=idea_id, prefer_mascot=True
+    )
     reference_image_path = reference.path if reference is not None else None
     # What the model is TOLD the photo is: a library image of a product or a
     # location must not be introduced as the brand's mascot. Ignored

@@ -197,7 +197,7 @@ def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[
 
 
 def resolve_reference(
-    brand_dir: Path, category: str | None, *, seed: str = ""
+    brand_dir: Path, category: str | None, *, seed: str = "", prefer_mascot: bool = False
 ) -> ReferenceImage | None:
     """Best UPLOADED photo for `category`, or `None` if the library has none.
 
@@ -225,15 +225,37 @@ def resolve_reference(
     index so callers passing `f"{idea_id}:{beat_index}"` spread one reel's
     beats across different photos while a re-run reproduces them exactly;
     `seed=""` always takes the first candidate.
+
+    `prefer_mascot` narrows to `shows_mascot` photos WITHIN the requested
+    category before that seeded pick. A category can hold a mix
+    (`forest-trail` was 2 of 4), and a resolved-but-mascot-less anchor is the
+    quiet failure: image2image still runs and the scene grounds correctly
+    while the model invents a different dog -- that shipped a terrier as the
+    hero of a post about a 50 lb shepherd mix. A filter, never a
+    substitution: no mascot photo in the category leaves the ordinary pick,
+    per the same bargain above.
     """
     by_category = existing_images_by_category(brand_dir)
     wanted = slugify(category or "")
 
     for slug in (wanted, GENERAL_CATEGORY):
         candidates = by_category.get(slug) if slug else None
-        if candidates:
-            return pick(best_tier(candidates), seed)
-    logger.info(
+        if not candidates:
+            continue
+        if prefer_mascot:
+            with_mascot = [c for c in candidates if c[1].shows_mascot]
+            if with_mascot:
+                return pick(best_tier(with_mascot), seed)
+            logger.warning(
+                "reference_library_no_mascot_photo_in_category",
+                requested=slug,
+                candidates=len(candidates),
+            )
+        return pick(best_tier(candidates), seed)
+    # Warning, not info: an unanchored generation looks successful and only
+    # reveals itself in the finished image, so this needs to be visible
+    # without going looking for it.
+    logger.warning(
         "reference_library_no_match",
         requested=wanted or "(none)",
         available=",".join(sorted(by_category)),
