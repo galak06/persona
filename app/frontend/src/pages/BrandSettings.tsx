@@ -41,6 +41,13 @@ interface FormState {
 
 const FB_GROUP_SCOUT = "fb-group-scout";
 
+/** Mirrors `lib.content_strategy.normalize_category`: trim, collapse inner
+ * whitespace, casefold. Nothing else -- "Dog Food" and "Dog Foods" are
+ * genuinely different categories. */
+function normalizeCat(value: string): string {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 function parseList(value: string): string[] {
   return value
     .split(",")
@@ -145,19 +152,24 @@ export default function BrandSettings(): React.JSX.Element {
   };
 
   const knownCategories = ideaCategories?.categories ?? [];
+  const siteCategories = ideaCategories?.site_categories ?? [];
   // Warn (never block) when the typed focus matches nothing this brand's ideas
   // have used: the gate compares on exactly this string, so a typo here
   // rejects every new idea instead of failing loudly. Matching is case- and
   // whitespace-insensitive, same as `lib.content_strategy.normalize_category`.
   const typedFocus = form?.focus_category.trim() ?? "";
+  // The check that actually protects the SEO effect: internal-link ranking
+  // compares the focus against a post's real WordPress categories, so a focus
+  // no published post uses leaves the clustering doing nothing, silently.
+  const focusNotOnSite =
+    typedFocus !== "" &&
+    siteCategories.length > 0 &&
+    !siteCategories.some((c) => normalizeCat(c) === normalizeCat(typedFocus));
+
   const focusIsUnknown =
     typedFocus !== "" &&
     knownCategories.length > 0 &&
-    !knownCategories.some(
-      (c) =>
-        c.trim().replace(/\s+/g, " ").toLowerCase() ===
-        typedFocus.replace(/\s+/g, " ").toLowerCase(),
-    );
+    !knownCategories.some((c) => normalizeCat(c) === normalizeCat(typedFocus));
 
   return (
     <div className="px-8 py-6 space-y-6">
@@ -276,6 +288,12 @@ export default function BrandSettings(): React.JSX.Element {
               Restricts idea generation to a single category, and tells the idea agent to go
               deeper rather than broader. Leave blank for no focus.
             </p>
+            {focusNotOnSite && (
+              <p className="mt-1 text-xs text-amber-700">
+                No published post uses “{typedFocus}” as a WordPress category, so internal-link
+                clustering will have no effect. Site categories: {siteCategories.join(", ")}
+              </p>
+            )}
             {focusIsUnknown && (
               <p className="mt-1 text-xs text-amber-700">
                 No idea has used “{form.focus_category.trim()}” yet. If that is a typo, every new

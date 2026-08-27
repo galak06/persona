@@ -1872,12 +1872,20 @@ export interface components {
         };
         /**
          * BrandIdeaCategoriesResponse
-         * @description The category vocabulary this brand's ideas have actually used.
+         * @description The category vocabularies a focus category is matched against.
          *
-         *     Feeds the Brand Settings focus-category field. Deliberately sourced from
-         *     `content_ideas.category` rather than the site's WordPress categories:
-         *     the focus gate compares against exactly this free-text field, so this is
-         *     the list a focus category must match to select anything at all.
+         *     Two lists, because a focus category is matched in two different places
+         *     and matching only one of them fails silently:
+         *
+         *     `categories` -- from `content_ideas.category`. This is what the idea gate
+         *     compares against, so a focus missing from it admits almost nothing.
+         *
+         *     `site_categories` -- the brand's real WordPress categories, from the site
+         *     content cache. This is what internal-link ranking compares against, so a
+         *     focus missing from it leaves the clustering doing nothing at all, with no
+         *     error anywhere. That is exactly how `Food/Nutrition` -- a real entry in
+         *     `categories` but on no published post -- looked healthy while disabling
+         *     the whole effect.
          */
         BrandIdeaCategoriesResponse: {
             /**
@@ -1885,6 +1893,11 @@ export interface components {
              * @default []
              */
             categories: string[];
+            /**
+             * Site Categories
+             * @default []
+             */
+            site_categories: string[];
         };
         /**
          * BrandKeywords

@@ -12,6 +12,7 @@ settings edit alike.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -25,6 +26,7 @@ from api.brand_schemas import (
 from api.brands_api import _provision_response, _provisioning_failed_response, _spec_from_row
 from lib import brands_db, ideas_db
 from lib.brand_provisioning import provision_brand
+from lib.gsc_scout import load_site_content_cache
 
 router = APIRouter()
 
@@ -114,6 +116,32 @@ def list_brand_idea_categories(brand_id: str) -> BrandIdeaCategoriesResponse:
     list, which the UI renders as "no suggestions" rather than an error --
     setting a focus before the first scout run is legitimate.
     """
-    if brands_db.get(brand_id) is None:
+    row = brands_db.get(brand_id)
+    if row is None:
         raise HTTPException(status_code=404, detail=f"brand '{brand_id}' not found")
-    return BrandIdeaCategoriesResponse(categories=ideas_db.known_categories(brand_id))
+    return BrandIdeaCategoriesResponse(
+        categories=ideas_db.known_categories(brand_id),
+        site_categories=_site_categories(row),
+    )
+
+
+def _site_categories(row: dict[str, Any]) -> list[str]:
+    """Distinct WordPress categories across the brand's cached posts.
+
+    Best-effort: a brand with no cache yet returns [], which the UI renders as
+    "no check available" rather than a false warning.
+    """
+    brand_dir = str(row.get("brand_dir") or "").strip()
+    if not brand_dir:
+        return []
+    try:
+        cache = load_site_content_cache(Path(brand_dir))
+    except Exception:
+        return []
+    names: set[str] = set()
+    for post in cache.get("recent_posts") or []:
+        if isinstance(post, dict):
+            for name in post.get("categories") or []:
+                if text := str(name or "").strip():
+                    names.add(text)
+    return sorted(names)
