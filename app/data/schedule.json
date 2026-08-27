@@ -3,11 +3,11 @@
   "tasks": [
     {
       "depends_on": [],
-      "description": "Crawl dogfoodandfun.com RSS + sitemap, cache recent posts for comment context",
+      "description": "Refresh the site content cache from the WP REST API (grounds internal links, reply drafting and the GSC scout)",
       "id": "site-analyzer",
       "inputs": [],
       "order": 10,
-      "output_file": "data/site_content_cache.json",
+      "output_file": "data/cache/site_content_cache.json",
       "re_run_guard": true,
       "requires_approval": false,
       "requires_browser": false,
@@ -15,8 +15,8 @@
         "cadence": "daily",
         "cron": "0 15 * * *"
       },
-      "script": null,
-      "skill": "site-analyzer",
+      "script": "scripts/refresh_site_cache.py",
+      "skill": null,
       "telegram_notify": true
     },
     {
