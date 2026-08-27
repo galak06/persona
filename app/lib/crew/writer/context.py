@@ -111,26 +111,23 @@ def internal_link_candidates_from_cache(
         url = str(post.get("url") or "").strip()
         if title and url:
             candidates.append(
-                InternalLinkCandidate(title=title, url=url, category=_first_category(post))
+                InternalLinkCandidate(title=title, url=url, categories=_category_names(post))
             )
     return candidates
 
 
-def _first_category(post: dict[str, Any]) -> str:
-    """The cached post's first WordPress category, or "" if it has none.
+def _category_names(post: dict[str, Any]) -> list[str]:
+    """Every WordPress category on the cached post, in cache order.
 
-    First rather than all: a post's primary category is what decides which
-    body of content it belongs to, and joining several would never compare
-    equal to a brand's single focus category.
+    All of them rather than the primary one: a brand focusing on a niche
+    normally files those posts under the niche category AND a general one, so
+    primary-only matching would miss the very posts the focus is meant to
+    gather.
     """
     raw = post.get("categories")
     if not isinstance(raw, list):
-        return ""
-    for entry in raw:
-        text = str(entry or "").strip()
-        if text:
-            return text
-    return ""
+        return []
+    return [text for entry in raw if (text := str(entry or "").strip())]
 
 
 def rank_link_candidates(
@@ -150,7 +147,10 @@ def rank_link_candidates(
     wanted = normalize_category(focus_category)
     if not wanted:
         return list(candidates)
-    return sorted(candidates, key=lambda c: normalize_category(c.category) != wanted)
+    def _misses_focus(candidate: InternalLinkCandidate) -> bool:
+        return not any(normalize_category(c) == wanted for c in candidate.categories)
+
+    return sorted(candidates, key=_misses_focus)
 
 
 def internal_link_candidates_json(candidates: list[InternalLinkCandidate]) -> str:

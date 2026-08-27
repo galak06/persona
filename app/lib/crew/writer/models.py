@@ -33,11 +33,16 @@ class InternalLinkCandidate(BaseModel):
 
     title: str
     url: str
-    # The post's own WordPress category, straight from the site cache. Carried
-    # so link choice can favour posts in the same category -- what turns a set
-    # of scattered pages into a body Google reads as one topic. Empty when the
-    # cached post has no categories; never inferred.
-    category: str = ""
+    # The post's own WordPress categories, straight from the site cache.
+    # Carried so link choice can favour posts sharing a category -- what turns
+    # scattered pages into a body Google reads as one topic.
+    #
+    # ALL of them, not just the primary: a niche cluster normally lives
+    # alongside a general category (a dental post filed under both
+    # "Food & Diet" and "Dental Care"), and matching only the first would miss
+    # every such post and silently disable the clustering it exists for.
+    # Empty when the cached post has no categories; never inferred.
+    categories: list[str] = []
 
 
 class ContentBrief(BaseModel):
