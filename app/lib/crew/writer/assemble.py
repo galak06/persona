@@ -21,9 +21,9 @@ from lib.blog_jsonld import article_jsonld, faq_jsonld, render_jsonld_blocks
 from lib.crew.writer.context import (
     internal_link_candidates_from_cache,
     read_brand_config,
-    strip_unapproved_internal_links,
     unwrap_lists_from_paragraphs,
 )
+from lib.crew.writer.link_guard import strip_unapproved_internal_links
 from lib.crew.writer.models import WrittenPost
 from lib.gsc_scout import load_site_content_cache
 

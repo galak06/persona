@@ -29,10 +29,15 @@ class OutlineSection(BaseModel):
 class InternalLinkCandidate(BaseModel):
     """One real internal-link target -- title/url MUST come from the brand's
     real `site_content_cache.json`, never invented by the LLM (enforced
-    separately in `lib.crew.writer.context.sanitize_internal_links`)."""
+    separately in `lib.crew.writer.link_guard.sanitize_internal_links`)."""
 
     title: str
     url: str
+    # The post's own WordPress category, straight from the site cache. Carried
+    # so link choice can favour posts in the same category -- what turns a set
+    # of scattered pages into a body Google reads as one topic. Empty when the
+    # cached post has no categories; never inferred.
+    category: str = ""
 
 
 class ContentBrief(BaseModel):

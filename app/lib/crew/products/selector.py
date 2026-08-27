@@ -6,7 +6,7 @@ products (`lib.crew.products.usage`), ask the selector agent to curate at
 most `MAX_PRODUCTS` genuine fits for the post's plan, then defensively
 validate the model's picks against the real candidate set -- same "don't
 fully trust the model" posture as
-`lib.crew.writer.context.sanitize_internal_links`.
+`lib.crew.writer.link_guard.sanitize_internal_links`.
 
 Failure posture is deliberately asymmetric:
   - selector failure (`None` from the execute seam -- LLM/parse error) falls

@@ -79,6 +79,24 @@ the hero far better than none does.{catch_all_clause(categories)}
 """
 
 
+def _focus_link_rule(focus_category: str) -> str:
+    """The extra internal-link rule for a brand focused on one category.
+
+    Empty string when there is no focus, so an unfocused brand's prompt is
+    unchanged. The candidate list is already ordered same-category-first
+    (`lib.crew.writer.context.rank_link_candidates`); this is what tells the
+    model that the ordering means something.
+    """
+    if not focus_category.strip():
+        return ""
+    return (
+        f' This brand is focused on "{focus_category.strip()}": prefer candidates whose '
+        f"category matches it, so those posts link to each other and read as one body of "
+        f"work rather than scattered pages. Only reach outside that category when no "
+        f"in-category candidate is genuinely relevant -- relevance still wins over category."
+    )
+
+
 def build_strategist_task_description(
     *,
     idea: dict[str, Any],
@@ -88,6 +106,7 @@ def build_strategist_task_description(
     link_candidates: list[InternalLinkCandidate],
     year: int,
     reference_categories: Sequence[str] = (),
+    focus_category: str = "",
 ) -> str:
     """The strategist agent's full prompt: one content idea -> a `ContentBrief`."""
     return f"""You are turning ONE approved content idea into a structured content brief.
@@ -127,7 +146,8 @@ topic warrants it] -> FAQ -> related reading -> our pick).
 3. Set primary_keyword to the idea's target keyword (or a close, better-targeted variant) and \
 propose 3-6 secondary_keywords.
 4. Choose 3-6 internal_link_candidates from the real list above whose topic is genuinely \
-relevant to this idea -- if fewer than 3 are relevant, return only the relevant ones.
+relevant to this idea -- if fewer than 3 are relevant, return only the relevant ones.\
+{_focus_link_rule(focus_category)}
 5. Propose 3-6 faq_questions this post should answer -- real questions a reader would search \
 for, not generic filler.
 6. Write mascot_angle: 2-4 sentences on how the brand's real voice/mascot fits THIS specific \
