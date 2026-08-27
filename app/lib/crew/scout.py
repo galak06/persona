@@ -38,6 +38,7 @@ from pathlib import Path
 from crewai import Agent, Task
 
 from lib import ideas_db
+from lib.content_strategy import focus_clause, load_content_strategy
 from lib.crew import keyword_store
 from lib.crew.context import (
     brand_identity_summary,
@@ -187,6 +188,16 @@ def run_crew_scout(
     # the agent produced blind. See `build_idea_task_description` for why.
     existing_topics = existing_topics_fn(brand_id=brand_id)
 
+    # The brand's declared stance decides the depth-vs-breadth instruction.
+    # No focus set == the breadth clause this prompt always carried.
+    strategy = load_content_strategy(config)
+    if strategy.has_focus:
+        logger.info(
+            "crew_scout_focus_category",
+            brand_id=brand_id,
+            focus_category=strategy.focus_category,
+        )
+
     idea_description = build_idea_task_description(
         identity=identity,
         voice=voice,
@@ -194,6 +205,7 @@ def run_crew_scout(
         trends_json=serialize_trend_signals(trends_output.signals),
         existing_topics=serialize_existing_topics(existing_topics),
         top_n=top_n,
+        strategy_clause=focus_clause(strategy),
     )
     idea_agent = build_idea_agent()
     idea_task = build_idea_task(idea_agent, idea_description)

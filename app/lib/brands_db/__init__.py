@@ -26,6 +26,7 @@ __all__ = [
     "create",
     "default_enabled_flows",
     "ensure",
+    "focus_category",
     "get",
     "list_brands",
     "set_brand_dir",
@@ -52,6 +53,7 @@ def create(
     enabled_flows: list[str] | None = None,
     headless: bool = True,
     group_join_limit: int = 10,
+    focus_category: str = "",
     status: str = BrandStatus.DRAFT,
     brand_dir: str = "",
     extra: dict[str, Any] | None = None,
@@ -68,6 +70,7 @@ def create(
         keywords=keywords,
         competitor_accounts=competitor_accounts,
         enabled_flows=enabled_flows,
+        focus_category=focus_category,
         headless=headless,
         group_join_limit=group_join_limit,
         status=status,
@@ -105,6 +108,7 @@ def update(
     competitor_accounts: list[Any] | None = None,
     enabled_flows: list[str] | None = None,
     group_join_limit: int | None = None,
+    focus_category: str | None = None,
 ) -> bool:
     """Partial update -- only params passed a non-`None` value change."""
     return _repo().update(
@@ -114,4 +118,10 @@ def update(
         competitor_accounts=competitor_accounts,
         enabled_flows=enabled_flows,
         group_join_limit=group_join_limit,
+        focus_category=focus_category,
     )
+
+
+def focus_category(brand_id: str | None) -> str:
+    """This brand's declared focus category, or "" when it has none."""
+    return _repo().focus_category(brand_id)

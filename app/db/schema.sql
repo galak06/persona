@@ -117,6 +117,13 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS headless            BOOLEAN NOT NULL
 -- matching that script's own pre-PR6 hardcoded JOIN_LIMIT_PER_DAY, so this
 -- migration is a no-op behavior-wise for brands that never customize it.
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS group_join_limit    INTEGER NOT NULL DEFAULT 10;
+-- Additive (one-focus-category strategy): the single WordPress category
+-- this brand is focused on, or '' for no focus. Existing rows default to
+-- '' -- i.e. no focus, the pre-focus breadth behaviour -- so this
+-- migration is a no-op behavior-wise for every brand already registered.
+-- Authoritative here; `<brand_dir>/config.json`'s `content_strategy`
+-- block is the rendered copy the engine reads at runtime.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS focus_category      TEXT  NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (

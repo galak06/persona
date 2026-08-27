@@ -16,7 +16,8 @@ import logging
 import uuid
 from typing import Any
 
-from lib import db
+from lib import brands_db, db
+from lib.content_strategy import ContentStrategy, is_in_focus
 
 _log = logging.getLogger(__name__)
 
@@ -72,6 +73,32 @@ FAILURE_STATUSES = frozenset({"write_failed", "validation_failed"})
 # Write
 
 
+def known_categories(brand_id: str | None) -> list[str]:
+    """Distinct `category` values this brand's ideas have actually used.
+
+    The focus gate compares against `content_ideas.category` -- free text the
+    scout/strategist produces -- so THIS is the vocabulary a focus category
+    has to match, not the site's WordPress category list (which only enters
+    much later, in `lib.crew.draft_category`). Surfacing it at the point an
+    operator sets a focus is what stops a plausible-looking typo from
+    rejecting every idea a run produces and quietly starving the queue.
+
+    Defensive like the rest of this module: any failure returns [].
+    """
+    if not brand_id:
+        return []
+    try:
+        rows = db.fetch_all(
+            "SELECT DISTINCT category FROM content_ideas "
+            "WHERE brand_id = %(id)s AND category <> '' ORDER BY category",
+            {"id": brand_id},
+        )
+    except Exception as exc:
+        _log.warning("ideas_db.known_categories lookup failed: %s", exc)
+        return []
+    return [str(r["category"]).strip() for r in rows if r.get("category")]
+
+
 def insert_idea(
     idea: dict[str, Any], *, brand_id: str | None = None, brand_name: str | None = None
 ) -> str | None:
@@ -110,6 +137,22 @@ def insert_idea(
             row["brand_id"] = brand_id
         if brand_name:
             row["brand_name"] = brand_name
+
+        # One-focus-category gate. This is the single enforcement point for
+        # BOTH idea producers (the CrewAI scout and `lib.gsc_scout`) plus the
+        # API -- they all funnel through this insert, so gating here is what
+        # makes the focus a constraint rather than a prompt suggestion the
+        # model can talk itself out of. A brand with no focus is unaffected.
+        strategy = ContentStrategy(focus_category=brands_db.focus_category(brand_id))
+        if not is_in_focus(row["category"], strategy):
+            _log.info(
+                "ideas_db.insert_idea rejected out-of-focus idea: "
+                "category=%r focus=%r topic=%r",
+                row["category"],
+                strategy.focus_category,
+                row["topic"],
+            )
+            return None
 
         columns = list(row.keys())
         insert_cols = ", ".join(columns)

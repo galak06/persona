@@ -91,6 +91,13 @@
     }
   },
 
+  "content_strategy": {
+    "_comment": "One category to focus on at a time. Empty = no focus (ideas may come from any category). Must match the category values this brand's ideas actually use.",
+    "focus_category": "",
+    "depth_bias": true,
+    "review_at": ""
+  },
+
   "integrations": {
     "openart": {
       "_comment": "Optional. enabled: true lets the reels pipeline generate per-beat images via OpenArt's MCP server. Requires OAuth — click 'Authorize OpenArt' on the Reels page, or run `python -m lib.oauth.openart` on the host. Disabled: reels still compose, reusing the post's hero image for every beat.",

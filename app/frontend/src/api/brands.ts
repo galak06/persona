@@ -25,6 +25,9 @@ import type { components } from "../types/openapi";
  */
 export type BrandKeywords = components["schemas"]["BrandKeywords"];
 
+/** `GET /brands/{id}/idea-categories` — focus-field suggestions. */
+export type BrandIdeaCategories = components["schemas"]["BrandIdeaCategoriesResponse"];
+
 /** Row shape returned by `GET /brands` (list). */
 export interface BrandSummary {
   id: string;
@@ -46,6 +49,7 @@ export interface Brand extends BrandSummary {
   competitor_accounts: string[];
   headless: boolean;
   group_join_limit: number;
+  focus_category: string;
   extra: Record<string, unknown>;
   updated_at: string;
 }
@@ -96,6 +100,8 @@ export interface BrandSettingsRequest {
   competitor_accounts?: string[];
   enabled_flows?: string[];
   group_join_limit?: number;
+  /** "" clears the focus — a meaningful value, unlike an absent field. */
+  focus_category?: string;
 }
 
 /** What onboarding/provisioning did (or would do). */

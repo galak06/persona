@@ -59,6 +59,7 @@ class BrandCreateRequest(BaseModel):
     secondary_keywords: list[str] = []
     competitor_mentions: list[str] = []
     competitor_accounts: list[str] = []
+    focus_category: str = ""
 
 
 class BrandSummary(BaseModel):
@@ -93,6 +94,7 @@ class BrandDetail(BaseModel):
     enabled_flows: list[str] = []
     headless: bool = True
     group_join_limit: int = 10
+    focus_category: str = ""
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -113,6 +115,9 @@ class BrandSettingsRequest(BaseModel):
     competitor_accounts: list[str] | None = None
     enabled_flows: list[str] | None = None
     group_join_limit: int | None = None
+    # One WP category name to focus on, or "" to clear the focus. `None`
+    # means "leave alone" -- "" is a meaningful value here, not absence.
+    focus_category: str | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -136,6 +141,7 @@ class BrandProvisionResponse(BaseModel):
     enabled_flows: list[str] = []
     headless: bool = True
     group_join_limit: int = 10
+    focus_category: str = ""
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}
@@ -207,3 +213,15 @@ class RunNowResponse(BaseModel):
     flow_id: str
     schedule_task_id: str
     enqueued: bool = True
+
+
+class BrandIdeaCategoriesResponse(BaseModel):
+    """The category vocabulary this brand's ideas have actually used.
+
+    Feeds the Brand Settings focus-category field. Deliberately sourced from
+    `content_ideas.category` rather than the site's WordPress categories:
+    the focus gate compares against exactly this free-text field, so this is
+    the list a focus category must match to select anything at all.
+    """
+
+    categories: list[str] = []

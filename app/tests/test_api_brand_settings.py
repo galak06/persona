@@ -121,6 +121,7 @@ def test_settings_no_fields_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> 
         "competitor_accounts": None,
         "enabled_flows": None,
         "group_join_limit": None,
+        "focus_category": None,
     }
 
 

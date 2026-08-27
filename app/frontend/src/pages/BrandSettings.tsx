@@ -5,6 +5,7 @@ import { endpoints } from "../api/endpoints";
 import type {
   Brand,
   BrandCreateResponse,
+  BrandIdeaCategories,
   BrandKeywords,
   BrandSettingsRequest,
 } from "../api/brands";
@@ -35,6 +36,7 @@ interface FormState {
   competitor_accounts: string;
   enabled_flows: string[];
   group_join_limit: string;
+  focus_category: string;
 }
 
 const FB_GROUP_SCOUT = "fb-group-scout";
@@ -73,6 +75,7 @@ function formStateFromBrand(brand: Brand): FormState {
     competitor_accounts: toCsv(brand.competitor_accounts),
     enabled_flows: brand.enabled_flows ?? [],
     group_join_limit: String(brand.group_join_limit),
+    focus_category: brand.focus_category ?? "",
   };
 }
 
@@ -94,6 +97,10 @@ export default function BrandSettings(): React.JSX.Element {
     error,
     refetch,
   } = useApiQuery<Brand>(id ? endpoints.brand(id) : null);
+  // Best-effort: a brand with no ideas yet simply gets no suggestions.
+  const { data: ideaCategories } = useApiQuery<BrandIdeaCategories>(
+    id ? endpoints.brandIdeaCategories(id) : null,
+  );
   const { toast } = useToast();
   const { mutate, loading: saving, error: saveError } = useApiMutation<
     BrandCreateResponse,
@@ -123,6 +130,9 @@ export default function BrandSettings(): React.JSX.Element {
       competitor_accounts: parseList(form.competitor_accounts),
       enabled_flows: form.enabled_flows,
       group_join_limit: Number.isNaN(parsedLimit) ? undefined : parsedLimit,
+      // "" is meaningful here (clear the focus), so it is always sent --
+      // only `undefined` means "leave alone" on the PATCH side.
+      focus_category: form.focus_category.trim(),
     };
 
     const updated = await mutate(endpoints.brandSettings(id), payload);
@@ -133,6 +143,21 @@ export default function BrandSettings(): React.JSX.Element {
       toast.error(`Could not save settings for ${id}`);
     }
   };
+
+  const knownCategories = ideaCategories?.categories ?? [];
+  // Warn (never block) when the typed focus matches nothing this brand's ideas
+  // have used: the gate compares on exactly this string, so a typo here
+  // rejects every new idea instead of failing loudly. Matching is case- and
+  // whitespace-insensitive, same as `lib.content_strategy.normalize_category`.
+  const typedFocus = form?.focus_category.trim() ?? "";
+  const focusIsUnknown =
+    typedFocus !== "" &&
+    knownCategories.length > 0 &&
+    !knownCategories.some(
+      (c) =>
+        c.trim().replace(/\s+/g, " ").toLowerCase() ===
+        typedFocus.replace(/\s+/g, " ").toLowerCase(),
+    );
 
   return (
     <div className="px-8 py-6 space-y-6">
@@ -229,6 +254,35 @@ export default function BrandSettings(): React.JSX.Element {
               />
             </label>
           </div>
+
+          <label className="block text-sm max-w-md">
+            <span className="block mb-1 font-medium text-slate-700">
+              Focus category <span className="font-normal text-slate-400">(optional)</span>
+            </span>
+            <input
+              type="text"
+              list="focus-category-options"
+              placeholder="No focus — ideas may come from any category"
+              value={form.focus_category}
+              onChange={(e) => setForm({ ...form, focus_category: e.target.value })}
+              className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
+            />
+            <datalist id="focus-category-options">
+              {knownCategories.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-xs text-slate-500">
+              Restricts idea generation to a single category, and tells the idea agent to go
+              deeper rather than broader. Leave blank for no focus.
+            </p>
+            {focusIsUnknown && (
+              <p className="mt-1 text-xs text-amber-700">
+                No idea has used “{form.focus_category.trim()}” yet. If that is a typo, every new
+                idea will be rejected. Known: {knownCategories.join(", ")}
+              </p>
+            )}
+          </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {LIST_FIELDS.map((field) => (

@@ -16,9 +16,14 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from api.brand_schemas import BrandKeywords, BrandProvisionResponse, BrandSettingsRequest
+from api.brand_schemas import (
+    BrandIdeaCategoriesResponse,
+    BrandKeywords,
+    BrandProvisionResponse,
+    BrandSettingsRequest,
+)
 from api.brands_api import _provision_response, _provisioning_failed_response, _spec_from_row
-from lib import brands_db
+from lib import brands_db, ideas_db
 from lib.brand_provisioning import provision_brand
 
 router = APIRouter()
@@ -62,7 +67,8 @@ def _merge_keywords(row: dict[str, Any], body: BrandSettingsRequest) -> dict[str
 
 @router.patch("/brands/{brand_id}/settings", response_model=BrandProvisionResponse)
 def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandProvisionResponse:
-    """Partial settings edit: `headless` + the 4 keyword/competitor lists.
+    """Partial settings edit: `headless`, the 4 keyword/competitor lists,
+    and the brand's one focus category.
 
     Every body field is optional and independent. Persists via
     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
@@ -85,6 +91,7 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         ),
         enabled_flows=(list(body.enabled_flows) if body.enabled_flows is not None else None),
         group_join_limit=body.group_join_limit,
+        focus_category=body.focus_category,
     )
 
     updated_row = brands_db.get(brand_id)
@@ -97,3 +104,16 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         raise _provisioning_failed_response(brand_id, exc) from exc
 
     return _provision_response(brand_id, result)
+
+
+@router.get("/brands/{brand_id}/idea-categories", response_model=BrandIdeaCategoriesResponse)
+def list_brand_idea_categories(brand_id: str) -> BrandIdeaCategoriesResponse:
+    """Distinct categories this brand's ideas have used, for the focus field.
+
+    Read-only and best-effort: a brand with no ideas yet returns an empty
+    list, which the UI renders as "no suggestions" rather than an error --
+    setting a focus before the first scout run is legitimate.
+    """
+    if brands_db.get(brand_id) is None:
+        raise HTTPException(status_code=404, detail=f"brand '{brand_id}' not found")
+    return BrandIdeaCategoriesResponse(categories=ideas_db.known_categories(brand_id))

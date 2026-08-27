@@ -47,6 +47,7 @@ class BrandsRepository:
         enabled_flows: list[str] | None = None,
         headless: bool = True,
         group_join_limit: int = 10,
+        focus_category: str = "",
         status: str = BrandStatus.DRAFT,
         brand_dir: str = "",
         extra: dict[str, Any] | None = None,
@@ -96,6 +97,7 @@ class BrandsRepository:
             ),
             "headless": headless,
             "group_join_limit": group_join_limit,
+            "focus_category": focus_category.strip(),
             "status": status,
             "brand_dir": brand_dir,
             "extra": Jsonb(extra if extra is not None else {}),
@@ -157,6 +159,32 @@ class BrandsRepository:
         )
         return rowcount > 0
 
+    def focus_category(self, brand_id: str | None) -> str:
+        """This brand's declared focus category, or "" when it has none.
+
+        Read from the registry row rather than the brand's config.json: the
+        focus gate in `lib.ideas_db.insert_idea` is reached from both idea
+        producers AND the API, and only the DB is guaranteed reachable from
+        all three -- a filesystem lookup would leave the gate silently inert
+        in the API container, which mounts no BRAND_DIR.
+
+        Returns "" (== no focus, pre-focus behaviour) on any failure rather
+        than raising: a registry hiccup must not reject every idea a run
+        produced.
+        """
+        if not brand_id:
+            return ""
+        try:
+            row = db.fetch_one(
+                "SELECT focus_category FROM brands WHERE id = %(id)s", {"id": brand_id}
+            )
+        except Exception:
+            return ""
+        if not row:
+            return ""
+        value = row.get("focus_category")
+        return str(value).strip() if value else ""
+
     def update(
         self,
         brand_id: str,
@@ -166,6 +194,7 @@ class BrandsRepository:
         competitor_accounts: list[Any] | None = None,
         enabled_flows: list[str] | None = None,
         group_join_limit: int | None = None,
+        focus_category: str | None = None,
     ) -> bool:
         """Partial update -- only params passed a non-`None` value change.
 
@@ -187,6 +216,10 @@ class BrandsRepository:
             updates["enabled_flows"] = Jsonb(enabled_flows)
         if group_join_limit is not None:
             updates["group_join_limit"] = group_join_limit
+        if focus_category is not None:
+            # Stored trimmed: "" is the meaningful "no focus" value, and a
+            # stray-whitespace category would never match an idea's own.
+            updates["focus_category"] = focus_category.strip()
 
         if not updates:
             return False

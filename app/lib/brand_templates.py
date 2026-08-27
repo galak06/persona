@@ -28,6 +28,7 @@ from typing import Any
 from lib.brand_template_defaults import (
     APPROVAL_GATES,
     CONTENT_ANALYSIS_DEFAULTS,
+    CONTENT_STRATEGY_DEFAULTS,
     DEDUPLICATION,
     DISABLED_CHANNEL_NOTE,
     FACEBOOK_CHANNEL_DEFAULTS,
@@ -65,6 +66,10 @@ class BrandSpec:
     competitor_mentions: list[str] = field(default_factory=list)
     competitor_accounts: list[str] = field(default_factory=list)
     headless: bool = True
+    # One category this brand is focused on, or "" for no focus (the
+    # default). Must be one of the brand's REAL WordPress category names --
+    # the same taxonomy `lib.crew.categorizer` files finished posts into.
+    focus_category: str = ""
     enabled_flows: list[str] = field(default_factory=default_enabled_flows)
     group_join_limit: int = _DEFAULT_GROUP_JOIN_LIMIT
 
@@ -145,6 +150,12 @@ def render_config_json(spec: BrandSpec) -> dict[str, Any]:
             # defaults and collapsing every relevance score to ~0.
             "keywords": _render_keywords(spec),
             "competitor_accounts": list(spec.competitor_accounts),
+        },
+        "content_strategy": {
+            **CONTENT_STRATEGY_DEFAULTS,
+            # Brand-driven, authoritative in the `brands` registry row;
+            # this rendered copy is what the engine reads at runtime.
+            "focus_category": spec.focus_category.strip(),
         },
         "approval_gates": APPROVAL_GATES,
         "deduplication": DEDUPLICATION,
