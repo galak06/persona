@@ -61,8 +61,12 @@ def _json_output_instructions(model: type[BaseModel]) -> str:
     schema = json.dumps(model.model_json_schema())
     return (
         "Respond with ONLY a single valid JSON object -- no markdown code fences, "
-        "no commentary before or after it, no trailing text. The JSON MUST validate "
-        f"against this JSON Schema:\n{schema}"
+        "no commentary before or after it, no trailing text. Your very first "
+        "character MUST be '{'. Do NOT write your reasoning first: a preamble "
+        "consumes the output budget and leaves the JSON truncated mid-object, "
+        "which discards the entire response. Keep every free-text field concise "
+        "(a `reason` under 200 characters) for the same reason. The JSON MUST "
+        f"validate against this JSON Schema:\n{schema}"
     )
 
 
