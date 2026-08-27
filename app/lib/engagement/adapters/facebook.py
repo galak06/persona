@@ -36,6 +36,7 @@ from lib.engagement.adapters.facebook_dom import (
     STORY_MESSAGE_COUNT_JS,
     USER_AGENT,
 )
+from lib.engagement.nav_retry import goto_with_retry
 from lib.engagement.post import Post
 from lib.engagement.result import CommentResult, LikeResult
 from lib.fb.comment_post import post_comment_fb
@@ -124,8 +125,11 @@ class FacebookGroupAdapter:
             self._context = self._new_context()
             self._page = self._context.new_page()
 
-            # Login validation
-            self._page.goto("https://www.facebook.com", wait_until="domcontentloaded")
+            # Login validation. Retried: this single goto used to abort the
+            # entire daily run on one transient DNS blip (9 of 28 August runs).
+            goto_with_retry(
+                self._page, "https://www.facebook.com", wait_until="domcontentloaded"
+            )
             time.sleep(3)
             if "login" in self._page.url.lower():
                 raise RuntimeError("SESSION_EXPIRED: Facebook login required")
