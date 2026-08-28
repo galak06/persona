@@ -91,7 +91,7 @@ jobs:
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_engager.py scripts/ig_engager.py scripts/fb_group_scout.py
           scripts/ig_comment.py
-          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py
+          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py scripts/regenerate_post_hero.py
           lib/engagement/nav_retry.py lib/notifier_outbox.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
@@ -204,7 +204,7 @@ jobs:
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_engager.py scripts/ig_engager.py
           scripts/ig_comment.py
-          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py
+          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py scripts/regenerate_post_hero.py
           lib/engagement/nav_retry.py lib/notifier_outbox.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
