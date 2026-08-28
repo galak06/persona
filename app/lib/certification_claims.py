@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import re
 
+from lib.medical_claims_validator import _is_negated
+
 #: Marks in a catalog note that an operator checked a live registry. Written
 #: by whoever verified it; absence means "not verified", never "not accepted".
 VERIFIED_MARKER = "verified against"
@@ -88,7 +90,16 @@ def unverified_certification_claims(
         if asin in verified or asin in seen:
             continue
         window = html[max(0, link.start() - CONTEXT_CHARS) : link.end() + CONTEXT_CHARS]
-        claim = _CLAIM_RE.search(window)
+        lowered = window.lower()
+        # "these are NOT VOHC-accepted" is the honest sentence this gate exists
+        # to make possible. Flagging it would punish a writer for being
+        # accurate and teach the pipeline to stay vague instead. Reuses the
+        # medical gate's clause-local negation test rather than growing a
+        # second dialect of the same rule.
+        claim = next(
+            (m for m in _CLAIM_RE.finditer(window) if not _is_negated(lowered, m.start())),
+            None,
+        )
         if claim is None:
             continue
         seen.add(asin)

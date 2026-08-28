@@ -111,3 +111,39 @@ def test_validate_is_silent_when_everything_checks_out() -> None:
 
 def test_empty_input_is_not_a_violation() -> None:
     assert unverified_certification_claims("", CATALOG) == []
+
+
+class TestNegatedClaimsAreNotClaims:
+    """"These are NOT VOHC-accepted" is the honest sentence this gate exists to
+    make possible.
+
+    A live regeneration wrote exactly that about three products and was
+    blocked, which would have punished the writer for being accurate and
+    taught the pipeline to stay vague. Reuses the medical gate's clause-local
+    negation test rather than growing a second dialect of the same rule.
+    """
+
+    @pytest.mark.parametrize(
+        "sentence",
+        [
+            "These are grain-free, but they are not VOHC-accepted.",
+            "They aren't VOHC approved.",
+            "This chew is never VOHC accepted despite the marketing.",
+        ],
+    )
+    def test_a_denial_passes(self, sentence: str) -> None:
+        html = f"<p>{_link('B00MFWJLDS')} {sentence}</p>"
+        assert unverified_certification_claims(html, CATALOG) == []
+
+    def test_a_denial_does_not_mask_a_real_claim_nearby(self) -> None:
+        """One negated mention must not excuse an asserted one in the same
+        window -- otherwise a single disclaimer launders the whole table."""
+        html = (
+            f"<p>{_link('B00MFWJLDS')} Some chews are not VOHC-accepted. "
+            "This one is VOHC-accepted.</p>"
+        )
+        assert unverified_certification_claims(html, CATALOG)
+
+    def test_assertion_still_flagged_after_the_change(self) -> None:
+        html = f"<p>{_link('B00MFWJLDS')} These are VOHC-accepted.</p>"
+        assert unverified_certification_claims(html, CATALOG)
