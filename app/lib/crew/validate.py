@@ -31,12 +31,15 @@ this gate exists to prevent.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from crewai import Agent, Task
 
+from lib.certification_claims import validate_certification_claims
 from lib.crew.context import brand_voice_summary
 from lib.crew.editor.agent import build_editor_agent, build_editor_task
 from lib.crew.editor.execute import execute_editor_crew
@@ -65,6 +68,27 @@ class ValidationResult:
     quality_score: float | None = None
 
 
+def load_brand_affiliate_catalog_entries(brand_dir: Path) -> list[dict[str, Any]]:
+    """The brand's curated affiliate catalog as raw entries, or [] if unreadable.
+
+    Raw rather than `lib.crew.writer.context.load_brand_affiliate_catalog`'s
+    parsed `ProductEntry` map, because the certification gate reads the free-text
+    `notes` field -- which is where an operator records that they checked a
+    registry -- and that does not survive the typed conversion.
+
+    Never raises: a missing catalog must not take down the gate, it just means
+    nothing is recorded as verified and every claim beside a product link is
+    flagged. Failing loud beats failing open here.
+    """
+    path = brand_dir / "data" / "config" / "affiliate_products.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("crew_validate_affiliate_catalog_unreadable", path=str(path))
+        return []
+    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+
+
 def validate_draft(
     brand_dir: Path,
     *,
@@ -83,6 +107,18 @@ def validate_draft(
     except ValueError as exc:
         logger.warning("crew_validate_medical_claims_rejected", reason=str(exc))
         return ValidationResult(passed=False, reasons=[f"medical_claims_validator: {exc}"])
+
+    # Certification claims are a separate gate because they are a separate kind
+    # of wrong: "VOHC-accepted" is not an unsafe health claim, it is a checkable
+    # fact about a published list, and the medical gate passed two drafts
+    # asserting it for products the list does not carry.
+    try:
+        validate_certification_claims(
+            body_html, load_brand_affiliate_catalog_entries(brand_dir), title=title
+        )
+    except ValueError as exc:
+        logger.warning("crew_validate_certification_claims_rejected", reason=str(exc))
+        return ValidationResult(passed=False, reasons=[f"certification_claims: {exc}"])
 
     voice = brand_voice_summary(brand_dir)
     description = build_editor_task_description(
