@@ -7,9 +7,10 @@ the mascot was not in and the model invented a different dog. Rewriting the
 whole post to fix its picture is the wrong trade; this replaces the image and
 touches nothing else.
 
-Anchors with `prefer_mascot=True`, the same setting the drafting pipeline
-uses, so the regenerated image is grounded on the real mascot wherever the
-library can supply her.
+Anchors on a photo that shows the mascot -- falling back to
+`lib.crew.reference_mascot.any_mascot_photo` when the requested category holds
+none -- because this script exists precisely to replace a hero the mascot was
+missing from.
 
 KNOWN LIMITATION -- the FIFU plugin usually wins this fight. It serves the
 hero from a slug-named file, and at post CREATION that file is the new image,
@@ -42,6 +43,7 @@ import httpx
 from lib.crew.brand_identity import read_brand_identity
 from lib.crew.reference_clauses import reference_clause
 from lib.crew.reference_library import resolve_reference
+from lib.crew.reference_mascot import any_mascot_photo
 from lib.crew.wp_image import build_image_brief, generate_wp_image
 from lib.crew.wp_media import upload_wp_media
 from lib.local_env import load_brand_env_into_environ, load_local_env
@@ -118,9 +120,9 @@ def main() -> int:
 
     before_bytes = _displayed_image_bytes(args.post_id)
 
-    reference = resolve_reference(
-        brand_dir, args.category or None, seed=str(args.post_id), prefer_mascot=True
-    )
+    reference = resolve_reference(brand_dir, args.category or None, seed=str(args.post_id))
+    if reference is None or not reference.shows_mascot:
+        reference = any_mascot_photo(brand_dir, seed=str(args.post_id)) or reference
     if reference is None:
         print("ERROR: no reference photo resolved -- refusing to generate", file=sys.stderr)
         return 1

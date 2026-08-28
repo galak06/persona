@@ -104,7 +104,7 @@ jobs:
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_context.py
-          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_reference_prefer_mascot.py tests/test_nav_retry.py tests/test_notifier_outbox.py
+          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
@@ -216,7 +216,7 @@ jobs:
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_context.py
-          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_reference_prefer_mascot.py tests/test_nav_retry.py tests/test_notifier_outbox.py
+          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
@@ -494,7 +494,7 @@ jobs:
             tests/test_brand_templates.py \
             tests/test_brand_provisioning.py \
             tests/test_brand_provisioning_enabled_flows.py \
-            tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_reference_prefer_mascot.py tests/test_nav_retry.py tests/test_notifier_outbox.py \
+            tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py \
             tests/test_comment_generator.py \
             tests/test_api_brands.py \
             tests/test_api_brands_live.py \

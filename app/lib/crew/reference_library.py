@@ -120,7 +120,7 @@ def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[
 
 
 def resolve_reference(
-    brand_dir: Path, category: str | None, *, seed: str = "", prefer_mascot: bool = False
+    brand_dir: Path, category: str | None, *, seed: str = ""
 ) -> ReferenceImage | None:
     """Best UPLOADED photo for `category`, or `None` if the library has none.
 
@@ -149,42 +149,19 @@ def resolve_reference(
     beats across different photos while a re-run reproduces them exactly;
     `seed=""` always takes the first candidate.
 
-    `prefer_mascot` narrows to `shows_mascot` photos within the requested
-    category, then falls back to any category that has one (`_any_mascot_photo`).
-    A resolved-but-mascot-less anchor is the quiet failure: image2image runs,
-    the scene grounds, and the model invents a different dog -- that shipped a
-    terrier as the hero of a post about a 50 lb shepherd mix. It is the one
-    exception to the no-substitution rule above; see `_any_mascot_photo`.
+    A resolved-but-mascot-less photo is not this function's problem to solve:
+    grounding the mascot is a SECOND reference attached alongside the scene
+    (`lib.crew.reference_mascot.mascot_anchor` + `paired_reference_clause`),
+    not a different choice of scene. Replacing the scene to smuggle the mascot
+    in loses the setting the planner asked for and was briefly tried here.
     """
     by_category = existing_images_by_category(brand_dir)
     wanted = slugify(category or "")
 
     for slug in (wanted, GENERAL_CATEGORY):
         candidates = by_category.get(slug) if slug else None
-        if not candidates:
-            continue
-        if prefer_mascot:
-            with_mascot = [c for c in candidates if c[1].shows_mascot]
-            if with_mascot:
-                return pick(best_tier(with_mascot), seed)
-            fallback = _any_mascot_photo(by_category, seed)
-            if fallback is not None:
-                logger.warning(
-                    "reference_library_mascot_fallback",
-                    requested=slug,
-                    anchored_on=fallback.category,
-                )
-                return fallback
-        return pick(best_tier(candidates), seed)
-    if prefer_mascot:
-        fallback = _any_mascot_photo(by_category, seed)
-        if fallback is not None:
-            logger.warning(
-                "reference_library_mascot_fallback",
-                requested=wanted or "(none)",
-                anchored_on=fallback.category,
-            )
-            return fallback
+        if candidates:
+            return pick(best_tier(candidates), seed)
     # Warning, not info: an unanchored generation looks successful and only
     # reveals itself in the finished image, so this needs to be visible
     # without going looking for it.
@@ -196,32 +173,3 @@ def resolve_reference(
     return None
 
 
-def _any_mascot_photo(
-    by_category: dict[str, list[Candidate]], seed: str
-) -> ReferenceImage | None:
-    """Any photo in the library that shows the mascot, or None.
-
-    The cross-category substitution this module otherwise refuses, allowed
-    ONLY under `prefer_mascot`. The bargain differs once a caller says the
-    subject IS the mascot: the alternative is not "no anchor" but "an anchor
-    without her in it", which yields a confidently wrong dog. A portrait in
-    the wrong setting is the lesser error, and unlike an invented dog it is
-    obvious enough to notice. Most brands will not have a mascot photo in
-    every collection, so this is the normal path.
-
-    Mascot-only collections rank first, so a turnaround sheet beats a trail
-    photo that merely happens to include her; ties break on name for
-    determinism.
-    """
-    ranked = sorted(
-        by_category.items(),
-        key=lambda kv: (
-            -sum(1 for c in kv[1] if c[1].shows_mascot) / max(len(kv[1]), 1),
-            kv[0],
-        ),
-    )
-    for _slug, candidates in ranked:
-        with_mascot = [c for c in candidates if c[1].shows_mascot]
-        if with_mascot:
-            return pick(best_tier(with_mascot), seed)
-    return None
