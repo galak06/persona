@@ -31,6 +31,7 @@ def test_statuses_tuple_is_unchanged() -> None:
         "validation_failed",
         "drafting",
         "composing_reel",
+        "reel_rejected",
     )
 
 

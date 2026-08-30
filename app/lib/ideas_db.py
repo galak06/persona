@@ -61,6 +61,7 @@ STATUSES = (
     "validation_failed",
     "drafting",
     "composing_reel",
+    "reel_rejected",
 )
 
 # The terminal failure statuses -- the only ones that carry a `failure_reason`
@@ -277,14 +278,24 @@ def set_reel_pending_review(
 
 
 def reject_reel(idea_id: str) -> bool:
-    """Reject a pending reel: atomically move idea_id from status='social_queued'
-    back to status='wp_published', clearing the pending-review columns so a
-    rejected reel doesn't linger in the review UI. The idea itself is untouched
-    and could be re-run through the reels pipeline later.
+    """Reject a pending reel: move idea_id from 'social_queued' to the terminal
+    'reel_rejected', clearing the pending-review columns so it doesn't linger
+    in the review UI.
+
+    NOT back to 'wp_published', which is the status the reels pipeline
+    harvests. Sending it there made a rejection indistinguishable from never
+    having had a reel, so the next scheduled compose picked the same idea up
+    and rendered it again -- one idea went through composition 15 times across
+    10 runs, at real LLM and render cost each time, and every rejection was
+    silently undone.
+
+    Re-running a rejected idea deliberately is still possible: the pipeline's
+    `--idea-id` path selects by id and ignores status, which is the difference
+    between an operator asking for it and a cron deciding on its own.
     """
     try:
         rowcount = db.execute(
-            "UPDATE content_ideas SET status = 'wp_published', "
+            "UPDATE content_ideas SET status = 'reel_rejected', "
             "reel_ig_video_path = NULL, reel_fb_video_path = NULL, "
             "reel_ig_caption = NULL, reel_fb_caption = NULL, reel_source = NULL, "
             "reel_validation_flags = NULL, updated_at = NOW() "

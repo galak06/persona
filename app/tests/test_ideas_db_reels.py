@@ -114,10 +114,18 @@ def test_set_reel_pending_review_false_when_not_composing(mock_execute: MagicMoc
 
 @patch("lib.ideas_db.db.execute")
 def test_reject_reel_wins_claim_and_clears_columns(mock_execute: MagicMock) -> None:
+    """Rejection is TERMINAL, not a return to the harvest pool.
+
+    It used to set 'wp_published' -- the exact status the reels pipeline
+    selects from -- so a rejection was indistinguishable from never having had
+    a reel and the next scheduled compose rendered the same idea again. One
+    idea went through composition 15 times across 10 runs that way.
+    """
     mock_execute.return_value = 1
     assert ideas_db.reject_reel("idea-1") is True
     query, params = mock_execute.call_args[0]
-    assert "SET status = 'wp_published'" in query
+    assert "SET status = 'reel_rejected'" in query
+    assert "wp_published" not in query
     assert "reel_ig_video_path = NULL" in query
     assert "WHERE id = %s AND status = 'social_queued'" in query
     assert params == ("idea-1",)
