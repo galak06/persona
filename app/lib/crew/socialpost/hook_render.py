@@ -24,9 +24,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from lib.crew.reference_clauses import paired_reference_clause, reference_clause
+from lib.crew.reference_clauses import anchored_reference_clause
 from lib.crew.reference_library import ReferenceImage
 from lib.crew.reference_mascot import mascot_anchor
+from lib.crew.reference_persona import persona_anchor
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.wp_image import ReferencePhoto, generate_wp_image
 from lib.observability import get_logger
@@ -78,6 +79,40 @@ def _anchor(
     return ReferencePhoto(data, anchor.content_type), anchor
 
 
+def _persona(
+    scene: ReferenceImage,
+    brand_dir: Path,
+    mascot: ReferenceImage | None,
+    *,
+    brief: str,
+    persona_name: str,
+    seed: str,
+) -> tuple[ReferencePhoto, ReferenceImage] | None:
+    """The extra photo that grounds the brand's PERSON, or `None`.
+
+    Same shape as `_anchor` at a different subject. `None` whenever the brief
+    puts no human in the frame, a photo already attached shows the persona, the
+    library holds none, or the file cannot be read -- in every case generation
+    still happens with whatever is already attached.
+    """
+    anchor = persona_anchor(
+        brand_dir, scene, mascot, brief=brief, persona_name=persona_name, seed=seed
+    )
+    if anchor is None:
+        return None
+    data = read_reference_bytes(anchor, role="persona_anchor")
+    if data is None:
+        return None
+    logger.info(
+        "social_posts_persona_anchor_attached",
+        scene_image_id=scene.id,
+        image_id=anchor.id,
+        category=anchor.category,
+        shows_mascot=anchor.shows_mascot,
+    )
+    return ReferencePhoto(data, anchor.content_type), anchor
+
+
 def render_from_reference(
     plan: SocialPostPlan,
     scene: ReferenceImage,
@@ -94,14 +129,20 @@ def render_from_reference(
     model returned no bytes, the call raised -- because to both callers those
     are the same event: no new image, keep whatever the post already has.
 
-    **A second photo goes with the scene whenever the first cannot carry the
-    mascot.** A scene collection ("home exterior") is a porch, not the brand's
+    **Further photos go with the scene whenever the first cannot carry a
+    subject the brief calls for.** A scene collection ("home exterior") is a porch, not the brand's
     animal, and the grounding clause a porch earns explicitly forbids taking
     the mascot from it -- so the mascot in the finished image was invented
     every time the planner named anything but a mascot collection. `_anchor`
-    adds a `shows_mascot` photo alongside, and `paired_reference_clause` tells
-    the model which is which. Nothing extra is attached when the scene photo
-    already shows the mascot, or when the brand keeps no such photo.
+    adds a `shows_mascot` photo alongside, and `anchored_reference_clause`
+    tells the model which is which. Nothing extra is attached when the scene
+    photo already shows the mascot, or when the brand keeps no such photo.
+
+    `_persona` does the same for the brand's PERSON, and only when the brief
+    puts a human in the frame -- a brief describing "a person holding a dog's
+    mouth open" otherwise renders an anonymous cropped hand, which is what
+    shipped on 2026-08-31. Attaching a face unconditionally would put a person
+    into images that should have none, so the brief decides.
 
     Passing a reference deliberately routes `generate_wp_image` past the
     Imagen tiers to `gemini-3-pro-image-preview` -- the only tier that accepts
@@ -110,15 +151,22 @@ def render_from_reference(
     scene_bytes = read_reference_bytes(scene, role="scene")
     if scene_bytes is None:
         return None
-    anchored = _anchor(scene, brand_dir, seed=seed)
     # A library photo of a product or a location must NOT be introduced as
     # "the brand's mascot" -- and one showing the person behind the brand
     # must name THEM, not the mascot. Both words are the brand's own; this
     # engine may never assume either (see `lib.crew.brand_identity`).
-    clause = (
-        reference_clause(scene, mascot_name, mascot_kind, persona_name)
-        if anchored is None
-        else paired_reference_clause(scene, anchored[1], mascot_name, mascot_kind, persona_name)
+    mascot = _anchor(scene, brand_dir, seed=seed)
+    persona = _persona(
+        scene,
+        brand_dir,
+        mascot[1] if mascot else None,
+        brief=plan.image_brief,
+        persona_name=persona_name,
+        seed=seed,
+    )
+    anchored = [a for a in (mascot, persona) if a is not None]
+    clause = anchored_reference_clause(
+        scene, [image for _, image in anchored], mascot_name, mascot_kind, persona_name
     )
     try:
         generated = generate_wp_image(
@@ -127,9 +175,9 @@ def render_from_reference(
             mascot_name=mascot_name,
             reference_image_bytes=scene_bytes,
             reference_image_mime=scene.content_type,
-            # Order is the contract `paired_reference_clause` describes:
-            # PHOTO 1 is the scene, PHOTO 2 the mascot anchor.
-            extra_reference_images=() if anchored is None else (anchored[0],),
+            # Order is the contract `anchored_reference_clause` describes:
+            # PHOTO 1 is the scene, then each anchor in this same order.
+            extra_reference_images=tuple(photo for photo, _ in anchored),
             reference_clause=clause,
         )
     except Exception as exc:

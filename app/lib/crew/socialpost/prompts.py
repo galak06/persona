@@ -44,7 +44,7 @@ model's instincts:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from lib.crew.reference_vocabulary import catch_all_clause
 
@@ -56,13 +56,33 @@ IG_HASHTAG_MIN = 3
 IG_HASHTAG_MAX = 5
 
 
-def _reference_category_section(categories: Sequence[str]) -> str:
+def _reference_category_section(
+    categories: Sequence[str], descriptions: Mapping[str, str] | None = None
+) -> str:
     """The `reference_category` instructions -- empty string when the brand has
     no reference-photo library, so the prompt stays byte-identical to what it
-    was before this field existed."""
+    was before this field existed.
+
+    `descriptions` (optional, label -> what that collection's photos show) is
+    the difference between choosing from words and choosing from photos. With
+    only slugs to go on, `home-exterior` is a guess -- and on 2026-08-31 an
+    indoor "hold the dog's mouth open over a plate of kibble" brief was tagged
+    `home-exterior`, whose photos are a cottage porch and a fenced yard. The
+    resolved photo could not match the brief and contributed nothing.
+
+    Each label stays on its OWN line with its description indented beneath, so
+    the string the model must copy verbatim is never fused to prose it might
+    copy along with it.
+    """
     if not categories:
         return ""
-    listed = "\n".join(f"  - {label}" for label in categories)
+    described = descriptions or {}
+    listed = "\n".join(
+        f"  - {label}\n      photos show: {described[label]}"
+        if described.get(label)
+        else f"  - {label}"
+        for label in categories
+    )
     return f"""
 ## Reference-photo collection (`reference_category`)
 That image is generated from the brand's own real photos. The brand keeps several \
@@ -90,6 +110,7 @@ def build_social_post_task_description(
     site_domain: str,
     brand_voice: str,
     reference_categories: Sequence[str] = (),
+    reference_descriptions: Mapping[str, str] | None = None,
 ) -> str:
     """The full prompt handed to the Social Post Writer's `Task`.
 
@@ -197,4 +218,4 @@ the image (e.g. "FULL GUIDE  ->  {site_domain.upper()}").
 `image_alt_text` describes the finished image in plain language for screen readers. \
 It is also indexed by search, so write it as a real sentence including the topic -- \
 not a keyword list.
-{_reference_category_section(reference_categories)}"""
+{_reference_category_section(reference_categories, reference_descriptions)}"""

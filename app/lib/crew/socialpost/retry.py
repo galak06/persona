@@ -61,8 +61,9 @@ from lib import ideas_db, social_post_db, social_post_retry_db
 from lib.crew import wp_source
 from lib.crew.brand_identity import read_brand_identity, site_domain
 from lib.crew.context import brand_voice_summary
-from lib.crew.reference_library import ReferenceImage, list_category_labels, resolve_reference
+from lib.crew.reference_library import ReferenceImage, resolve_reference
 from lib.crew.reference_mascot import any_mascot_photo
+from lib.crew.reference_vocabulary import category_menu
 from lib.crew.socialpost import (
     build_social_post_agent,
     build_social_post_task,
@@ -146,13 +147,15 @@ def _replan(idea: dict[str, Any], post: dict[str, Any], brand_dir: Path) -> Soci
     body = wp_source.strip_html(post.get("content", {}).get("rendered", ""))[:3000]
     target_keyword = str(idea.get("target_keyword") or "")
     agent = build_social_post_agent()
+    categories, category_photos = category_menu(brand_dir)
     description = build_social_post_task_description(
         title=title,
         body=body,
         target_keyword=target_keyword,
         site_domain=site_domain(brand_dir),
         brand_voice=brand_voice_summary(brand_dir),
-        reference_categories=list_category_labels(brand_dir, with_photos=True),
+        reference_categories=categories,
+        reference_descriptions=category_photos,
     )
     task = build_social_post_task(agent, description)
     return execute_social_post_crew(agent, task, target_keyword=target_keyword)

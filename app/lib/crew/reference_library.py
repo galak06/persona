@@ -119,6 +119,28 @@ def list_category_labels(brand_dir: Path, *, with_photos: bool = False) -> list[
     return [label for slug, label in labels.items() if slug in stocked]
 
 
+def descriptions_by_category(brand_dir: Path) -> dict[str, list[str]]:
+    """Each stocked category's slug -> the vision descriptions of its photos.
+
+    Feeds `lib.crew.reference_vocabulary.described_categories`, so a planner
+    choosing a collection is shown what that collection actually CONTAINS
+    rather than only its slug. Best photos first, matching `resolve_reference`'s
+    ranking, so the examples a planner reads are the ones most likely to be the
+    photo it gets. Entries with no description are skipped rather than padded --
+    an empty list degrades that one category to its bare label.
+    """
+    described: dict[str, list[str]] = {}
+    for slug, candidates in existing_images_by_category(brand_dir).items():
+        texts = [
+            image.description.strip()
+            for _, image in sorted(candidates, key=lambda c: c[0])
+            if image.description and image.description.strip()
+        ]
+        if texts:
+            described[slug] = texts
+    return described
+
+
 def resolve_reference(
     brand_dir: Path, category: str | None, *, seed: str = ""
 ) -> ReferenceImage | None:

@@ -64,8 +64,10 @@ class ReferenceImage:
     #: written before the vision tagger have no such key, so the default is
     #: the SAFE reading: assume it is not a mascot portrait.
     shows_mascot: bool = False
-    #: What the tagger saw, carried for logs and operator UI only -- never
-    #: sent to the image model.
+    #: What the tagger saw. Carried for logs, operator UI, and -- via
+    #: `reference_library.descriptions_by_category` -- for showing a text
+    #: PLANNER what a collection contains before it names one. Still never
+    #: sent to the IMAGE model, which gets the photo itself.
     description: str = ""
     #: Does it show the brand's own PERSONA -- the person behind it? Judged
     #: independently of `shows_mascot` (a photo may show either, both, or

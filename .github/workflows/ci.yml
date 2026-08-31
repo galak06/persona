@@ -144,6 +144,7 @@ jobs:
           lib/crew/reference_mascot.py
           lib/crew/wp_image.py lib/crew/wp_image_providers.py
           api/reference_images_api.py api/reference_images_schemas.py
+          lib/crew/reference_persona.py tests/test_reference_persona.py
           tests/test_reference_library.py tests/test_reference_validate.py
           tests/test_reference_library_migration.py
           tests/test_reference_images_api.py tests/test_reference_vision.py
@@ -544,6 +545,7 @@ jobs:
             tests/test_managed_flow_ids_consistency.py \
             tests/test_pg_backup.py \
             tests/test_reels_compose_api.py \
+            tests/test_reference_persona.py \
             tests/test_reference_library.py \
             tests/test_reference_library_migration.py \
             tests/test_reference_validate.py \

@@ -23,9 +23,15 @@ image on the brand's real subject; no reference means no generated image.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
-from lib.crew.reference_library import GENERAL_CATEGORY, slugify
+from lib.crew.reference_library import (
+    GENERAL_CATEGORY,
+    descriptions_by_category,
+    list_category_labels,
+    slugify,
+)
 
 
 def catch_all_clause(categories: Sequence[str]) -> str:
@@ -44,3 +50,56 @@ def catch_all_clause(categories: Sequence[str]) -> str:
         f' The one general-purpose collection is "{catch_all}" -- reach for it only when no '
         "specific collection is anywhere near the scene."
     )
+
+
+def described_categories(
+    labelled: Sequence[str],
+    examples: Mapping[str, Sequence[str]],
+    *,
+    max_examples: int = 2,
+    max_chars: int = 110,
+) -> list[tuple[str, str]]:
+    """`(label, "<what its photos actually show>")` per category.
+
+    The label is returned SEPARATELY from its description, never pre-joined
+    into one string: the planner must copy the label verbatim into a field, and
+    a line reading `home-exterior -- e.g. a porch` invites it to copy the whole
+    line. The caller renders them on separate lines.
+
+    The planner is asked to name the collection whose scenes match the brief
+    it just wrote, but it has only ever been shown SLUGS. `home-exterior` does
+    not say "a weathered cottage porch, picket fence, gravel path" to a model
+    any more than it does to a person, so the match is a guess about a word.
+
+    Live on 2026-08-31: a brief describing a dog's teeth being checked over a
+    plate of kibble -- unambiguously indoors -- was tagged `home-exterior`,
+    and the porch photo that resolved contributed nothing to the finished
+    image. The pick was not careless; the label was all there was to go on.
+
+    The descriptions come from the vision tagger that already ran at upload
+    time, so this costs nothing and stays true to what the brand actually
+    holds. A category whose photos carry no description degrades to its bare
+    label -- the old behaviour, for that category only.
+    """
+    described: list[tuple[str, str]] = []
+    for label in labelled:
+        shown = [d.strip() for d in examples.get(slugify(label), ()) if d and d.strip()]
+        joined = " / ".join(shown[:max_examples])
+        if len(joined) > max_chars:
+            joined = joined[: max_chars - 1].rstrip() + "…"
+        described.append((label, joined))
+    return described
+
+
+def category_menu(brand_dir: Path) -> tuple[list[str], dict[str, str]]:
+    """The exact pair a planner prompt needs: nameable labels + what each shows.
+
+    One helper rather than three lines repeated at every call site, because the
+    two halves MUST stay in step: the labels are the only strings a planner may
+    emit (see this module's docstring on why a stray name costs the whole
+    image), and the descriptions must key off those same labels or they silently
+    render nothing.
+    """
+    labels = list_category_labels(brand_dir, with_photos=True)
+    described = described_categories(labels, descriptions_by_category(brand_dir))
+    return labels, {label: text for label, text in described if text}

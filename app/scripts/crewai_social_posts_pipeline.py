@@ -66,7 +66,7 @@ from lib import social_post_db
 from lib.crew import wp_source
 from lib.crew.brand_identity import read_brand_identity, site_domain
 from lib.crew.context import brand_voice_summary
-from lib.crew.reference_library import list_category_labels
+from lib.crew.reference_vocabulary import category_menu
 from lib.crew.socialpost import (
     build_social_post_agent,
     build_social_post_task,
@@ -141,6 +141,7 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     target_keyword = str(row.get("target_keyword") or "")
 
     agent = build_social_post_agent()
+    categories, category_photos = category_menu(brand_dir)
     description = build_social_post_task_description(
         title=title,
         body=body,
@@ -151,7 +152,8 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
         # keeps photos under -- `with_photos` is what makes that true, since a
         # declared-but-empty tag resolves to no image at all. No stocked
         # category means an empty list, which drops the section entirely.
-        reference_categories=list_category_labels(brand_dir, with_photos=True),
+        reference_categories=categories,
+        reference_descriptions=category_photos,
     )
     task = build_social_post_task(agent, description)
     plan = execute_social_post_crew(agent, task, target_keyword=target_keyword)
