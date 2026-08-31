@@ -96,7 +96,10 @@ def test_health_check_flag_without_a_probe_reports_healthy(recorder: dict[str, A
 def test_success_records_start_then_complete(recorder: dict[str, Any]) -> None:
     code = run_flow("fb-engager", lambda: None, argv=["prog"])
     assert code == 0
-    assert recorder["started"] == [("dogfood-fb-engager", recorder["started"][0][1])]
+    # Brand-derived, not a fixed prefix: the label must follow whichever brand
+    # the flow runs for, which is what makes two brands' runs land on two rows.
+    brand = recorder["started"][0][1]
+    assert recorder["started"] == [(f"{brand}-fb-engager", brand)]
     assert [c[2] for c in recorder["completed"]] == ["success"]
     assert recorder["lock"] == "fb-engager"
 

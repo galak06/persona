@@ -41,7 +41,7 @@ from lib.brands_db.models import BrandStatus
 from lib.local_env import load_brand_env
 from lib.observability import get_logger
 from lib.task_queue import TaskQueue
-from lib.worker_labels import TASK_ID_PREFIX
+from lib.worker_labels import flow_id_from_task_id
 
 logger = get_logger(__name__)
 
@@ -84,12 +84,7 @@ def _write_flow_log(
     same logic `api/schedule_config.py::label_for_task_id` already applies
     on the read side, so writer and reader agree on the filename.
     """
-    if task_id.startswith(TASK_ID_PREFIX):
-        flow_id = task_id[len(TASK_ID_PREFIX) :]
-    elif task_id.startswith(f"{brand}-"):
-        flow_id = task_id[len(brand) + 1 :]
-    else:
-        flow_id = task_id
+    flow_id = flow_id_from_task_id(task_id, brand) or task_id
     log_path = brand_dir / "logs" / f"cron_{flow_id.replace('-', '_')}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as f:

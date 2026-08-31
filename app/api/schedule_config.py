@@ -26,7 +26,7 @@ def read_json(path: Path | str) -> Any:
 
 from lib.config import BrandPaths
 from lib.config import settings as _settings
-from lib.worker_labels import TASK_ID_PREFIX as _TASK_ID_PREFIX
+from lib.worker_labels import flow_id_from_task_id, worker_label_for_flow
 
 _log = logging.getLogger("approval_api.schedule_config")
 
@@ -76,13 +76,13 @@ def _paths() -> BrandPaths:
 
 
 def label_for_task_id(task_id: str) -> str | None:
-    """Map ``dogfood-<suffix>`` -> ``com.persona.<suffix>``.
+    """Map ``<brand>-<suffix>`` -> ``com.persona.<suffix>``.
 
-    Returns None when ``task_id`` doesn't carry the brand prefix.
+    Returns None when ``task_id`` carries no recognised brand prefix. The
+    legacy ``dogfood-`` form is still accepted so a row written before the
+    brand-derived id migration still resolves to its launchd label.
     """
-    if not task_id.startswith(_TASK_ID_PREFIX):
-        return None
-    suffix = task_id[len(_TASK_ID_PREFIX) :]
+    suffix = flow_id_from_task_id(task_id)
     if not suffix:
         return None
     return f"{_BRAND_LABEL_PREFIX}{suffix}"
@@ -146,7 +146,12 @@ def task_for_label(
     suffix = label[len(_BRAND_LABEL_PREFIX) :]
     if not suffix:
         return None
-    task_id = f"{_TASK_ID_PREFIX}{suffix}"
+    # Reverse of `label_for_task_id`: rebuild the brand-derived task id.
+    try:
+        task_id = worker_label_for_flow(suffix)
+    except RuntimeError:
+        return None
+
 
     cfg = config if config is not None else load_schedule_config()
     for task in cfg.tasks:
