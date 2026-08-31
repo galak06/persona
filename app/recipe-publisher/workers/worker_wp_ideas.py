@@ -17,7 +17,12 @@ revert logic to catch. This worker atomically claims each idea via
 subprocess-invoking it -- the sole guard preventing this worker and the
 ideas_api.py background trigger from both drafting the same idea
 concurrently -- and reverts back to "approved" if the subprocess never
-reached its own terminal status, so a stuck claim is always retried.
+reached its own terminal status.
+
+That in-process revert only runs if THIS process survives, so the claim is
+also a lease: a sweep additionally picks up ideas stranded at "drafting" by
+a holder that was killed outright (container restart, OOM, deploy) and
+never got to revert anything. See `ideas_db.DRAFT_CLAIM_LEASE_SECONDS`.
 
 Primary trigger is the ideas_api.py approval hook (BackgroundTasks). This
 worker is a cron safety net for ideas where that hook crashed, plus the
@@ -49,11 +54,24 @@ def _targets(
     limit: int,
     idea_id: str | None,
 ) -> list[dict]:
+    """Draftable ideas: the approved queue, plus anything stranded at
+    'drafting' under an expired lease.
+
+    That second source is what makes this worker a real safety net. A holder
+    that dies mid-draft never releases its claim (see
+    `ideas_db.DRAFT_CLAIM_LEASE_SECONDS`), and a query for status='approved'
+    alone can never see the row it left behind -- so the "stuck claims are
+    always retried" promise in this module's docstring was, until the lease
+    existed, only true for a holder that lived long enough to keep it.
+    """
     rows = ideas_db.list_ideas(status="approved", brand_id=brand_id, limit=limit)
+    rows += ideas_db.list_stale_drafting(brand_id=brand_id, limit=limit)
     filtered = [r for r in rows if r.get("wp_url") is None]
     if idea_id is not None:
         filtered = [r for r in filtered if str(r.get("id")) == idea_id]
-    return filtered
+    # Both sources are limited separately; cap the union so `--limit` still
+    # means what it says.
+    return filtered[:limit]
 
 
 def _revert_if_still_drafting(idea_id: str) -> None:
@@ -85,10 +103,25 @@ def _do_one(idea: dict, *, dry_run: bool) -> str:
         return "dry_run"
 
     idea_id = str(idea["id"])
+    was_stranded = str(idea.get("status") or "") == "drafting"
 
     if not ideas_db.claim_idea_for_drafting(idea_id):
         log.info(json.dumps({"event": "idea_draft_skipped_not_approved", "idea_id": idea_id}))
         return "skipped"
+
+    if was_stranded:
+        # Distinct event from a normal claim: this idea had already fallen out
+        # of the pipeline, and how often that happens is worth being able to
+        # grep for -- it counts holders dying mid-draft.
+        log.info(
+            json.dumps(
+                {
+                    "event": "idea_draft_claim_reclaimed",
+                    "idea_id": idea_id,
+                    "claimed_at": str(idea.get("updated_at")),
+                }
+            )
+        )
 
     try:
         result = subprocess.run(
@@ -96,7 +129,7 @@ def _do_one(idea: dict, *, dry_run: bool) -> str:
             cwd=_ROOT,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=ideas_db.DRAFT_SUBPROCESS_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
         log.error(json.dumps({"event": "idea_draft_timeout", "idea_id": idea_id, "error": str(exc)}))

@@ -339,26 +339,86 @@ def set_reel_result(
         return False
 
 
-def claim_idea_for_drafting(idea_id: str) -> bool:
-    """Atomically transition idea_id from status='approved' to status='drafting',
-    ONLY if it is still 'approved' at the moment of the update. Returns True if
-    THIS call won the claim (i.e. is now responsible for drafting it), False if
-    the idea was not found, was already claimed/moved to a different status by
-    someone else (e.g. a "Disable" click, or a concurrent claim), or on any DB
-    error. This is the sole mechanism preventing two concurrent callers (an API
-    background task and a cron safety-net worker) from both spawning a drafting
-    subprocess for the same idea.
+# The drafting claim is a LEASE, not a permanent lock.
+#
+# Both callers -- `api/ideas_api.py`'s BackgroundTask and
+# `recipe-publisher/workers/worker_wp_ideas.py`'s cron sweep -- release their
+# claim IN-PROCESS: they revert 'drafting' -> 'approved' when the drafting
+# subprocess fails. That release only runs if the caller itself survives.
+# Kill the process holding the claim -- a container restart, an OOM, a deploy
+# -- and nothing ever releases it. The row then sits at 'drafting' forever,
+# invisible to a sweep whose candidate query selects only status='approved',
+# while the Ideas page keeps showing a reassuring "Drafting" badge over an
+# idea that has silently fallen out of the pipeline. Live: idea
+# f4df76d6-ad83-420f-99a9-0ab9139f9bdf was claimed at 12:05:02Z on
+# 2026-08-31 and orphaned 71 seconds later by an API container restart.
+#
+# So the claim expires. The lease MUST stay comfortably longer than the
+# subprocess timeout its holder runs under -- otherwise a slow but perfectly
+# healthy draft has its claim stolen mid-run and gets drafted twice. Both
+# callers import the timeout from here rather than repeating the literal, so
+# the two values cannot drift apart into that overlap.
+DRAFT_SUBPROCESS_TIMEOUT_SECONDS = 600
+DRAFT_CLAIM_LEASE_SECONDS = 900
+
+
+def claim_idea_for_drafting(
+    idea_id: str, *, lease_seconds: int = DRAFT_CLAIM_LEASE_SECONDS
+) -> bool:
+    """Atomically claim idea_id for drafting (status -> 'drafting').
+
+    The claim is won if the idea is either still 'approved', or already
+    'drafting' under an EXPIRED lease -- i.e. stranded by a holder that died
+    (see the comment above). Returns True if THIS call won it and is now
+    responsible for drafting, False if the idea was not found, is held under
+    a LIVE lease, was moved to some other status (a "Disable" click), or on
+    any DB error.
+
+    Still the sole guard against two concurrent callers drafting the same
+    idea: a live claim is refreshed no less often than every
+    `DRAFT_SUBPROCESS_TIMEOUT_SECONDS`, so an in-flight draft can never
+    present as expired to a competitor.
     """
     try:
         rowcount = db.execute(
             "UPDATE content_ideas SET status = 'drafting', updated_at = NOW() "
-            "WHERE id = %s AND status = 'approved'",
-            (idea_id,),
+            "WHERE id = %s AND (status = 'approved' OR (status = 'drafting' "
+            "AND updated_at < NOW() - (%s * INTERVAL '1 second')))",
+            (idea_id, lease_seconds),
         )
         return rowcount > 0
     except Exception as exc:
         _log.warning("ideas_db.claim_idea_for_drafting failed: %s", exc)
         return False
+
+
+def list_stale_drafting(
+    *,
+    brand_id: str | None = None,
+    limit: int = 500,
+    lease_seconds: int = DRAFT_CLAIM_LEASE_SECONDS,
+) -> list[dict[str, Any]]:
+    """Ideas stranded at 'drafting' under an expired lease.
+
+    The cron sweep's second candidate source, alongside status='approved'.
+    Without it the sweep cannot retry a stranded idea at all: it would never
+    ask about a row it does not select, so a lease-aware
+    `claim_idea_for_drafting` alone would fix only the API trigger path.
+
+    Raises rather than degrading to `[]`, for the same reason `list_ideas`
+    does -- an empty list here is a factual claim that nothing is stranded.
+    """
+    clauses = ["status = 'drafting'", "updated_at < NOW() - (%s * INTERVAL '1 second')"]
+    params: list[Any] = [lease_seconds]
+    if brand_id:
+        clauses.append("brand_id = %s")
+        params.append(brand_id)
+    params.append(max(1, min(limit, 5000)))
+    query = (
+        f"SELECT * FROM content_ideas WHERE {' AND '.join(clauses)} "
+        "ORDER BY created_at DESC LIMIT %s"
+    )
+    return db.fetch_all(query, tuple(params))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

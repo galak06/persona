@@ -122,7 +122,7 @@ jobs:
           tests/test_backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           tests/test_crew_reels.py tests/test_reels_openart_client.py
-          tests/test_ideas_api_reel_transitions.py tests/test_ideas_db_reels.py
+          tests/test_ideas_api_reel_transitions.py tests/test_ideas_db_reels.py tests/test_wp_ideas_drafter_lease.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
           lib/social_post_slots.py tests/test_social_post_slots.py
@@ -530,6 +530,7 @@ jobs:
             tests/test_reels_openart_client.py \
             tests/test_ideas_api_reel_transitions.py \
             tests/test_ideas_db_reels.py \
+            tests/test_wp_ideas_drafter_lease.py \
             tests/test_crew_socialpost.py \
             tests/test_social_post_db.py \
             tests/test_social_post_slots.py \
