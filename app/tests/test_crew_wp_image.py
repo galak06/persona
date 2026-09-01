@@ -198,3 +198,35 @@ def test_resolve_reference_image_path_finds_jpg(tmp_path: Path) -> None:
     ref = assets / "persona_mascot_reference.jpg"
     ref.write_bytes(b"fake-jpg-bytes")
     assert resolve_reference_image_path(tmp_path) == ref
+
+
+# ── the key travels in a header, never the URL ───────────────────────────────
+# httpx logs request URLs at INFO, so a `?key=` here would put the caller's
+# Gemini key into application logs and into any verbose output pasted into a
+# bug report. This repo has shipped that bug before.
+
+
+@respx.mock
+def test_imagen_sends_the_key_in_a_header_and_never_in_the_url() -> None:
+    route = respx.post(_FAST_URL).mock(return_value=_predict_response())
+
+    generate_wp_image("a golden field at sunrise")
+
+    request = route.calls[0].request
+    assert request.headers["x-goog-api-key"] == "test-key"
+    assert "test-key" not in str(request.url)
+    assert "key=" not in (request.url.query.decode() or "")
+
+
+@respx.mock
+def test_nano_pro_sends_the_key_in_a_header_and_never_in_the_url() -> None:
+    respx.post(_FAST_URL).mock(return_value=httpx.Response(404, text="retired"))
+    respx.post(_STANDARD_URL).mock(return_value=httpx.Response(404, text="retired"))
+    route = respx.post(_NANO_PRO_URL).mock(return_value=_generate_content_response())
+
+    generate_wp_image("a golden field at sunrise")
+
+    request = route.calls[0].request
+    assert request.headers["x-goog-api-key"] == "test-key"
+    assert "test-key" not in str(request.url)
+    assert "key=" not in (request.url.query.decode() or "")

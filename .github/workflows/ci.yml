@@ -146,6 +146,7 @@ jobs:
           lib/oauth/openart.py lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
           studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
 
       - name: Ruff format check
         run: >-
@@ -225,6 +226,7 @@ jobs:
           lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
           studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
 
   typecheck:
     name: Type Check
@@ -287,6 +289,7 @@ jobs:
           lib/oauth/openart.py lib/oauth/openart_store.py
           lib/crew/reference_vocabulary.py
           studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
           --ignore-missing-imports
 
   test:
@@ -407,6 +410,7 @@ jobs:
           timeout --signal=ABRT 600 pytest \
             --timeout=90 --timeout-method=thread \
             tests/test_studio.py \
+            tests/test_no_url_credentials.py \
             tests/test_db.py \
             tests/test_groups_db.py \
             tests/test_engagements_db.py \

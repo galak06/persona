@@ -149,7 +149,7 @@ def research_candidates(existing_titles: list[str], *, n: int = 6) -> list[Candi
     logger.info(
         "gemini research call model=%s n=%d excluded=%d", _GEMINI_MODEL, n, len(existing_titles)
     )
-    r = httpx.post(url, params={"key": api_key}, json=payload, timeout=180.0)
+    r = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=180.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini research HTTP {r.status_code}: {r.text[:500]}")
 
