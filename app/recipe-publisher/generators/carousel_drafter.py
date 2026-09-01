@@ -182,7 +182,7 @@ def _call_gemini(prompt_text: str) -> dict[str, Any]:
         },
     }
     url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
-    r = httpx.post(url, params={"key": api_key}, json=payload, timeout=180.0)
+    r = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=180.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini carousel-draft HTTP {r.status_code}: {r.text[:500]}")
     data = r.json()

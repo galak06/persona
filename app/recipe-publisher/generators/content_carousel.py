@@ -110,7 +110,7 @@ def plan_slides(
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": 0.7, "maxOutputTokens": 4096},
     }
-    r = httpx.post(_GEMINI_URL, params={"key": api_key}, json=payload, timeout=60.0)
+    r = httpx.post(_GEMINI_URL, headers={"x-goog-api-key": api_key}, json=payload, timeout=60.0)
     if r.status_code >= 400:
         raise RuntimeError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
 

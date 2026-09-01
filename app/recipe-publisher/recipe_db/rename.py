@@ -68,7 +68,7 @@ def generate_display_name(
     try:
         response = httpx.post(
             _ENDPOINT.format(model=_MODEL),
-            params={"key": key}, json=payload, timeout=timeout,
+            headers={"x-goog-api-key": key}, json=payload, timeout=timeout,
         )
         response.raise_for_status()
         parts = response.json()["candidates"][0]["content"]["parts"]

@@ -26,6 +26,12 @@ not the whole tree, so a green build means *those* files are clean.
   request `gemini-2.5-flash`, which Google has retired for new API keys.
   Those paths 404 until repinned. The live engager and the studio already
   use current models.
+- **Meta tokens in query strings.** 31 call sites across the Facebook and
+  Instagram publishers pass `access_token` as a URL parameter, which httpx
+  writes to the request log. They should move to an `Authorization` header.
+  `tests/test_no_url_credentials.py` pins the affected files so the set
+  cannot grow while the fix is pending. LLM API keys are already header-only
+  and enforced at zero.
 - **Brand-specific strings in comments.** Around 140 references to the
   original brand remain in docstrings and comments across `app/lib/` and
   `app/api/`. They don't affect behaviour — the code reads its identity

@@ -96,7 +96,7 @@ def enrich_to_seed(candidate: Candidate) -> dict[str, Any]:
 
     url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
     logger.info("gemini enrich call model=%s title=%r", _GEMINI_MODEL, candidate.title)
-    r = httpx.post(url, params={"key": api_key}, json=payload, timeout=180.0)
+    r = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=180.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini enrich HTTP {r.status_code}: {r.text[:500]}")
 
