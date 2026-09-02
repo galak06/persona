@@ -96,6 +96,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+      args:
+        PERSONA_GIT_SHA: ${PERSONA_GIT_SHA:-unknown}
     restart: unless-stopped
     ports:
       - "5001:5001"
@@ -168,6 +170,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        PERSONA_GIT_SHA: ${PERSONA_GIT_SHA:-unknown}
     restart: unless-stopped
     ports:
       - "3000:80"
