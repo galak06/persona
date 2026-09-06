@@ -15,6 +15,10 @@ import ErrorState from "./ui/ErrorState";
 import LoadingState from "./ui/LoadingState";
 import { LogPanel } from "./ui/WorkerCard";
 
+// Matches the Flows page cadence so a card advances running -> success/error
+// on its own instead of freezing until the operator reloads.
+const POLL_MS = 15_000;
+
 /**
  * Flow-readiness panel — one card per managed flow (`ig-engager`/
  * `fb-engager`/`fb-group-scout`), each showing enabled state, last-run
@@ -154,6 +158,7 @@ export default function FlowReadinessPanel({
 }: FlowReadinessPanelProps): React.JSX.Element {
   const { data, loading, error, refetch } = useApiQuery<FlowStatusResponse>(
     endpoints.brandFlows(brandId),
+    { refetchInterval: POLL_MS },
   );
 
   return (
