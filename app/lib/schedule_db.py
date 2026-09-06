@@ -4,6 +4,12 @@ JSON/JSONB columns are auto-parsed to Python objects on read by psycopg;
 writes wrap dict/list values in `Jsonb(...)` so psycopg serializes them
 correctly. The public API (connect, load_all, save_task) is preserved for
 backward compat.
+
+`is_retired()` lives here rather than in either consumer because "is this row
+retired" must have exactly ONE definition: `scripts/task_dispatcher.py`
+refusing to run a retired row while `lib/flow_readiness.py` happily read one's
+frozen `worker_runs` status is how a retired 2026-08-31 migration row shadowed
+the live one on the Flow status panel for a week.
 """
 
 from __future__ import annotations
@@ -46,6 +52,28 @@ _KNOWN_COLUMNS = {
     "extra",
     "brand_id",
 }
+
+
+# A flow is retired by moving `schedule.cron` aside instead of deleting the row,
+# so the schedule it used to run on stays recoverable. Either key marks the row
+# as deliberately cron-less; `disabled_reason` alone is enough for rows retired
+# before there was a cron worth preserving.
+RETIRED_CRON_KEY = "cron_disabled"
+RETIRED_REASON_KEY = "disabled_reason"
+
+
+def is_retired(task: dict[str, Any]) -> bool:
+    """Whether `task` (a `schedule_tasks` row) was retired rather than deleted.
+
+    Retiring is additive -- the 2026-08-31 task-id migration
+    (`scripts/migrate_task_ids_to_brand.py`) left every superseded row in
+    place, cron moved to `cron_disabled` and `disabled_reason` recorded. Such
+    a row must never be dispatched, and must never be mistaken for a flow's
+    live row: its `worker_runs` status is frozen at whatever it held the day
+    it was retired.
+    """
+    schedule = task.get("schedule") or {}
+    return RETIRED_CRON_KEY in schedule or RETIRED_REASON_KEY in schedule
 
 
 def connect(db_path: str | None = None) -> None:
