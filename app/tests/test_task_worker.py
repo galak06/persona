@@ -100,6 +100,32 @@ def test_run_task_executes_and_records_success(
 
 
 @requires_postgres
+def test_run_task_hands_the_child_its_own_timeout_budget(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`subprocess.run(timeout=)` below is a SIGKILL: an overrunning flow
+    writes no summary and no state, so the run vanishes. Exporting the same
+    number as FLOW_TIMEOUT_SECONDS is what lets a long flow (ig-engager) stop
+    itself at a safe checkpoint first -- see lib/engagement/scan_deadline.py.
+    """
+    captured: dict[str, Any] = {}
+
+    def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["env"] = kwargs["env"]
+        captured["timeout"] = kwargs["timeout"]
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    task_worker.run_task(_queue_item("t1", tmp_path))
+
+    # Same number on both sides: the child's deadline and the worker's fuse
+    # must describe one budget, not two that can drift apart.
+    assert captured["env"]["FLOW_TIMEOUT_SECONDS"] == "60"
+    assert captured["timeout"] == 60
+
+
+@requires_postgres
 def test_run_task_records_error_on_nonzero_exit(
     pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

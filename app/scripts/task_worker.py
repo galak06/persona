@@ -122,6 +122,14 @@ def run_task(task: dict[str, Any]) -> None:
         **os.environ,
         "BRAND_DIR": str(brand_dir),
         "PERSONA_BRAND": brand,
+        # The child's own copy of the fuse applied below. `subprocess.run`'s
+        # timeout is a SIGKILL: a flow that overruns writes no summary and no
+        # state, so the run simply vanishes. A flow that can outlast its
+        # budget (ig-engager, whose comment pacing alone sleeps 120-180s per
+        # comment) reads this and stops itself at a safe checkpoint first --
+        # see lib/engagement/scan_deadline.py. Every other flow ignores it,
+        # and the timeout below stays the backstop either way.
+        "FLOW_TIMEOUT_SECONDS": str(timeout_seconds),
         **load_brand_env(brand_dir),
     }
     headless = task.get("headless")

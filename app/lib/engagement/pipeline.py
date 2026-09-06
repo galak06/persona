@@ -47,6 +47,11 @@ from lib.engagement.extraction import (
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.engagement.post_processor import gate_source, process_post
+from lib.engagement.scan_deadline import (
+    STOPPED_DEADLINE,
+    STOPPED_RATE_LIMIT,
+    ScanDeadline,
+)
 from lib.engagement.scan_results import PostOutcome, ScanReport
 
 __all__ = [
@@ -74,6 +79,7 @@ def run_outbound_scan(
     dry_run: bool = False,
     inline_comment: bool = False,
     comment_gate: _CommentGate | None = None,
+    deadline: ScanDeadline | None = None,
 ) -> ScanReport:
     """Run one outbound-engagement scan and return a `ScanReport`.
 
@@ -98,6 +104,13 @@ def run_outbound_scan(
     *would* have been liked). The drafter IS still called under a dry run
     so the preview shows the comment that would have been posted. Counters
     (`likes_attempted`, `comments_attempted`) report the would-be totals.
+
+    An optional `deadline` (see `lib/engagement/scan_deadline.py`) bounds the
+    pass in wall-clock time. It is checked at the two safe checkpoints -- the
+    start of a source and the start of a post -- never mid-action, so a post
+    is always finished before the loop unwinds. The session teardown, the
+    funnel and the report all still happen; `stopped_reason` on the report is
+    what tells a truncated pass apart from a complete one.
     """
     del now_iso  # interface stability; unused since the queue stage retired
     platform = adapter.platform
@@ -105,11 +118,21 @@ def run_outbound_scan(
     counters = _Counters(platform)
 
     with adapter.session():
-        for source in adapter.list_sources():
+        # Materialized once: the total is what makes a truncated pass legible
+        # in the summary ("12 of 19"), and `list_sources()` is a CSV read plus
+        # a cadence filter, not something to re-evaluate mid-loop.
+        sources = list(adapter.list_sources())
+        counters.sources_total = len(sources)
+        for source in sources:
+            if _deadline_passed(deadline, counters, log):
+                break
             if not gate_source(platform, rate_tracker, log):
+                counters.stopped_reason = STOPPED_RATE_LIMIT
                 break
             counters.sources_visited += 1
             for post in adapter.iterate_posts(source):
+                if _deadline_passed(deadline, counters, log):
+                    break
                 counters.add(
                     post,
                     process_post(
@@ -127,9 +150,35 @@ def run_outbound_scan(
                         comment_gate=comment_gate,
                     ),
                 )
+            if counters.stopped_reason is not None:
+                break
             _pace_between_sources(platform, rate_tracker)
 
     return counters.to_report()
+
+
+def _deadline_passed(deadline: ScanDeadline | None, counters: _Counters, log: _Log) -> bool:
+    """True when the pass must stop here; records the reason the first time.
+
+    Logged as a warning rather than info: a run that ran out of budget did
+    less than it was asked to, and the operator has to be able to find that
+    without reading the funnel arithmetic.
+    """
+    if deadline is None or not deadline.expired():
+        return False
+    if counters.stopped_reason is None:
+        counters.stopped_reason = STOPPED_DEADLINE
+        log.warning(
+            "scan_stopped_at_deadline platform=%s sources_visited=%d sources_total=%d "
+            "posts_scanned=%d budget=%.0fs reserve=%.0fs",
+            counters.platform,
+            counters.sources_visited,
+            counters.sources_total,
+            counters.posts_scanned,
+            deadline.budget_seconds,
+            deadline.reserve_seconds,
+        )
+    return True
 
 
 def _resolve_commenter(
@@ -167,6 +216,8 @@ class _Counters:
         self.platform = platform
         self.candidate_count = 0
         self.sources_visited = 0
+        self.sources_total = 0
+        self.stopped_reason: str | None = None
         self.posts_scanned = 0
         self.likes_attempted = 0
         self.likes_succeeded = 0
@@ -222,6 +273,8 @@ class _Counters:
         return ScanReport(
             platform=self.platform,
             sources_visited=self.sources_visited,
+            sources_total=self.sources_total,
+            stopped_reason=self.stopped_reason,
             posts_scanned=self.posts_scanned,
             candidates=self.candidate_count,
             likes_attempted=self.likes_attempted,

@@ -74,6 +74,15 @@ jobs:
       # above. The one exception is
       # tests/lib/engagement/test_ig_engager_with_fake.py, which carries
       # pre-existing (unrelated) ruff-format drift: lint- and pytest-list only.
+      # Internal scan-deadline slice (worker exports FLOW_TIMEOUT_SECONDS ->
+      # lib/engagement/scan_deadline.py -> pipeline stop points -> truncated
+      # summary + last_run stamp): every new file is lint- AND format-clean,
+      # so all four go in both lists, and the two test files also in the
+      # pytest list below (_deadline_fakes.py is their shared helper, not a
+      # test module, so it belongs in the ruff lists only). pipeline.py,
+      # scan_results.py and run_summary.py were already listed;
+      # scan_deadline.py stays out of the mypy list for the same
+      # lib/engagement package reason as the comment-outbox files above.
       - name: Ruff check (lint)
         run: >-
           ruff check
@@ -186,6 +195,10 @@ jobs:
           tests/lib/engagement/test_instagram_extract.py
           tests/lib/engagement/test_scan_funnel.py
           tests/lib/engagement/test_ig_engager_with_fake.py
+          lib/engagement/scan_deadline.py
+          tests/lib/engagement/_deadline_fakes.py
+          tests/lib/engagement/test_scan_deadline.py
+          tests/lib/engagement/test_scan_truncation.py
           tests/lib/runtime/test_singleton.py
 
       - name: Ruff format check
@@ -295,6 +308,10 @@ jobs:
           lib/engagement/adapters/instagram.py
           tests/lib/engagement/test_instagram_extract.py
           tests/lib/engagement/test_scan_funnel.py
+          lib/engagement/scan_deadline.py
+          tests/lib/engagement/_deadline_fakes.py
+          tests/lib/engagement/test_scan_deadline.py
+          tests/lib/engagement/test_scan_truncation.py
           tests/lib/runtime/test_singleton.py
 
   typecheck:
@@ -580,6 +597,8 @@ jobs:
             tests/lib/engagement/test_instagram_extract.py \
             tests/lib/engagement/test_scan_funnel.py \
             tests/lib/engagement/test_ig_engager_with_fake.py \
+            tests/lib/engagement/test_scan_deadline.py \
+            tests/lib/engagement/test_scan_truncation.py \
             tests/lib/runtime/test_singleton.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \

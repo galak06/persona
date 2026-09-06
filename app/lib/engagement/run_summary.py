@@ -55,6 +55,23 @@ def format_funnel(report: ScanReport) -> str:
     return " ".join(f"{name}={count}" for name, count in funnel_counts(report).items())
 
 
+def stopped_suffix(report: ScanReport) -> str:
+    """The truncation notice, or "" when the pass ran to the end.
+
+    Appended rather than woven into the head so a complete pass reads exactly
+    as it always has -- and so a truncated one cannot be mistaken for it. A
+    scan that stopped early otherwise reported the same shape as a scan that
+    finished, which is how a week of SIGKILLed ig-engager runs looked like
+    quiet days on Instagram.
+    """
+    if report.stopped_reason is None:
+        return ""
+    return (
+        f" | STOPPED: {report.stopped_reason} "
+        f"({report.sources_visited}/{report.sources_total} sources reached)"
+    )
+
+
 def build_summary(
     report: ScanReport,
     *,
@@ -83,7 +100,7 @@ def build_summary(
             f"Commented: {report.comments_posted}/{comment_quota} | "
             f"Agent declined: {report.comments_declined}"
         )
-    return f"{head} | Funnel: {format_funnel(report)}"
+    return f"{head} | Funnel: {format_funnel(report)}{stopped_suffix(report)}"
 
 
 def log_funnel(report: ScanReport, log: Log) -> None:
@@ -94,8 +111,20 @@ def log_funnel(report: ScanReport, log: Log) -> None:
     `logging.Logger`, which takes positional args rather than kwargs.
     """
     log.info(
-        "scan_funnel platform=%s sources=%d %s",
+        "scan_funnel platform=%s sources=%d %s%s",
         report.platform,
         report.sources_visited,
         format_funnel(report),
+        _stopped_fields(report),
     )
+
+
+def _stopped_fields(report: ScanReport) -> str:
+    """`stopped_reason=... sources_total=...`, or "" for a complete pass.
+
+    The grep-side twin of `stopped_suffix`: same fact, `key=value` shaped so
+    it parses like the rest of the line.
+    """
+    if report.stopped_reason is None:
+        return ""
+    return f" stopped_reason={report.stopped_reason} sources_total={report.sources_total}"

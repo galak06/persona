@@ -17,6 +17,7 @@ from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.scan_deadline import ScanDeadline
 
 
 class FakeDedup:
@@ -289,6 +290,7 @@ def run(
     dry_run: bool = False,
     inline_comment: bool = False,
     comment_gate: FakeCommentGate | None = None,
+    deadline: ScanDeadline | None = None,
 ) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter]:
     """Run pipeline with sensible defaults; return report + collaborators.
 
@@ -313,5 +315,6 @@ def run(
         dry_run=dry_run,
         inline_comment=inline_comment,
         comment_gate=comment_gate,
+        deadline=deadline,
     )
     return report, d, rt, dr

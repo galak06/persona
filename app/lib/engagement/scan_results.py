@@ -58,6 +58,15 @@ class ScanReport:
     extraction_failed: int = 0
     empty_caption: int = 0
     scored_below_threshold: int = 0
+    # How much of the pass actually happened. `sources_total` is every source
+    # the adapter offered THIS run -- for Instagram that is the hashtags due
+    # today under `should_scan_today`, not the whole CSV -- and
+    # `stopped_reason` names why the loop ended early (`"deadline"`,
+    # `"rate_limit"`), `None` meaning it ran to the end. The pair exists
+    # because a pass cut short reported exactly the numbers of a complete one:
+    # `sources_visited` alone cannot say whether 12 was all there was.
+    sources_total: int = 0
+    stopped_reason: str | None = None
 
 
 @dataclass(frozen=True)
