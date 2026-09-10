@@ -22,46 +22,57 @@ JsonValue = None | bool | int | float | str | list["JsonValue"] | dict[str, "Jso
 
 T = TypeVar("T")
 
+
+def lock_path_for(path: Path) -> Path:
+    """The sidecar file :func:`locked_json` takes its flock on."""
+    return path.with_name(f".{path.name}.lock")
+
+
 @contextlib.contextmanager
 def locked_json(path: Path, default: T, indent: int = 2) -> Generator[T, None, None]:
     """Context manager for atomic read-modify-write loops under an OS lock.
 
-    Locks the target file, reads and yields the JSON content. When the block
-    exits, writes the modified object back to disk atomically (temp + replace).
-    This serializes concurrent modifications from multiple processes.
-    
+    Takes an exclusive flock, reads and yields the JSON content, and on a
+    clean exit writes the modified object back atomically (temp + replace).
+    That serializes concurrent modifications from multiple processes: two
+    writers cannot lose each other's change, and no reader ever sees a
+    half-written file. If the block raises, nothing is written.
+
+    **The lock is on a sidecar `.<name>.lock`, not on the data file**, because
+    the atomic write replaces the data file's inode. A lock taken on the file
+    itself is held on the inode the `os.replace` just orphaned, so the next
+    process opens the NEW inode, finds it unlocked, and runs concurrently with
+    the writer that still thinks it holds the lock — exactly the lost update
+    this helper exists to prevent. The sidecar is never replaced, so every
+    process contends on the same inode. It is created on first use and left in
+    place (an empty marker file); deleting it between runs is harmless.
+
     Args:
         path: The JSON file to lock and modify.
         default: The default value to yield if the file is missing or empty.
         indent: JSON pretty-print indent. Default 2.
     """
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(default), encoding="utf-8")
-
-    with path.open("r+", encoding="utf-8") as fh:
-        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path_for(path).open("a+", encoding="utf-8") as lock_fh:
+        fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
         try:
             try:
                 raw = path.read_text(encoding="utf-8")
             except OSError:
                 raw = ""
-            
+
             try:
                 data = json.loads(raw) if raw.strip() else default
             except json.JSONDecodeError:
                 data = default
-                
+
             yield data
-            
-            tmp_path = path.with_suffix(path.suffix + ".tmp")
-            tmp_path.write_text(
-                json.dumps(data, indent=indent, ensure_ascii=False),
-                encoding="utf-8",
-            )
-            os.replace(tmp_path, path)
+
+            write_json(path, data, indent=indent)
         finally:
-            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+
+
 """Recursive type for any JSON-parseable value. Use as the return type
 of `read_json` when the caller is happy to refine via `cast` or
 `isinstance` at the use site."""

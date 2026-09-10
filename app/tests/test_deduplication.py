@@ -127,9 +127,22 @@ class TestTTLPurge:
         stats = deduplication.get_cache_stats()
         assert "facebook" not in stats
 
-    def test_corrupted_cache_resets(self, tmp_cache):
+    def test_corrupted_cache_is_quarantined_not_reset(self, tmp_cache):
+        """A cache we cannot parse is moved aside, never overwritten.
+
+        This module used to answer a parse failure with `write_text("{}")`,
+        which destroyed 60 days of engagement history for both platforms on a
+        single torn read. Reads still degrade to "nothing is a duplicate", but
+        the bytes survive in a `.corrupt-<timestamp>` sibling. Full locking
+        coverage lives in tests/test_state_file_locking.py.
+        """
         tmp_cache.write_text("not valid json [[[")
+
         assert deduplication.is_duplicate("facebook", "test") is False
+
+        quarantined = list(tmp_cache.parent.glob(f"{tmp_cache.name}.corrupt-*"))
+        assert len(quarantined) == 1
+        assert quarantined[0].read_text() == "not valid json [[["
 
 
 # ── brand-scoped location (2026-08-15) ────────────────────────────────────
