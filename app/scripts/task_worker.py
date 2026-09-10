@@ -40,6 +40,7 @@ from lib import brands_db, flow_queue, worker_db
 from lib.brands_db.models import BrandStatus
 from lib.local_env import load_brand_env
 from lib.observability import get_logger
+from lib.runtime.flow import flow_skip_reason
 from lib.task_queue import TaskQueue
 from lib.worker_labels import flow_id_from_task_id
 
@@ -165,19 +166,24 @@ def run_task(task: dict[str, Any]) -> None:
         worker_db.record_complete(brand_dir, task_id, brand, "error", message)
         raise
 
+    # A flow that lost its singleton lock exits 0 (overlapping ticks are normal)
+    # but did not run. Without this, the `skipped` row the child wrote is
+    # overwritten by this parent's `success` -- both write the SAME
+    # `worker_runs` row (`task_id` and the child's derived label are both
+    # `<brand>-<flow_id>`). See `lib.runtime.flow.FLOW_SKIPPED_MARKER`.
+    stdout = result.stdout or ""
+    ok = result.returncode == 0
+    skip = flow_skip_reason(stdout) if ok else None
+    outcome = "skipped" if skip else "success" if ok else f"exit={result.returncode}"
     _write_flow_log(
-        brand_dir,
-        brand,
-        task_id,
-        status="success" if result.returncode == 0 else f"exit={result.returncode}",
-        stdout=result.stdout or "",
-        stderr=result.stderr or "",
+        brand_dir, brand, task_id, status=outcome, stdout=stdout, stderr=result.stderr or ""
     )
 
-    if result.returncode == 0:
-        message = (result.stdout or "").strip()[-500:]
-        worker_db.record_complete(brand_dir, task_id, brand, "success", message)
-        logger.info("task_executed", task_id=task_id, status="success")
+    if ok:
+        status: worker_db.WorkerRunStatus = "skipped" if skip else "success"
+        msg = (skip or stdout.strip())[-500:]
+        worker_db.record_complete(brand_dir, task_id, brand, status, msg)
+        logger.info("task_executed", task_id=task_id, status=status)
         return
 
     # Fall back to stdout when stderr is empty. Every flow logs through

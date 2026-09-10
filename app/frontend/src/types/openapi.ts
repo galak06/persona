@@ -2560,7 +2560,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "success" | "error";
+            status: "queued" | "running" | "success" | "error" | "skipped";
         };
         /**
          * FlowReadiness
@@ -3347,7 +3347,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "never" | "queued" | "running" | "success" | "error";
+            status: "never" | "queued" | "running" | "success" | "error" | "skipped";
             /** Title */
             title: string;
         };
@@ -3391,7 +3391,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "success" | "error" | "never";
+            status: "queued" | "running" | "success" | "error" | "never" | "skipped";
             /** Timeout Seconds */
             timeout_seconds: number;
             /** Used Openart */

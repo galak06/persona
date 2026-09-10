@@ -38,6 +38,7 @@ function statusBadgeClasses(status: string | undefined): string {
   if (status === "success") return "bg-emerald-50 text-emerald-700";
   if (status === "error") return "bg-rose-50 text-rose-700";
   if (status === "running") return "bg-amber-50 text-amber-700";
+  if (status === "skipped") return "bg-sky-50 text-sky-700";
   return "bg-stone-100 text-slate-500";
 }
 

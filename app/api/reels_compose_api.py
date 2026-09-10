@@ -62,7 +62,10 @@ _dispatch_lock = threading.Lock()
 
 # `worker_db.WorkerRunStatus` plus the synthetic "never" this API layer
 # reports when the flow has no `worker_runs` row at all.
-ComposeRunStatus = Literal["queued", "running", "success", "error", "never"]
+# Mirrors `lib.worker_db.WorkerRunStatus` plus the synthetic "never" for a flow
+# with no row: the raw column value is cast straight into the response model
+# below, so a value missing here is a 500, not a fallback.
+ComposeRunStatus = Literal["queued", "running", "success", "error", "never", "skipped"]
 
 
 class ComposeStatus(BaseModel):

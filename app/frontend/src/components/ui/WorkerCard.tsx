@@ -23,6 +23,9 @@ export const PILL_VARIANT: Record<WorkerStatus["status"], string> = {
   running: "bg-sky-100 text-sky-700 border-sky-200",
   success: "bg-emerald-100 text-emerald-800 border-emerald-200",
   error:   "bg-rose-100 text-rose-800 border-rose-200",
+  // Neither success nor failure: another instance held the flow's lock, so
+  // this tick declined to run. Styled apart from both so it reads as such.
+  skipped: "bg-violet-100 text-violet-800 border-violet-200",
 };
 
 const PILL_LABEL: Record<WorkerStatus["status"], string> = {
@@ -31,6 +34,7 @@ const PILL_LABEL: Record<WorkerStatus["status"], string> = {
   running: "Running",
   success: "Success",
   error:   "Error",
+  skipped: "Skipped",
 };
 
 // ── Humanizer ─────────────────────────────────────────────────────────────────
@@ -221,7 +225,9 @@ interface TriggerResponse {
   rate_limits: Record<string, { used: number; limit: number; remaining: number }> | null;
 }
 
-const TERMINAL_STATUSES: WorkerStatus["status"][] = ["success", "error", "never"];
+// "skipped" is terminal too: the flow declined because another instance held
+// its lock, so nothing further will change this row.
+const TERMINAL_STATUSES: WorkerStatus["status"][] = ["success", "error", "never", "skipped"];
 const POLL_INTERVAL_MS = 3_000;
 const POLL_MAX = 200; // 200 × 3s = 10 minutes
 

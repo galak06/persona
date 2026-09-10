@@ -22,6 +22,7 @@ const STATUS_STYLES: Record<WorkerStatus["status"], string> = {
   running: "bg-sky-100 text-sky-700 border-sky-200",
   queued:  "bg-amber-100 text-amber-800 border-amber-200",
   never:   "bg-slate-100 text-slate-700 border-slate-200",
+  skipped: "bg-violet-100 text-violet-800 border-violet-200",
 };
 
 const STATUS_LABEL: Record<WorkerStatus["status"], string> = {
@@ -30,6 +31,7 @@ const STATUS_LABEL: Record<WorkerStatus["status"], string> = {
   running: "Running",
   queued:  "Queued",
   never:   "Never run",
+  skipped: "Skipped",
 };
 
 /** Format an ISO timestamp as a short relative phrase ("3m ago"). */

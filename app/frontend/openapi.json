@@ -1983,7 +1983,8 @@
               "queued",
               "running",
               "success",
-              "error"
+              "error",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"
@@ -3792,7 +3793,8 @@
               "queued",
               "running",
               "success",
-              "error"
+              "error",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"
@@ -3924,7 +3926,8 @@
               "running",
               "success",
               "error",
-              "never"
+              "never",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"

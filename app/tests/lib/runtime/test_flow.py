@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from lib.runtime.flow import run_flow, session_file_check
+from lib.runtime.flow import FLOW_SKIPPED_MARKER, flow_skip_reason, run_flow, session_file_check
 from lib.runtime.singleton import LockAcquisitionError
 
 
@@ -167,35 +167,71 @@ def test_exception_is_recorded_then_reraised(recorder: dict[str, Any]) -> None:
 
 
 # ------------------------------------------------------------ held lock
-
-
-def test_held_lock_is_success_and_writes_no_row(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An overlapping cron tick is normal, not a failure.
-
-    Some flows exited non-zero here, turning healthy pacing into a cron alert.
-    `record_start` sits inside the lock, so a tick that never acquired it must
-    leave the previous run's row untouched.
-    """
+@pytest.fixture
+def held_lock(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
+    """A `SingletonLock` another instance already holds. Returns the row writes."""
     from lib.runtime import flow
 
-    calls: list[str] = []
-    monkeypatch.setattr(flow, "record_start", lambda *a: calls.append("start"))
-    monkeypatch.setattr(flow, "record_complete", lambda *a, **k: calls.append("complete"))
+    completed: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(flow, "record_start", lambda *a: pytest.fail("no row before the lock"))
+    monkeypatch.setattr(
+        flow,
+        "record_complete",
+        lambda d, label, brand, status, msg="": completed.append((label, brand, status, msg)),
+    )
 
     class _Held:
-        def __init__(self, name: str) -> None:
-            pass
+        def __init__(self, name: str) -> None: ...
 
         def __enter__(self) -> None:
             raise LockAcquisitionError("held", context={"name": "x"})
 
-        def __exit__(self, *_a: object) -> None:
-            return None
+        def __exit__(self, *_a: object) -> None: ...
 
     monkeypatch.setattr(flow, "SingletonLock", _Held)
+    return completed
 
-    assert run_flow("fb-engager", lambda: pytest.fail("must not run"), argv=["prog"]) == 0
-    assert calls == []
+
+def test_held_lock_records_skipped_and_still_exits_zero(
+    held_lock: list[tuple[Any, ...]],
+) -> None:
+    """A lost lock must be distinguishable from a real run -- without alarming.
+
+    Leaving the row alone (the old behaviour) meant a manual "Run now" reported
+    the PREVIOUS run's `success` with an empty log -- identical to a run that
+    happened and found nothing. `error` is wrong the other way: it would alarm
+    on ordinary cron pacing, so the exit code stays 0. `record_start` sits
+    inside the lock (the fixture fails if called), so no `running` row opens."""
+    code = run_flow("fb-engager", lambda: pytest.fail("must not run"), argv=["prog"])
+
+    assert code == 0
+    assert len(held_lock) == 1
+    label, brand, status, message = held_lock[0]
+    assert status == "skipped"
+    assert label == f"{brand}-fb-engager"
+    assert "fb-engager" in message and "lock" in message
+
+
+def test_held_lock_announces_the_skip_on_stdout(
+    held_lock: list[tuple[Any, ...]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`scripts/task_worker.py` rewrites the same row from the parent process
+    after the child exits 0, overwriting `skipped` with `success`. The stdout
+    marker is how it learns not to; stderr still carries the cron log."""
+    run_flow("fb-engager", lambda: pytest.fail("must not run"), argv=["prog"])
+
+    captured = capsys.readouterr()
+    reason = flow_skip_reason(captured.out)
+    assert reason is not None and "fb-engager" in reason
+    assert "fb-engager" in captured.err
+
+
+def test_flow_skip_reason_reads_only_a_real_skip() -> None:
+    """A flow prints freely before `run_flow` ever asks the lock."""
+    assert flow_skip_reason("scanned 12 posts\nliked 3\n") is None
+    assert flow_skip_reason("") is None
+    out = f"booting\n{FLOW_SKIPPED_MARKER} skipped: 'x' holds the lock\ndone\n"
+    assert flow_skip_reason(out) == "skipped: 'x' holds the lock"
 
 
 # ------------------------------------------------------- session_file_check
