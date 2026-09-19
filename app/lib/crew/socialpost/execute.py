@@ -29,6 +29,7 @@ robustness, leaving this stage without the lenient repair `writer` had. See
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TypeVar
 
 from crewai import Agent, Task
@@ -108,11 +109,26 @@ def _correction_prompt(plan: SocialPostPlan, violations: list[str]) -> str:
 
 
 def execute_social_post_crew(
-    agent: Agent, task: Task, *, target_keyword: str
+    agent: Agent,
+    task: Task,
+    *,
+    target_keyword: str,
+    extra_violations: Callable[[SocialPostPlan], list[str]] | None = None,
 ) -> SocialPostPlan | None:
     """Run the real Social Post `Crew(...).kickoff()`, retrying with surgical
     feedback while the plan breaks hard caption rules. `None` if no attempt
-    within `MAX_ATTEMPTS` produces a clean plan."""
+    within `MAX_ATTEMPTS` produces a clean plan.
+
+    `extra_violations` adds caller-supplied blocking rules to the SAME retry
+    loop, which is the only place a rejected draft is ever handed back for a
+    minimal correction. The product-spotlight track passes
+    `partial(lib.crew.spotlight.rules.find_spotlight_violations, product=...)`
+    so an affiliate post that drops its disclosure or invents a certification
+    gets the same two corrections a missing hashtag gets -- rather than a
+    second validation pass after the crew, which could only discard the whole
+    (already paid-for) composition. Default `None` keeps a regular post's
+    behaviour byte-for-byte identical.
+    """
     base_description = task.description
     plan: SocialPostPlan | None = None
 
@@ -136,7 +152,9 @@ def execute_social_post_crew(
             logger.warning("crew_socialpost_unparseable_retrying", attempt=attempt)
             task.description = base_description
             continue
-        violations = find_caption_violations(plan, target_keyword=target_keyword)
+        violations = find_caption_violations(plan, target_keyword=target_keyword) + (
+            extra_violations(plan) if extra_violations else []
+        )
         if not violations:
             return plan
         if attempt == MAX_ATTEMPTS:

@@ -448,6 +448,115 @@ CREATE INDEX IF NOT EXISTS idx_content_ideas_social_post_status
 ALTER TABLE content_ideas ADD COLUMN IF NOT EXISTS failure_reason TEXT;
 
 -- ────────────────────────────────────────────────────────────────────────────
+-- content_derivatives (lib/derivatives_db/ — product-spotlight FB Page + IG
+-- feed posts derived from an ALREADY-PUBLISHED WP post; lib/crew/spotlight/).
+--
+-- Why a separate table instead of more `social_post_*` columns on
+-- content_ideas: those columns model exactly ONE social set per idea. Captions,
+-- image, slot and result URLs are single columns, and every transition in
+-- lib/social_post_db.py is `UPDATE content_ideas ... WHERE social_post_status =
+-- <prior>`. Once an idea's one set is published the row is spent, which is how
+-- the focus campaign ran dry: all four in-focus posts were consumed, compose
+-- reported `candidates: 0`, and weekly output fell from 7 FB + 7 IG to zero. A
+-- derivative is many-per-idea by nature (one per featured product, repeatable
+-- over time, and a carousel format later), so it is a child row with its own
+-- lifecycle. Widening content_ideas again would have meant either one column
+-- set per derivative (unbounded) or a JSONB blob that no conditional UPDATE can
+-- guard.
+--
+-- Additive and idempotent, like everything else in this file: CREATE ... IF NOT
+-- EXISTS only, nothing existing is altered, and replaying it (postgres initdb
+-- mount, tests/conftest.py) is a no-op. `id` is a Python uuid4 TEXT, the same
+-- convention as content_ideas.id. `idea_id` IS a foreign key (unlike brand_id,
+-- which follows the no-FK convention explained above content_ideas): a
+-- derivative without its source post has nothing to link to, nothing to ground
+-- a caption on and no WP url for the review card, so an orphan is always a bug
+-- and the database should refuse it. No ON DELETE clause on purpose -- ideas
+-- are never deleted (additive-only data rule), and if one ever were, refusing
+-- the delete is the safe answer.
+--
+--   (insert) 'composing' -> 'queued' --approve--> 'scheduled' -> 'fb_publishing'
+--        |                  |    ^                    |               |
+--        v                  v    \---unschedule-------/               v
+--     'failed'         'rejected'                              'fb_published'
+--     (terminal)       (terminal)                                     |
+--                                          'published' <- 'ig_publishing'
+--
+-- Why there is NO CHECK constraint on status/kind/format: no table in this file
+-- has one. Status vocabularies live in Python (lib/derivatives_db/__init__.py
+-- STATUSES / FORMATS), where adding a value is a code review rather than a
+-- migration against a live database that this file can only ever ADD to -- a
+-- CHECK written today could not be widened idempotently tomorrow without
+-- DROP CONSTRAINT, which the additive-only rule forbids.
+--
+-- `*_publishing` are atomic publish CLAIMS, not resting states. The regular
+-- social-post worker guards with read-status-then-publish; two overlapping
+-- release sweeps can both pass that read and double-post. Here the worker must
+-- win `UPDATE ... SET status='fb_publishing' WHERE status='scheduled' AND
+-- fb_due_at <= NOW()` before it touches the Graph API. The claim is released
+-- (back to the prior state) ONLY when the publisher raised. A publish that
+-- succeeded but whose result write failed stays wedged in `*_publishing`,
+-- error-logged, and is never auto-reposted: a stuck row costs one manual fix,
+-- a duplicate post on a brand page cannot be taken back.
+--
+-- Why the partial UNIQUE index covers exactly composing/queued/scheduled: those
+-- are the states in which a second row for the same (idea, product, format)
+-- would be a DUPLICATE REVIEW ITEM -- two cards for one decision, two paid
+-- compose runs, two slots claimed. It is what makes create idempotent:
+-- `INSERT ... ON CONFLICT (idea_id, product_key, format) WHERE status IN (...)
+-- DO NOTHING` affects zero rows and the API answers 409 with the existing id.
+-- 'composing' must be inside the predicate (a double click lands both requests
+-- before either compose finishes) and so must 'scheduled' (approved but not yet
+-- out is still the same pending post). Everything after the publish claim, and
+-- both terminal states, are deliberately OUTSIDE it: spotlighting the same
+-- product from the same post again next month is a feature, and a 'failed' or
+-- 'rejected' row must never block the retry it exists to allow.
+--
+-- `fb_affiliate_url` / `ig_affiliate_url` are stored, not recomputed: each
+-- carries its own `ascsubtag` (fb-<slug> / ig-<slug>, see
+-- lib/crew/products/social_links.py) and the owner copies them off the review
+-- card into a manual DM. The card must show the exact link the row was composed
+-- with, even if the associates tag or the post slug changes afterwards.
+-- `image_path` is RELATIVE to $BRAND_DIR for the same reason
+-- social_post_image_path is. `error` is the machine-readable failure reason
+-- for 'failed' rows (same purpose as content_ideas.failure_reason).
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS content_derivatives (
+    id                  TEXT        PRIMARY KEY,
+    idea_id             TEXT        NOT NULL    REFERENCES content_ideas(id),
+    brand_id            TEXT        NOT NULL,
+    kind                TEXT        NOT NULL DEFAULT 'product_spotlight',
+    format              TEXT        NOT NULL DEFAULT 'feed_post',
+    product_key         TEXT        NOT NULL,
+    product_asin        TEXT        NOT NULL,
+    product_display     TEXT        NOT NULL,
+    reference_category  TEXT        NOT NULL DEFAULT '',
+    status              TEXT        NOT NULL DEFAULT 'composing',
+    fb_caption          TEXT,
+    ig_caption          TEXT,
+    comment_keyword     TEXT,
+    image_path          TEXT,
+    image_alt           TEXT,
+    source              TEXT,
+    validation_flags    TEXT[],
+    fb_due_at           TIMESTAMPTZ,
+    ig_due_at           TIMESTAMPTZ,
+    fb_page_post_url    TEXT,
+    ig_post_url         TEXT,
+    fb_affiliate_url    TEXT,
+    ig_affiliate_url    TEXT,
+    error               TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_content_derivatives_active
+    ON content_derivatives (idea_id, product_key, format)
+    WHERE status IN ('composing', 'queued', 'scheduled');
+CREATE INDEX IF NOT EXISTS idx_content_derivatives_brand_status
+    ON content_derivatives (brand_id, status);
+
+-- ────────────────────────────────────────────────────────────────────────────
 -- brand_secrets (lib/brand_secrets.py)
 --
 -- Per-brand platform credentials (FB/IG/WP), ENCRYPTED at rest with Fernet.
