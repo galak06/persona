@@ -29,7 +29,7 @@ from crewai import Agent, Task
 
 from lib import ideas_db
 from lib.content_strategy import load_content_strategy
-from lib.crew.context import brand_identity_summary, brand_voice_summary
+from lib.crew.context import brand_identity_summary, brand_longform_voice_summary
 from lib.crew.reference_library import list_category_labels
 from lib.crew.writer.agent import (
     build_strategist_agent,
@@ -127,7 +127,7 @@ def build_content_brief(
     description = build_strategist_task_description(
         idea=idea,
         identity=brand_identity_summary(config),
-        voice=brand_voice_summary(brand_dir),
+        voice=brand_longform_voice_summary(brand_dir),
         mascot_facts=mascot_facts_summary(brand_dir),
         link_candidates=link_candidates,
         focus_category=strategy.focus_category,
@@ -185,7 +185,7 @@ def write_post_from_brief(
     description = build_writer_task_description(
         brief=brief,
         identity=brand_identity_summary(config),
-        voice=brand_voice_summary(brand_dir),
+        voice=brand_longform_voice_summary(brand_dir),
         mascot_facts=mascot_facts_summary(brand_dir),
         catalog_text=catalog_summary_text(catalog),
         disclosure_text=load_disclosure_text(brand_dir),

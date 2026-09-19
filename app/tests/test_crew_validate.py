@@ -124,11 +124,18 @@ def test_score_at_exactly_threshold_passes(brand_dir: Path) -> None:
 def test_high_score_still_rejected_when_stray_artifact_flagged(brand_dir: Path) -> None:
     """Regression coverage for the real GPS-tracker bug: a high rubric score
     must NOT be enough to pass if the editor flags a stray LLM artifact --
-    the OR condition, not just the threshold, must gate."""
+    the OR condition, not just the threshold, must gate.
+
+    The body here is deliberately clean prose rather than `_REAL_BUG_EXCERPT`
+    itself: that excerpt contains "let me clarify", which the deterministic
+    AI-tell scan now rejects one gate earlier (see the test below), so using
+    it would never reach the editor and this test would stop covering the OR
+    condition it exists for. The excerpt is still what the editor REPORTS.
+    """
     result = validate_draft(
         brand_dir,
         title="GPS Trackers Without the Monthly Bill",
-        body_html=f"<p>{_REAL_BUG_EXCERPT}</p>",
+        body_html="<p>The collar held its charge for nine of fourteen days.</p>",
         editor_execute_fn=lambda agent, task: _good_verdict(
             score=95.0, stray_artifacts=[_REAL_BUG_EXCERPT]
         ),
@@ -136,6 +143,28 @@ def test_high_score_still_rejected_when_stray_artifact_flagged(brand_dir: Path) 
     assert result.passed is False
     assert result.quality_score == 95.0
     assert any(_REAL_BUG_EXCERPT in reason for reason in result.reasons)
+
+
+def test_real_gps_bug_excerpt_now_caught_before_the_editor(brand_dir: Path) -> None:
+    """The same real bug, caught for free: "let me clarify" is a literal
+    meta-commentary string, so it no longer depends on a second LLM call
+    noticing it. The editor must not even run."""
+    editor_called = False
+
+    def fake_editor(agent: Agent, task: Task) -> QualityVerdict:
+        nonlocal editor_called
+        editor_called = True
+        return _good_verdict()
+
+    result = validate_draft(
+        brand_dir,
+        title="GPS Trackers Without the Monthly Bill",
+        body_html=f"<p>{_REAL_BUG_EXCERPT}</p>",
+        editor_execute_fn=fake_editor,
+    )
+    assert result.passed is False
+    assert editor_called is False
+    assert any("meta_commentary" in reason for reason in result.reasons)
 
 
 def test_stray_artifact_reason_quotes_the_exact_excerpt(brand_dir: Path) -> None:
@@ -179,3 +208,61 @@ def test_clean_high_score_passes_with_no_reasons(brand_dir: Path) -> None:
     assert result.passed is True
     assert result.reasons == []
     assert result.quality_score == 88.0
+
+
+# ── AI-tell gate (deterministic, runs before the editor) ─────────────────────
+
+
+def test_template_heading_rejects_before_editor_runs(brand_dir: Path) -> None:
+    """The tell the editor agent demonstrably misses: it scored 12 consecutive
+    live posts as publishable while every one closed on this exact skeleton."""
+    editor_called = False
+
+    def fake_editor(agent: Agent, task: Task) -> QualityVerdict:
+        nonlocal editor_called
+        editor_called = True
+        return _good_verdict()
+
+    result = validate_draft(
+        brand_dir,
+        title="A Post",
+        body_html=(
+            "<p>Your dog's breath clears a room.</p>"
+            "<h2>Frequently Asked Questions</h2><p>Real answer.</p>"
+            "<h2>Our Pick</h2><p>Real recommendation.</p>"
+        ),
+        editor_execute_fn=fake_editor,
+    )
+
+    assert result.passed is False
+    assert editor_called is False
+    assert any("Frequently Asked Questions" in reason for reason in result.reasons)
+    assert any("Our Pick" in reason for reason in result.reasons)
+
+
+def test_banned_opener_rejects_draft(brand_dir: Path) -> None:
+    result = validate_draft(
+        brand_dir,
+        title="A Post",
+        body_html="<p>Last spring, I noticed her breath had gotten worse.</p>",
+        editor_execute_fn=lambda agent, task: _good_verdict(),
+    )
+    assert result.passed is False
+    assert any("banned_opener" in reason for reason in result.reasons)
+
+
+def test_varied_headings_reach_the_editor(brand_dir: Path) -> None:
+    """The positive half of the slice: a post carrying the same blocks under
+    written-for-this-post headings must pass the scan and be scored normally."""
+    result = validate_draft(
+        brand_dir,
+        title="A Post",
+        body_html=(
+            "<p>Your dog's breath clears a room.</p>"
+            "<h2>What Owners Keep Asking Me About Bully Sticks</h2><p>Real answer.</p>"
+            "<h2>What I Feed Her Now</h2><p>Real recommendation.</p>"
+        ),
+        editor_execute_fn=lambda agent, task: _good_verdict(),
+    )
+    assert result.passed is True
+    assert result.quality_score == 92.0

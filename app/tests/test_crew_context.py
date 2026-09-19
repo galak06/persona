@@ -7,8 +7,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from lib.crew.context import (
+    _LONGFORM_GUIDE_MAX_CHARS,
     brand_identity_summary,
+    brand_longform_voice_summary,
     brand_voice_summary,
     seed_keywords_summary,
     serialize_opportunities,
@@ -115,3 +119,54 @@ def test_serialize_opportunities_round_trips_expected_fields() -> None:
 
 def test_serialize_opportunities_empty_list_is_empty_json_array() -> None:
     assert serialize_opportunities([]) == "[]"
+
+
+# ── long-form voice guide (blog writer + quality editor) ─────────────────────
+
+
+def test_longform_voice_summary_prefers_the_longform_guide(tmp_path: Path) -> None:
+    (tmp_path / "data" / "config").mkdir(parents=True)
+    (tmp_path / "data" / "config" / "brand_voice_guide.md").write_text("COMMENT voice")
+    (tmp_path / "data" / "config" / "brand_longform_voice_guide.md").write_text("ARTICLE voice")
+    assert brand_longform_voice_summary(tmp_path) == "ARTICLE voice"
+
+
+def test_longform_voice_summary_falls_back_to_the_comment_guide(tmp_path: Path) -> None:
+    """A brand with no article guide must keep behaving exactly as it did
+    before this file existed -- losing the voice section entirely would be a
+    silent regression for every brand but dogfoodandfun."""
+    (tmp_path / "data" / "config").mkdir(parents=True)
+    (tmp_path / "data" / "config" / "brand_voice_guide.md").write_text("COMMENT voice")
+    assert brand_longform_voice_summary(tmp_path) == "COMMENT voice"
+
+
+def test_longform_voice_summary_missing_both_returns_empty_string(tmp_path: Path) -> None:
+    assert brand_longform_voice_summary(tmp_path) == ""
+
+
+def test_longform_voice_summary_truncates_long_text(tmp_path: Path) -> None:
+    (tmp_path / "data" / "config").mkdir(parents=True)
+    (tmp_path / "data" / "config" / "brand_longform_voice_guide.md").write_text(
+        "\n".join(f"line {i}" for i in range(500))
+    )
+    summary = brand_longform_voice_summary(tmp_path, max_chars=100)
+    assert summary.endswith("...(truncated)")
+    assert len(summary) <= 100 + len("\n...(truncated)")
+
+
+def test_real_brand_longform_guide_fits_under_the_cap() -> None:
+    """The cap exists to bound prompt size, but a guide silently cut in half
+    is how the comment guide ended up teaching the writer nothing past its
+    "Tone Principles" heading. If this fails, raise the cap or cut the guide
+    -- do not let it truncate unnoticed."""
+    guide = (
+        Path(__file__).resolve().parents[1]
+        / "brands"
+        / "dogfoodandfun"
+        / "data"
+        / "config"
+        / "brand_longform_voice_guide.md"
+    )
+    if not guide.exists():  # pragma: no cover - brand dir is not always checked out
+        pytest.skip("dogfoodandfun brand dir not present")
+    assert len(guide.read_text(encoding="utf-8").strip()) <= _LONGFORM_GUIDE_MAX_CHARS
