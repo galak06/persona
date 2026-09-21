@@ -74,6 +74,21 @@ def test_derive_excerpt_skips_byline_and_disclosure_paragraphs() -> None:
     assert derive_excerpt(html) == "Nalla wouldn't touch her bowl for two days straight."
 
 
+def test_derive_excerpt_skips_the_brand_configured_disclosure_wording() -> None:
+    """dogfoodandfun's `content_rules.json` disclosure starts with neither "By"
+    nor "Affiliate disclosure", so a prefix check let it become the excerpt of
+    every post -- live on 4704/4728/4738, exactly as shaped below."""
+    html = (
+        "<p><em>By Nalla's Dad / August 31, 2026</em></p>"
+        "<p><em>As an Amazon Associate, I earn from qualifying purchases. "
+        "We only recommend gear we actually use.</em></p>"
+        "<p>Last month, the vet ran a gloved finger along Nalla's gum line.</p>"
+    )
+    assert derive_excerpt(html) == (
+        "Last month, the vet ran a gloved finger along Nalla's gum line."
+    )
+
+
 def test_derive_excerpt_truncates_long_paragraph_at_word_boundary() -> None:
     long_text = "word " * 40
     html = f"<p>By Nalla's Dad / August 6, 2026</p><p>{long_text.strip()}</p>"

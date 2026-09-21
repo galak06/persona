@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from lib.affiliate_resolver import _has_disclosure
+
 _JSONLD_SCRIPT_MARKER = '<script type="application/ld+json">'
 
 
@@ -76,7 +78,7 @@ def build_wrapped_body(body_html: str, *, media_source_url: str, alt_text: str) 
     return wrapped
 
 
-_BOILERPLATE_PREFIXES = ("by ", "affiliate disclosure")
+_BOILERPLATE_PREFIXES = ("by ",)
 
 
 def derive_excerpt(body_html: str, *, length: int = 155) -> str:
@@ -89,12 +91,21 @@ def derive_excerpt(body_html: str, *, length: int = 155) -> str:
     content, so every post ends up with the identical, meaningless excerpt --
     reproduced live via `[dff_recent_posts]`. Returns `""` (caller omits the
     field) if no substantive paragraph is found.
+
+    The disclosure is matched with `lib.affiliate_resolver._has_disclosure`,
+    not a prefix, because the sentence is brand-configurable
+    (`content_rules.json`'s `affiliate.disclosure_text`). dogfoodandfun's
+    "As an Amazon Associate, I earn from qualifying purchases..." matched no
+    prefix, so it became the excerpt of every post it opened -- live on posts
+    4704/4728/4738.
     """
     content, _ = split_body_and_jsonld(body_html)
     for match in re.finditer(r"<p[^>]*>(.*?)</p>", content, re.DOTALL):
         text = re.sub(r"<[^>]+>", "", match.group(1)).strip()
         text = re.sub(r"\s+", " ", text)
         if not text or text.lower().startswith(_BOILERPLATE_PREFIXES):
+            continue
+        if _has_disclosure(text):
             continue
         if len(text) <= length:
             return text
