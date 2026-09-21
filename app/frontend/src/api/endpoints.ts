@@ -187,6 +187,12 @@ export const endpoints = {
 
   /** POST — re-run the tagger over every filed photo. One model call each. */
   referenceRetag: "/reference-images/retag",
+
+  /** GET/POST — the active brand's affiliate product catalog. */
+  products: "/products",
+
+  /** PATCH — edit one product, or make it the pick for the focus category. */
+  product: (key: string): string => `/products/${encPath(key)}`,
 } as const;
 
 // Re-export the legacy single-purpose builders so any Phase 2 callers

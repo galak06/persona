@@ -31,6 +31,7 @@ from crewai import Agent, Task
 from lib.affiliate_resolver import ProductEntry
 from lib.crew.products.agent import build_product_selector_agent, build_product_selector_task
 from lib.crew.products.execute import execute_product_selector_crew
+from lib.crew.products.focus import focus_pool
 from lib.crew.products.models import ProductSelection
 from lib.crew.products.pool import load_candidate_pool
 from lib.crew.products.prompts import build_selector_task_description
@@ -82,6 +83,30 @@ def _candidates_text(candidates: dict[str, ProductEntry]) -> str:
     return "\n".join(lines)
 
 
+def _focus_category(brand_dir: Path) -> str:
+    """This brand's declared focus category, or "" when it has none.
+
+    Defensive by design: the registry lookup is a DB round-trip, and this
+    function is reached from the offline writer tests and from any context
+    where Postgres is not up. A failure degrades to "no focus", i.e. the
+    pre-focus behaviour of offering the whole catalog, because losing the DB
+    must not turn a drafting run into a no-product post. It is logged, so a
+    focus that silently stopped applying is visible rather than inferred from
+    the output.
+    """
+    from lib import brands_db
+
+    try:
+        return brands_db.focus_category(brand_dir.name)
+    except Exception as exc:  # registry unreachable -> pre-focus behaviour
+        logger.warning(
+            "crew_products_focus_lookup_failed",
+            brand_id=brand_dir.name,
+            error=str(exc),
+        )
+        return ""
+
+
 def select_products_for_post(
     brand_dir: Path,
     brief: ContentBrief,
@@ -124,6 +149,7 @@ def select_products_for_post(
             discovered = {}
         for key, entry in discovered.items():
             pool.setdefault(key, entry)
+    pool = focus_pool(pool, _focus_category(brand_dir))
     if not pool:
         logger.info("crew_products_pool_empty", brand_id=brand_dir.name)
         return {}

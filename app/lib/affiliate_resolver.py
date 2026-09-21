@@ -56,6 +56,13 @@ class ProductEntry:
     display: str
     category: str | None = None
     notes: str | None = None
+    # Selection state, read only by `lib.crew.products.focus`. Both defaults
+    # are deliberately the permissive ones so a catalog written before these
+    # fields existed keeps resolving and selecting exactly as it did: every
+    # legacy entry is active, and `selected_for=()` only ever narrows the pool
+    # once a focus category is actually declared.
+    active: bool = True
+    selected_for: tuple[str, ...] = ()
 
 
 def _load_catalog() -> dict[str, ProductEntry]:
