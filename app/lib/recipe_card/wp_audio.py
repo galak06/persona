@@ -22,6 +22,10 @@ AUDIO_MARKER = "<!-- persona:audio-player -->"
 # Placeholder slot written by the publisher before the song exists; replaced
 # in place by the real player once the reel's song is generated.
 PLACEHOLDER_MARKER = "<!-- persona:audio-placeholder -->"
+# Posts published before the engine was brand-generalized carry a brand-slug
+# prefix instead ("<!-- dogfoodandfun:audio-placeholder -->"), so match the
+# prefix loosely rather than pinning it to the current constant.
+PLACEHOLDER_MARKER_RE = re.compile(r"<!--\s*[\w.-]+:audio-placeholder\s*-->")
 
 
 def upload_audio(mp3_bytes: bytes, filename: str) -> tuple[int, str]:
@@ -83,11 +87,17 @@ def inject_audio_player(post_id: int, media_id: int, source_url: str) -> bool:
         f'<!-- /wp:audio -->\n'
         f'</div>\n'
     )
-    if PLACEHOLDER_MARKER in content:
+    if PLACEHOLDER_MARKER_RE.search(content):
         # Replace the "song coming soon" placeholder slot with the real player.
+        # WordPress wraps the bare comment in a paragraph, so the live shape is
+        # `<p><!-- ...placeholder --></p>` followed by the (legacy) visible box.
+        # Consume the whole slot: optional <p> wrapper, marker, optional </p>,
+        # optional box. Newer posts are marker-only and match the same pattern.
         updated = re.sub(
-            re.escape(PLACEHOLDER_MARKER)
-            + r'\s*<div class="dff-song-placeholder">.*?</div>',
+            r"(?:<p>\s*)?"
+            + PLACEHOLDER_MARKER_RE.pattern
+            + r"(?:\s*</p>)?"
+            + r'(?:\s*<div class="dff-song-placeholder">.*?</div>)?',
             block.strip(),
             content,
             count=1,
