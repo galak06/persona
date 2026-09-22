@@ -71,7 +71,7 @@ def select_products_for_existing_post(
     otherwise the picked entries in the model's own order. Keys the model
     returns that aren't in `pool` are dropped with a warning -- same
     "don't fully trust the model" posture as
-    `lib.crew.writer.context.sanitize_internal_links`.
+    `lib.crew.writer.link_guard.sanitize_internal_links`.
     """
     if not pool:
         logger.info("blog_products_pool_empty")

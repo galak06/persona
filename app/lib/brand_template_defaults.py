@@ -54,6 +54,17 @@ CONTENT_ANALYSIS_DEFAULTS: dict[str, Any] = {
         "competitor_account": -0.50,
     },
 }
+# One-focus-category strategy (see `lib.content_strategy`). Shipped OFF:
+# `focus_category=""` means "no focus", which is the pre-focus breadth
+# behaviour every existing brand already has. A brand opts in from Brand
+# Settings; nothing here is brand-specific, and no category name may ever be
+# hardcoded in the engine.
+CONTENT_STRATEGY_DEFAULTS: dict[str, Any] = {
+    "focus_category": "",
+    "depth_bias": True,
+    "review_at": "",
+}
+
 
 # Verbatim from dogfoodandfun/config.json's `approval_gates` block.
 APPROVAL_GATES: dict[str, Any] = {

@@ -25,6 +25,7 @@ from lib.engagement.inline_comment import maybe_comment
 from lib.engagement.like_step import run_like_step
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.scan_logging import log_near_miss, log_scanned, log_scored
 from lib.engagement.scan_results import CommentOutcome, PostOutcome
 
 
@@ -56,9 +57,11 @@ def process_post(
 ) -> PostOutcome:
     """Score, like, optionally comment, and mark one post."""
     platform = adapter.platform
-    _log_scanned(post, source, platform, log)
+    log_scanned(post, source, platform, log)
     if dedup.is_duplicate(platform, post.post_id):
-        return PostOutcome()
+        # Same early return as before -- `duplicate` only NAMES the branch so
+        # the run summary can report how many posts left the funnel here.
+        return PostOutcome(duplicate=True)
 
     outcome = _visit_post(
         post=post,
@@ -74,18 +77,20 @@ def process_post(
         drafter=drafter,
         comment_gate=comment_gate,
     )
-    # Iterate-once, marked AFTER the visit so a failed comment stays
-    # retryable (see `PostOutcome.is_retryable`). The tradeoff: a crash
-    # mid-run now costs re-visits next run rather than silently burning
-    # posts we never actually engaged with. Re-visiting is the cheap,
+    # Iterate-once, marked AFTER the visit so an unconfirmed or blocked
+    # comment stays retryable (see `PostOutcome.is_retryable`). The tradeoff:
+    # a crash mid-run now costs re-visits next run rather than silently
+    # burning posts we never actually engaged with. Re-visiting is the cheap,
     # self-correcting direction; a permanently skipped post is not.
     #
-    # Withholding the mark only restores eligibility if nothing ELSE marks
-    # the post, so the collaborator's duplicate gate has to agree. Both
-    # engagers pass `lib.scan_dedup.ScanDedup`, which asks
-    # `already_commented` rather than a presence-only `is_duplicate` —
-    # otherwise the like this visit just recorded would make the post a
-    # duplicate forever and the retry below would never happen.
+    # What withholding the mark does NOT do any more is prevent a duplicate
+    # comment. That job belongs to the claim `comment_submit.py` takes before
+    # the submit: `lib/scan_dedup.py`'s `is_duplicate` reads the outbox first,
+    # so a post whose comment came back unconfirmed is already unreachable.
+    # The mark is withheld so `scripts/comment_verify.py` can RELEASE that
+    # claim if the comment turns out never to have landed — a
+    # `completed_tasks` seen-mark is permanent, and writing one here would
+    # make the release a no-op and retire the post regardless.
     if not outcome.is_retryable:
         mark_seen(dedup, platform, post.post_id, log=log, dry_run=dry_run)
     return outcome
@@ -113,8 +118,9 @@ def _visit_post(
         return PostOutcome(pre_filter_reason=reason)
 
     score = adapter.adjust_score(post, score_relevance(post))
+    log_scored(post, platform, score, log)
     if not policy.is_candidate(score):
-        return PostOutcome()
+        return PostOutcome(scored_below_threshold=True)
 
     like = run_like_step(
         post=post,
@@ -148,6 +154,7 @@ def _visit_post(
         comment_posted=comment.posted,
         comment_declined=comment.declined,
         comment_failed=comment.failed,
+        comment_blocked=comment.blocked,
     )
 
 
@@ -172,7 +179,7 @@ def _run_comment_step(
     report counts them even when no comment lands.
     """
     if not _is_comment_candidate(platform, post, score, policy):
-        _log_near_miss(post, platform, score, log)
+        log_near_miss(post, platform, score, log)
         return CommentOutcome(), None
 
     log.info(
@@ -200,30 +207,6 @@ def _run_comment_step(
         comment_gate=comment_gate,
     )
     return outcome, score
-
-
-def _log_scanned(post: Post, source: Source, platform: str, log: Log) -> None:
-    """Log that this post was enumerated, before any gate runs."""
-    log.info(
-        "post_scanned platform=%s post_id=%s source=%s url=%s",
-        platform,
-        post.post_id,
-        source.name or "",
-        post.post_url,
-    )
-
-
-def _log_near_miss(post: Post, platform: str, score: float, log: Log) -> None:
-    """Log near-miss posts so users can see why they were skipped."""
-    if score < 0.5:
-        return
-    log.info(
-        "post_skipped platform=%s post_id=%s score=%.2f url=%s",
-        platform,
-        post.post_id,
-        score,
-        post.post_url,
-    )
 
 
 def _is_comment_candidate(

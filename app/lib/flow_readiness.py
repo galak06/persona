@@ -24,6 +24,9 @@ from pathlib import Path
 from typing import Any
 
 from lib import db, schedule_db, worker_db
+from lib.observability import get_logger
+
+logger = get_logger(__name__)
 
 # Presentation order (onboarding order), not `MANAGED_FLOW_IDS`'s frozenset
 # iteration order. Stays the FULL managed set -- `tests/
@@ -114,6 +117,45 @@ def _readiness_for(flow_id: str, *, brand_id: str, brand_dir: Path) -> dict[str,
     }  # pragma: no cover -- unreachable for MANAGED_FLOW_IDS
 
 
+def _task_ids_by_flow(brand_id: str) -> dict[str, str]:
+    """Map each flow id to the `schedule_tasks.id` its LIVE row carries.
+
+    `title` is not unique per brand: the 2026-08-31 task-id migration retired
+    each superseded row in place rather than deleting it, so `dogfoodandfun`
+    holds both `dogfoodandfun-ig-engager` (live) and `dogfood-ig-engager`
+    (retired) under the title `ig-engager`. Retired rows are skipped via the
+    same `schedule_db.is_retired` predicate the dispatcher refuses to run
+    them on -- reading one meant reporting a `worker_runs` row frozen at the
+    day it was retired.
+
+    Should two LIVE rows ever share a title, resolution stays deterministic
+    (independent of row order) rather than last-write-wins: the canonical
+    `<brand_id>-<flow_id>` id wins, else the lexicographically smallest, and
+    the collision is logged -- silent last-wins is what hid the retired-row
+    bug for a week.
+    """
+    by_flow: dict[str, str] = {}
+    for task in schedule_db.load_all():
+        if task.get("brand_id") != brand_id or schedule_db.is_retired(task):
+            continue
+        flow_id, task_id = task["title"], task["id"]
+        held = by_flow.get(flow_id)
+        if held is None:
+            by_flow[flow_id] = task_id
+            continue
+        canonical = f"{brand_id}-{flow_id}"
+        winner = canonical if canonical in (held, task_id) else min(held, task_id)
+        logger.warning(
+            "flow_task_id_collision",
+            brand_id=brand_id,
+            flow_id=flow_id,
+            task_ids=sorted({held, task_id}),
+            chosen=winner,
+        )
+        by_flow[flow_id] = winner
+    return by_flow
+
+
 def flow_status(
     *, brand_id: str, brand_dir: Path, enabled_flows: list[str]
 ) -> list[dict[str, Any]]:
@@ -124,14 +166,13 @@ def flow_status(
     current per-brand convention and use a hardcoded `dogfood-` prefix
     unrelated to its real `brand_id`, while brands provisioned since then get
     `<brand_id>-<flow_id>`. Rather than pick one format and be wrong for the
-    other, look up each flow's row by `(brand_id, title=flow_id)` -- both
-    conventions set `title` to the plain flow id -- and read `worker_runs`
-    under that row's real `id`.
+    other, look up each flow's LIVE row by `(brand_id, title=flow_id)` --
+    both conventions set `title` to the plain flow id -- and read
+    `worker_runs` under that row's real `id`. See `_task_ids_by_flow` for why
+    "live" has to be part of that lookup.
     """
     enabled_set = set(enabled_flows)
-    tasks_by_flow = {
-        t["title"]: t["id"] for t in schedule_db.load_all() if t.get("brand_id") == brand_id
-    }
+    tasks_by_flow = _task_ids_by_flow(brand_id)
     out: list[dict[str, Any]] = []
     for flow_id in _PANEL_ORDER:
         schedule_task_id = tasks_by_flow.get(flow_id)

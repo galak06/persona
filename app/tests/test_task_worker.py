@@ -26,6 +26,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from scripts import task_worker
 
 from lib import db, worker_db
+from lib.runtime.flow import FLOW_SKIPPED_MARKER
 
 _BRAND = "dogfoodandfun"
 
@@ -97,6 +98,56 @@ def test_run_task_executes_and_records_success(
     assert row is not None
     assert row["status"] == "success"
     assert row["message"] == "all good"
+
+
+@requires_postgres
+def test_run_task_preserves_a_childs_skipped_status(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A flow that lost its singleton lock exits 0 but did not run.
+
+    Child and parent write the SAME `worker_runs` row -- `task_id` here and
+    `worker_label_for_flow` inside `run_flow` are both `<brand>-<flow_id>`. So
+    a plain "returncode 0 means success" overwrote the `skipped` row the child
+    had just written, and a manual "Run now" that did nothing was reported as
+    a success with an empty message.
+    """
+    reason = "skipped: another instance of 'ig-engager' holds the lock"
+    fake_run = _fake_run(returncode=0, stdout=f"booting\n{FLOW_SKIPPED_MARKER} {reason}\n")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    task_worker.run_task(_queue_item(f"{_BRAND}-ig-engager", tmp_path))
+
+    row = worker_db.get_one(tmp_path, f"{_BRAND}-ig-engager", _BRAND)
+    assert row is not None
+    assert row["status"] == "skipped"
+    assert row["message"] == reason
+
+
+@requires_postgres
+def test_run_task_hands_the_child_its_own_timeout_budget(
+    pg: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`subprocess.run(timeout=)` below is a SIGKILL: an overrunning flow
+    writes no summary and no state, so the run vanishes. Exporting the same
+    number as FLOW_TIMEOUT_SECONDS is what lets a long flow (ig-engager) stop
+    itself at a safe checkpoint first -- see lib/engagement/scan_deadline.py.
+    """
+    captured: dict[str, Any] = {}
+
+    def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        captured["env"] = kwargs["env"]
+        captured["timeout"] = kwargs["timeout"]
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", _run)
+
+    task_worker.run_task(_queue_item("t1", tmp_path))
+
+    # Same number on both sides: the child's deadline and the worker's fuse
+    # must describe one budget, not two that can drift apart.
+    assert captured["env"]["FLOW_TIMEOUT_SECONDS"] == "60"
+    assert captured["timeout"] == 60
 
 
 @requires_postgres

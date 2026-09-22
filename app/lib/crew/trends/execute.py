@@ -46,16 +46,80 @@ def _log_json_decode_failed(exc: json.JSONDecodeError, text: str) -> None:
     logger.warning("crew_trends_json_decode_failed", error=str(exc), raw_output=text)
 
 
-def execute_trends_crew(agent: Agent, task: Task) -> TrendsOutput | None:
-    """Run the real trend-scout `Crew(...).kickoff()`. `None` on any failure."""
+DEFAULT_MAX_ATTEMPTS = 3
+
+# Appended to the task description on a retry. The base prompt already says
+# "no commentary before or after it" (`agent._json_output_instructions`) and
+# the model ignores it anyway, so repeating that alone would be pointless --
+# this names the specific failure and caps the field that actually blew the
+# budget.
+RETRY_INSTRUCTION = (
+    "\n\nCRITICAL -- your previous response could not be parsed. You began with "
+    "reasoning prose, which consumed the output budget and left the JSON "
+    "truncated mid-object, so NOTHING was usable. This time: your very first "
+    "character MUST be '{' and your very last MUST be '}'. Write no reasoning, "
+    "no restatement of the inputs, no explanation -- before or after. Keep every "
+    "`reason` field under 200 characters so the object cannot run out of room."
+)
+
+
+def execute_trends_crew(
+    agent: Agent, task: Task, *, max_attempts: int = DEFAULT_MAX_ATTEMPTS
+) -> TrendsOutput | None:
+    """Run the real trend-scout `Crew(...).kickoff()`. `None` on any failure.
+
+    Retried, because this stage's dominant failure mode is not a bug but a
+    dice roll: DeepSeek intermittently emits a long chain-of-thought preamble
+    before the JSON, runs out of output budget, and truncates mid-object. A
+    35,001-character response ending `"keyword": "d` -- 23 open braces to 21
+    closed -- is unrecoverable no matter how good the repair layer is, and it
+    zeroes the whole scout run (no signals -> no ideas -> exit 1).
+
+    The same prompt succeeds on a re-roll, so one failure is not evidence the
+    request is impossible. Retries also cover kickoff-level network errors,
+    for the same reason the engager adapters retry navigation.
+
+    `task.description` is restored before returning: the caller owns that
+    object and must not be left carrying retry scaffolding.
+    """
     from crewai import Crew  # local import: keeps Crew construction next to its one use
 
-    try:
-        crew = Crew(agents=[agent], tasks=[task], verbose=False)
-        crew.kickoff()
-    except Exception as exc:  # CrewAI/LiteLLM/network errors
-        logger.warning("crew_trends_kickoff_failed", error=str(exc))
-        return None
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be >= 1")
 
-    raw = task.output.raw if task.output else None
-    return _parse_structured_output(raw)
+    original_description = task.description
+    try:
+        for attempt in range(1, max_attempts + 1):
+            if attempt > 1:
+                task.description = original_description + RETRY_INSTRUCTION
+
+            try:
+                crew = Crew(agents=[agent], tasks=[task], verbose=False)
+                crew.kickoff()
+            except Exception as exc:  # CrewAI/LiteLLM/network errors
+                logger.warning(
+                    "crew_trends_kickoff_failed",
+                    error=str(exc),
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                )
+                continue
+
+            raw = task.output.raw if task.output else None
+            parsed = _parse_structured_output(raw)
+            if parsed is not None:
+                if attempt > 1:
+                    logger.info("crew_trends_recovered_on_retry", attempt=attempt)
+                return parsed
+
+            logger.warning(
+                "crew_trends_parse_failed_retrying",
+                attempt=attempt,
+                max_attempts=max_attempts,
+                raw_length=len(raw or ""),
+            )
+    finally:
+        task.description = original_description
+
+    logger.error("crew_trends_all_attempts_failed", max_attempts=max_attempts)
+    return None

@@ -32,6 +32,7 @@ from lib.brand_templates import (
 from lib.brands_db.models import BrandStatus
 from lib.brands_db.repository import BrandsRepository
 from lib.groups_db.models import slugify
+from lib.worker_labels import worker_label_for_flow
 
 # app/ (this file lives at app/lib/brand_provisioning.py).
 _PERSONA_ROOT = Path(__file__).resolve().parent.parent
@@ -110,7 +111,11 @@ def _flow_to_task(flow: dict[str, Any], *, brand_id: str) -> dict[str, Any]:
     """
     flow_id = str(flow["id"])
     return {
-        "id": f"{brand_id}-{flow_id}",
+        # Built through the shared helper, not string-formatted here: this
+        # module and `lib.worker_labels` disagreed for months (`<brand_id>-`
+        # vs a hardcoded `dogfood-`), which gave one flow two rows and left
+        # the UI's row stuck at 'running'. One definition, one id.
+        "id": worker_label_for_flow(flow_id, brand_id),
         "brand_id": brand_id,
         "title": flow_id,
         "description": flow.get("description", ""),

@@ -23,7 +23,10 @@ preceding it within the same clause (split on `. ! ? ; \\n` — NOT commas,
 so a negation still covers a list: "not a vet, nutritionist, or doctor").
 A negation cue ("not", "isn't", "never", "without", ...) in that short
 (6-word) window drops the hit: "we are not veterinarians" / "this isn't
-medical advice" must not trigger. Mirrors
+medical advice" must not trigger. The same window also honours DISMISSAL
+cues ("avoid", "beware", "myth", "debunked"), so a post can name a
+marketing claim in order to warn readers off it -- see `_DISMISSAL_WORDS`
+for what that widening costs. Mirrors
 `generators/recipe.py::_validate()`'s clause-scoped negation for
 "xylitol-free" / "no garlic", broadened for natural prose.
 
@@ -113,7 +116,42 @@ _NEGATION_WORDS = (
     "haven't",
     "hadn't",
 )
-_NEGATION_RE = re.compile(r"\b(?:" + "|".join(_NEGATION_WORDS) + r")\b")
+
+# Dismissal cues -- a DELIBERATE loosening of the gate, kept separate from the
+# grammatical negations above so what was widened stays auditable in one place.
+#
+# These frame the phrase that follows as something to REJECT rather than
+# assert. A post warning readers off snake oil has to be able to name the snake
+# oil: on 2026-08-31 the dental draft for idea f4df76d6 was rejected entirely
+# for the sentence
+#
+#     Avoid flashy marketing claims like "cures bad breath" or "eliminates
+#     plaque" in three days
+#
+# -- advice not to trust that claim, read by the scanner as making it. The
+# "miracle cure" sentence two paragraphs later was correctly dropped, because
+# "not" is a cue and "avoid" was not.
+#
+# The cost is real and worth stating: "avoid" now suppresses a claim term for
+# the next 6 words of the same clause, and this module's clause delimiters are
+# `.!?;\n` -- an em-dash does NOT reset the clause. So a contrived
+# "avoid the vet visit -- this cures parvo" would slip through where it did not
+# before. Accepted on 2026-08-31 to stop discarding whole drafts; the mechanism
+# is unchanged, so reverting is deleting this tuple.
+_DISMISSAL_WORDS = (
+    "avoid",
+    "avoids",
+    "avoiding",
+    "beware",
+    "debunk",
+    "debunks",
+    "debunked",
+    "myth",
+    "myths",
+)
+_NEGATION_RE = re.compile(
+    r"\b(?:" + "|".join((*_NEGATION_WORDS, *_DISMISSAL_WORDS)) + r")\b"
+)
 _CLAUSE_DELIMITERS_RE = re.compile(r"[.!?;\n]")
 _NEGATION_WINDOW_WORDS = 6
 

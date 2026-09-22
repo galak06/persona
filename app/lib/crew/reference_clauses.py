@@ -44,7 +44,13 @@ described beyond the name the brand gave -- no gender, no role, no appearance.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from lib.crew.reference_library import ReferenceImage
+
+#: Spelled-out counts for the opening sentence -- "THREE reference photos"
+#: reads as an instruction, "3 reference photos" reads as data.
+_NUMBER_WORDS = {2: "TWO", 3: "THREE", 4: "FOUR"}
 
 
 def _mascot_aside(mascot_name: str, mascot_kind: str) -> str:
@@ -195,6 +201,79 @@ def reference_clause(
     )
 
 
+def anchored_reference_clause(
+    scene: ReferenceImage,
+    anchors: Sequence[ReferenceImage],
+    mascot_name: str = "",
+    mascot_kind: str = "",
+    persona_name: str = "",
+) -> str:
+    """One positional clause for a scene photo plus ANY number of anchors.
+
+    `paired_reference_clause` covered exactly one anchor because exactly one
+    subject was ever anchored: the mascot. A brief that puts a person in the
+    frame needs a second (`lib.crew.reference_persona`), and the brand's own
+    animal and its own person are different subjects that can arrive on
+    different photos.
+
+    Same contract as the two-photo version, extended: photos are numbered from
+    1 in the order the caller attaches them, PHOTO 1 is always the scene, and
+    each anchor is described by what IT shows. The caller MUST send the parts
+    in this same order.
+    """
+    if not anchors:
+        return reference_clause(scene, mascot_name, mascot_kind, persona_name)
+    numbered = [f"PHOTO 1 -- {reference_clause(scene, mascot_name, mascot_kind, persona_name)}"]
+    for position, anchor in enumerate(anchors, start=2):
+        numbered.append(
+            f"PHOTO {position} -- "
+            + identity_clause(
+                mascot_name,
+                mascot_kind,
+                persona_name,
+                shows_mascot=anchor.shows_mascot,
+                shows_persona=anchor.shows_persona,
+            )
+        )
+    count = _NUMBER_WORDS.get(len(anchors) + 1, str(len(anchors) + 1).upper())
+    # The single-anchor case names PHOTO 2 outright. "The later photo" is
+    # strictly vaguer, and vaguer is worse in a prompt -- it only earns its
+    # keep when there is more than one photo it could mean.
+    single = len(anchors) == 1
+    resolve = (
+        "follow PHOTO 2 for that subject"
+        if single
+        else "follow the later photo for the subject it shows"
+    )
+    scope = "both" if single else "all of them"
+    # PHOTO 1 is not always a pure setting photo. Once a persona anchor can
+    # ride along with a scene that already shows the mascot, calling a studio
+    # portrait of the mascot a reference for "setting, styling and props"
+    # describes it wrongly -- and the model has to reconcile that against a
+    # PHOTO 1 clause that just told it to reproduce the subject exactly.
+    if scene.shows_mascot or scene.shows_persona:
+        jobs = (
+            "PHOTO 1 fixes the setting and the subject it shows; "
+            + ("PHOTO 2 fixes" if single else "each later photo fixes")
+            + " a subject PHOTO 1 does not"
+        )
+    else:
+        jobs = (
+            "PHOTO 1 fixes the setting, styling and props, "
+            + ("PHOTO 2 fixes" if single else "the photos after it fix")
+            + " what the brand's own "
+            + ("subject looks" if single else "subjects look")
+            + " like"
+        )
+    return (
+        f"{count} reference photos are attached, in this order. "
+        + "".join(numbered)
+        + f"They have different jobs: {jobs}. Where they disagree, {resolve} "
+        f"and PHOTO 1 for everything else, and follow the scene described "
+        f"above over {scope}. "
+    )
+
+
 def paired_reference_clause(
     scene: ReferenceImage,
     anchor: ReferenceImage,
@@ -202,37 +281,11 @@ def paired_reference_clause(
     mascot_kind: str = "",
     persona_name: str = "",
 ) -> str:
-    """One clause for TWO attached photos, described by position.
+    """The one-anchor case of `anchored_reference_clause`, kept as a name.
 
-    A single reference cannot do both jobs. The photo that matches the scene
-    the planner asked for is usually a place or a product, and the clause it
-    earns says -- correctly -- "do not take the mascot's appearance from this".
-    With nothing else attached, the model then invents one
-    (`lib.crew.reference_mascot` has the live example). Attaching a
-    `shows_mascot` photo as well fixes that only if the model is told which
-    photo is which, so this clause is strictly positional and the caller MUST
-    send the parts in the same order: scene first, anchor second.
-
-    Built from `reference_clause` and `identity_clause` rather than from new
-    prose, so the single-reference and two-reference paths can never drift
-    into saying different things about the same photo. The closing sentence is
-    the only new instruction, and it exists to settle the one conflict the two
-    photos create: which of them decides what the mascot looks like.
+    Every caller that attaches exactly one anchor reads better saying so, and
+    this is the shape `lib.crew.reference_mascot` documents. It delegates
+    rather than repeating the prose, so the two- and three-photo paths cannot
+    drift into describing the same photo differently.
     """
-    scene_clause = reference_clause(scene, mascot_name, mascot_kind, persona_name)
-    anchor_clause = identity_clause(
-        mascot_name,
-        mascot_kind,
-        persona_name,
-        shows_mascot=True,
-        shows_persona=anchor.shows_persona,
-    )
-    return (
-        "TWO reference photos are attached, in this order. "
-        f"PHOTO 1 -- {scene_clause}"
-        f"PHOTO 2 -- {anchor_clause}"
-        "The two have different jobs: PHOTO 1 fixes the setting, styling and "
-        "props, PHOTO 2 fixes what the brand's own subject looks like. Where "
-        "they disagree, follow PHOTO 2 for that subject and PHOTO 1 for "
-        "everything else, and follow the scene described above over both. "
-    )
+    return anchored_reference_clause(scene, (anchor,), mascot_name, mascot_kind, persona_name)

@@ -360,6 +360,11 @@
             "title": "Facebook Page Url",
             "type": "string"
           },
+          "focus_category": {
+            "default": "",
+            "title": "Focus Category",
+            "type": "string"
+          },
           "instagram_profile_url": {
             "default": "",
             "title": "Instagram Profile Url",
@@ -447,6 +452,11 @@
             "title": "Extra",
             "type": "object"
           },
+          "focus_category": {
+            "default": "",
+            "title": "Focus Category",
+            "type": "string"
+          },
           "group_join_limit": {
             "default": 10,
             "title": "Group Join Limit",
@@ -510,6 +520,29 @@
           "status"
         ],
         "title": "BrandDetail",
+        "type": "object"
+      },
+      "BrandIdeaCategoriesResponse": {
+        "description": "The category vocabularies a focus category is matched against.\n\nTwo lists, because a focus category is matched in two different places\nand matching only one of them fails silently:\n\n`categories` -- from `content_ideas.category`. This is what the idea gate\ncompares against, so a focus missing from it admits almost nothing.\n\n`site_categories` -- the brand's real WordPress categories, from the site\ncontent cache. This is what internal-link ranking compares against, so a\nfocus missing from it leaves the clustering doing nothing at all, with no\nerror anywhere. That is exactly how `Food/Nutrition` -- a real entry in\n`categories` but on no published post -- looked healthy while disabling\nthe whole effect.",
+        "properties": {
+          "categories": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Categories",
+            "type": "array"
+          },
+          "site_categories": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Site Categories",
+            "type": "array"
+          }
+        },
+        "title": "BrandIdeaCategoriesResponse",
         "type": "object"
       },
       "BrandKeywords": {
@@ -610,6 +643,11 @@
             },
             "title": "Files Written",
             "type": "array"
+          },
+          "focus_category": {
+            "default": "",
+            "title": "Focus Category",
+            "type": "string"
           },
           "group_join_limit": {
             "default": 10,
@@ -744,6 +782,17 @@
               }
             ],
             "title": "Enabled Flows"
+          },
+          "focus_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Focus Category"
           },
           "group_join_limit": {
             "anyOf": [
@@ -1934,7 +1983,8 @@
               "queued",
               "running",
               "success",
-              "error"
+              "error",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"
@@ -3743,7 +3793,8 @@
               "queued",
               "running",
               "success",
-              "error"
+              "error",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"
@@ -3875,7 +3926,8 @@
               "running",
               "success",
               "error",
-              "never"
+              "never",
+              "skipped"
             ],
             "title": "Status",
             "type": "string"
@@ -4361,6 +4413,49 @@
         ]
       }
     },
+    "/api/v1/brands/{brand_id}/idea-categories": {
+      "get": {
+        "description": "Distinct categories this brand's ideas have used, for the focus field.\n\nRead-only and best-effort: a brand with no ideas yet returns an empty\nlist, which the UI renders as \"no suggestions\" rather than an error --\nsetting a focus before the first scout run is legitimate.",
+        "operationId": "list_brand_idea_categories_api_v1_brands__brand_id__idea_categories_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "brand_id",
+            "required": true,
+            "schema": {
+              "title": "Brand Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandIdeaCategoriesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Brand Idea Categories",
+        "tags": [
+          "brands"
+        ]
+      }
+    },
     "/api/v1/brands/{brand_id}/provision": {
       "post": {
         "description": "Idempotent re-run: rebuilds a `BrandSpec` from the stored row and re-provisions.\n\nThe retry/recovery path for a `POST /brands` that returned 502, and the\ngeneral \"re-run onboarding for this brand\" path (e.g. after editing\nkeywords directly in the DB, or the dogfoodandfun reset). 404 if the\nbrand row doesn't exist.",
@@ -4406,7 +4501,7 @@
     },
     "/api/v1/brands/{brand_id}/settings": {
       "patch": {
-        "description": "Partial settings edit: `headless` + the 4 keyword/competitor lists.\n\nEvery body field is optional and independent. Persists via\n`BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-\nfrom-row + `provision_brand()` path `POST .../provision` uses -- this is\nwhat makes a headless toggle or keyword edit actually take effect on the\nnext scanner run (`brand.json`/`config.json`/`instagram_accounts.csv`\nall get rewritten), not just stored inertly in Postgres. 404 if the\nbrand row doesn't exist.",
+        "description": "Partial settings edit: `headless`, the 4 keyword/competitor lists,\nand the brand's one focus category.\n\nEvery body field is optional and independent. Persists via\n`BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-\nfrom-row + `provision_brand()` path `POST .../provision` uses -- this is\nwhat makes a headless toggle or keyword edit actually take effect on the\nnext scanner run (`brand.json`/`config.json`/`instagram_accounts.csv`\nall get rewritten), not just stored inertly in Postgres. 404 if the\nbrand row doesn't exist.",
         "operationId": "update_brand_settings_api_v1_brands__brand_id__settings_patch",
         "parameters": [
           {

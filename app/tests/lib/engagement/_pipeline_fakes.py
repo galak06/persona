@@ -17,17 +17,33 @@ from lib.engagement.adapters.fake import FakeAdapter, FakeSource
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
+from lib.engagement.scan_deadline import ScanDeadline
 
 
 class FakeDedup:
-    """In-test dedup double matching the pipeline's call signatures."""
+    """In-test dedup double matching the pipeline's call signatures.
+
+    Implements `SupportsCommentClaim` as well, backed by in-memory sets —
+    without it every inline-comment test would stop commenting, because
+    `comment_submit._claim` refuses any collaborator that cannot reserve a
+    post. The claim semantics mirror `lib.scan_dedup.ScanDedup`: a claimed
+    post is a duplicate from then on, and a second claim on it is refused.
+    """
 
     def __init__(self, seen: set[str] | None = None) -> None:
         self.seen = seen or set()
         self.engaged: list[tuple[str, str, str, str | None]] = []
+        # Every claim_comment call, in order, as (platform, post_id).
+        self.claims: list[tuple[str, str]] = []
+        self.claimed: set[tuple[str, str]] = set()
+        self.settled: set[tuple[str, str]] = set()
+        # Knobs for the outage/refusal paths.
+        self.claims_ok = True
+        self.claim_grants = True
+        self.settle_ok = True
 
     def is_duplicate(self, platform: str, post_id: str) -> bool:
-        return post_id in self.seen
+        return (platform, post_id) in self.claimed or post_id in self.seen
 
     def mark_engaged(
         self,
@@ -38,6 +54,32 @@ class FakeDedup:
         status: str = "engaged",
     ) -> None:
         self.engaged.append((platform, post_id, action, group_or_hashtag))
+
+    def claims_available(self) -> bool:
+        return self.claims_ok
+
+    def claim_comment(
+        self,
+        platform: str,
+        post_id: str,
+        *,
+        post_url: str = "",
+        target_name: str = "",
+        content: str = "",
+    ) -> bool:
+        self.claims.append((platform, post_id))
+        if not self.claims_ok or not self.claim_grants:
+            return False
+        if (platform, post_id) in self.claimed:
+            return False
+        self.claimed.add((platform, post_id))
+        return True
+
+    def settle_comment(self, platform: str, post_id: str) -> bool:
+        if not self.settle_ok:
+            return False
+        self.settled.add((platform, post_id))
+        return True
 
 
 class FakeIterateOnceDedup(FakeDedup):
@@ -136,14 +178,28 @@ class FakeCommentGate:
 
 
 class FakeLog:
+    """`Log` double recording both the format string and the rendered line.
+
+    `calls` holds `(level, format_string)` — what most tests assert on, since
+    the event name is the first word of the format string. `lines` holds
+    `(level, rendered)` so a test can assert on the VALUES a line carries
+    (a score, a caption length), which is the whole point of the per-post
+    `post_scored` line.
+    """
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.lines: list[tuple[str, str]] = []
 
     def info(self, msg: str, *args: object, **kwargs: object) -> None:
-        self.calls.append(("info", msg))
+        self._record("info", msg, args)
 
     def warning(self, msg: str, *args: object, **kwargs: object) -> None:
-        self.calls.append(("warning", msg))
+        self._record("warning", msg, args)
+
+    def _record(self, level: str, msg: str, args: tuple[object, ...]) -> None:
+        self.calls.append((level, msg))
+        self.lines.append((level, msg % args if args else msg))
 
 
 # --- Stub callables ---------------------------------------------------------
@@ -200,7 +256,10 @@ def make_post(
     platform: str = "instagram",
     source_id: str = "s1",
     source_name: str = "src",
+    platform_extra: dict[str, object] | None = None,
 ) -> Post:
+    """Build a `Post`. `platform_extra` defaults to empty — i.e. an adapter
+    that reports no extraction status, which the pipeline reads as OK."""
     return Post(
         platform=platform,
         post_id=pid,
@@ -209,6 +268,7 @@ def make_post(
         source_id=source_id,
         source_name=source_name,
         source_url="https://x/s",
+        platform_extra=dict(platform_extra or {}),
     )
 
 
@@ -230,6 +290,7 @@ def run(
     dry_run: bool = False,
     inline_comment: bool = False,
     comment_gate: FakeCommentGate | None = None,
+    deadline: ScanDeadline | None = None,
 ) -> tuple[ScanReport, FakeDedup, FakeRateTracker, FakeDrafter]:
     """Run pipeline with sensible defaults; return report + collaborators.
 
@@ -254,5 +315,6 @@ def run(
         dry_run=dry_run,
         inline_comment=inline_comment,
         comment_gate=comment_gate,
+        deadline=deadline,
     )
     return report, d, rt, dr

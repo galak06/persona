@@ -12,46 +12,9 @@ from collections.abc import Sequence
 from typing import Any
 
 from lib.crew.reference_vocabulary import catch_all_clause
+from lib.crew.writer.blueprint import _BLUEPRINT_SPEC, _HARD_RULES, _PROSE_RULES
 from lib.crew.writer.context import internal_link_candidates_json
 from lib.crew.writer.models import ContentBrief, InternalLinkCandidate
-
-_BLUEPRINT_SPEC = """\
-## Blueprint (follow this structure exactly, as WordPress-ready HTML)
-1. Byline: "By {persona} / {today}"
-2. Affiliate disclosure -- immediately after the byline. Use this EXACT sentence, verbatim: \
-"{disclosure}"
-3. Hook -- an 80-150 word mascot-story opener (a specific, relatable scenario), matching the \
-brief's mascot_angle
-4. Problem statement -- why this topic matters
-5. Core content -- H2/H3 sections per the brief's outline, data-heavy (at least 3 concrete \
-numbers/data points per major section), engineer-metaphor framing
-6. Product comparison table -- ONLY if the catalog below has products genuinely relevant to \
-this topic; a markdown-in-HTML <table> with name/price-range/key-spec/pros/cons/affiliate link \
-columns, using [AFFILIATE:key] placeholders for links. If nothing in the catalog fits, skip \
-this section and the "Our Pick" section entirely -- do not force irrelevant products in.
-7. FAQ -- one <h3> per brief faq_question, each followed by a real answer paragraph; also \
-return these as faq_pairs in your structured output (used to generate schema.org FAQPage \
-markup separately -- do not add the JSON-LD yourself)
-8. Related reading -- a bulleted list of internal links, using ONLY the brief's real \
-internal_link_candidates (never invent a URL)
-9. "Our Pick" -- closing recommendation with an [AFFILIATE:key] link, ONLY if step 6 produced \
-a product section
-
-Target 2,500-3,500 words for body_html. Report the actual word_count of what you wrote -- do \
-not just restate the target.
-"""
-
-_HARD_RULES = """\
-## Hard rules
-- Never claim implied vet/nutritionist/doctor credentials, a disease cure/treatment, dosage/\
-prescription advice, or an absolute health-efficacy claim ("guaranteed", "100% safe", "cures").
-- Never state a specific fact about the brand's mascot (diet, products owned, a specific \
-anecdote) that isn't grounded in the mascot facts below -- if a detail isn't listed there, \
-keep mascot mentions general ("in our experience", "we've noticed").
-- Never invent a [AFFILIATE:key] -- only use keys listed in the product catalog below.
-- Never invent an internal link URL -- only use the brief's internal_link_candidates.
-- Include the current year ({year}) in the title.
-"""
 
 
 def _reference_category_section(categories: Sequence[str]) -> str:
@@ -79,6 +42,24 @@ the hero far better than none does.{catch_all_clause(categories)}
 """
 
 
+def _focus_link_rule(focus_category: str) -> str:
+    """The extra internal-link rule for a brand focused on one category.
+
+    Empty string when there is no focus, so an unfocused brand's prompt is
+    unchanged. The candidate list is already ordered same-category-first
+    (`lib.crew.writer.context.rank_link_candidates`); this is what tells the
+    model that the ordering means something.
+    """
+    if not focus_category.strip():
+        return ""
+    return (
+        f' This brand is focused on "{focus_category.strip()}": prefer candidates whose '
+        f"category matches it, so those posts link to each other and read as one body of "
+        f"work rather than scattered pages. Only reach outside that category when no "
+        f"in-category candidate is genuinely relevant -- relevance still wins over category."
+    )
+
+
 def build_strategist_task_description(
     *,
     idea: dict[str, Any],
@@ -88,6 +69,7 @@ def build_strategist_task_description(
     link_candidates: list[InternalLinkCandidate],
     year: int,
     reference_categories: Sequence[str] = (),
+    focus_category: str = "",
 ) -> str:
     """The strategist agent's full prompt: one content idea -> a `ContentBrief`."""
     return f"""You are turning ONE approved content idea into a structured content brief.
@@ -121,15 +103,27 @@ first-person mascot narrative belongs in the body's hook (a text claim, not a vi
 in the title. Keep the title to 60 characters or fewer, INCLUDING the year -- Google truncates \
 longer search-result titles (~555-600px, roughly 60 characters), so anything past that limit \
 never displays in search results at all.
-2. Propose an outline: 5-9 H2/H3 sections with a 1-line note on what each covers, following the \
-brand's blueprint (hook -> problem statement -> core content -> [product comparison if the \
-topic warrants it] -> FAQ -> related reading -> our pick).
+2. Propose an outline: 4-11 H2/H3 sections with a 1-line note on what each covers. The post \
+opens with a hook and a reason the topic matters, carries the argument through its core \
+sections, compares products if the topic warrants it, answers real reader questions, points at \
+related posts, and closes on a recommendation -- but those are the JOBS each section does, not \
+its heading and not a fixed running order. Two rules on the outline you propose:
+   - Every heading must be about this post's subject. Never propose a heading that is (or \
+starts with) a slot name -- "FAQ", "Frequently Asked Questions", "Related Reading", "Our Pick", \
+"Product Comparison Table", "Hook", "Problem", "Introduction", "Conclusion", "Summary", "Key \
+Takeaways", "Final Thoughts". A draft carrying one is rejected mechanically, so a heading like \
+"What Owners Keep Asking Me About Bully Sticks" is required where "FAQ" would have gone.
+   - Choose the section COUNT from the topic rather than defaulting to the middle of the \
+range. A single focused comparison earns four sections; a season-long feeding experiment earns \
+eleven. Every post landing on the same count is how a site starts looking machine-made.
 3. Set primary_keyword to the idea's target keyword (or a close, better-targeted variant) and \
 propose 3-6 secondary_keywords.
 4. Choose 3-6 internal_link_candidates from the real list above whose topic is genuinely \
-relevant to this idea -- if fewer than 3 are relevant, return only the relevant ones.
-5. Propose 3-6 faq_questions this post should answer -- real questions a reader would search \
-for, not generic filler.
+relevant to this idea -- if fewer than 3 are relevant, return only the relevant ones.\
+{_focus_link_rule(focus_category)}
+5. Propose 3-7 faq_questions this post should answer -- real questions a reader would search \
+for, not generic filler. Pick the count from how many the topic really raises; do not land on \
+the same number every post.
 6. Write mascot_angle: 2-4 sentences on how the brand's real voice/mascot fits THIS specific \
 topic, grounded in the idea's own reasoning above and the mascot facts above -- never a generic \
 statement that could apply to any topic.
@@ -185,5 +179,6 @@ FAQ questions to answer:
 {catalog_text}
 
 {_BLUEPRINT_SPEC.format(persona=persona, today=today, disclosure=disclosure_text)}
+{_PROSE_RULES}
 {_HARD_RULES.format(year=year)}
 """

@@ -84,18 +84,13 @@ _RECIPE_CSS = (
     "color:#fff!important;text-decoration:none;padding:.7rem 1.3rem;"
     "border-radius:8px;font-weight:600;margin:1.2rem 0}"
     ".dff-recipe em{color:#6b7280}"
-    ".dff-song-placeholder{margin:0 0 22px;padding:14px 18px;"
-    "border:2px dashed #fcd34d;border-radius:10px;background:#fffbeb;"
-    "color:#92400e;font-size:.95rem;text-align:center}"
 )
 
-# Song slot shown in the post until the reel's song is generated later; the
-# audio-embed step (lib/recipe_card/wp_audio) replaces it with the real player.
-_SONG_PLACEHOLDER = (
-    "<!-- persona:audio-placeholder -->\n"
-    '<div class="dff-song-placeholder">🎵 Recipe song coming soon — the '
-    "Nalla's Dad original for this recipe drops with the reel.</div>"
-)
+# Invisible anchor marking where the reel's audio player is injected later by
+# `lib/recipe_card/wp_audio`. Renders nothing on purpose: the old visible
+# "song coming soon" box was an unfulfilled promise that sat on 25 live posts
+# for months, so the slot stays silent until there is a real player for it.
+_SONG_PLACEHOLDER = "<!-- persona:audio-placeholder -->"
 
 
 def _style_recipe_body(inner_html: str) -> str:

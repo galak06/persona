@@ -1,13 +1,14 @@
-"""The inline (single-pass) comment step: draft and post in one visit.
+"""The inline (single-pass) comment step: DECIDE whether to comment.
 
 Both engagers run this path via `run_outbound_scan(inline_comment=True)`:
 `scripts/ig_engager.py` and `scripts/fb_engager.py` each like AND comment
 a qualifying post in the single visit that opened it. The old Facebook
 two-stage queue (scan -> queue file -> separate commenter run) is retired.
 
-Every posted or failed comment is persisted to `lib.engagements_db`
-(`record_publish` swallows DB errors, so recording can never break a run)
-and to the JSONL engagement log with the canonical `comment` action.
+This module owns the gate chain and the draft; `comment_submit.py` owns the
+claim -> submit -> settle sequence and the persistence that follows a posted
+comment. They were one module until the claim steps pushed it past the
+300-line cap.
 
 Split out of `pipeline.py` to keep every engagement module under the
 300-line cap.
@@ -15,12 +16,16 @@ Split out of `pipeline.py` to keep every engagement module under the
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
-from lib import engagements_db
 from lib.engagement.adapter import Source, SupportsComment
-from lib.engagement.collaborators import CommentGate, Dedup, Drafter, Log, RateTracker
-from lib.engagement.log import log_engagement
+from lib.engagement.collaborators import (
+    CommentGate,
+    Dedup,
+    Drafter,
+    Log,
+    RateTracker,
+    SupportsCommentClaim,
+)
+from lib.engagement.comment_submit import submit_comment
 from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.engagement.scan_results import CommentOutcome
@@ -43,10 +48,11 @@ def maybe_comment(
 ) -> CommentOutcome:
     """Draft and post one comment during this post's visit.
 
-    Order: auto-approve gate -> comment gate -> comment quota -> draft ->
-    post -> record. Under `dry_run` the drafter still runs (so the preview
-    shows the real text) but nothing leaves the process: no `comment()`,
-    no rate spend, no dedup mark.
+    Order: auto-approve gate -> comment gate -> comment quota -> claim
+    outage -> draft -> claim/post/settle (`comment_submit.submit_comment`).
+    Under `dry_run` the drafter still runs (so the preview shows the real
+    text) but nothing leaves the process: no claim, no `comment()`, no rate
+    spend, no dedup mark.
     """
     if _blocked_by_approval_gate(post, score, platform, policy, log):
         return CommentOutcome()
@@ -54,6 +60,8 @@ def maybe_comment(
         return CommentOutcome()
     if _blocked_by_comment_quota(platform, rate_tracker, log):
         return CommentOutcome()
+    if _blocked_by_claim_outage(platform, dedup, log):
+        return CommentOutcome(blocked=True)
 
     text = _draft(post, platform, drafter)
     if not text:
@@ -64,7 +72,7 @@ def maybe_comment(
         _log_dry_run(post, platform, score, text, log)
         return CommentOutcome(attempted=True)
 
-    return _submit(
+    return submit_comment(
         post=post,
         source=source,
         platform=platform,
@@ -137,6 +145,26 @@ def _blocked_by_comment_quota(platform: str, rate_tracker: RateTracker, log: Log
     return True
 
 
+def _blocked_by_claim_outage(platform: str, dedup: Dedup, log: Log) -> bool:
+    """True when the claim store is down, so no comment can be reserved.
+
+    Asked BEFORE `_draft` on purpose: `comment_submit._claim` would refuse
+    every comment anyway, and a Postgres outage must not be paid for with an
+    LLM call whose output is then thrown away. Collaborators without the
+    capability fall through here and are refused later, at the claim itself,
+    so the "cannot reserve" refusal is logged in exactly one place.
+    """
+    if not isinstance(dedup, SupportsCommentClaim):
+        return False
+    if dedup.claims_available():
+        return False
+    log.warning(
+        "comment_skipped_claims_unavailable platform=%s (no draft attempted)",
+        platform,
+    )
+    return True
+
+
 def _draft(post: Post, platform: str, drafter: Drafter) -> str:
     """Ask the agentic drafter for comment text ("" means it declined)."""
     return drafter.draft_comment_for_post(
@@ -181,96 +209,3 @@ def _log_dry_run(post: Post, platform: str, score: float, text: str, log: Log) -
         post.post_url,
         text,
     )
-
-
-def _submit(
-    *,
-    post: Post,
-    source: Source,
-    platform: str,
-    score: float,
-    text: str,
-    commenter: SupportsComment,
-    dedup: Dedup,
-    rate_tracker: RateTracker,
-    log: Log,
-) -> CommentOutcome:
-    """Post the drafted comment and record it, or report a retryable failure."""
-    result = commenter.comment(post, text)
-    if not result.posted:
-        log.warning(
-            "post_comment_failed platform=%s post_id=%s reason=%s url=%s",
-            platform,
-            post.post_id,
-            result.reason,
-            post.post_url,
-        )
-        engagements_db.record_publish(
-            platform=platform,
-            kind="comment",
-            status="failed",
-            target_name=post.source_name or "",
-            target_url=post.post_url,
-            content=text,
-            ref=post.post_id,
-            error=result.reason,
-        )
-        # `failed` (not merely "not posted") keeps the post retryable — see
-        # `PostOutcome.is_retryable`; it must NOT be marked seen.
-        return CommentOutcome(attempted=True, failed=True)
-
-    _record_comment(
-        post=post,
-        source=source,
-        platform=platform,
-        score=score,
-        text=text,
-        dedup=dedup,
-        rate_tracker=rate_tracker,
-        log=log,
-    )
-    return CommentOutcome(attempted=True, posted=True)
-
-
-def _record_comment(
-    *,
-    post: Post,
-    source: Source,
-    platform: str,
-    score: float,
-    text: str,
-    dedup: Dedup,
-    rate_tracker: RateTracker,
-    log: Log,
-) -> None:
-    """Spend the budget, mark engaged, persist (JSONL + DB), pace the next one."""
-    rate_tracker.record_action(platform, "comment")
-    dedup.mark_engaged(platform, post.post_id, "comment", source.name or "")
-    log_engagement(
-        "comment",
-        platform,
-        post.source_name or source.name or "",
-        text,
-        post_url=post.post_url,
-        post_id=post.post_id,
-        relevance_score=round(score, 3),
-        post_text=post.text,
-    )
-    engagements_db.record_publish(
-        platform=platform,
-        kind="comment",
-        status="posted",
-        target_name=post.source_name or "",
-        target_url=post.post_url,
-        content=text,
-        ref=post.post_id,
-        posted_at=datetime.now(UTC).isoformat(),
-    )
-    log.info(
-        "post_commented platform=%s post_id=%s score=%.2f url=%s",
-        platform,
-        post.post_id,
-        score,
-        post.post_url,
-    )
-    rate_tracker.wait_random_delay(platform, "comment")

@@ -11,15 +11,18 @@ import json
 from pathlib import Path
 
 from lib.crew.writer.context import (
-    filter_links_to_allowed,
     idea_priority,
     internal_link_candidates_from_cache,
     internal_link_candidates_json,
     mascot_facts_summary,
+    rank_link_candidates,
     read_brand_config,
+    unwrap_lists_from_paragraphs,
+)
+from lib.crew.writer.link_guard import (
+    filter_links_to_allowed,
     sanitize_internal_links,
     strip_unapproved_internal_links,
-    unwrap_lists_from_paragraphs,
 )
 from lib.crew.writer.models import ContentBrief, InternalLinkCandidate
 
@@ -91,9 +94,11 @@ def test_internal_link_candidates_from_cache_empty_input() -> None:
 
 
 def test_internal_link_candidates_json_round_trips() -> None:
-    candidates = [InternalLinkCandidate(title="A", url="https://x.com/a/")]
+    candidates = [InternalLinkCandidate(title="A", url="https://x.com/a/", categories=["Gear"])]
     parsed = json.loads(internal_link_candidates_json(candidates))
-    assert parsed == [{"title": "A", "url": "https://x.com/a/"}]
+    # `categories` rides along so the strategist can see which candidates share
+    # the brand's focus category, not just their titles.
+    assert parsed == [{"title": "A", "url": "https://x.com/a/", "categories": ["Gear"]}]
 
 
 # ── sanitize_internal_links / filter_links_to_allowed ───────────────────────
@@ -266,3 +271,68 @@ def test_strip_unapproved_internal_links_mixed_body() -> None:
     assert f'href="{_REAL_POST_URL}"' in out
     assert f'href="{_INVENTED_POST_URL}"' not in out
     assert f'href="{amazon_url}"' in out
+
+
+# ───────────────────────────────────── focus-category link ranking
+
+
+def test_link_candidates_carry_the_posts_real_categories() -> None:
+    """The cache already knows each post's WP categories; they used to be
+    dropped here, leaving link choice blind to what belongs together."""
+    cache = {
+        "recent_posts": [
+            {"title": "A", "url": "https://x/a", "categories": ["Gear"]},
+            {"title": "B", "url": "https://x/b", "categories": []},
+            {"title": "C", "url": "https://x/c"},
+        ]
+    }
+    got = {c.title: c.categories for c in internal_link_candidates_from_cache(cache)}
+    assert got == {"A": ["Gear"], "B": [], "C": []}
+
+
+def test_every_category_is_kept_not_just_the_primary() -> None:
+    cache = {"recent_posts": [{"title": "A", "url": "u", "categories": ["Food & Diet", "Dental"]}]}
+    assert internal_link_candidates_from_cache(cache)[0].categories == ["Food & Diet", "Dental"]
+
+
+def test_a_niche_focus_matches_a_post_filed_under_a_general_category_too() -> None:
+    """The case this exists for: a niche cluster lives alongside a general
+    category, so a dental post is filed under BOTH. Primary-only matching
+    would miss it and silently disable the clustering."""
+    candidates = [
+        InternalLinkCandidate(title="General", url="a", categories=["Food & Diet"]),
+        InternalLinkCandidate(title="Dental", url="b", categories=["Food & Diet", "Dental Care"]),
+    ]
+    ranked = rank_link_candidates(candidates, focus_category="Dental Care")
+    assert [c.title for c in ranked] == ["Dental", "General"]
+
+
+def test_ranking_puts_focus_category_first_and_is_stable() -> None:
+    candidates = [
+        InternalLinkCandidate(title="Gear A", url="a", categories=["Gear"]),
+        InternalLinkCandidate(title="Food B", url="b", categories=["Dog Food"]),
+        InternalLinkCandidate(title="Gear C", url="c", categories=["Gear"]),
+        InternalLinkCandidate(title="Food D", url="d", categories=["  dog   food "]),
+    ]
+    ranked = rank_link_candidates(candidates, focus_category="Dog Food")
+    assert [c.title for c in ranked] == ["Food B", "Food D", "Gear A", "Gear C"]
+
+
+def test_ranking_never_drops_a_candidate() -> None:
+    """Ranking, not filtering: a brand with few in-category posts must still
+    have something to link to rather than losing internal links entirely."""
+    candidates = [
+        InternalLinkCandidate(title="A", url="a", categories=["Gear"]),
+        InternalLinkCandidate(title="B", url="b", categories=[]),
+    ]
+    ranked = rank_link_candidates(candidates, focus_category="Dog Food")
+    assert {c.url for c in ranked} == {"a", "b"}
+
+
+def test_ranking_is_a_no_op_without_a_focus() -> None:
+    candidates = [
+        InternalLinkCandidate(title="A", url="a", categories=["Gear"]),
+        InternalLinkCandidate(title="B", url="b", categories=["Dog Food"]),
+    ]
+    for blank in ("", "   "):
+        assert rank_link_candidates(candidates, focus_category=blank) == candidates

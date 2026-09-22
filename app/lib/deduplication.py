@@ -21,10 +21,18 @@ which was wrong three ways at once:
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+from collections.abc import Generator
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Literal
+
+from lib.io.jsonio import locked_json
+from lib.observability import get_logger
+
+logger = get_logger(__name__)
 
 Platform = Literal["facebook", "instagram", "wordpress"]
 
@@ -46,26 +54,88 @@ def _cache_path() -> Path:
     return paths.dedup_cache
 
 
+def _quarantine(cache_file: Path, reason: str) -> None:
+    """Rename an unusable cache aside instead of destroying it.
+
+    This module used to answer any parse failure with
+    ``cache_file.write_text("{}")`` — one torn read and 60 days of like and
+    comment history for BOTH platforms were gone, silently, with nothing left
+    to recover from. A cache we cannot parse is a cache we cannot trust, but
+    it is still data: move it to a ``.corrupt-<timestamp>`` sibling, log loudly,
+    and let the caller start from an empty one. The rename is atomic, so a
+    concurrent reader sees the old file or no file, never a half-moved one.
+    """
+    stamp = datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    quarantined = cache_file.with_name(f"{cache_file.name}.corrupt-{stamp}")
+    try:
+        os.replace(cache_file, quarantined)
+    except OSError as exc:  # pragma: no cover - filesystem failure
+        logger.error(
+            "dedup_cache_quarantine_failed",
+            path=str(cache_file),
+            reason=reason,
+            error=str(exc),
+        )
+        return
+    logger.warning(
+        "dedup_cache_quarantined",
+        path=str(cache_file),
+        quarantined=str(quarantined),
+        reason=reason,
+    )
+
+
+def _read_valid_cache(cache_file: Path) -> dict | None:
+    """Parse `cache_file`, quarantining it if it is unreadable or malformed.
+
+    Returns None when there is nothing usable to read — missing, empty, or
+    just quarantined. An empty file is not quarantined: it holds no history to
+    preserve, and `locked_json` seeds it on the next write.
+    """
+    if not cache_file.exists():
+        return None
+    try:
+        raw = cache_file.read_text(encoding="utf-8")
+    except OSError as exc:
+        _quarantine(cache_file, f"unreadable: {exc}")
+        return None
+    if not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        _quarantine(cache_file, f"invalid JSON: {exc}")
+        return None
+    if not isinstance(data, dict):
+        _quarantine(cache_file, f"top level is {type(data).__name__}, expected object")
+        return None
+    return data
+
+
 def _load_cache() -> dict:
-    cache_file = _cache_path()
-    if cache_file.exists():
-        try:
-            with cache_file.open() as f:
-                data = json.load(f)
-            if not isinstance(data, dict):
-                raise ValueError("Cache not a dict")
-            return data
-        except Exception:
-            # Corrupted — reset and continue
-            cache_file.write_text("{}")
-    return {}
+    """Read-only snapshot of the cache. Never writes to disk."""
+    return _read_valid_cache(_cache_path()) or {}
 
 
-def _save_cache(cache: dict) -> None:
+@contextlib.contextmanager
+def _locked_cache() -> Generator[dict, None, None]:
+    """Yield the purged cache for a read-modify-write held under an OS lock.
+
+    `locked_json` flocks the file for the whole block and writes the result
+    back atomically (temp file + `os.replace`), so two processes marking two
+    different posts cannot lose each other's entry, and no reader — including
+    a crash-interrupted one — can observe a half-written cache.
+    """
     cache_file = _cache_path()
     cache_file.parent.mkdir(parents=True, exist_ok=True)
-    with cache_file.open("w") as f:
-        json.dump(cache, f, indent=2)
+    # Quarantine BEFORE taking the lock: `locked_json` falls back to its
+    # default on a parse failure and would write that default back, which is
+    # the very self-wipe this module is getting rid of.
+    _read_valid_cache(cache_file)
+    empty: dict = {}
+    with locked_json(cache_file, empty) as cache:
+        _purge_expired(cache)
+        yield cache
 
 
 def _purge_expired(cache: dict) -> dict:
@@ -121,20 +191,17 @@ def mark_engaged(
     Record that a post has been engaged with.
     status: "engaged" | "FAILED" | "skipped"
     """
-    cache = _load_cache()
-    cache = _purge_expired(cache)
+    with _locked_cache() as cache:
+        if platform not in cache:
+            cache[platform] = {}
 
-    if platform not in cache:
-        cache[platform] = {}
-
-    cache[platform][post_id] = {
-        "engaged_at": date.today().isoformat(),
-        "action": action,
-        "group_or_hashtag": group_or_hashtag,
-        "status": status,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-    }
-    _save_cache(cache)
+        cache[platform][post_id] = {
+            "engaged_at": date.today().isoformat(),
+            "action": action,
+            "group_or_hashtag": group_or_hashtag,
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
 
 
 def get_cache_stats() -> dict:

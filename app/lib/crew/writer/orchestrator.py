@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any
 from crewai import Agent, Task
 
 from lib import ideas_db
-from lib.crew.context import brand_identity_summary, brand_voice_summary
+from lib.content_strategy import load_content_strategy
+from lib.crew.context import brand_identity_summary, brand_longform_voice_summary
 from lib.crew.reference_library import list_category_labels
 from lib.crew.writer.agent import (
     build_strategist_agent,
@@ -39,15 +40,15 @@ from lib.crew.writer.agent import (
 from lib.crew.writer.assemble import assemble_final_html
 from lib.crew.writer.context import (
     catalog_summary_text,
-    filter_links_to_allowed,
     idea_priority,
     internal_link_candidates_from_cache,
     load_disclosure_text,
     mascot_facts_summary,
+    rank_link_candidates,
     read_brand_config,
-    sanitize_internal_links,
 )
 from lib.crew.writer.execute import execute_strategist_crew, execute_writer_crew
+from lib.crew.writer.link_guard import filter_links_to_allowed, sanitize_internal_links
 from lib.crew.writer.models import ContentBrief, WrittenPost
 from lib.crew.writer.prompts import build_strategist_task_description, build_writer_task_description
 from lib.gsc_scout import load_site_content_cache
@@ -115,14 +116,21 @@ def build_content_brief(
     """Strategist stage: one idea row -> a sanitized `ContentBrief`."""
     config = read_brand_config(brand_dir)
     site_cache = load_site_content_cache(brand_dir)
-    link_candidates = internal_link_candidates_from_cache(site_cache)
+    # Same-category posts first: the brand's focus decides which internal
+    # links build a coherent body rather than a scatter (no-op when unset).
+    strategy = load_content_strategy(config)
+    link_candidates = rank_link_candidates(
+        internal_link_candidates_from_cache(site_cache),
+        focus_category=strategy.focus_category,
+    )
 
     description = build_strategist_task_description(
         idea=idea,
         identity=brand_identity_summary(config),
-        voice=brand_voice_summary(brand_dir),
+        voice=brand_longform_voice_summary(brand_dir),
         mascot_facts=mascot_facts_summary(brand_dir),
         link_candidates=link_candidates,
+        focus_category=strategy.focus_category,
         year=date.today().year,
         # The strategist may only tag the post with a category the brand
         # actually keeps photos under -- `with_photos` is what makes that
@@ -177,7 +185,7 @@ def write_post_from_brief(
     description = build_writer_task_description(
         brief=brief,
         identity=brand_identity_summary(config),
-        voice=brand_voice_summary(brand_dir),
+        voice=brand_longform_voice_summary(brand_dir),
         mascot_facts=mascot_facts_summary(brand_dir),
         catalog_text=catalog_summary_text(catalog),
         disclosure_text=load_disclosure_text(brand_dir),

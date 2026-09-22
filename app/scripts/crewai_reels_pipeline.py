@@ -56,12 +56,14 @@ from scripts.pipeline_env import check_required_env, infer_brand_dir
 from scripts.reels_images import resolve_images
 
 from lib import ideas_db
+from lib.content_strategy import is_in_focus, load_content_strategy
 from lib.crew import wp_source
 from lib.crew.context import brand_voice_summary
 from lib.crew.reels import build_reels_agent, build_reels_task, execute_reels_crew
 from lib.crew.reels.models import ReelPlan
 from lib.crew.reels.prompts import build_reels_task_description
 from lib.crew.reference_library import list_category_labels
+from lib.crew.writer.context import read_brand_config
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.observability import get_logger
 
@@ -226,6 +228,36 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _in_focus_only(
+    rows: list[dict[str, Any]], brand_dir: Path
+) -> list[dict[str, Any]]:
+    """Drop published posts outside the brand's declared focus category.
+
+    The focus gate stops off-category IDEAS being created, but composition
+    harvests `status='wp_published'` -- which is every article the brand ever
+    published, including the categories it has deliberately stopped working
+    in. A brand six months into a dental focus was still rendering reels for
+    old GPS-collar and batch-cooking posts, at real LLM and render cost, for
+    content it is no longer trying to rank.
+
+    A brand with no focus keeps every row, exactly as before.
+    """
+    strategy = load_content_strategy(read_brand_config(brand_dir))
+    if not strategy.has_focus:
+        return rows
+    kept = [r for r in rows if is_in_focus(str(r.get("category") or ""), strategy)]
+    dropped = len(rows) - len(kept)
+    if dropped:
+        logger.info(
+            "crew_reels_skipped_out_of_focus",
+            focus_category=strategy.focus_category,
+            skipped=dropped,
+            kept=len(kept),
+        )
+        print(f"skipped {dropped} published post(s) outside focus '{strategy.focus_category}'")
+    return kept
+
+
 def main() -> int:
     args = _parse_args()
     brand_dir = (args.brand_dir or infer_brand_dir()).resolve()
@@ -250,6 +282,7 @@ def main() -> int:
     else:
         rows = ideas_db.list_ideas(status="wp_published", brand_id=brand_id, limit=args.limit)
         rows = [r for r in rows if r.get("reel_ig_video_path") is None]
+        rows = _in_focus_only(rows, brand_dir)
 
     if not rows:
         print("no eligible ideas for reel composition")

@@ -17,6 +17,7 @@ silently missed what the engager actually read. That was the
 now exactly one module object per file. The helpers below are ordinary
 path-redirection and collaborator stubs — patch ``lib.<name>`` and it works.
 """
+
 from __future__ import annotations
 
 import json
@@ -95,24 +96,79 @@ def stub_pipeline_collaborators(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(rate_limiter, "wait_random_delay", lambda *_a, **_k: None)
 
 
-def stub_skill_notifications(
-    monkeypatch: pytest.MonkeyPatch, scanner_module: Any
-) -> None:
+def stub_skill_notifications(monkeypatch: pytest.MonkeyPatch, scanner_module: Any) -> None:
     """No-op the Telegram skill-notification hooks on an engager module."""
     for fn_name in ("skill_started", "skill_finished", "skill_skipped"):
         monkeypatch.setattr(scanner_module, fn_name, lambda *_a, **_k: None)
 
 
-def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+class InMemoryCommentOutbox:
+    """Stand-in for ``lib.comment_outbox``: the ``comment_claims`` table as a dict.
+
+    Same shape as the real module (insert-or-fail ``claim``, idempotent
+    ``settle``, pending-only ``release``, bulk ``claimed_post_ids``) so
+    ``ScanDedup`` exercises its REAL claim semantics against it — the fake is
+    a store, not a stub that always says yes.
+    """
+
+    def __init__(self) -> None:
+        # (platform, post_id) -> "pending" | "posted"
+        self.rows: dict[tuple[str, str], str] = {}
+
+    def claim(
+        self,
+        platform: str,
+        post_id: str,
+        *,
+        post_url: str = "",
+        target_name: str = "",
+        content: str = "",
+        worker_label: str = "",
+        brand: str | None = None,
+    ) -> bool:
+        if (platform, post_id) in self.rows:
+            return False
+        self.rows[(platform, post_id)] = "pending"
+        return True
+
+    def settle(self, platform: str, post_id: str, *, brand: str | None = None) -> bool:
+        if (platform, post_id) not in self.rows:
+            return False
+        self.rows[(platform, post_id)] = "posted"
+        return True
+
+    def release(self, platform: str, post_id: str, *, brand: str | None = None) -> bool:
+        if self.rows.get((platform, post_id)) != "pending":
+            return False
+        del self.rows[(platform, post_id)]
+        return True
+
+    def claimed_post_ids(self, platform: str, brand: str | None = None) -> set[str]:
+        return {post_id for plat, post_id in self.rows if plat == platform}
+
+
+def neutralize_scan_dedup_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> InMemoryCommentOutbox:
     """Sever ``ScanDedup``'s Postgres side so single-pass tests stay hermetic.
 
-    Both engagers pass ``lib.scan_dedup.ScanDedup``, whose iterate-once
-    seen-marks live in Postgres ``completed_tasks``. Tests want neither the
-    DB dependency nor the cross-test pollution real marks cause, so the two
-    Postgres calls ``scan_dedup`` binds by name are stubbed: reads return an
-    empty set, writes are no-ops. Iterate-once still works WITHIN a run via
-    ScanDedup's in-memory ``_seen_ids`` set; the JSON ``deduplication`` side
-    keeps using the tmp cache (via ``redirect_state_paths``).
+    Both engagers pass ``lib.scan_dedup.ScanDedup``, which now talks to TWO
+    Postgres-backed stores, and both have to go:
+
+      - ``lib.dedup_pg`` — iterate-once seen-marks in ``completed_tasks``.
+        Reads return an empty set, writes are no-ops. Iterate-once still works
+        WITHIN a run via ScanDedup's in-memory ``_seen_ids`` set; the JSON
+        ``deduplication`` side keeps using the tmp cache (via
+        ``redirect_state_paths``).
+      - ``lib.comment_outbox`` — the comment CLAIM. Replaced with a real
+        in-memory store rather than a no-op, because ``is_duplicate`` consults
+        it on every call and ``comment_submit`` refuses to comment without a
+        granted claim: stub it away and the engager tests would go green
+        having posted nothing at all.
+
+    The stub is bound as ``scan_dedup.comment_outbox`` only, so the real module
+    object is left untouched for everyone else. Returns the store so tests can
+    assert on the claims a run took.
 
     The inline-comment persistence sinks (``log_engagement`` JSONL +
     ``engagements_db.record_publish``) are already no-oped for every test in
@@ -122,11 +178,12 @@ def neutralize_scan_dedup_backend(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(scan_dedup, "completed_entity_ids", lambda *_a, **_k: set())
     monkeypatch.setattr(scan_dedup, "record_done", lambda *_a, **_k: True)
+    outbox = InMemoryCommentOutbox()
+    monkeypatch.setattr(scan_dedup, "comment_outbox", outbox)
+    return outbox
 
 
-def build_fb_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Path]:
+def build_fb_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     """Tmp-path environment for ``scripts.fb_engager`` tests (SINGLE-PASS).
 
     Facebook mirrors Instagram now: no ``QUEUE_FILE`` to patch. Redirects
@@ -211,9 +268,7 @@ def build_fb_environment(
     }
 
 
-def build_ig_environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> dict[str, Path]:
+def build_ig_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
     """Tmp-path environment for ``scripts.ig_engager`` tests (SINGLE-PASS).
 
     Post-PR#36 Instagram likes AND comments in one visit and persists no
@@ -262,9 +317,7 @@ def build_ig_environment(
     # instance, so tests patch that instance (see ``test_ig_engager_with_fake``).
     from lib import rate_limiter as bare_rate_limiter
 
-    monkeypatch.setattr(
-        bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None
-    )
+    monkeypatch.setattr(bare_rate_limiter, "wait_random_delay", lambda *_a, **_k: None)
     stub_skill_notifications(monkeypatch, ig_engager)
 
     return {

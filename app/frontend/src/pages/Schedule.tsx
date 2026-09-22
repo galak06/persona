@@ -44,6 +44,7 @@ const STATUS_STYLES: Record<WorkerStatus["status"], string> = {
   running: "text-sky-700 font-semibold",
   success: "text-emerald-700 font-semibold",
   error: "text-rose-700 font-semibold",
+  skipped: "text-violet-700 font-semibold",
 };
 
 function formatRelativeTime(iso: string | null | undefined): string {

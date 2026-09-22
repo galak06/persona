@@ -59,6 +59,7 @@ class BrandCreateRequest(BaseModel):
     secondary_keywords: list[str] = []
     competitor_mentions: list[str] = []
     competitor_accounts: list[str] = []
+    focus_category: str = ""
 
 
 class BrandSummary(BaseModel):
@@ -93,6 +94,7 @@ class BrandDetail(BaseModel):
     enabled_flows: list[str] = []
     headless: bool = True
     group_join_limit: int = 10
+    focus_category: str = ""
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -113,6 +115,9 @@ class BrandSettingsRequest(BaseModel):
     competitor_accounts: list[str] | None = None
     enabled_flows: list[str] | None = None
     group_join_limit: int | None = None
+    # One WP category name to focus on, or "" to clear the focus. `None`
+    # means "leave alone" -- "" is a meaningful value here, not absence.
+    focus_category: str | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -136,6 +141,7 @@ class BrandProvisionResponse(BaseModel):
     enabled_flows: list[str] = []
     headless: bool = True
     group_join_limit: int = 10
+    focus_category: str = ""
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}
@@ -207,3 +213,24 @@ class RunNowResponse(BaseModel):
     flow_id: str
     schedule_task_id: str
     enqueued: bool = True
+
+
+class BrandIdeaCategoriesResponse(BaseModel):
+    """The category vocabularies a focus category is matched against.
+
+    Two lists, because a focus category is matched in two different places
+    and matching only one of them fails silently:
+
+    `categories` -- from `content_ideas.category`. This is what the idea gate
+    compares against, so a focus missing from it admits almost nothing.
+
+    `site_categories` -- the brand's real WordPress categories, from the site
+    content cache. This is what internal-link ranking compares against, so a
+    focus missing from it leaves the clustering doing nothing at all, with no
+    error anywhere. That is exactly how `Food/Nutrition` -- a real entry in
+    `categories` but on no published post -- looked healthy while disabling
+    the whole effect.
+    """
+
+    categories: list[str] = []
+    site_categories: list[str] = []

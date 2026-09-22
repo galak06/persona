@@ -82,9 +82,11 @@ def test_inline_comment_records_rate_action_and_dedup_mark() -> None:
 
 
 def test_inline_comment_failure_is_not_counted_as_posted() -> None:
-    """A failed submission spends no budget and is logged as a failure."""
+    """An unconfirmed submission spends no budget and is logged as such."""
     adapter = FakeAdapter(
-        "instagram", [make_src("s1")], {"s1": make_ig_posts(1)},
+        "instagram",
+        [make_src("s1")],
+        {"s1": make_ig_posts(1)},
         comment_should_fail=True,
     )
     log = FakeLog()
@@ -97,7 +99,7 @@ def test_inline_comment_failure_is_not_counted_as_posted() -> None:
     assert report.comments_attempted == 1
     assert ("instagram", "comment") not in rt.recorded
     assert [e for e in dedup.engaged if e[2] == "comment"] == []
-    assert "post_comment_failed" in _events(log)
+    assert "post_comment_unconfirmed" in _events(log)
 
 
 # --- 2. the agent decline is the approval gate -------------------------------
@@ -174,9 +176,7 @@ def test_dry_run_drafts_but_never_comments() -> None:
 def test_dry_run_consumes_no_state() -> None:
     """No rate spend, no engagement mark, and no seen-mark on a dry run."""
     dedup = FakeIterateOnceDedup()
-    _r, _d, rt, _dr = run(
-        _ig_adapter(2), dedup=dedup, inline_comment=True, dry_run=True
-    )
+    _r, _d, rt, _dr = run(_ig_adapter(2), dedup=dedup, inline_comment=True, dry_run=True)
 
     assert ("instagram", "comment") not in rt.recorded
     assert dedup.engaged == []
@@ -249,9 +249,7 @@ def test_non_question_post_is_not_commented() -> None:
     """The IG '?' candidacy gate still applies in single-pass mode."""
     posts = make_ig_posts(1, has_question=False)
     adapter = FakeAdapter("instagram", [make_src("s1")], {"s1": posts})
-    report, _d, _rt, drafter = run(
-        adapter, dedup=FakeIterateOnceDedup(), inline_comment=True
-    )
+    report, _d, _rt, drafter = run(adapter, dedup=FakeIterateOnceDedup(), inline_comment=True)
 
     assert drafter.calls == []
     assert adapter.comments == []

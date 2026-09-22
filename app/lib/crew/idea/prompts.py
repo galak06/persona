@@ -63,6 +63,7 @@ def build_idea_task_description(
     trends_json: str,
     existing_topics: str,
     top_n: int,
+    strategy_clause: str,
 ) -> str:
     """The full prompt handed to the idea-synthesis agent's `Task`.
 
@@ -79,6 +80,13 @@ def build_idea_task_description(
     not do, because the agent rewrites the headline each time. Telling it
     what exists makes non-repetition a generation constraint; the filter in
     `lib.crew.topic_similarity` stays as the backstop for what slips past.
+
+    `strategy_clause` comes from `lib.content_strategy.focus_clause` and is
+    the ONLY place the depth-vs-breadth stance is expressed. It used to be a
+    hardcoded "breadth is the point" sentence here, which meant a brand that
+    declared a focus category still got told to spread out -- a prompt
+    sentence out-votes a config flag every time, so the sentence itself has
+    to be what varies.
     """
     return f"""You are synthesizing brand-voiced, publishable blog content ideas from \
 already-gathered trend signals. You do NOT have web search -- work only from the \
@@ -114,9 +122,7 @@ subject matches, even when your headline is completely different. "Pumpkin vs Sw
 for Dog Digestion" and "Sweet Potato vs. Pumpkin for Dogs" are the SAME topic. A new angle \
 on a covered subject only counts as new if it answers a materially different question -- \
 a fresh hook, season, or product name on the same comparison does not.
-5. Prefer subjects with no coverage yet over a stronger signal on a subject already \
-covered. Breadth is the point: this brand's ideas skew heavily toward a few repeated \
-themes, so an unexplored area at a moderate score beats a fifth take on a saturated one.
+5. {strategy_clause}
 6. Return at most {top_n} ideas, highest priority_score first. This is pure synthesis --
 never invent a trend signal that isn't grounded in the list above, and never perform a web \
 search (you have none available).

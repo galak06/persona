@@ -10,15 +10,15 @@ import {
 } from "../api/ideas";
 import type { ContentIdea, IdeasResponse, SlidesResponse } from "../api/ideas";
 import { useApiQuery } from "../hooks/useApiQuery";
+import { useBrand } from "../context/BrandContext";
+import { endpoints } from "../api/endpoints";
+import type { BrandIdeaCategories } from "../api/brands";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
 import IdeasKeywords from "./IdeasKeywords";
 
-const CATEGORIES = [
-  "all", "recipes", "health", "training", "nutrition",
-  "gear-toys", "grooming", "breed-specific", "safety",
-] as const;
+const ALL_CATEGORIES = "all";
 
 const STATUSES = [
   { value: "all", label: "All" },
@@ -259,6 +259,7 @@ export default function Ideas(): React.JSX.Element {
   const [generateNote, setGenerateNote] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { selectedBrand } = useBrand();
   const url = ideasUrl({ status: statusFilter === "all" ? undefined : statusFilter });
   const { data, loading, error, refetch } = useApiQuery<IdeasResponse>(url);
 
@@ -313,9 +314,38 @@ export default function Ideas(): React.JSX.Element {
     const withLocal = ideas.map((i) =>
       localStatuses[i.id] ? { ...i, status: localStatuses[i.id] } : i,
     );
-    if (categoryFilter === "all") return withLocal;
+    if (categoryFilter === ALL_CATEGORIES) return withLocal;
     return withLocal.filter((i) => i.category === categoryFilter);
   }, [data, categoryFilter, localStatuses]);
+
+  /* Every category this brand's ideas actually use, from the server.
+   *
+   * The previous options were hardcoded ("recipes", "gear-toys",
+   * "breed-specific"…) and matched NONE of the 22 categories really in use:
+   * lowercase slugs against the free text the scout writes ("Dental Care",
+   * "GPS/Gear"). Since the filter compares with strict equality, every option
+   * except "all" silently returned an empty list, a new focus category could
+   * never appear, and one brand's taxonomy sat baked into a multi-brand
+   * engine.
+   *
+   * Server-sourced rather than derived from `data`, because `data` is already
+   * status-filtered by the request above — deriving from it would shrink the
+   * category list whenever a status is selected and hide the very category
+   * someone is looking for. Falls back to whatever is on screen if the
+   * endpoint is unavailable, so the filter degrades instead of emptying. */
+  const { data: brandCategories } = useApiQuery<BrandIdeaCategories>(
+    selectedBrand ? endpoints.brandIdeaCategories(selectedBrand) : null,
+  );
+  const categoryOptions = useMemo(() => {
+    const seen = new Set<string>(brandCategories?.categories ?? []);
+    if (seen.size === 0) {
+      for (const idea of data?.ideas ?? []) {
+        const category = (idea.category ?? "").trim();
+        if (category) seen.add(category);
+      }
+    }
+    return [ALL_CATEGORIES, ...[...seen].sort((a, b) => a.localeCompare(b))];
+  }, [brandCategories, data]);
 
   const handleDecision = useCallback(async (id: string, newStatus: string): Promise<void> => {
     setBusyIds((prev) => new Set(prev).add(id));
@@ -400,8 +430,10 @@ export default function Ideas(): React.JSX.Element {
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="text-sm border-stone-300 rounded-lg shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200/50"
         >
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c === "all" ? "All categories" : c}</option>
+          {categoryOptions.map((c) => (
+            <option key={c} value={c}>
+              {c === ALL_CATEGORIES ? "All categories" : c}
+            </option>
           ))}
         </select>
       </div>

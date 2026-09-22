@@ -56,7 +56,12 @@ def _revert_stale_claim(idea_id: str) -> None:
     validation_failed, or wp_draft via create_wp_draft), revert it back to
     "approved" so it's a valid retry candidate for the next
     worker_wp_ideas.py sweep. Any other status means the subprocess already
-    classified its own outcome, so it's left untouched."""
+    classified its own outcome, so it's left untouched.
+
+    Best-effort only: this runs in the API process, so it cannot fire if
+    that process is itself killed mid-draft. The backstop for that case is
+    the claim's lease (`ideas_db.DRAFT_CLAIM_LEASE_SECONDS`), which lets the
+    next sweep reclaim the idea without anyone having released it."""
     idea = ideas_db.get_idea(idea_id)
     if idea is not None and idea.get("status") == "drafting":
         ideas_db.update_status(idea_id, "approved")
@@ -82,7 +87,7 @@ def _draft_idea_with_crewai_background(idea_id: str) -> None:
             cwd=_PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=600,
+            timeout=ideas_db.DRAFT_SUBPROCESS_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
         log.error(json.dumps({"event": "idea_draft_timeout", "idea_id": idea_id}))

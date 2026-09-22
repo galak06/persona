@@ -1,18 +1,31 @@
 """Validation gate for the CrewAI content pipeline -- the substitute for
 human review before a draft reaches WordPress.
 
-Runs two hard-fail checks, in order, on the fully-assembled post (title +
+Runs three hard-fail checks, in order, on the fully-assembled post (title +
 body_html):
 
   1. `lib.medical_claims_validator.validate_blog_post` -- deterministic,
      regex-based, catches `ValueError` and treats it as an immediate reject.
      The quality editor never runs if this fails first (cheaper, and a
      compliance failure doesn't need a second opinion).
-  2. The `lib.crew.editor` quality-editor agent -- rejects if the score is
+  2. `lib.crew.ai_tells.scan_body` -- deterministic, rejects a draft that
+     reads as machine-written: a heading that names the blueprint slot
+     ("Frequently Asked Questions", "Our Pick"), an opener from the banned
+     formula list, meta-commentary about writing the post, or cliché /
+     transition / flat-cadence measurements past their ceilings.
+  3. The `lib.crew.editor` quality-editor agent -- rejects if the score is
      below `MIN_QUALITY_SCORE` OR if it flags any stray-LLM-artifact issue;
      both conditions are reported independently when they fire.
 
-Both checks fail closed: a missing/unparseable editor verdict is treated as
+Check 2 runs before the editor for the same reason check 1 does -- it is
+free, and it catches what the editor demonstrably does not. The editor
+scored 12 consecutive live posts as publishable while every one of them
+closed on the identical "Frequently Asked Questions -> Related Reading ->
+Our Pick" skeleton; an LLM asked whether prose sounds machine-written is
+not a reliable judge of its own genre, so that specific tell is measured
+rather than judged.
+
+All three fail closed: a missing/unparseable editor verdict is treated as
 a reject, not a pass-through (`lib.crew.editor.execute.execute_editor_crew`
 already returns `None` on any LLM/parse failure -- this module refuses to
 draft on `None` rather than assume the post is fine).
@@ -31,13 +44,17 @@ this gate exists to prevent.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from crewai import Agent, Task
 
-from lib.crew.context import brand_voice_summary
+from lib.certification_claims import validate_certification_claims
+from lib.crew.ai_tells import scan_body
+from lib.crew.context import brand_longform_voice_summary
 from lib.crew.editor.agent import build_editor_agent, build_editor_task
 from lib.crew.editor.execute import execute_editor_crew
 from lib.crew.editor.models import QualityVerdict
@@ -65,6 +82,27 @@ class ValidationResult:
     quality_score: float | None = None
 
 
+def load_brand_affiliate_catalog_entries(brand_dir: Path) -> list[dict[str, Any]]:
+    """The brand's curated affiliate catalog as raw entries, or [] if unreadable.
+
+    Raw rather than `lib.crew.writer.context.load_brand_affiliate_catalog`'s
+    parsed `ProductEntry` map, because the certification gate reads the free-text
+    `notes` field -- which is where an operator records that they checked a
+    registry -- and that does not survive the typed conversion.
+
+    Never raises: a missing catalog must not take down the gate, it just means
+    nothing is recorded as verified and every claim beside a product link is
+    flagged. Failing loud beats failing open here.
+    """
+    path = brand_dir / "data" / "config" / "affiliate_products.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.warning("crew_validate_affiliate_catalog_unreadable", path=str(path))
+        return []
+    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+
+
 def validate_draft(
     brand_dir: Path,
     *,
@@ -73,7 +111,7 @@ def validate_draft(
     outline: list[OutlineSection] | None = None,
     editor_execute_fn: EditorExecuteFn | None = None,
 ) -> ValidationResult:
-    """Run both hard-fail gates in order on one assembled post.
+    """Run every hard-fail gate in order on one assembled post.
 
     Never raises -- a validator exception would itself be a fail-open bug
     in a gate whose entire purpose is failing closed.
@@ -84,7 +122,29 @@ def validate_draft(
         logger.warning("crew_validate_medical_claims_rejected", reason=str(exc))
         return ValidationResult(passed=False, reasons=[f"medical_claims_validator: {exc}"])
 
-    voice = brand_voice_summary(brand_dir)
+    # Certification claims are a separate gate because they are a separate kind
+    # of wrong: "VOHC-accepted" is not an unsafe health claim, it is a checkable
+    # fact about a published list, and the medical gate passed two drafts
+    # asserting it for products the list does not carry.
+    try:
+        validate_certification_claims(
+            body_html, load_brand_affiliate_catalog_entries(brand_dir), title=title
+        )
+    except ValueError as exc:
+        logger.warning("crew_validate_certification_claims_rejected", reason=str(exc))
+        return ValidationResult(passed=False, reasons=[f"certification_claims: {exc}"])
+
+    # Deterministic AI-tell scan. Advisory findings and the raw cadence
+    # metrics are logged either way -- a draft that passes at 3.8 clichés per
+    # 1000 words is one prompt drift away from failing, and that trend is
+    # only visible if the numbers are recorded on the passing runs too.
+    tells = scan_body(body_html)
+    logger.info("crew_validate_ai_tells_scanned", **tells.metrics)
+    if not tells.passed:
+        logger.warning("crew_validate_ai_tells_rejected", reasons=tells.reasons())
+        return ValidationResult(passed=False, reasons=tells.reasons())
+
+    voice = brand_longform_voice_summary(brand_dir)
     description = build_editor_task_description(
         title=title,
         body_html=body_html,

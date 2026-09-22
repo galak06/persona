@@ -16,7 +16,8 @@ import logging
 import uuid
 from typing import Any
 
-from lib import db
+from lib import brands_db, db
+from lib.content_strategy import ContentStrategy, is_in_focus
 
 _log = logging.getLogger(__name__)
 
@@ -60,6 +61,7 @@ STATUSES = (
     "validation_failed",
     "drafting",
     "composing_reel",
+    "reel_rejected",
 )
 
 # The terminal failure statuses -- the only ones that carry a `failure_reason`
@@ -70,6 +72,32 @@ FAILURE_STATUSES = frozenset({"write_failed", "validation_failed"})
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Write
+
+
+def known_categories(brand_id: str | None) -> list[str]:
+    """Distinct `category` values this brand's ideas have actually used.
+
+    The focus gate compares against `content_ideas.category` -- free text the
+    scout/strategist produces -- so THIS is the vocabulary a focus category
+    has to match, not the site's WordPress category list (which only enters
+    much later, in `lib.crew.draft_category`). Surfacing it at the point an
+    operator sets a focus is what stops a plausible-looking typo from
+    rejecting every idea a run produces and quietly starving the queue.
+
+    Defensive like the rest of this module: any failure returns [].
+    """
+    if not brand_id:
+        return []
+    try:
+        rows = db.fetch_all(
+            "SELECT DISTINCT category FROM content_ideas "
+            "WHERE brand_id = %(id)s AND category <> '' ORDER BY category",
+            {"id": brand_id},
+        )
+    except Exception as exc:
+        _log.warning("ideas_db.known_categories lookup failed: %s", exc)
+        return []
+    return [str(r["category"]).strip() for r in rows if r.get("category")]
 
 
 def insert_idea(
@@ -110,6 +138,22 @@ def insert_idea(
             row["brand_id"] = brand_id
         if brand_name:
             row["brand_name"] = brand_name
+
+        # One-focus-category gate. This is the single enforcement point for
+        # BOTH idea producers (the CrewAI scout and `lib.gsc_scout`) plus the
+        # API -- they all funnel through this insert, so gating here is what
+        # makes the focus a constraint rather than a prompt suggestion the
+        # model can talk itself out of. A brand with no focus is unaffected.
+        strategy = ContentStrategy(focus_category=brands_db.focus_category(brand_id))
+        if not is_in_focus(row["category"], strategy):
+            _log.info(
+                "ideas_db.insert_idea rejected out-of-focus idea: "
+                "category=%r focus=%r topic=%r",
+                row["category"],
+                strategy.focus_category,
+                row["topic"],
+            )
+            return None
 
         columns = list(row.keys())
         insert_cols = ", ".join(columns)
@@ -234,14 +278,24 @@ def set_reel_pending_review(
 
 
 def reject_reel(idea_id: str) -> bool:
-    """Reject a pending reel: atomically move idea_id from status='social_queued'
-    back to status='wp_published', clearing the pending-review columns so a
-    rejected reel doesn't linger in the review UI. The idea itself is untouched
-    and could be re-run through the reels pipeline later.
+    """Reject a pending reel: move idea_id from 'social_queued' to the terminal
+    'reel_rejected', clearing the pending-review columns so it doesn't linger
+    in the review UI.
+
+    NOT back to 'wp_published', which is the status the reels pipeline
+    harvests. Sending it there made a rejection indistinguishable from never
+    having had a reel, so the next scheduled compose picked the same idea up
+    and rendered it again -- one idea went through composition 15 times across
+    10 runs, at real LLM and render cost each time, and every rejection was
+    silently undone.
+
+    Re-running a rejected idea deliberately is still possible: the pipeline's
+    `--idea-id` path selects by id and ignores status, which is the difference
+    between an operator asking for it and a cron deciding on its own.
     """
     try:
         rowcount = db.execute(
-            "UPDATE content_ideas SET status = 'wp_published', "
+            "UPDATE content_ideas SET status = 'reel_rejected', "
             "reel_ig_video_path = NULL, reel_fb_video_path = NULL, "
             "reel_ig_caption = NULL, reel_fb_caption = NULL, reel_source = NULL, "
             "reel_validation_flags = NULL, updated_at = NOW() "
@@ -285,26 +339,86 @@ def set_reel_result(
         return False
 
 
-def claim_idea_for_drafting(idea_id: str) -> bool:
-    """Atomically transition idea_id from status='approved' to status='drafting',
-    ONLY if it is still 'approved' at the moment of the update. Returns True if
-    THIS call won the claim (i.e. is now responsible for drafting it), False if
-    the idea was not found, was already claimed/moved to a different status by
-    someone else (e.g. a "Disable" click, or a concurrent claim), or on any DB
-    error. This is the sole mechanism preventing two concurrent callers (an API
-    background task and a cron safety-net worker) from both spawning a drafting
-    subprocess for the same idea.
+# The drafting claim is a LEASE, not a permanent lock.
+#
+# Both callers -- `api/ideas_api.py`'s BackgroundTask and
+# `recipe-publisher/workers/worker_wp_ideas.py`'s cron sweep -- release their
+# claim IN-PROCESS: they revert 'drafting' -> 'approved' when the drafting
+# subprocess fails. That release only runs if the caller itself survives.
+# Kill the process holding the claim -- a container restart, an OOM, a deploy
+# -- and nothing ever releases it. The row then sits at 'drafting' forever,
+# invisible to a sweep whose candidate query selects only status='approved',
+# while the Ideas page keeps showing a reassuring "Drafting" badge over an
+# idea that has silently fallen out of the pipeline. Live: idea
+# f4df76d6-ad83-420f-99a9-0ab9139f9bdf was claimed at 12:05:02Z on
+# 2026-08-31 and orphaned 71 seconds later by an API container restart.
+#
+# So the claim expires. The lease MUST stay comfortably longer than the
+# subprocess timeout its holder runs under -- otherwise a slow but perfectly
+# healthy draft has its claim stolen mid-run and gets drafted twice. Both
+# callers import the timeout from here rather than repeating the literal, so
+# the two values cannot drift apart into that overlap.
+DRAFT_SUBPROCESS_TIMEOUT_SECONDS = 600
+DRAFT_CLAIM_LEASE_SECONDS = 900
+
+
+def claim_idea_for_drafting(
+    idea_id: str, *, lease_seconds: int = DRAFT_CLAIM_LEASE_SECONDS
+) -> bool:
+    """Atomically claim idea_id for drafting (status -> 'drafting').
+
+    The claim is won if the idea is either still 'approved', or already
+    'drafting' under an EXPIRED lease -- i.e. stranded by a holder that died
+    (see the comment above). Returns True if THIS call won it and is now
+    responsible for drafting, False if the idea was not found, is held under
+    a LIVE lease, was moved to some other status (a "Disable" click), or on
+    any DB error.
+
+    Still the sole guard against two concurrent callers drafting the same
+    idea: a live claim is refreshed no less often than every
+    `DRAFT_SUBPROCESS_TIMEOUT_SECONDS`, so an in-flight draft can never
+    present as expired to a competitor.
     """
     try:
         rowcount = db.execute(
             "UPDATE content_ideas SET status = 'drafting', updated_at = NOW() "
-            "WHERE id = %s AND status = 'approved'",
-            (idea_id,),
+            "WHERE id = %s AND (status = 'approved' OR (status = 'drafting' "
+            "AND updated_at < NOW() - (%s * INTERVAL '1 second')))",
+            (idea_id, lease_seconds),
         )
         return rowcount > 0
     except Exception as exc:
         _log.warning("ideas_db.claim_idea_for_drafting failed: %s", exc)
         return False
+
+
+def list_stale_drafting(
+    *,
+    brand_id: str | None = None,
+    limit: int = 500,
+    lease_seconds: int = DRAFT_CLAIM_LEASE_SECONDS,
+) -> list[dict[str, Any]]:
+    """Ideas stranded at 'drafting' under an expired lease.
+
+    The cron sweep's second candidate source, alongside status='approved'.
+    Without it the sweep cannot retry a stranded idea at all: it would never
+    ask about a row it does not select, so a lease-aware
+    `claim_idea_for_drafting` alone would fix only the API trigger path.
+
+    Raises rather than degrading to `[]`, for the same reason `list_ideas`
+    does -- an empty list here is a factual claim that nothing is stranded.
+    """
+    clauses = ["status = 'drafting'", "updated_at < NOW() - (%s * INTERVAL '1 second')"]
+    params: list[Any] = [lease_seconds]
+    if brand_id:
+        clauses.append("brand_id = %s")
+        params.append(brand_id)
+    params.append(max(1, min(limit, 5000)))
+    query = (
+        f"SELECT * FROM content_ideas WHERE {' AND '.join(clauses)} "
+        "ORDER BY created_at DESC LIMIT %s"
+    )
+    return db.fetch_all(query, tuple(params))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

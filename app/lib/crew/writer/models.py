@@ -29,10 +29,20 @@ class OutlineSection(BaseModel):
 class InternalLinkCandidate(BaseModel):
     """One real internal-link target -- title/url MUST come from the brand's
     real `site_content_cache.json`, never invented by the LLM (enforced
-    separately in `lib.crew.writer.context.sanitize_internal_links`)."""
+    separately in `lib.crew.writer.link_guard.sanitize_internal_links`)."""
 
     title: str
     url: str
+    # The post's own WordPress categories, straight from the site cache.
+    # Carried so link choice can favour posts sharing a category -- what turns
+    # scattered pages into a body Google reads as one topic.
+    #
+    # ALL of them, not just the primary: a niche cluster normally lives
+    # alongside a general category (a dental post filed under both
+    # "Food & Diet" and "Dental Care"), and matching only the first would miss
+    # every such post and silently disable the clustering it exists for.
+    # Empty when the cached post has no categories; never inferred.
+    categories: list[str] = []
 
 
 class ContentBrief(BaseModel):

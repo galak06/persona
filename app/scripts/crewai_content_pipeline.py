@@ -47,10 +47,12 @@ from lib import ideas_db
 from lib.affiliate_resolver import AffiliateResolverError
 from lib.crew.brand_identity import read_brand_identity
 from lib.crew.draft import DraftCreationError, create_wp_draft
-from lib.crew.reference_clauses import reference_clause
+from lib.crew.reference_clauses import paired_reference_clause, reference_clause
 from lib.crew.reference_library import resolve_reference
+from lib.crew.reference_mascot import any_mascot_photo, mascot_anchor
+from lib.crew.socialpost.hook_render import read_reference_bytes
 from lib.crew.validate import ValidationResult, validate_draft
-from lib.crew.wp_image import build_image_brief, generate_wp_image
+from lib.crew.wp_image import ReferencePhoto, build_image_brief, generate_wp_image
 from lib.crew.writer import (
     assemble_final_html,
     build_content_brief,
@@ -275,14 +277,39 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
     # `reference_image_bytes` is None, and `_style_suffix` then emits no
     # reference clause) -- no non-uploaded image is used as an anchor, which
     # is all "uploads only" asks.
+    # The scene the planner asked for, then -- separately, in code -- the photo
+    # that grounds the mascot's appearance. One reference cannot do both jobs:
+    # a place or product photo correctly earns a clause saying "do not take the
+    # mascot's appearance from this", and with nothing else attached the model
+    # invents an animal. `lib.crew.reference_mascot` carries the live example,
+    # and `lib.crew.socialpost.hook_render` has done it this way all along --
+    # the WP hero simply never adopted it.
     reference = resolve_reference(brand_dir, brief.reference_category, seed=idea_id)
+    if reference is None:
+        # The planner named a tag the library cannot match. Generating with no
+        # reference at all invents the mascot outright, so fall back to the
+        # operator-asks-directly primitive the retry path already uses.
+        reference = any_mascot_photo(brand_dir, seed=idea_id)
     reference_image_path = reference.path if reference is not None else None
+    anchor = mascot_anchor(brand_dir, reference, seed=idea_id)
+    anchor_bytes = read_reference_bytes(anchor, role="mascot_anchor") if anchor else None
     # What the model is TOLD the photo is: a library image of a product or a
     # location must not be introduced as the brand's mascot. Ignored
     # downstream when there is no reference at all.
-    clause = reference_clause(
-        reference, identity.mascot_name, identity.mascot_kind, identity.persona_name
-    )
+    extra_photos: tuple[ReferencePhoto, ...] = ()
+    if reference is not None and anchor is not None and anchor_bytes is not None:
+        clause = paired_reference_clause(
+            reference, anchor, identity.mascot_name, identity.mascot_kind, identity.persona_name
+        )
+        extra_photos = (ReferencePhoto(anchor_bytes, anchor.content_type),)
+        print(
+            f"mascot anchor: {anchor.path} [{anchor.category}] "
+            f"persona={anchor.shows_persona}"
+        )
+    else:
+        clause = reference_clause(
+            reference, identity.mascot_name, identity.mascot_kind, identity.persona_name
+        )
     if reference is not None:
         print(f"reference: {reference.path} [{reference.category}] mascot={reference.shows_mascot}")
     tag_names = list(
@@ -302,7 +329,13 @@ def _run_full_pipeline(brand_dir: Path, args: argparse.Namespace) -> int:
             reference_image_path=reference_image_path,
             # The clause rides in on `create_wp_draft`'s generator seam rather
             # than as one more pass-through parameter through `lib.crew.draft`.
-            generate_image_fn=partial(generate_wp_image, reference_clause=clause),
+            # Order is the contract `paired_reference_clause` describes:
+            # PHOTO 1 is the scene, PHOTO 2 the mascot anchor.
+            generate_image_fn=partial(
+                generate_wp_image,
+                reference_clause=clause,
+                extra_reference_images=extra_photos,
+            ),
         )
     except DraftCreationError as exc:
         print(f"\nWORDPRESS DRAFT CREATION FAILED: {exc}", file=sys.stderr)

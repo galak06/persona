@@ -150,6 +150,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/brands/{brand_id}/idea-categories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Brand Idea Categories
+         * @description Distinct categories this brand's ideas have used, for the focus field.
+         *
+         *     Read-only and best-effort: a brand with no ideas yet returns an empty
+         *     list, which the UI renders as "no suggestions" rather than an error --
+         *     setting a focus before the first scout run is legitimate.
+         */
+        get: operations["list_brand_idea_categories_api_v1_brands__brand_id__idea_categories_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/brands/{brand_id}/provision": {
         parameters: {
             query?: never;
@@ -190,7 +214,8 @@ export interface paths {
         head?: never;
         /**
          * Update Brand Settings
-         * @description Partial settings edit: `headless` + the 4 keyword/competitor lists.
+         * @description Partial settings edit: `headless`, the 4 keyword/competitor lists,
+         *     and the brand's one focus category.
          *
          *     Every body field is optional and independent. Persists via
          *     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
@@ -1724,6 +1749,11 @@ export interface components {
              */
             facebook_page_url: string;
             /**
+             * Focus Category
+             * @default
+             */
+            focus_category: string;
+            /**
              * Instagram Profile Url
              * @default
              */
@@ -1788,6 +1818,11 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
+             * Focus Category
+             * @default
+             */
+            focus_category: string;
+            /**
              * Group Join Limit
              * @default 10
              */
@@ -1834,6 +1869,35 @@ export interface components {
              * @default
              */
             updated_at: string;
+        };
+        /**
+         * BrandIdeaCategoriesResponse
+         * @description The category vocabularies a focus category is matched against.
+         *
+         *     Two lists, because a focus category is matched in two different places
+         *     and matching only one of them fails silently:
+         *
+         *     `categories` -- from `content_ideas.category`. This is what the idea gate
+         *     compares against, so a focus missing from it admits almost nothing.
+         *
+         *     `site_categories` -- the brand's real WordPress categories, from the site
+         *     content cache. This is what internal-link ranking compares against, so a
+         *     focus missing from it leaves the clustering doing nothing at all, with no
+         *     error anywhere. That is exactly how `Food/Nutrition` -- a real entry in
+         *     `categories` but on no published post -- looked healthy while disabling
+         *     the whole effect.
+         */
+        BrandIdeaCategoriesResponse: {
+            /**
+             * Categories
+             * @default []
+             */
+            categories: string[];
+            /**
+             * Site Categories
+             * @default []
+             */
+            site_categories: string[];
         };
         /**
          * BrandKeywords
@@ -1905,6 +1969,11 @@ export interface components {
             /** Files Written */
             files_written: string[];
             /**
+             * Focus Category
+             * @default
+             */
+            focus_category: string;
+            /**
              * Group Join Limit
              * @default 10
              */
@@ -1971,6 +2040,8 @@ export interface components {
             competitor_mentions?: string[] | null;
             /** Enabled Flows */
             enabled_flows?: string[] | null;
+            /** Focus Category */
+            focus_category?: string | null;
             /** Group Join Limit */
             group_join_limit?: number | null;
             /** Headless */
@@ -2489,7 +2560,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "success" | "error";
+            status: "queued" | "running" | "success" | "error" | "skipped";
         };
         /**
          * FlowReadiness
@@ -3276,7 +3347,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "never" | "queued" | "running" | "success" | "error";
+            status: "never" | "queued" | "running" | "success" | "error" | "skipped";
             /** Title */
             title: string;
         };
@@ -3320,7 +3391,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "queued" | "running" | "success" | "error" | "never";
+            status: "queued" | "running" | "success" | "error" | "never" | "skipped";
             /** Timeout Seconds */
             timeout_seconds: number;
             /** Used Openart */
@@ -3569,6 +3640,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunNowResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_brand_idea_categories_api_v1_brands__brand_id__idea_categories_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                brand_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandIdeaCategoriesResponse"];
                 };
             };
             /** @description Validation Error */

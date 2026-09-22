@@ -27,6 +27,19 @@ _VOICE_GUIDE_MAX_CHARS = 1200
 _CURRENT_VOICE_GUIDE = Path("data") / "config" / "brand_voice_guide.md"
 _LEGACY_VOICE_GUIDE = Path("data") / "brand_voice_guide.md"
 
+# The article voice is a SEPARATE document from the one above, which is
+# written for social comments end to end ("Every comment sounds like...",
+# "End every comment with a question", "Write more than 250 words" listed as
+# a DON'T). Feeding that to the agent drafting a 2,000-word article told it
+# almost nothing about long-form prose, so it fell back on generic LLM house
+# style -- the actual root cause behind posts that read as machine-written.
+#
+# The cap is higher than `_VOICE_GUIDE_MAX_CHARS` because 1200 characters of
+# the comment guide stopped inside its "Tone Principles" section: the writer
+# never saw a single rule past it.
+_LONGFORM_VOICE_GUIDE = Path("data") / "config" / "brand_longform_voice_guide.md"
+_LONGFORM_GUIDE_MAX_CHARS = 6000
+
 
 def brand_identity_summary(config: dict[str, Any]) -> str:
     """One-paragraph "who is this brand" anchor from `config.json`'s `site` block."""
@@ -62,6 +75,28 @@ def brand_voice_summary(brand_dir: Path, *, max_chars: int = _VOICE_GUIDE_MAX_CH
                 return text
             return text[:max_chars].rsplit("\n", 1)[0] + "\n...(truncated)"
     return ""
+
+
+def brand_longform_voice_summary(
+    brand_dir: Path, *, max_chars: int = _LONGFORM_GUIDE_MAX_CHARS
+) -> str:
+    """The brand's ARTICLE voice guide, falling back to the comment one.
+
+    Used by the blog writer and the quality editor; every short-form caller
+    (scout, social posts, reels, comments) keeps using `brand_voice_summary`,
+    whose comment-shaped guidance is correct for them.
+
+    Falls back to `brand_voice_summary` rather than returning "" when a brand
+    has no long-form guide, so a brand that never adds one behaves exactly as
+    it does today instead of losing its voice section entirely.
+    """
+    candidate = brand_dir / _LONGFORM_VOICE_GUIDE
+    if candidate.exists():
+        text = candidate.read_text(encoding="utf-8").strip()
+        if len(text) <= max_chars:
+            return text
+        return text[:max_chars].rsplit("\n", 1)[0] + "\n...(truncated)"
+    return brand_voice_summary(brand_dir)
 
 
 def seed_keywords_summary(seeds: list[KeywordSeed]) -> str:

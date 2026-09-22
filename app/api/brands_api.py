@@ -54,6 +54,7 @@ def _spec_from_request(body: BrandCreateRequest) -> BrandSpec:
         secondary_keywords=list(body.secondary_keywords),
         competitor_mentions=list(body.competitor_mentions),
         competitor_accounts=list(body.competitor_accounts),
+        focus_category=body.focus_category,
     )
 
 
@@ -82,6 +83,7 @@ def _spec_from_row(row: dict[str, Any]) -> BrandSpec:
         headless=bool(row.get("headless", True)),
         enabled_flows=list(row.get("enabled_flows") or brands_db.default_enabled_flows()),
         group_join_limit=int(row.get("group_join_limit") or 10),
+        focus_category=str(row.get("focus_category") or ""),
     )
 
 
@@ -102,6 +104,7 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),
         group_join_limit=int(row.get("group_join_limit") or 10),
+        focus_category=str(row.get("focus_category") or ""),
         status=str(row.get("status") or ""),
         brand_dir=brand_dir,
         extra=dict(row.get("extra") or {}),
@@ -163,6 +166,7 @@ def create_brand(body: BrandCreateRequest) -> BrandProvisionResponse:
                 "competitor_mentions": list(body.competitor_mentions),
             },
             competitor_accounts=list(body.competitor_accounts),
+            focus_category=body.focus_category,
             extra={
                 "instagram_profile_url": body.instagram_profile_url,
                 "facebook_page_url": body.facebook_page_url,
@@ -223,6 +227,7 @@ def get_brand(brand_id: str) -> BrandDetail:
         enabled_flows=list(row.get("enabled_flows") or []),
         headless=bool(row.get("headless", True)),
         group_join_limit=int(row.get("group_join_limit") or 10),
+        focus_category=str(row.get("focus_category") or ""),
         status=str(row.get("status") or ""),
         brand_dir=str(row.get("brand_dir") or ""),
         extra=dict(row.get("extra") or {}),

@@ -36,6 +36,11 @@ from lib.engagement.adapters.instagram import InstagramHashtagAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
 from lib.engagement.policy import EngagementPolicy, thresholds_from_config
 from lib.engagement.post import Post
+from lib.engagement.run_summary import build_summary, log_funnel
+from lib.engagement.scan_deadline import (
+    DeadlineAwareRateTracker,
+    deadline_from_env,
+)
 from lib.io.jsonio import read_json, write_json
 from lib.notifier import skill_finished, skill_skipped, skill_started
 from lib.rate_limiter import can_act, daily_limit, print_status
@@ -71,6 +76,13 @@ def _score_post(post: Post) -> float:
 
 
 def _already_ran_today(last_run: dict[str, Any]) -> bool:
+    """True only for a COMPLETE pass earlier today.
+
+    A pass that stopped at its own deadline stamps `"truncated"`, not
+    `"success"`, so it deliberately does not close the day: the hashtags it
+    never reached are still worth a second attempt, and `ScanDedup` makes
+    that attempt cheap (every post the first pass opened is skipped).
+    """
     ig = last_run.get("ig_engager", {})
     return (ig.get("last_run_at") or "")[:10] == date.today().isoformat() and ig.get(
         "status"
@@ -118,6 +130,11 @@ def run_ig_scan(
     active = adapter or InstagramHashtagAdapter(
         {**config, "session_file": SESSION_FILE, "hashtag_file": HASHTAG_FILE}
     )
+    # The worker's own `subprocess.run(timeout=)` fuse, handed down as
+    # FLOW_TIMEOUT_SECONDS. None when the flow was started by hand. A full
+    # pass normally finishes well inside it; this is what makes a SLOW one
+    # end with a summary and a stamp instead of a SIGKILL.
+    deadline = deadline_from_env()
     try:
         report = run_outbound_scan(
             active,
@@ -126,13 +143,14 @@ def run_ig_scan(
             # post is liked and commented in the one visit that opened it.
             # No queue, no ig_comment.py handoff (see module docstring).
             dedup=ScanDedup(WORKER_LABEL, log=log),
-            rate_tracker=rate_limiter,
+            rate_tracker=DeadlineAwareRateTracker(rate_limiter, deadline),
             drafter=_DRAFTER,
             log=log,
             now_iso=lambda: datetime.now(UTC).isoformat(),
             score_relevance=_score_post,
             dry_run=dry_run,
             inline_comment=True,
+            deadline=deadline,
         )
     except RuntimeError as exc:
         msg = str(exc)
@@ -149,29 +167,29 @@ def run_ig_scan(
         last_run["ig_engager"] = {
             "last_run_at": datetime.now(UTC).isoformat(),
             "hashtags_scanned": report.sources_visited,
+            "hashtags_due": report.sources_total,
             "posts_liked": report.likes_succeeded,
             "posts_commented": report.comments_posted,
             "comments_declined": report.comments_declined,
-            "status": "success",
+            # Only a pass that reached the end of the day's hashtag list is
+            # "success". A truncated one is stamped so it is visible in
+            # `scripts/status.py` (anything but success/FAILED renders as a
+            # warning) AND so `_already_ran_today` does not use it to skip
+            # the rest of the day.
+            "status": "success" if report.stopped_reason is None else "truncated",
+            "stopped_reason": report.stopped_reason,
         }
         write_json(LAST_RUN_FILE, last_run)
 
-    quota = daily_limit("instagram", "comment")
-    if dry_run:
-        summary = (
-            f"DRY RUN (nothing liked, commented or recorded) | "
-            f"Hashtags: {report.sources_visited} | "
-            f"Would like: {report.likes_attempted} | "
-            f"Would comment: {report.comments_attempted}/{quota} | "
-            f"Agent declined: {report.comments_declined}"
-        )
-    else:
-        summary = (
-            f"Hashtags: {report.sources_visited} | "
-            f"Liked: {report.likes_succeeded} | "
-            f"Commented: {report.comments_posted}/{quota} | "
-            f"Agent declined: {report.comments_declined}"
-        )
+    # The funnel goes to BOTH sinks: the summary is what a human reads in
+    # Telegram, the log line is what survives to be grepped afterwards.
+    log_funnel(report, log)
+    summary = build_summary(
+        report,
+        source_label="Hashtags",
+        comment_quota=daily_limit("instagram", "comment"),
+        dry_run=dry_run,
+    )
     skill_finished("ig-engager", summary)
     print_status()
     return report

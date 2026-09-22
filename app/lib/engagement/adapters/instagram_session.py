@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Browser, BrowserContext, Page, Playwright
 
 from lib.engagement.adapters.instagram_dom import OVERLAY_SELECTORS
+from lib.engagement.nav_retry import goto_with_retry
 from lib.local_env import get_runtime_headless
 
 _log = logging.getLogger(__name__)
@@ -88,7 +89,9 @@ class InstagramSession:
     def _verify_logged_in(self) -> None:
         """Load the IG home page and fail loudly if we were bounced to login."""
         page = self.require_page()
-        page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
+        # Retried for the same reason as the Facebook adapter's bootstrap:
+        # a momentary resolver failure must not cost the whole run.
+        goto_with_retry(page, "https://www.instagram.com/", wait_until="domcontentloaded")
         time.sleep(4)
         url = (page.url or "").lower()
         if "login" in url or "accounts/login" in url:

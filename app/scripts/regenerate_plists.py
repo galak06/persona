@@ -30,7 +30,7 @@ from api.schedule_config import load_schedule_config
 from api.schedule_state import _LABEL_TO_LOG
 from scripts._cron_to_launchd import UnsupportedCronError, cron_to_launchd
 
-from lib.worker_labels import TASK_ID_PREFIX as _TASK_ID_PREFIX
+from lib.worker_labels import flow_id_from_task_id
 
 REPO_ROOT = _REPO_ROOT
 _BRAND_LABEL_PREFIX = "com.persona."
@@ -112,7 +112,7 @@ def build_plist(
     if not cron:
         raise UnsupportedCronError(f"task {task.id} has no schedule.cron")
 
-    suffix = task.id.removeprefix(_TASK_ID_PREFIX)
+    suffix = flow_id_from_task_id(task.id) or task.id
     label = f"{_BRAND_LABEL_PREFIX}{suffix}"
 
     script = extra.get("script")
@@ -286,10 +286,10 @@ def main(argv: list[str] | None = None) -> int:
     skipped: list[tuple[str, str]] = []
 
     for task in config.tasks:
-        if not task.id.startswith(_TASK_ID_PREFIX):
-            skipped.append((task.id, "id does not start with 'dogfood-'"))
+        suffix = flow_id_from_task_id(task.id)
+        if not suffix:
+            skipped.append((task.id, "id carries no recognised brand prefix"))
             continue
-        suffix = task.id.removeprefix(_TASK_ID_PREFIX)
         if args.only and suffix != args.only:
             continue
         label = f"{_BRAND_LABEL_PREFIX}{suffix}"

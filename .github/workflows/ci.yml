@@ -64,6 +64,29 @@ jobs:
       # lists here, while its test (tests/test_wp_scan_skill.py) is clean
       # and included. scripts/fb_engager.py and scripts/ig_comment.py are
       # clean on both and included.
+      # Comment-outbox slice (transactional claim + reconciler): every file it
+      # touches is lint- AND format-clean, so the whole slice is in both lists,
+      # including the lib/engagement/* modules it added. Those are deliberately
+      # absent from the mypy list below -- the package carries 3 pre-existing
+      # strict errors (log.py:15, log.py:69, history.py:34) that any file
+      # importing it inherits. Same reason lib/comment_verify_sessions.py is
+      # here but not there.
+      # Scan-funnel instrumentation slice (extraction status, per-post score
+      # log, ScanReport funnel, shared run summary): all of it lint- AND
+      # format-clean, so the whole slice is in both lists -- and absent from
+      # the mypy list for the same package reason as the comment-outbox files
+      # above. The one exception is
+      # tests/lib/engagement/test_ig_engager_with_fake.py, which carries
+      # pre-existing (unrelated) ruff-format drift: lint- and pytest-list only.
+      # Internal scan-deadline slice (worker exports FLOW_TIMEOUT_SECONDS ->
+      # lib/engagement/scan_deadline.py -> pipeline stop points -> truncated
+      # summary + last_run stamp): every new file is lint- AND format-clean,
+      # so all four go in both lists, and the two test files also in the
+      # pytest list below (_deadline_fakes.py is their shared helper, not a
+      # test module, so it belongs in the ruff lists only). pipeline.py,
+      # scan_results.py and run_summary.py were already listed;
+      # scan_deadline.py stays out of the mypy list for the same
+      # lib/engagement package reason as the comment-outbox files above.
       - name: Ruff check (lint)
         run: >-
           ruff check
@@ -73,14 +96,16 @@ jobs:
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
           lib/errors/platforms.py
           lib/brands_db/ lib/brand_context.py
-          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
+          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py lib/content_strategy.py
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/engagement/pipeline.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py tools/dump_openapi.py
           scripts/backfill_dedup_brand.py scripts/migrate_dedup_cache.py
-          tests/test_import_hygiene.py tests/test_deduplication.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
+          tests/test_import_hygiene.py tests/test_deduplication.py tests/test_state_file_locking.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_engager.py scripts/ig_engager.py scripts/fb_group_scout.py
           scripts/ig_comment.py
+          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py scripts/regenerate_post_hero.py scripts/migrate_task_ids_to_brand.py
+          lib/engagement/nav_retry.py lib/notifier_outbox.py lib/certification_claims.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
@@ -92,7 +117,7 @@ jobs:
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_context.py
-          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
+          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py tests/test_certification_claims.py tests/test_reels_focus_and_rejection.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
@@ -100,15 +125,19 @@ jobs:
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
+          lib/crew/writer/context.py lib/crew/writer/link_guard.py
+          lib/crew/reference_manifest.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
+          lib/crew/ai_tells/ scripts/rewrite_ai_tells.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
+          tests/test_crew_ai_tells.py tests/test_crew_ai_tells_rewrite.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
           tests/test_crew_products_compliance.py
           tests/test_backfill_blog_product_blocks.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           tests/test_crew_reels.py tests/test_reels_openart_client.py
-          tests/test_ideas_api_reel_transitions.py tests/test_ideas_db_reels.py
+          tests/test_ideas_api_reel_transitions.py tests/test_ideas_db_reels.py tests/test_wp_ideas_drafter_lease.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
           lib/social_post_slots.py tests/test_social_post_slots.py
@@ -130,6 +159,7 @@ jobs:
           lib/crew/reference_mascot.py
           lib/crew/wp_image.py lib/crew/wp_image_providers.py
           api/reference_images_api.py api/reference_images_schemas.py
+          lib/crew/reference_persona.py tests/test_reference_persona.py
           tests/test_reference_library.py tests/test_reference_validate.py
           tests/test_reference_library_migration.py
           tests/test_reference_images_api.py tests/test_reference_vision.py
@@ -138,13 +168,44 @@ jobs:
           tests/_reference_library_fakes.py
           tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
           lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
-          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
+          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py tests/test_crew_writer_context.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
           tests/test_reels_images.py tests/test_reels_images_references.py
           tests/test_socialpost_compose.py
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
           lib/oauth/openart.py lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
+          lib/comment_outbox.py lib/comment_verify_sessions.py lib/scan_dedup.py
+          lib/engagement/comment_submit.py lib/engagement/comment_confirm.py
+          lib/engagement/collaborators.py lib/engagement/result.py
+          lib/engagement/inline_comment.py lib/engagement/scan_results.py
+          lib/engagement/post_processor.py
+          lib/engagement/adapters/own_comment.py
+          lib/engagement/adapters/instagram_own_comment_dom.py
+          lib/engagement/adapters/facebook_own_comment_dom.py
+          lib/ig/comment_post.py lib/fb/comment_post.py
+          scripts/comment_verify.py scripts/backfill_comment_claims.py
+          tests/test_comment_outbox.py tests/test_comment_verify.py
+          tests/test_backfill_comment_claims.py tests/test_scan_dedup.py
+          tests/test_commenter.py
+          tests/lib/engagement/test_comment_submit.py
+          tests/lib/engagement/test_own_comment_lookup.py
+          tests/lib/engagement/test_pipeline_inline_comment.py
+          tests/lib/engagement/test_pipeline_retry.py
+          tests/lib/engagement/_env_builders.py
+          tests/lib/engagement/conftest.py
+          lib/engagement/extraction.py lib/engagement/scan_logging.py
+          lib/engagement/run_summary.py
+          lib/engagement/adapters/instagram_extract.py
+          lib/engagement/adapters/instagram.py
+          tests/lib/engagement/test_instagram_extract.py
+          tests/lib/engagement/test_scan_funnel.py
+          tests/lib/engagement/test_ig_engager_with_fake.py
+          lib/engagement/scan_deadline.py
+          tests/lib/engagement/_deadline_fakes.py
+          tests/lib/engagement/test_scan_deadline.py
+          tests/lib/engagement/test_scan_truncation.py
+          tests/lib/runtime/test_singleton.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
 
@@ -157,14 +218,16 @@ jobs:
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
           lib/errors/platforms.py
           lib/brands_db/ lib/brand_context.py
-          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
+          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py lib/content_strategy.py
           lib/comment_generator.py lib/comment_generator_defaults.py lib/reply_drafter.py lib/draft_helper.py lib/draft_prompts.py lib/llm_client.py lib/llm_tracing.py lib/gemini_client.py lib/skill_loader.py
           lib/engagement/adapters/instagram_dom.py lib/config.py lib/local_env.py lib/flow_readiness.py lib/task_queue.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py lib/deduplication.py lib/draft_history.py lib/runtime/flow.py lib/flow_queue.py tools/dump_openapi.py
           scripts/backfill_dedup_brand.py scripts/migrate_dedup_cache.py
-          tests/test_import_hygiene.py tests/test_deduplication.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
+          tests/test_import_hygiene.py tests/test_deduplication.py tests/test_state_file_locking.py tests/lib/runtime/test_flow.py tests/_pg.py tests/conftest.py tests/test_db_isolation.py tests/lib/test_flow_queue.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           scripts/fb_engager.py scripts/ig_engager.py
           scripts/ig_comment.py
+          lib/site_cache.py scripts/refresh_site_cache.py scripts/create_wp_category.py scripts/regenerate_post_hero.py scripts/migrate_task_ids_to_brand.py
+          lib/engagement/nav_retry.py lib/notifier_outbox.py lib/certification_claims.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/oauth_api.py api/session_status_api.py
           tests/test_db.py tests/test_groups_db.py tests/test_engagements_db.py
           tests/test_worker_db.py tests/test_schedule_db.py tests/test_dedup_pg.py
@@ -175,7 +238,7 @@ jobs:
           tests/test_task_dispatcher.py tests/test_task_dispatcher_enabled_flows.py tests/test_task_dispatcher_multi_brand.py
           tests/test_task_worker.py tests/test_task_worker_multi_brand.py tests/lib/scheduling/
           tests/test_brands_db.py tests/test_brands_db_update.py tests/test_brand_context.py
-          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py
+          tests/test_brand_templates.py tests/test_brand_provisioning.py tests/test_brand_provisioning_enabled_flows.py tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py tests/test_certification_claims.py tests/test_reels_focus_and_rejection.py
           tests/test_comment_generator.py tests/test_api_brands.py tests/test_api_brands_live.py tests/test_api_brand_settings.py
           tests/test_local_env.py tests/test_flow_readiness.py tests/test_api_brand_flows.py tests/test_task_queue.py tests/test_api_oauth.py
           tests/test_session_status.py tests/test_api_session_status.py tests/test_activity_log.py
@@ -183,8 +246,12 @@ jobs:
           tests/test_skill_loader.py tests/test_ig_engager_skill.py tests/test_wp_scan_skill.py
           recipe-publisher/ideator/research.py recipe-publisher/ideator/enricher.py
           lib/crew/structured_output.py tests/lib/crew/test_structured_output.py
+          lib/crew/writer/context.py lib/crew/writer/link_guard.py
+          lib/crew/reference_manifest.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
+          lib/crew/ai_tells/ scripts/rewrite_ai_tells.py
           tests/test_crew_products_pool.py tests/test_crew_products_usage.py
+          tests/test_crew_ai_tells.py tests/test_crew_ai_tells_rewrite.py
           tests/test_crew_products_stage.py tests/test_crew_products_select.py
           tests/test_crew_products_block.py tests/test_crew_products_blog_backfill.py
           tests/test_crew_products_compliance.py
@@ -218,13 +285,44 @@ jobs:
           tests/_reference_library_fakes.py
           tests/test_crew_wp_image.py tests/test_crew_wp_image_references.py
           lib/crew/reference_vocabulary.py tests/test_reference_vocabulary.py
-          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py
+          tests/test_crew_writer_prompts.py tests/test_crew_socialpost_prompts.py tests/test_crew_writer_context.py
           tests/test_reels_openart_generate.py tests/_reels_openart_fakes.py
           tests/test_reels_images.py tests/test_reels_images_references.py
           tests/test_socialpost_compose.py
           api/oauth_openart_api.py tests/test_oauth_openart_status.py
           lib/oauth/openart_store.py
           tests/test_oauth_openart.py tests/test_oauth_openart_refresh.py
+          lib/comment_outbox.py lib/comment_verify_sessions.py lib/scan_dedup.py
+          lib/engagement/comment_submit.py lib/engagement/comment_confirm.py
+          lib/engagement/collaborators.py lib/engagement/result.py
+          lib/engagement/inline_comment.py lib/engagement/scan_results.py
+          lib/engagement/post_processor.py
+          lib/engagement/adapters/own_comment.py
+          lib/engagement/adapters/instagram_own_comment_dom.py
+          lib/engagement/adapters/facebook_own_comment_dom.py
+          lib/ig/comment_post.py lib/fb/comment_post.py
+          scripts/comment_verify.py scripts/backfill_comment_claims.py
+          tests/test_comment_outbox.py tests/test_comment_verify.py
+          tests/test_backfill_comment_claims.py tests/test_scan_dedup.py
+          tests/test_commenter.py
+          tests/lib/engagement/test_comment_submit.py
+          tests/lib/engagement/test_own_comment_lookup.py
+          tests/lib/engagement/test_pipeline_inline_comment.py
+          tests/lib/engagement/test_pipeline_retry.py
+          tests/lib/engagement/_env_builders.py
+          tests/lib/engagement/conftest.py
+          tests/lib/engagement/test_fb_engager_with_fake.py
+          lib/engagement/extraction.py lib/engagement/scan_logging.py
+          lib/engagement/run_summary.py
+          lib/engagement/adapters/instagram_extract.py
+          lib/engagement/adapters/instagram.py
+          tests/lib/engagement/test_instagram_extract.py
+          tests/lib/engagement/test_scan_funnel.py
+          lib/engagement/scan_deadline.py
+          tests/lib/engagement/_deadline_fakes.py
+          tests/lib/engagement/test_scan_deadline.py
+          tests/lib/engagement/test_scan_truncation.py
+          tests/lib/runtime/test_singleton.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
 
@@ -264,12 +362,13 @@ jobs:
           lib/engagements_db/db.py lib/engagements_db/repository.py
           lib/worker_db.py lib/schedule_db.py lib/scheduling/
           lib/brands_db/ lib/brand_context.py lib/local_env.py lib/flow_readiness.py lib/session_status.py lib/activity_log.py lib/dedup_pg.py lib/bootstrap.py
-          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py
+          lib/brand_templates.py lib/brand_template_defaults.py lib/brand_provisioning.py lib/content_strategy.py
           lib/llm_client.py lib/skill_loader.py
           scripts/task_dispatcher.py scripts/noop_healthcheck.py scripts/onboard_brand.py scripts/task_worker.py
           api/brands_api.py api/brand_settings_api.py api/brand_schemas.py api/brand_flows_api.py api/session_status_api.py
           lib/crew/structured_output.py
           lib/crew/products/ scripts/backfill_blog_product_blocks.py
+          lib/crew/ai_tells/ scripts/rewrite_ai_tells.py
           lib/crew/reels/ scripts/crewai_reels_pipeline.py
           lib/crew/socialpost/ lib/crew/wp_source.py lib/social_post_db.py
           lib/social_post_slots.py lib/social_post_retry_db.py
@@ -288,6 +387,7 @@ jobs:
           api/reference_images_api.py api/reference_images_schemas.py
           lib/oauth/openart.py lib/oauth/openart_store.py
           lib/crew/reference_vocabulary.py
+          lib/comment_outbox.py lib/scan_dedup.py scripts/backfill_comment_claims.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
           --ignore-missing-imports
@@ -346,7 +446,7 @@ jobs:
       # nothing in this suite wants telemetry, and an exporter reaching for the
       # network only adds a way for the job to stall. (This was first added as
       # a suspected fix for the 6h hang; the actual cause was the dotted
-      # --cov=lib.crew.products below. Tracing crewai's imports shows zero
+      # --cov=lib/crew/products below. Tracing crewai's imports shows zero
       # socket connects, so these are hygiene, not the fix.)
       # (crewai 1.15.12 reads exactly these: telemetry.py checks OTEL_SDK_DISABLED
       # and CREWAI_DISABLE_TELEMETRY; the tracing listener checks CREWAI_TRACING_ENABLED.)
@@ -399,7 +499,16 @@ jobs:
         # lib.crew.scout -> crewai -> chromadb/numpy, and on this runner it
         # never returns: three runs (16m, 33m, 6h) logged not one byte of
         # pytest output. The path form makes coverage measure files by path and
-        # never import them. Keep it a path for any heavy package added here.
+        # never import them. EVERY target below must be a path -- not just the
+        # heavy ones. A dotted target makes coverage resolve it through
+        # `importlib.util.find_spec`, and it re-resolves on every sys.path
+        # change, from whichever thread happens to trigger the trace. crewai
+        # imports chromadb imports opentelemetry.sdk._logs, which builds a
+        # ThreadPoolExecutor AT MODULE LEVEL and joins it: the main thread then
+        # holds the import lock waiting on a pool worker, while that worker sits
+        # in coverage's find_spec waiting for the same lock. Deadlock, zero
+        # output, killed by the wrapper at 600s. Path targets never call
+        # find_spec, so the worker never needs the lock.
         # `timeout --signal=ABRT 600` is the outer net: --timeout below only
         # arms a timer per test item (setup/call/teardown), so any hang before
         # the first test -- plugin load, coverage's source resolution, conftest
@@ -429,6 +538,7 @@ jobs:
             tests/test_brand_templates.py \
             tests/test_brand_provisioning.py \
             tests/test_brand_provisioning_enabled_flows.py \
+            tests/test_content_strategy.py tests/test_site_cache.py tests/test_crew_trends_retry.py tests/test_nav_retry.py tests/test_notifier_outbox.py tests/test_certification_claims.py tests/test_reels_focus_and_rejection.py \
             tests/test_comment_generator.py \
             tests/test_api_brands.py \
             tests/test_api_brands_live.py \
@@ -453,6 +563,8 @@ jobs:
             tests/test_gemini_client.py \
             tests/lib/crew/test_structured_output.py \
             tests/test_crew_products_pool.py \
+            tests/test_crew_ai_tells.py \
+            tests/test_crew_ai_tells_rewrite.py \
             tests/test_crew_products_usage.py \
             tests/test_crew_products_stage.py \
             tests/test_crew_products_select.py \
@@ -464,6 +576,7 @@ jobs:
             tests/test_reels_openart_client.py \
             tests/test_ideas_api_reel_transitions.py \
             tests/test_ideas_db_reels.py \
+            tests/test_wp_ideas_drafter_lease.py \
             tests/test_crew_socialpost.py \
             tests/test_social_post_db.py \
             tests/test_social_post_slots.py \
@@ -477,6 +590,7 @@ jobs:
             tests/test_managed_flow_ids_consistency.py \
             tests/test_pg_backup.py \
             tests/test_reels_compose_api.py \
+            tests/test_reference_persona.py \
             tests/test_reference_library.py \
             tests/test_reference_library_migration.py \
             tests/test_reference_validate.py \
@@ -489,6 +603,7 @@ jobs:
             tests/test_crew_wp_image_references.py \
             tests/test_reference_vocabulary.py \
             tests/test_crew_writer_prompts.py \
+            tests/test_crew_writer_context.py \
             tests/test_crew_socialpost_prompts.py \
             tests/test_reels_openart_generate.py \
             tests/test_reels_images.py \
@@ -497,17 +612,36 @@ jobs:
             tests/test_oauth_openart_status.py \
             tests/test_oauth_openart.py \
             tests/test_oauth_openart_refresh.py \
+            tests/test_comment_outbox.py \
+            tests/test_comment_verify.py \
+            tests/test_backfill_comment_claims.py \
+            tests/test_scan_dedup.py \
+            tests/test_deduplication.py \
+            tests/test_state_file_locking.py \
+            tests/test_commenter.py \
+            tests/lib/engagement/test_comment_submit.py \
+            tests/lib/engagement/test_own_comment_lookup.py \
+            tests/lib/engagement/test_pipeline_inline_comment.py \
+            tests/lib/engagement/test_pipeline_retry.py \
+            tests/lib/engagement/test_instagram_extract.py \
+            tests/lib/engagement/test_scan_funnel.py \
+            tests/lib/engagement/test_ig_engager_with_fake.py \
+            tests/lib/engagement/test_scan_deadline.py \
+            tests/lib/engagement/test_scan_truncation.py \
+            tests/lib/runtime/test_singleton.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
-            --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
-            --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \
-            --cov=lib.scheduling \
-            --cov=lib.brands_db --cov=lib.brand_context --cov=lib.local_env --cov=lib.flow_readiness --cov=lib.session_status --cov=lib.activity_log \
-            --cov=lib.brand_templates --cov=lib.brand_template_defaults --cov=lib.brand_provisioning \
-            --cov=comment_generator --cov=comment_generator_defaults --cov=reply_drafter --cov=draft_helper --cov=llm_tracing --cov=gemini_client \
-            --cov=api.brands_api --cov=api.brand_settings_api --cov=api.brand_schemas --cov=api.brand_flows_api \
-            --cov=api.oauth_api --cov=api.session_status_api \
+            --cov=lib/db.py --cov=lib/db.py_pool --cov=lib/groups_db \
+            --cov=lib/engagements_db --cov=lib/worker_db.py --cov=lib/schedule_db.py --cov=lib/dedup_pg.py \
+            --cov=lib/scheduling \
+            --cov=lib/brands_db --cov=lib/brand_context.py --cov=lib/local_env.py --cov=lib/flow_readiness.py --cov=lib/session_status.py --cov=lib/activity_log.py \
+            --cov=lib/brand_templates.py --cov=lib/brand_template_defaults.py --cov=lib/brand_provisioning.py --cov=lib/content_strategy.py --cov=lib/site_cache.py --cov=lib/engagement/nav_retry.py --cov=lib/notifier_outbox.py --cov=lib/certification_claims.py \
+            --cov=lib/comment_generator.py --cov=lib/comment_generator.py_defaults --cov=lib/reply_drafter.py --cov=lib/draft_helper.py --cov=lib/llm_tracing.py --cov=lib/gemini_client.py \
+            --cov=api/brands_api.py --cov=api/brand_settings_api.py --cov=api/brand_schemas.py --cov=api/brand_flows_api.py \
+            --cov=api/oauth_api.py --cov=api/session_status_api.py \
             --cov=lib/crew/products \
+            --cov=lib/crew/writer/context.py --cov=lib/crew/writer/link_guard.py \
             --cov=lib/crew/structured_output.py \
+            --cov=lib/comment_outbox.py --cov=lib/scan_dedup.py \
             --cov-report=term-missing --cov-fail-under=80
 
   security:

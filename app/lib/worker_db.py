@@ -30,9 +30,17 @@ _UPSERT_SQL = """
 
 # The only values `worker_runs.status` can hold. `record_queued` writes
 # "queued"; `record_start` writes "running"; `record_complete` writes one of
-# the terminal two. The API adds a synthetic "never" for a flow with no row at
-# all -- see `api.schemas`.
-WorkerRunStatus = Literal["queued", "running", "success", "error"]
+# the terminal three. The API adds a synthetic "never" for a flow with no row
+# at all -- see `api.schemas`.
+#
+# "skipped" is neither success nor error: the flow declined to run because
+# another instance already held its singleton lock (`lib.runtime.flow`). It
+# needs its own value because the two consumers of this column read it as a
+# verdict on the flow's health -- recording a skip as "success" made a manual
+# "Run now" that did nothing indistinguishable from a real run (same status,
+# same fresh `last_run`, an empty `message`), and recording it as "error"
+# would alarm on ordinary cron pacing.
+WorkerRunStatus = Literal["queued", "running", "success", "error", "skipped"]
 
 
 def record_queued(brand_dir: str | Path, label: str, brand: str) -> None:

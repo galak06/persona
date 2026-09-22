@@ -137,14 +137,6 @@ def _flow_enabled(task: dict[str, Any], enabled_flows: frozenset[str] | None) ->
     return flow_id in enabled_flows
 
 
-# A flow is retired by moving `schedule.cron` aside instead of deleting the row,
-# so the schedule it used to run on stays recoverable. Either key marks the row
-# as deliberately cron-less; `disabled_reason` alone is enough for rows retired
-# before there was a cron worth preserving.
-_RETIRED_KEY = "cron_disabled"
-_RETIRED_REASON_KEY = "disabled_reason"
-
-
 def dispatch_task(
     task: dict[str, Any],
     *,
@@ -181,12 +173,12 @@ def dispatch_task(
         # the real signal: seven retired rows re-warned on every pass, ~2,880
         # lines a day. Same distinction the `script` branch below already
         # draws between a by-design skill row and a genuine misconfiguration.
-        if _RETIRED_KEY in schedule or _RETIRED_REASON_KEY in schedule:
+        if schedule_db.is_retired(task):
             logger.info(
                 "task_retired",
                 task_id=task_id,
-                reason=schedule.get(_RETIRED_REASON_KEY),
-                retired_cron=schedule.get(_RETIRED_KEY),
+                reason=schedule.get(schedule_db.RETIRED_REASON_KEY),
+                retired_cron=schedule.get(schedule_db.RETIRED_CRON_KEY),
             )
         else:
             logger.warning("task_missing_cron", task_id=task_id)

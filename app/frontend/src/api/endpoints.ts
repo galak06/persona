@@ -103,6 +103,9 @@ export const endpoints = {
   /** PATCH — partial brand settings edit (headless + keyword/competitor lists). */
   brandSettings: (id: string): string => `/brands/${enc(id)}/settings`,
 
+  /** GET — categories this brand's ideas have used (focus-field suggestions). */
+  brandIdeaCategories: (id: string): string => `/brands/${enc(id)}/idea-categories`,
+
   /** GET — per-flow enabled state, last-run status, and readiness signal. */
   brandFlows: (id: string): string => `/brands/${enc(id)}/flows`,
 

@@ -217,3 +217,51 @@ def test_draft_creation_posts_when_content_is_clean() -> None:
 
     fake_client.post.assert_called_once()
     assert result == {"id": 1, "status": "draft"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dismissal cues (`_DISMISSAL_WORDS`) -- a post must be able to NAME a bad
+# marketing claim in order to warn readers off it.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The sentence that cost the whole f4df76d6 dental draft on 2026-08-31.
+        'Avoid flashy marketing claims like "cures bad breath" or '
+        '"eliminates plaque" in three days.',
+        "Beware any chew promising it cures gum disease.",
+        "It's a myth that dental chews cure periodontal disease.",
+        "That claim has been debunked: nothing cures canine gingivitis overnight.",
+    ],
+)
+def test_claims_named_in_order_to_dismiss_them_are_not_flagged(text: str) -> None:
+    assert mcv.find_banned_claims(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "This supplement cures periodontal disease in two weeks.",
+        "A guaranteed cure for canine gum disease.",
+        "This is a miracle cure for bad breath.",
+        "Our veterinarian formulated this chew.",
+    ],
+)
+def test_dismissal_cues_do_not_weaken_the_asserted_claim(text: str) -> None:
+    """The widening must buy nothing for a claim the post actually makes."""
+    assert mcv.find_banned_claims(text) != []
+
+
+def test_dismissal_cue_is_clause_local_like_every_other_cue() -> None:
+    """A dismissal in a PREVIOUS sentence must not license the next one."""
+    text = "Avoid flashy marketing. This supplement cures gum disease."
+    assert "cure_claim" in mcv.find_banned_claims(text)
+
+
+def test_dismissal_words_stay_separable_from_grammatical_negations() -> None:
+    """They are kept in their own tuple so the loosening is revertible by
+    deleting it -- if they are ever merged into _NEGATION_WORDS, that
+    auditability is gone."""
+    assert "avoid" in mcv._DISMISSAL_WORDS
+    assert "avoid" not in mcv._NEGATION_WORDS

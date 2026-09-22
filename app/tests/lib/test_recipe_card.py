@@ -366,3 +366,75 @@ class TestUploadPdf:
         with patch("lib.recipe_card.wp_sync.wp_client", return_value=mock_client):
             url = upload_pdf(b"%PDF-1.4", "card.pdf")
         assert url == "https://cdn.example.com/card.pdf"
+
+
+# ---------------------------------------------------------------------------
+# wp_audio — placeholder anchoring
+# ---------------------------------------------------------------------------
+
+
+class TestAudioPlaceholderAnchor:
+    """The player must land on the marker whether or not the legacy visible
+    "song coming soon" box is still there.
+
+    Posts published before the box was removed still carry it; newer ones are
+    marker-only. Both shapes anchor the player at the same spot.
+    """
+
+    MARKER = "<!-- persona:audio-placeholder -->"
+    LEGACY_BOX = (
+        '<div class="dff-song-placeholder">\U0001f3b5 Recipe song coming soon '
+        "— the Nalla\'s Dad original for this recipe drops with the reel.</div>"
+    )
+
+    def _inject(self, content: str) -> str:
+        from lib.recipe_card import wp_audio
+
+        captured: dict[str, str] = {}
+
+        class _Resp:
+            def raise_for_status(self) -> None:
+                return None
+
+        class _Client:
+            def patch(self, _url: str, json: dict[str, str]) -> _Resp:
+                captured["content"] = json["content"]
+                return _Resp()
+
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *_: object) -> None:
+                return None
+
+        with (
+            patch.object(wp_audio, "wp_client", _Client),
+            patch.object(wp_audio, "fetch_post_data", lambda _id: {"content": content}),
+        ):
+            wp_audio.inject_audio_player(1, 99, "https://example.test/song.mp3")
+        return captured["content"]
+
+    def test_marker_only_post_gets_player_at_marker(self) -> None:
+        out = self._inject(f"<p>Intro</p>\n{self.MARKER}\n<p>Body</p>")
+        assert "wp-block-audio" in out
+        assert out.index("wp-block-audio") < out.index("<p>Body</p>")
+
+    def test_legacy_box_is_replaced_not_left_behind(self) -> None:
+        out = self._inject(
+            f"<p>Intro</p>\n{self.MARKER}\n{self.LEGACY_BOX}\n<p>Body</p>"
+        )
+        assert "wp-block-audio" in out
+        assert "dff-song-placeholder" not in out
+        assert "Recipe song coming soon" not in out
+
+    def test_legacy_brand_prefixed_marker_still_anchors(self) -> None:
+        """Live posts predate the brand-generalization rename and carry
+        ``dogfoodandfun:`` rather than ``persona:``."""
+        legacy = "<!-- dogfoodandfun:audio-placeholder -->"
+        out = self._inject(
+            f"<p>Intro</p>\n<p>{legacy}</p>\n{self.LEGACY_BOX}\n<p>Body</p>"
+        )
+        assert "wp-block-audio" in out
+        assert "dff-song-placeholder" not in out
+        assert "audio-placeholder" not in out
+        assert out.index("wp-block-audio") < out.index("<p>Body</p>")

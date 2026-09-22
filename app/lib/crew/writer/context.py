@@ -22,7 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from lib.affiliate_resolver import ProductEntry
-from lib.crew.writer.models import ContentBrief, InternalLinkCandidate
+from lib.content_strategy import normalize_category
+from lib.crew.writer.models import InternalLinkCandidate
 from lib.observability import get_logger
 
 logger = get_logger(__name__)
@@ -109,69 +110,53 @@ def internal_link_candidates_from_cache(
         title = str(post.get("title") or "").strip()
         url = str(post.get("url") or "").strip()
         if title and url:
-            candidates.append(InternalLinkCandidate(title=title, url=url))
+            candidates.append(
+                InternalLinkCandidate(title=title, url=url, categories=_category_names(post))
+            )
     return candidates
+
+
+def _category_names(post: dict[str, Any]) -> list[str]:
+    """Every WordPress category on the cached post, in cache order.
+
+    All of them rather than the primary one: a brand focusing on a niche
+    normally files those posts under the niche category AND a general one, so
+    primary-only matching would miss the very posts the focus is meant to
+    gather.
+    """
+    raw = post.get("categories")
+    if not isinstance(raw, list):
+        return []
+    return [text for entry in raw if (text := str(entry or "").strip())]
+
+
+def rank_link_candidates(
+    candidates: list[InternalLinkCandidate], *, focus_category: str
+) -> list[InternalLinkCandidate]:
+    """Order candidates so same-category posts come first.
+
+    Ranking, never filtering: a brand whose cache holds only a few posts in
+    its focus category still needs SOMETHING to link to, and starving the
+    list would cost the post its internal links entirely rather than making
+    them more focused. The strategist is told separately to prefer the ones
+    at the top (see `build_strategist_task_description`).
+
+    Stable within each group, so the cache's own recency order survives.
+    Returns the list unchanged when the brand has no focus.
+    """
+    wanted = normalize_category(focus_category)
+    if not wanted:
+        return list(candidates)
+
+    def _misses_focus(candidate: InternalLinkCandidate) -> bool:
+        return not any(normalize_category(c) == wanted for c in candidate.categories)
+
+    return sorted(candidates, key=_misses_focus)
 
 
 def internal_link_candidates_json(candidates: list[InternalLinkCandidate]) -> str:
     """Compact JSON of real internal-link candidates for the strategist prompt."""
     return json.dumps([c.model_dump() for c in candidates], ensure_ascii=False)
-
-
-def sanitize_internal_links(brief: ContentBrief, allowed_urls: set[str]) -> ContentBrief:
-    """Drop any `internal_link_candidates` entry whose URL isn't in the real
-    candidate set given to the strategist -- defense against the LLM
-    inventing a plausible-looking URL despite prompt instructions."""
-    kept = [c for c in brief.internal_link_candidates if c.url in allowed_urls]
-    dropped = len(brief.internal_link_candidates) - len(kept)
-    if dropped:
-        logger.warning("crew_writer_dropped_invented_internal_links", count=dropped)
-    return brief.model_copy(update={"internal_link_candidates": kept})
-
-
-def filter_links_to_allowed(
-    links: list[InternalLinkCandidate], allowed_urls: set[str]
-) -> list[InternalLinkCandidate]:
-    """Same filter as `sanitize_internal_links`, applied to a bare link list
-    (used on the writer's self-reported `internal_links_used`, which is a
-    second, independent LLM call and gets the same defensive treatment)."""
-    kept = [link for link in links if link.url in allowed_urls]
-    dropped = len(links) - len(kept)
-    if dropped:
-        logger.warning("crew_writer_dropped_invented_links_used", count=dropped)
-    return kept
-
-
-_ANCHOR_RE = re.compile(r'<a\s+[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
-
-
-def strip_unapproved_internal_links(
-    body_html: str, *, site_url: str, allowed_urls: set[str]
-) -> str:
-    """Defang any same-site `<a href>` in the WRITTEN HTML BODY whose URL isn't
-    in the real candidate set -- `sanitize_internal_links`/`filter_links_to_allowed`
-    only police the brief's/post's structured link fields, but the writer is
-    free-form prose and can (live-confirmed: did, once, in this build's own
-    validation run) embed an invented internal link directly in running text
-    without declaring it in `internal_links_used` at all. Same "don't fully
-    trust the model" posture, applied at the one place the URL actually ships.
-
-    Only touches links that look like THIS brand's own site (prefix-matches
-    `site_url`) -- external links (affiliate URLs, citations) are untouched,
-    since only internal links are claimed to come from the real candidate set.
-    Un-approved matches are defanged to plain text (anchor tag dropped, the
-    visible link text is kept) rather than deleting the sentence around them.
-    """
-    site_prefix = site_url.rstrip("/") + "/"
-
-    def _replace(match: re.Match[str]) -> str:
-        url, text = match.group(1), match.group(2)
-        if url.startswith(site_prefix) and url not in allowed_urls:
-            logger.warning("crew_writer_stripped_invented_body_link", url=url)
-            return text
-        return match.group(0)
-
-    return _ANCHOR_RE.sub(_replace, body_html)
 
 
 #: `(?:(?!</?p\b).)*?` -- "any character, as long as it isn't the start of a

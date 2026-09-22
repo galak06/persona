@@ -23,9 +23,10 @@ Semantics, fixed here so every flow agrees:
 
 * ``--health-check`` short-circuits before the lock and before any run row, so
   probing a flow never looks like a run. Exit code is the probe's.
-* A held lock is **success** (exit 0), not failure: a cron tick overlapping a
-  still-running scan is normal, and the run row is left alone because
-  ``record_start`` happens inside the lock.
+* A held lock exits **0**, not failure: a cron tick overlapping a still-running
+  scan is normal. It is recorded as its own ``skipped`` status, though — see
+  ``FLOW_SKIPPED_MARKER``. ``record_start`` still happens inside the lock, so a
+  tick that never acquired it never opens a ``running`` row.
 * An exception is recorded against the run row and then **re-raised**, so the
   traceback still reaches the cron log and the exit code is non-zero.
 * ``main`` may return an exit code, or ``None`` for "success, 0".
@@ -43,6 +44,29 @@ from lib.worker_db import record_complete, record_start
 from lib.worker_labels import worker_label_for_flow
 
 HEALTH_CHECK_FLAG = "--health-check"
+
+#: Printed to STDOUT when a flow declines to run because another instance holds
+#: its singleton lock. The skip has to survive one process boundary: a flow
+#: launched by ``scripts/task_worker.py`` writes its own ``worker_runs`` row
+#: here, and then the worker writes the SAME row again from the parent process
+#: once the child exits — under the same label, because both derive it from the
+#: brand and flow id. A clean exit there means ``success``, which would
+#: overwrite the ``skipped`` this function just recorded. So the reason is also
+#: emitted on stdout, where `flow_skip_reason` reads it back.
+FLOW_SKIPPED_MARKER = "FLOW_SKIPPED:"
+
+
+def flow_skip_reason(stdout: str) -> str | None:
+    """The skip reason a child flow printed, or None if it ran normally.
+
+    Deliberately scans every line rather than only the last: a flow prints
+    whatever it likes before ``run_flow`` gets its answer from the lock.
+    """
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(FLOW_SKIPPED_MARKER):
+            return stripped[len(FLOW_SKIPPED_MARKER) :].strip()
+    return None
 
 
 def session_file_check(session_file: Path, label: str) -> int:
@@ -125,6 +149,13 @@ def run_flow(
             record_complete(ctx.brand_dir, label, ctx.brand_id, "success")
             return _exit_code(code)
     except LockAcquisitionError as exc:
-        # Expected under normal cron pacing — the previous tick is still going.
-        print(f"another instance of {flow_id!r} is running: {exc}", file=sys.stderr)
+        # Expected under normal cron pacing — the previous tick is still going,
+        # so the exit code stays 0 and no cron alert fires. But it is NOT
+        # success: a manual "Run now" that lost the lock used to report a plain
+        # success with an empty log, which reads exactly like a real run that
+        # found nothing to do. `skipped` is the row that tells them apart.
+        message = f"skipped: another instance of {flow_id!r} holds the lock ({exc})"
+        print(f"{FLOW_SKIPPED_MARKER} {message}")
+        print(message, file=sys.stderr)
+        record_complete(ctx.brand_dir, label, ctx.brand_id, "skipped", message)
         return 0

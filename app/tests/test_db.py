@@ -32,6 +32,7 @@ _EXPECTED_TABLES = {
     "published_content",
     "content_ideas",
     "brand_secrets",  # encrypted per-brand credentials (lib/brand_secrets.py)
+    "comment_claims",  # comment-before-post claim rows (lib/comment_outbox.py)
 }
 _EXCLUDED_TABLES = {"recipes", "oauth_tokens", "raw_scrapes"}
 

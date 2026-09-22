@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 
+from lib.content_strategy import BREADTH_CLAUSE
 from lib.crew.idea.agent import build_idea_agent, build_idea_task
 from lib.crew.idea.execute import _parse_structured_output
 from lib.crew.idea.prompts import (
@@ -80,6 +81,7 @@ def test_build_idea_task_description_includes_all_sections() -> None:
         trends_json=serialize_trend_signals([_signal()]),
         existing_topics=serialize_existing_topics({"canicross 101: the 3 pieces of gear"}),
         top_n=7,
+        strategy_clause=BREADTH_CLAUSE,
     )
     assert "Brand: DogFoodAndFun" in description
     assert "Authentic, peer-to-peer." in description
@@ -101,6 +103,7 @@ def test_build_idea_task_description_missing_voice_and_seed_keywords_fallback() 
         trends_json="[]",
         existing_topics=serialize_existing_topics(set()),
         top_n=10,
+        strategy_clause=BREADTH_CLAUSE,
     )
     assert "(no voice guide available)" in description
     assert "(none on file)" in description

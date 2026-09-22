@@ -66,6 +66,19 @@ class ContentAnalysisConfig(BaseModel):
     competitor_accounts: list[str] = []
 
 
+class ContentStrategyConfig(BaseModel):
+    """A brand's one-focus-category stance. See `lib.content_strategy`.
+
+    Every field is defaulted and the whole block is optional on `AppSettings`,
+    so a brand config.json written before focus existed still parses and keeps
+    the pre-focus (breadth) behaviour. `focus_category=""` means "no focus".
+    """
+
+    focus_category: str = ""
+    depth_bias: bool = True
+    review_at: str = ""
+
+
 class ApprovalGatesConfig(BaseModel):
     first_post_to_new_group: bool
     comment_contains_url: bool
@@ -128,6 +141,9 @@ class AppSettings(BaseModel):
     # re-read the same numbers from raw JSON -- a second copy that drifted.
     # A `rate_limits` block left in a brand config.json is simply ignored.
     content_analysis: ContentAnalysisConfig
+    # Optional + fully defaulted: pre-focus brand configs have no such block
+    # and must keep parsing (and keep their breadth behaviour) untouched.
+    content_strategy: ContentStrategyConfig = ContentStrategyConfig()
     approval_gates: ApprovalGatesConfig
     deduplication: DeduplicationConfig
     file_paths: FilePathsConfig

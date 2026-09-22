@@ -21,6 +21,7 @@ const STATUS_DOT: Record<WorkerStatus["status"], string> = {
   running: "bg-sky-500",
   success: "bg-emerald-500",
   error: "bg-rose-500",
+  skipped: "bg-violet-400",
 };
 
 interface SchedulePipelineViewProps {

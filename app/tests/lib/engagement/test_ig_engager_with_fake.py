@@ -336,3 +336,39 @@ def test_ig_scan_dry_run_posts_nothing(
     assert report.comments_posted == 0
     # A dry run consumes no state: the already-ran-today stamp is not burned.
     assert json.loads(last_run_path.read_text()) == {}
+
+
+# --- 9. the run summary carries the funnel -----------------------------------
+
+
+def test_ig_scan_summary_reports_the_funnel(
+    ig_environment: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The finish notification must answer "where did the posts go?".
+
+    ``ig-engager`` spent a week producing zero candidates while its summary
+    said only ``Hashtags: 4 | Liked: 0 | Commented: 0/10 | Agent declined: 0``
+    -- a line that reads identically whether 110 posts were scanned and
+    rejected or the scraper returned nothing at all. The funnel is what
+    separates those two, so it has to survive the trip through the wrapper,
+    not just exist on the report.
+    """
+    finished: list[str] = []
+    monkeypatch.setattr(
+        ig_engager, "skill_finished", lambda _skill, summary: finished.append(summary)
+    )
+    hashtag = _hashtag("dogs")
+    posts = [
+        _make_ig_post("p1", _high_score_question(1), hashtag),
+        _make_ig_post("p2", "unrelated chatter about nothing at all", hashtag),
+    ]
+
+    report = run_ig_scan(adapter=FakeAdapter("instagram", [hashtag], {"dogs": posts}))
+    assert report is not None
+    assert len(finished) == 1
+    summary = finished[0]
+    assert summary.startswith("Hashtags: 1 | Liked: 1 | Commented: 1/")
+    assert "Funnel: scanned=2 duplicates=0 pre_filtered=0 " in summary
+    assert "extract_fail=0 empty_caption=0 below_threshold=1 " in summary
+    assert "candidates=1 drafted=1 posted=1 declined=0" in summary

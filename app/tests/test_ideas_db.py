@@ -31,6 +31,7 @@ def test_statuses_tuple_is_unchanged() -> None:
         "validation_failed",
         "drafting",
         "composing_reel",
+        "reel_rejected",
     )
 
 
@@ -308,14 +309,80 @@ def test_claim_idea_for_drafting_wins_claim(mock_execute: MagicMock) -> None:
     assert ideas_db.claim_idea_for_drafting("idea-1") is True
     query, params = mock_execute.call_args[0]
     assert "SET status = 'drafting'" in query
-    assert "WHERE id = %s AND status = 'approved'" in query
-    assert params == ("idea-1",)
+    assert "status = 'approved'" in query
+    assert params == ("idea-1", ideas_db.DRAFT_CLAIM_LEASE_SECONDS)
 
 
 @patch("lib.ideas_db.db.execute")
 def test_claim_idea_for_drafting_false_when_not_approved(mock_execute: MagicMock) -> None:
     mock_execute.return_value = 0
     assert ideas_db.claim_idea_for_drafting("idea-1") is False
+
+
+@patch("lib.ideas_db.db.execute")
+def test_claim_idea_for_drafting_can_take_over_an_expired_lease(
+    mock_execute: MagicMock,
+) -> None:
+    """A holder killed mid-draft never reverts its claim, so the claim must be
+    reclaimable on age alone -- otherwise the idea is stranded forever."""
+    mock_execute.return_value = 1
+    assert ideas_db.claim_idea_for_drafting("idea-1") is True
+    query, _ = mock_execute.call_args[0]
+    assert "status = 'drafting'" in query
+    assert "updated_at < NOW() - (%s * INTERVAL '1 second')" in query
+
+
+@patch("lib.ideas_db.db.execute")
+def test_claim_idea_for_drafting_lease_is_parameterised_not_interpolated(
+    mock_execute: MagicMock,
+) -> None:
+    mock_execute.return_value = 1
+    ideas_db.claim_idea_for_drafting("idea-1", lease_seconds=42)
+    query, params = mock_execute.call_args[0]
+    assert "42" not in query
+    assert params == ("idea-1", 42)
+
+
+def test_draft_lease_outlives_the_subprocess_timeout() -> None:
+    """If the lease could expire while a healthy draft is still running, a
+    competitor would steal the claim and the idea would be drafted twice."""
+    assert ideas_db.DRAFT_CLAIM_LEASE_SECONDS > ideas_db.DRAFT_SUBPROCESS_TIMEOUT_SECONDS
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# list_stale_drafting
+
+
+@patch("lib.ideas_db.db.fetch_all")
+def test_list_stale_drafting_filters_on_status_and_age(mock_fetch: MagicMock) -> None:
+    mock_fetch.return_value = [{"id": "idea-1"}]
+    rows = ideas_db.list_stale_drafting(brand_id="acme", limit=5)
+    assert rows == [{"id": "idea-1"}]
+    query, params = mock_fetch.call_args[0]
+    assert "status = 'drafting'" in query
+    assert "updated_at < NOW() - (%s * INTERVAL '1 second')" in query
+    assert "brand_id = %s" in query
+    assert params == (ideas_db.DRAFT_CLAIM_LEASE_SECONDS, "acme", 5)
+
+
+@patch("lib.ideas_db.db.fetch_all")
+def test_list_stale_drafting_omits_brand_clause_when_unset(mock_fetch: MagicMock) -> None:
+    mock_fetch.return_value = []
+    ideas_db.list_stale_drafting(limit=3)
+    query, params = mock_fetch.call_args[0]
+    assert "brand_id = %s" not in query
+    assert params == (ideas_db.DRAFT_CLAIM_LEASE_SECONDS, 3)
+
+
+@patch("lib.ideas_db.db.fetch_all")
+def test_list_stale_drafting_raises_rather_than_reporting_nothing_stranded(
+    mock_fetch: MagicMock,
+) -> None:
+    """Same contract as list_ideas: swallowing a DB error into [] would report
+    a clean sweep while ideas silently pile up at 'drafting'."""
+    mock_fetch.side_effect = Exception("boom")
+    with pytest.raises(Exception, match="boom"):
+        ideas_db.list_stale_drafting(brand_id="acme")
 
 
 @patch("lib.ideas_db.db.execute")

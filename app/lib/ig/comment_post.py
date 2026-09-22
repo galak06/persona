@@ -3,13 +3,28 @@
 Extracted from ``scripts/comment_poster.py`` so the IG comment action
 (``scripts/ig_comment.py``) owns one posting path instead of duplicating the
 DOM walk. The caller owns the browser context/session; this function drives one
-post → comment-box → submit.
+post → comment-box → submit → **confirm**.
+
+The confirm step is new and load-bearing. This function used to click Post,
+``time.sleep(3)`` and ``return True`` unconditionally, so a submit that never
+landed reported success and a submit that landed then raised reported failure —
+``lib/engagement/adapters/instagram.py:237-238`` maps any exception to
+``CommentResult.failed(...)``. That ambiguity is what put two comments on one
+post. Now the return value means "our text is visible in the thread": True lets
+``lib/engagement/comment_submit.py`` settle the claim immediately, False leaves
+the claim ``pending`` for ``scripts/comment_verify.py`` to adjudicate.
+
+The confirmation itself lives in ``lib/engagement/comment_confirm.py``, shared
+with the Facebook half: the two used to carry byte-identical copies of it, and
+that is exactly the shape that lets one platform's fix silently miss the other.
 """
 
 from __future__ import annotations
 
 import time
 from typing import TYPE_CHECKING
+
+from lib.engagement.comment_confirm import comment_landed
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page
@@ -22,11 +37,14 @@ def post_comment_ig(
     *,
     skip_navigation: bool = False,
 ) -> bool:
-    """Navigate to ``post_url`` and submit ``comment``. Returns True on success.
+    """Navigate to ``post_url`` and submit ``comment``. True == CONFIRMED live.
 
     Tries textarea → contenteditable → any form textarea to locate the comment
-    box, types the comment, then clicks Post (Enter as fallback). Returns False
-    if the comment box can't be found.
+    box, types the comment, clicks Post (Enter as fallback), then polls the
+    open page until the comment appears in the thread. Returns False if the
+    comment box can't be found, or if the submit could not be confirmed — the
+    caller treats that as "unconfirmed", not "did not post" (see the module
+    docstring).
 
     ``skip_navigation`` suppresses the goto + settle wait for callers that have
     already landed the page on ``post_url`` — the single-pass scanner likes and
@@ -81,5 +99,7 @@ def post_comment_ig(
         page.keyboard.press("Enter")
     print(f"    IG submit: {sub}", flush=True)
 
-    time.sleep(3)
-    return True
+    time.sleep(1)
+    landed = comment_landed(page, comment, label="IG")
+    print(f"    IG confirm: {'found' if landed else 'not_found'}", flush=True)
+    return landed

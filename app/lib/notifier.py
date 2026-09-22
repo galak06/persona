@@ -31,6 +31,7 @@ from typing import Any
 
 import requests
 
+from lib import notifier_outbox
 from lib.queue_state import commit_telegram_decision, read_decision
 
 
@@ -66,10 +67,15 @@ def _load_config() -> dict:
     }
 
 
-def send(message: str, silent: bool = False) -> bool:
-    """
-    Send a Telegram message. Returns True on success, False on failure.
-    silent=True sends without phone notification (useful for non-urgent updates).
+def _post_message(message: str, silent: bool = False) -> bool | None:
+    """One raw sendMessage call.
+
+    Three-valued on purpose, because the caller has to tell two failures apart:
+      True  -- delivered
+      False -- Telegram REJECTED it (bad chat id, malformed HTML). Retrying
+               later will fail identically, so it must NOT be parked.
+      None  -- the request never completed (DNS/connection). That is the
+               transient case worth holding onto.
     """
     cfg = _load_config()
     token = cfg.get("bot_token", "")
@@ -92,11 +98,44 @@ def send(message: str, silent: bool = False) -> bool:
         )
         if not resp.ok:
             print(f"[notifier] Telegram API error: {resp.status_code} — {resp.text[:200]}")
-            return False
+            # 5xx is Telegram itself wobbling -- transient, worth parking.
+            return None if resp.status_code >= 500 else False
         return True
     except Exception as e:
         print(f"[notifier] Failed to send notification: {e}")
-        return False
+        return None
+
+
+def send(message: str, silent: bool = False) -> bool:
+    """
+    Send a Telegram message. Returns True on success, False on failure.
+    silent=True sends without phone notification (useful for non-urgent updates).
+
+    An alert lost to a network failure is parked in `lib.notifier_outbox` and
+    replayed on the next successful send, so an outage that takes down a run
+    can no longer also swallow the warning about it.
+    """
+    result = _post_message(message, silent)
+
+    if result is True:
+        # Flush anything an earlier outage parked. Best-effort: a failure to
+        # replay history must never turn a delivered message into a failure.
+        try:
+            replayed = notifier_outbox.drain(lambda m, s: _post_message(m, s) is True)
+            if replayed:
+                print(f"[notifier] replayed {replayed} alert(s) held from an earlier outage")
+        except Exception as exc:
+            print(f"[notifier] outbox replay failed: {exc}")
+        return True
+
+    if result is None:
+        try:
+            if notifier_outbox.enqueue(message, silent=silent):
+                print("[notifier] held this alert for retry on the next successful send")
+        except Exception as exc:
+            print(f"[notifier] could not hold alert: {exc}")
+
+    return False
 
 
 def send_video(video_path: Path, caption: str = "", silent: bool = False) -> bool:
