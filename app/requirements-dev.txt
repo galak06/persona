@@ -1,6 +1,16 @@
 # Development & CI dependencies
 ruff>=0.4.0
-pytest>=8.0.0
+# Upper bound is load-bearing, not caution. Under 9.1.1 the directory
+# conftest at tests/lib/engagement/conftest.py silently fails to load when the
+# CI job passes its ~116 test files explicitly: every fixture it declares
+# vanishes and 12 tests die with "fixture 'ig_environment' not found". The same
+# file list on 9.0.3 is 1505 passed. It is not an ordering or a name clash --
+# the directory alone, or any small subset, loads the conftest fine; it takes a
+# large explicit list to reproduce. Missing fixtures are not a documented 9.1
+# behaviour change, so this is pinned below it until that is understood
+# upstream. CI installs from this file on every run, which is how it drifted
+# onto 9.1.1 while every local venv sat on 9.0.3 and passed.
+pytest>=8.0.0,<9.1
 pytest-cov>=5.0.0
 mypy>=1.10.0
 
