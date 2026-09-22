@@ -16,6 +16,7 @@ import Alert from "../components/ui/Alert";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
+import ProductsPanel from "../components/products/ProductsPanel";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -329,6 +330,8 @@ export default function BrandSettings(): React.JSX.Element {
           </button>
         </form>
       )}
+
+      <ProductsPanel />
 
       <ReferenceLibrarySection brandId={id} />
 

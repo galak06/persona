@@ -231,8 +231,30 @@ def load_brand_affiliate_catalog(brand_dir: Path) -> dict[str, ProductEntry]:
             display=entry.get("display", key),
             category=entry.get("category"),
             notes=entry.get("notes"),
+            active=entry.get("active", True) is not False,
+            selected_for=_selected_for(entry),
         )
     return catalog
+
+
+def _selected_for(entry: dict[str, Any]) -> tuple[str, ...]:
+    """The focus categories this catalog entry is explicitly selected for.
+
+    Tolerant like every other field here: a missing value means "selected for
+    nothing", a bare string is accepted as a one-element list (that is how a
+    hand-edited file tends to spell it), and blank members are dropped. Order
+    is preserved but duplicates are not, so re-selecting an already-selected
+    category cannot grow the list without bound.
+    """
+    raw = entry.get("selected_for")
+    if raw is None:
+        return ()
+    values = [raw] if isinstance(raw, str) else list(raw) if isinstance(raw, list) else []
+    seen: dict[str, None] = {}
+    for value in values:
+        if tag := str(value or "").strip():
+            seen.setdefault(tag, None)
+    return tuple(seen)
 
 
 def catalog_summary_text(catalog: dict[str, ProductEntry]) -> str:

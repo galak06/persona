@@ -927,6 +927,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Products
+         * @description The active brand's catalog, annotated against its focus category.
+         */
+        get: operations["get_products_api_v1_products_get"];
+        put?: never;
+        /**
+         * Post Product
+         * @description Add a product, selected for the current focus unless told otherwise.
+         */
+        post: operations["post_product_api_v1_products_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/products/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch Product
+         * @description Edit one product. `selected` toggles it for the current focus category.
+         */
+        patch: operations["patch_product_api_v1_products__key__patch"];
+        trace?: never;
+    };
     "/api/v1/reels/compose": {
         parameters: {
             query?: never;
@@ -2976,6 +3020,146 @@ export interface components {
             /** Items */
             items: (components["schemas"]["CommentItem"] | components["schemas"]["BlogPostItem"] | components["schemas"]["GroupItem"] | components["schemas"]["IdeaItem"] | components["schemas"]["SeedItem"] | components["schemas"]["CampaignVerifyItem"])[];
         };
+        /**
+         * ProductCreate
+         * @description A new catalog entry.
+         */
+        ProductCreate: {
+            /** Asin */
+            asin: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Display
+             * @default
+             */
+            display: string;
+            /**
+             * Key
+             * @description [a-z0-9][a-z0-9_-]* -- immutable once created
+             */
+            key: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+            /**
+             * Select For Focus
+             * @description Make it THE product for the current focus category, displacing whichever one holds it. Defaults to false: with one product per category, adding to the catalog and swapping the live promotion are different decisions and should not share a button.
+             * @default false
+             */
+            select_for_focus: boolean;
+        };
+        /**
+         * ProductModel
+         * @description One catalog entry as the panel renders it.
+         */
+        ProductModel: {
+            /**
+             * Active
+             * @description False hides it from selection
+             * @default true
+             */
+            active: boolean;
+            /**
+             * Asin
+             * @description 10-character Amazon product id
+             */
+            asin: string;
+            /**
+             * Category
+             * @description Catalog category tag, e.g. dental-care
+             * @default
+             */
+            category: string;
+            /**
+             * Display
+             * @description Human-readable product name
+             */
+            display: string;
+            /**
+             * In Focus Category
+             * @description Whether its own `category` tag matches the current focus. Advisory only -- it never grants selection, it just tells the panel which products are the obvious ones to pick.
+             * @default false
+             */
+            in_focus_category: boolean;
+            /**
+             * Key
+             * @description Stable id referenced by [AFFILIATE:key] placeholders
+             */
+            key: string;
+            /**
+             * Notes
+             * @description Editorial 'why this product' line
+             * @default
+             */
+            notes: string;
+            /**
+             * Selected
+             * @description Whether this is THE product selected for the brand's current focus category. At most one product carries this per category.
+             * @default false
+             */
+            selected: boolean;
+            /**
+             * Selected For
+             * @description Focus categories this product is explicitly selected for
+             */
+            selected_for?: string[];
+        };
+        /**
+         * ProductUpdate
+         * @description A partial edit. `None` means 'leave this field alone'.
+         */
+        ProductUpdate: {
+            /** Active */
+            active?: boolean | null;
+            /** Category */
+            category?: string | null;
+            /** Display */
+            display?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Selected
+             * @description true makes this THE product for the current focus category (displacing the incumbent); false leaves the category unowned.
+             */
+            selected?: boolean | null;
+        };
+        /**
+         * ProductsResponse
+         * @description The whole catalog plus the focus context needed to render it.
+         */
+        ProductsResponse: {
+            /**
+             * Focus Category
+             * @description '' when no focus is declared
+             * @default
+             */
+            focus_category: string;
+            /**
+             * Focus Slug
+             * @description Comparison form of focus_category
+             * @default
+             */
+            focus_slug: string;
+            /**
+             * Max Products Per Post
+             * @description The selector's per-post ceiling, for display only. One-per-category selection means a focus run never reaches it: every post in the run promotes the single selected product.
+             */
+            max_products_per_post: number;
+            /** Products */
+            products?: components["schemas"]["ProductModel"][];
+            /**
+             * Selected Count
+             * @description 0 or 1 -- whether the focus category has its product chosen yet. 0 means posts in this run ship with no product block at all.
+             * @default 0
+             */
+            selected_count: number;
+        };
         /** RecipeCardWebhookPayload */
         RecipeCardWebhookPayload: {
             /** Post Id */
@@ -4733,6 +4917,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PendingResponse"];
+                };
+            };
+        };
+    };
+    get_products_api_v1_products_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductsResponse"];
+                };
+            };
+        };
+    };
+    post_product_api_v1_products_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_product_api_v1_products__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProductUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProductModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

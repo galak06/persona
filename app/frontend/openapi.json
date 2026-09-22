@@ -2953,6 +2953,215 @@
         "title": "PendingResponse",
         "type": "object"
       },
+      "ProductCreate": {
+        "description": "A new catalog entry.",
+        "properties": {
+          "asin": {
+            "title": "Asin",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "display": {
+            "default": "",
+            "title": "Display",
+            "type": "string"
+          },
+          "key": {
+            "description": "[a-z0-9][a-z0-9_-]* -- immutable once created",
+            "title": "Key",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "title": "Notes",
+            "type": "string"
+          },
+          "select_for_focus": {
+            "default": false,
+            "description": "Make it THE product for the current focus category, displacing whichever one holds it. Defaults to false: with one product per category, adding to the catalog and swapping the live promotion are different decisions and should not share a button.",
+            "title": "Select For Focus",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "asin"
+        ],
+        "title": "ProductCreate",
+        "type": "object"
+      },
+      "ProductModel": {
+        "description": "One catalog entry as the panel renders it.",
+        "properties": {
+          "active": {
+            "default": true,
+            "description": "False hides it from selection",
+            "title": "Active",
+            "type": "boolean"
+          },
+          "asin": {
+            "description": "10-character Amazon product id",
+            "title": "Asin",
+            "type": "string"
+          },
+          "category": {
+            "default": "",
+            "description": "Catalog category tag, e.g. dental-care",
+            "title": "Category",
+            "type": "string"
+          },
+          "display": {
+            "description": "Human-readable product name",
+            "title": "Display",
+            "type": "string"
+          },
+          "in_focus_category": {
+            "default": false,
+            "description": "Whether its own `category` tag matches the current focus. Advisory only -- it never grants selection, it just tells the panel which products are the obvious ones to pick.",
+            "title": "In Focus Category",
+            "type": "boolean"
+          },
+          "key": {
+            "description": "Stable id referenced by [AFFILIATE:key] placeholders",
+            "title": "Key",
+            "type": "string"
+          },
+          "notes": {
+            "default": "",
+            "description": "Editorial 'why this product' line",
+            "title": "Notes",
+            "type": "string"
+          },
+          "selected": {
+            "default": false,
+            "description": "Whether this is THE product selected for the brand's current focus category. At most one product carries this per category.",
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "selected_for": {
+            "description": "Focus categories this product is explicitly selected for",
+            "items": {
+              "type": "string"
+            },
+            "title": "Selected For",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "asin",
+          "display"
+        ],
+        "title": "ProductModel",
+        "type": "object"
+      },
+      "ProductUpdate": {
+        "description": "A partial edit. `None` means 'leave this field alone'.",
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "display": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "true makes this THE product for the current focus category (displacing the incumbent); false leaves the category unowned.",
+            "title": "Selected"
+          }
+        },
+        "title": "ProductUpdate",
+        "type": "object"
+      },
+      "ProductsResponse": {
+        "description": "The whole catalog plus the focus context needed to render it.",
+        "properties": {
+          "focus_category": {
+            "default": "",
+            "description": "'' when no focus is declared",
+            "title": "Focus Category",
+            "type": "string"
+          },
+          "focus_slug": {
+            "default": "",
+            "description": "Comparison form of focus_category",
+            "title": "Focus Slug",
+            "type": "string"
+          },
+          "max_products_per_post": {
+            "description": "The selector's per-post ceiling, for display only. One-per-category selection means a focus run never reaches it: every post in the run promotes the single selected product.",
+            "title": "Max Products Per Post",
+            "type": "integer"
+          },
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductModel"
+            },
+            "title": "Products",
+            "type": "array"
+          },
+          "selected_count": {
+            "default": 0,
+            "description": "0 or 1 -- whether the focus category has its product chosen yet. 0 means posts in this run ship with no product block at all.",
+            "title": "Selected Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_products_per_post"
+        ],
+        "title": "ProductsResponse",
+        "type": "object"
+      },
       "RecipeCardWebhookPayload": {
         "properties": {
           "post_id": {
@@ -6147,6 +6356,121 @@
           }
         },
         "summary": "List Pending"
+      }
+    },
+    "/api/v1/products": {
+      "get": {
+        "description": "The active brand's catalog, annotated against its focus category.",
+        "operationId": "get_products_api_v1_products_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Products",
+        "tags": [
+          "products"
+        ]
+      },
+      "post": {
+        "description": "Add a product, selected for the current focus unless told otherwise.",
+        "operationId": "post_product_api_v1_products_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Product",
+        "tags": [
+          "products"
+        ]
+      }
+    },
+    "/api/v1/products/{key}": {
+      "patch": {
+        "description": "Edit one product. `selected` toggles it for the current focus category.",
+        "operationId": "patch_product_api_v1_products__key__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Product",
+        "tags": [
+          "products"
+        ]
       }
     },
     "/api/v1/reels/compose": {
