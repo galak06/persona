@@ -93,3 +93,6 @@ app/recipe-publisher/seeds/seeds.json
 .claude/state/turn_durations.json
 .claude/state/turn_start_timestamp.txt
 .claude/state/last_turn_duration.txt
+
+# CLI output from `python cli.py generate`
+/out/

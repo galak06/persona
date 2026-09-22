@@ -6,10 +6,14 @@ on:
   push:
     paths:
       - "app/**"
+      - "cli.py"
+      - "examples/**"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
       - "app/**"
+      - "cli.py"
+      - "examples/**"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -202,6 +206,8 @@ jobs:
           tests/lib/engagement/test_scan_deadline.py
           tests/lib/engagement/test_scan_truncation.py
           tests/lib/runtime/test_singleton.py
+          studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
 
       - name: Ruff format check
         run: >-
@@ -317,6 +323,8 @@ jobs:
           tests/lib/engagement/test_scan_deadline.py
           tests/lib/engagement/test_scan_truncation.py
           tests/lib/runtime/test_singleton.py
+          studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
 
   typecheck:
     name: Type Check
@@ -380,6 +388,8 @@ jobs:
           lib/oauth/openart.py lib/oauth/openart_store.py
           lib/crew/reference_vocabulary.py
           lib/comment_outbox.py lib/scan_dedup.py scripts/backfill_comment_claims.py
+          studio/ tests/test_studio.py ../cli.py
+          tests/test_no_url_credentials.py
           --ignore-missing-imports
 
   test:
@@ -499,6 +509,8 @@ jobs:
         run: |
           timeout --signal=ABRT 600 pytest \
             --timeout=90 --timeout-method=thread \
+            tests/test_studio.py \
+            tests/test_no_url_credentials.py \
             tests/test_db.py \
             tests/test_groups_db.py \
             tests/test_engagements_db.py \

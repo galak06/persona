@@ -140,3 +140,40 @@ more true statements; the AI needs grounding to write specific comments
 **Rate limit hit** — the daily caps in config.json are conservative by default;
 Instagram's real limit is ~100 likes/day and ~20 comments/day, but starting
 low avoids triggering their bot detection
+
+---
+
+## Keeping the stack current
+
+Containers bake the code in at build time, so a running stack does not follow
+your checkout. Two scripts cover this:
+
+| | |
+|---|---|
+| `./scripts/rebuild.sh [services]` | Builds and swaps containers from the checkout **as it is**. Both compose files, `--force-recreate`, verifies the swap by container age. |
+| `./scripts/sync.sh [services]` | Merges `origin/main` first, then calls `rebuild.sh`, then **proves** the running containers are on that commit. |
+
+Use `sync.sh` for a deploy, `rebuild.sh` when you deliberately want to build
+uncommitted local work.
+
+```bash
+cd app
+./scripts/sync.sh --check      # is the stack current? exits non-zero if not
+./scripts/sync.sh              # merge origin/main, rebuild, verify
+./scripts/sync.sh --no-pull    # rebuild the checkout as-is, still verified
+```
+
+`--check` changes nothing and exits non-zero when stale, so it works as a
+cron guard or health check.
+
+### Why the proof step exists
+
+`rebuild.sh` answers *"did the containers get swapped?"* — not *"is the running
+code current?"* A container built from a checkout that is behind `main` passes
+every check it makes.
+
+That is not hypothetical. On 2026-09-01 all three app containers were rebuilt
+successfully and kept serving code with a known credential leak, because the
+checkout was four commits behind. `sync.sh` closes that gap by baking the
+commit into the image as `PERSONA_GIT_SHA` and reading it back out of the
+running container.

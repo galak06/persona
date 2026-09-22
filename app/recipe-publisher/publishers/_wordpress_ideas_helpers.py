@@ -114,7 +114,7 @@ def call_gemini(idea: dict, enrichment: dict) -> str:
     endpoint = (
         f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     )
-    r = httpx.post(endpoint, params={"key": api_key}, json=payload, timeout=120.0)
+    r = httpx.post(endpoint, headers={"x-goog-api-key": api_key}, json=payload, timeout=120.0)
     r.raise_for_status()
     return r.json()["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -171,7 +171,7 @@ def _call_imagen(
         },
     }
     try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=timeout)
+        r = httpx.post(url, headers={"x-goog-api-key": key}, json=payload, timeout=timeout)
     except httpx.HTTPError as e:
         raise ImageGenerationError(f"imagen request error: {e}") from e
     if r.status_code >= 400:

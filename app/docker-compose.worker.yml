@@ -43,6 +43,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+      args:
+        PERSONA_GIT_SHA: ${PERSONA_GIT_SHA:-unknown}
     restart: unless-stopped
     environment:
       # Satisfies lib.config's module-level settings singleton, which
@@ -68,6 +70,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      args:
+        PERSONA_GIT_SHA: ${PERSONA_GIT_SHA:-unknown}
     restart: unless-stopped
     # Same rule as the api service: secrets come from `.env`, never from a
     # `- VAR=${VAR}` passthrough (the shell outranks those, so one stale

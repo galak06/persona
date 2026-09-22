@@ -136,7 +136,7 @@ def _generate_imagen(brief: str, *, model: str, provider: str, timeout: float = 
         },
     }
     try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=timeout)
+        r = httpx.post(url, headers={"x-goog-api-key": key}, json=payload, timeout=timeout)
     except httpx.HTTPError as e:
         raise ImageGenerationError(f"imagen request error: {e}") from e
     if r.status_code >= 400:
@@ -185,7 +185,7 @@ def _generate_nano_pro(
         },
     }
     try:
-        r = httpx.post(url, params={"key": key}, json=payload, timeout=timeout)
+        r = httpx.post(url, headers={"x-goog-api-key": key}, json=payload, timeout=timeout)
     except httpx.HTTPError as e:
         raise ImageGenerationError(f"nano_pro request error: {e}") from e
     if r.status_code >= 400:

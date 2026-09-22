@@ -101,7 +101,7 @@ def _call_gemini(category: str) -> list[dict[str, Any]]:
     url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
     _log.info("gemini call: model=%s category=%s", _GEMINI_MODEL, category)
 
-    r = httpx.post(url, params={"key": api_key}, json=payload, timeout=120.0)
+    r = httpx.post(url, headers={"x-goog-api-key": api_key}, json=payload, timeout=120.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini HTTP {r.status_code}: {r.text[:400]}")
 

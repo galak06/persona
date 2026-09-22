@@ -65,7 +65,7 @@ def generate_from_seed_gemini(
 
     url = _GEMINI_ENDPOINT.format(model=_GEMINI_MODEL)
     logger.info("gemini voice call model=%s topic=%r seed=%s", _GEMINI_MODEL, topic, seed.id)
-    r = httpx.post(url, params={"key": key}, json=payload, timeout=120.0)
+    r = httpx.post(url, headers={"x-goog-api-key": key}, json=payload, timeout=120.0)
     if r.status_code >= 400:
         raise RuntimeError(f"gemini voice HTTP {r.status_code}: {r.text[:500]}")
 

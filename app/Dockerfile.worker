@@ -38,5 +38,15 @@ COPY . .
 RUN useradd -m -u 1000 persona && chown -R persona:persona /app /ms-playwright
 USER persona
 
+# Build provenance: the commit this image was built from. `scripts/sync.sh`
+# passes it and then reads it back out of the running container, so "is the
+# stack running current code?" is one command instead of grepping for a line
+# you happen to remember changing.
+#
+# Declared last on purpose: the SHA changes on every commit, so an earlier
+# placement would invalidate the dependency layers on every single build.
+ARG PERSONA_GIT_SHA=unknown
+ENV PERSONA_GIT_SHA=$PERSONA_GIT_SHA
+
 # Default: run the cron worker. Override in docker-compose if needed.
 CMD ["python", "scripts/dev.py", "--workers-only"]
