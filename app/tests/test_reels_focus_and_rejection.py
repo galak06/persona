@@ -68,7 +68,5 @@ class TestRejectionIsTerminal:
         assert "reel_rejected" != "wp_published"
 
     @pytest.mark.parametrize("harvested", ["wp_published"])
-    def test_the_terminal_status_is_not_one_the_composer_harvests(
-        self, harvested: str
-    ) -> None:
+    def test_the_terminal_status_is_not_one_the_composer_harvests(self, harvested: str) -> None:
         assert "reel_rejected" != harvested

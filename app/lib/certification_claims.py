@@ -69,9 +69,7 @@ def catalog_display(catalog: list[dict[str, object]], asin: str) -> str:
     return asin
 
 
-def unverified_certification_claims(
-    html: str, catalog: list[dict[str, object]]
-) -> list[str]:
+def unverified_certification_claims(html: str, catalog: list[dict[str, object]]) -> list[str]:
     """`"<product>: <claim excerpt>"` for every claim beside an unverified link.
 
     A claim counts as being about a product when it falls within

@@ -193,5 +193,3 @@ def resolve_reference(
         available=",".join(sorted(by_category)),
     )
     return None
-
-

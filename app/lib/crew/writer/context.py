@@ -147,6 +147,7 @@ def rank_link_candidates(
     wanted = normalize_category(focus_category)
     if not wanted:
         return list(candidates)
+
     def _misses_focus(candidate: InternalLinkCandidate) -> bool:
         return not any(normalize_category(c) == wanted for c in candidate.categories)
 

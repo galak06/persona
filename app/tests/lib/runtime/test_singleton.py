@@ -175,9 +175,7 @@ class TestDefaultLockDir:
         finally:
             held.__exit__(None, None, None)
 
-    def test_no_brand_falls_back_instead_of_raising(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_brand_falls_back_instead_of_raising(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """CLI one-offs and tests may have no brand at all.
 
         `BrandContext.from_env()` raises there. The fallback is the old

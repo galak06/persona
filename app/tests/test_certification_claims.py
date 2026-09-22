@@ -114,7 +114,7 @@ def test_empty_input_is_not_a_violation() -> None:
 
 
 class TestNegatedClaimsAreNotClaims:
-    """"These are NOT VOHC-accepted" is the honest sentence this gate exists to
+    """ "These are NOT VOHC-accepted" is the honest sentence this gate exists to
     make possible.
 
     A live regeneration wrote exactly that about three products and was
