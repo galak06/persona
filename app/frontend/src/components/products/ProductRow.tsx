@@ -66,11 +66,19 @@ export default function ProductRow({
         )}
       </div>
 
+      {/* Given a real button's border and hover: as bare grey text it sat
+          exactly where the "inactive" badge sits and read as a STATUS -- "this
+          product is deactivated" -- rather than as the action it is. */}
       <button
         type="button"
         disabled={busy}
         onClick={() => onToggleActive(product.key, !product.active)}
-        className="shrink-0 text-xs text-slate-500 underline-offset-2 hover:text-slate-700 hover:underline disabled:opacity-50"
+        title={
+          product.active
+            ? `Stop ${product.display} being offered to the writer. It stays linkable from posts that already reference it.`
+            : `Allow ${product.display} to be selected again.`
+        }
+        className="shrink-0 rounded-md border border-stone-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-stone-400 hover:bg-stone-50 hover:text-slate-800 disabled:opacity-50"
       >
         {product.active ? "Deactivate" : "Restore"}
       </button>
