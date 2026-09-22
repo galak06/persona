@@ -446,7 +446,7 @@ jobs:
       # nothing in this suite wants telemetry, and an exporter reaching for the
       # network only adds a way for the job to stall. (This was first added as
       # a suspected fix for the 6h hang; the actual cause was the dotted
-      # --cov=lib.crew.products below. Tracing crewai's imports shows zero
+      # --cov=lib/crew/products below. Tracing crewai's imports shows zero
       # socket connects, so these are hygiene, not the fix.)
       # (crewai 1.15.12 reads exactly these: telemetry.py checks OTEL_SDK_DISABLED
       # and CREWAI_DISABLE_TELEMETRY; the tracing listener checks CREWAI_TRACING_ENABLED.)
@@ -499,7 +499,16 @@ jobs:
         # lib.crew.scout -> crewai -> chromadb/numpy, and on this runner it
         # never returns: three runs (16m, 33m, 6h) logged not one byte of
         # pytest output. The path form makes coverage measure files by path and
-        # never import them. Keep it a path for any heavy package added here.
+        # never import them. EVERY target below must be a path -- not just the
+        # heavy ones. A dotted target makes coverage resolve it through
+        # `importlib.util.find_spec`, and it re-resolves on every sys.path
+        # change, from whichever thread happens to trigger the trace. crewai
+        # imports chromadb imports opentelemetry.sdk._logs, which builds a
+        # ThreadPoolExecutor AT MODULE LEVEL and joins it: the main thread then
+        # holds the import lock waiting on a pool worker, while that worker sits
+        # in coverage's find_spec waiting for the same lock. Deadlock, zero
+        # output, killed by the wrapper at 600s. Path targets never call
+        # find_spec, so the worker never needs the lock.
         # `timeout --signal=ABRT 600` is the outer net: --timeout below only
         # arms a timer per test item (setup/call/teardown), so any hang before
         # the first test -- plugin load, coverage's source resolution, conftest
@@ -621,18 +630,18 @@ jobs:
             tests/lib/engagement/test_scan_truncation.py \
             tests/lib/runtime/test_singleton.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
-            --cov=lib.db --cov=lib.db_pool --cov=lib.groups_db \
-            --cov=lib.engagements_db --cov=lib.worker_db --cov=lib.schedule_db --cov=lib.dedup_pg \
-            --cov=lib.scheduling \
-            --cov=lib.brands_db --cov=lib.brand_context --cov=lib.local_env --cov=lib.flow_readiness --cov=lib.session_status --cov=lib.activity_log \
-            --cov=lib.brand_templates --cov=lib.brand_template_defaults --cov=lib.brand_provisioning --cov=lib.content_strategy --cov=lib.site_cache --cov=lib.engagement.nav_retry --cov=lib.notifier_outbox --cov=lib.certification_claims \
-            --cov=comment_generator --cov=comment_generator_defaults --cov=reply_drafter --cov=draft_helper --cov=llm_tracing --cov=gemini_client \
-            --cov=api.brands_api --cov=api.brand_settings_api --cov=api.brand_schemas --cov=api.brand_flows_api \
-            --cov=api.oauth_api --cov=api.session_status_api \
+            --cov=lib/db.py --cov=lib/db.py_pool --cov=lib/groups_db \
+            --cov=lib/engagements_db --cov=lib/worker_db.py --cov=lib/schedule_db.py --cov=lib/dedup_pg.py \
+            --cov=lib/scheduling \
+            --cov=lib/brands_db --cov=lib/brand_context.py --cov=lib/local_env.py --cov=lib/flow_readiness.py --cov=lib/session_status.py --cov=lib/activity_log.py \
+            --cov=lib/brand_templates.py --cov=lib/brand_template_defaults.py --cov=lib/brand_provisioning.py --cov=lib/content_strategy.py --cov=lib/site_cache.py --cov=lib/engagement/nav_retry.py --cov=lib/notifier_outbox.py --cov=lib/certification_claims.py \
+            --cov=lib/comment_generator.py --cov=lib/comment_generator.py_defaults --cov=lib/reply_drafter.py --cov=lib/draft_helper.py --cov=lib/llm_tracing.py --cov=lib/gemini_client.py \
+            --cov=api/brands_api.py --cov=api/brand_settings_api.py --cov=api/brand_schemas.py --cov=api/brand_flows_api.py \
+            --cov=api/oauth_api.py --cov=api/session_status_api.py \
             --cov=lib/crew/products \
-            --cov=lib.crew.writer.context --cov=lib.crew.writer.link_guard \
+            --cov=lib/crew/writer/context.py --cov=lib/crew/writer/link_guard.py \
             --cov=lib/crew/structured_output.py \
-            --cov=lib.comment_outbox --cov=lib.scan_dedup \
+            --cov=lib/comment_outbox.py --cov=lib/scan_dedup.py \
             --cov-report=term-missing --cov-fail-under=80
 
   security:
