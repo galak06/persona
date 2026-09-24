@@ -2,8 +2,10 @@
 # Pre-existing print()-based step logging throughout this script; structured
 # log migration is deferred to a dedicated refactor (sys.path-based imports
 # also force the pyright suppression — bootstrap rewires sys.path at runtime).
-"""Facebook Group Scout — find dog groups to join from niche keywords +
-content-competitor names (data/competitors.json). Reuses the brand FB session.
+"""Facebook Group Scout — find groups to join from the brand's own search
+queries (<BRAND_DIR>/brand.json group_scout, see lib.group_discovery.relevance)
++ content-competitor names. Off-target groups (marketplace, travel, medical,
+promotion, outside the brand's target market) are never joined.
 
 CLI: --force / --dry-run / --approve "1 10"|'all'|'none' / --bypass-daily-cap /
 --health-check (exit 0 if session present, 1 otherwise).
@@ -33,6 +35,12 @@ from lib.group_discovery.approval import (
 from lib.group_discovery.competitor_signals import active_queries as competitor_queries
 from lib.group_discovery.competitor_signals import annotate_with_mentions, load_competitors
 from lib.group_discovery.fb_search import pace_between_queries, search_groups
+from lib.group_discovery.relevance import (
+    ScoutRules,
+    drop_off_target,
+    load_scout_rules,
+    off_target_reason,
+)
 from lib.group_discovery.scoring import parse_member_count, score_group
 from lib.group_discovery.state import (
     add_to_pending,
@@ -77,13 +85,6 @@ MIN_SCORE = 40
 ADMISSION_EASY_BOOST = 10
 ADMISSION_APPROVAL_PENALTY = 5
 
-SEARCH_QUERIES = [
-    "homemade dog food", "raw dog food", "dog nutrition", "dog food recipes",
-    "dog diet advice", "running with dogs", "canicross", "GPS dog tracker",
-    "dog hiking", "dog owners community", "healthy dogs", "dog product reviews",
-]
-
-
 def compute_budget(bypass_daily: bool = False) -> tuple[int, int, int]:
     """Return (effective, daily_remaining, weekly_remaining).
 
@@ -124,7 +125,7 @@ def check_rerun_guard(last_run: dict[str, dict[str, Any]]) -> bool:
 
 
 def collect_candidates(
-    page: Page, queries: list[tuple[str, str]], known: set[str]
+    page: Page, queries: list[tuple[str, str]], known: set[str], rules: ScoutRules
 ) -> dict[str, dict[str, Any]]:
     """Run every (label, query) pair, return url → card dict (highest score kept)."""
     all_candidates: dict[str, dict[str, Any]] = {}
@@ -140,8 +141,12 @@ def collect_candidates(
                 card["member_count"] = parse_member_count(card["member_text"])
                 card["found_via_query"] = query
                 card["found_via_channel"] = label
+                reason = off_target_reason(card, rules)
+                if reason:
+                    print(f"  [off-target] {card['name']}: {reason}")
+                    continue
                 # Score without competitor boost; annotated+rescored after loop
-                card["score"] = score_group(card)
+                card["score"] = score_group(card, rules=rules)
                 mc = card["member_count"]
                 if mc > 0 and (mc < 1_000 or mc > 150_000):
                     continue
@@ -170,14 +175,16 @@ def _success_record(
     return rec
 
 
-def apply_competitor_boost(candidates: list[dict[str, Any]]) -> None:
+def apply_competitor_boost(candidates: list[dict[str, Any]], rules: ScoutRules) -> None:
     """Annotate candidates with competitor mentions and re-score with boost."""
     competitors = load_competitors()
     if not competitors:
         return
     annotate_with_mentions(candidates, competitors)
     for g in candidates:
-        g["score"] = score_group(g, competitor_mentions=g.get("competitor_mentions", 0))
+        g["score"] = score_group(
+            g, competitor_mentions=g.get("competitor_mentions", 0), rules=rules
+        )
 
 
 def _card_text(g: dict[str, Any]) -> str:
@@ -257,8 +264,11 @@ def main(
     print(f"{caps}, effective: {budget}")
 
     # --- Join pre-approved groups first ---
+    rules = load_scout_rules()
     known_groups = load_known_groups()
+    # Re-check queued groups: an older, looser scout may have queued them.
     pre_approved = [g for g in load_pending() if g.get("status") == "approved"]
+    pre_approved = drop_off_target(pre_approved, rules)
     pre_approved = [g for g in pre_approved if g["url"].lower() not in known_groups]
     if pre_approved:
         print(f"Pre-approved queue: {len(pre_approved)} group(s) waiting to join.")
@@ -316,6 +326,7 @@ def main(
 
     pending = load_pending()
     pending = [g for g in pending if g["url"].lower() not in known_groups]
+    pending = drop_off_target(pending, rules)
     save_pending(pending)
     if pending:
         print(f"\n📋 Pending queue: {len(pending)} group(s) from previous runs")
@@ -324,9 +335,10 @@ def main(
         print("ERROR: No saved Facebook session found. Run: python scripts/login.py fb")
         return
 
-    queries: list[tuple[str, str]] = [("keyword", q) for q in SEARCH_QUERIES]
+    queries: list[tuple[str, str]] = [("keyword", q) for q in rules.search_queries]
     queries += [("competitor", q) for q in competitor_queries()]
-    print(f"\nQuery plan: {len(SEARCH_QUERIES)} keyword + {len(queries) - len(SEARCH_QUERIES)} competitor")
+    n_kw = len(rules.search_queries)
+    print(f"\nQuery plan: {n_kw} keyword + {len(queries) - n_kw} competitor")
 
     with session.page() as page:
         print("\nChecking Facebook session...")
@@ -339,9 +351,9 @@ def main(
 
         print("Facebook session OK.\n")
 
-        all_candidates = collect_candidates(page, queries, known_groups)
+        all_candidates = collect_candidates(page, queries, known_groups, rules)
         candidates = list(all_candidates.values())
-        apply_competitor_boost(candidates)
+        apply_competitor_boost(candidates, rules)
         candidates = [c for c in candidates if c["score"] >= MIN_SCORE]
         print(f"\nClassifying admission likelihood for {len(candidates)} candidate(s)...")
         candidates = apply_admission_likelihood(candidates)

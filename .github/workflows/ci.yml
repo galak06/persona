@@ -211,6 +211,7 @@ jobs:
           tests/lib/runtime/test_singleton.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
+          lib/group_discovery/geo.py lib/group_discovery/relevance.py tests/test_fb_group_scout_relevance.py
 
       - name: Ruff format check
         run: >-
@@ -331,6 +332,7 @@ jobs:
           tests/lib/runtime/test_singleton.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
+          lib/group_discovery/geo.py lib/group_discovery/relevance.py tests/test_fb_group_scout_relevance.py
 
   typecheck:
     name: Type Check
@@ -397,6 +399,7 @@ jobs:
           lib/comment_outbox.py lib/scan_dedup.py scripts/backfill_comment_claims.py
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
+          lib/group_discovery/geo.py lib/group_discovery/relevance.py
           --ignore-missing-imports
 
   test:
@@ -527,6 +530,7 @@ jobs:
             --timeout=90 --timeout-method=thread \
             tests/test_studio.py \
             tests/test_no_url_credentials.py \
+            tests/test_fb_group_scout_relevance.py \
             tests/test_db.py \
             tests/test_groups_db.py \
             tests/test_engagements_db.py \

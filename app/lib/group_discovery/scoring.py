@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+from typing import Any
+
+from lib.group_discovery.relevance import ScoutRules, mentions_target_country, off_target_reason
 
 FOOD_KW = [
     "food",
@@ -91,35 +94,13 @@ def competitor_signal_boost(mentions: int) -> int:
     return min(mentions * 15, 45)
 
 
-# Regional keywords for USA/Canada targeting
-GEO_KEYWORDS = [
-    "usa", "u.s.a", "united states", "american", "canada", "canadian",
-    "america", "north america", "us based", "ca based",
-    "new york", "california", "texas", "florida", "toronto", "vancouver",
-]
-
-# Non-US/CA signals — any match DISQUALIFIES the group (score forced to 0)
-NON_US_SIGNALS = [
-    # English-speaking non-NA
-    "uk", "united kingdom", "britain", "british", "england", "scotland", "wales",
-    "australia", "australian", "new zealand", "nz",
-    # South/Southeast Asia
-    "india", "indian", "pakistan", "bangladesh", "sri lanka",
-    "philippines", "filipino", "pilipinas", "pilipino", "bentahan",
-    "indonesia", "malaysia", "singapore", "vietnam", "thailand",
-    # Middle East / Africa
-    "nigeria", "kenya", "south africa", "ghana", "egypt", "israel",
-    "saudi", "dubai", "uae",
-    # Europe
-    "europe", "european", "germany", "german", "france", "french",
-    "spain", "spanish", "italy", "italian", "netherlands", "poland",
-    "london", "sydney", "melbourne", "delhi", "mumbai", "lahore",
-]
-
-def score_group(g: dict, competitor_mentions: int = 0) -> int:
+def score_group(
+    g: dict[str, Any], competitor_mentions: int = 0, rules: ScoutRules | None = None
+) -> int:
+    rules = rules if rules is not None else ScoutRules()
     score = 0
     name_desc = (g["name"] + " " + g["description"]).lower()
-    
+
     # Niche keyword match (additive, max 30)
     # Food bonus only when group is clearly dog-focused (not cat food, soul food, etc.)
     if any(kw in name_desc for kw in FOOD_KW) and any(a in name_desc for a in DOG_ANCHORS):
@@ -129,16 +110,17 @@ def score_group(g: dict, competitor_mentions: int = 0) -> int:
     if any(kw in name_desc for kw in LIFESTYLE_KW):
         score += 5
 
-    # Hard disqualify: any non-US/CA geo signal → score 0
-    if any(sig in name_desc for sig in NON_US_SIGNALS):
+    # Hard disqualify: off-target group kind (marketplace, travel, medical,
+    # promotion, brand exclude_terms) or a country outside the brand's market
+    if off_target_reason(g, rules):
         return 0
 
     # Hard disqualify: group must mention dogs in some form
     if not any(a in name_desc for a in DOG_ANCHORS):
         return 0
 
-    # Geo bonus for explicit USA/Canada signal
-    if any(kw in name_desc for kw in GEO_KEYWORDS):
+    # Geo bonus for naming one of the brand's target countries
+    if mentions_target_country(g, rules):
         score += 15
 
     # Member count (max 20)
