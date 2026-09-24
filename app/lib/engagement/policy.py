@@ -1,6 +1,6 @@
 """EngagementPolicy — thresholds and quotas for OutboundEngagement, in one object.
 
-Holds the scoring gates (candidate, comment, approval) and the daily action
+Holds the scoring gates (candidate, comment) and the daily action
 quotas (comment, like) in one frozen dataclass, built once at scanner startup
 and read-only thereafter.
 
@@ -18,7 +18,6 @@ The two halves come from different places, deliberately:
 
 Replaces three patterns that drifted across the FB and IG scanners:
     - `config["content_analysis"]["relevance_threshold"]` inline reads
-    - `config["content_analysis"]["approval_threshold"]` inline reads
     - `ig_comment_threshold = 0.75` hardcoded in ig_engager
 
 Design notes:
@@ -40,7 +39,6 @@ _log = logging.getLogger(__name__)
 _DEFAULT_THRESHOLDS: dict[str, float] = {
     "candidate_threshold": 0.70,
     "comment_threshold": 0.75,
-    "approval_threshold": 0.80,
     "ig_comment_threshold": 0.75,
 }
 
@@ -89,10 +87,6 @@ def thresholds_from_config(config: dict[str, object]) -> dict[str, float]:
             content_analysis.get("relevance_threshold"),
             _DEFAULT_THRESHOLDS["candidate_threshold"],
         ),
-        "approval_threshold": _as_float(
-            content_analysis.get("approval_threshold"),
-            _DEFAULT_THRESHOLDS["approval_threshold"],
-        ),
         "comment_threshold": _as_float(
             content_analysis.get("ig_comment_threshold"),
             _DEFAULT_THRESHOLDS["comment_threshold"],
@@ -109,11 +103,9 @@ class EngagementPolicy:
     Was `config["content_analysis"]["relevance_threshold"]`."""
 
     comment_threshold: float
-    """Score required to queue a comment. IG: 0.75 (was hardcoded);
-    FB: equals `candidate_threshold` today. Unification in a later slice."""
-
-    approval_threshold: float
-    """Below this score → `requires_approval=True` on the queue record."""
+    """Score required to comment — the only comment floor, FB and IG alike.
+    There is no approval band above it: no human approves comments since
+    2026-08-14, so a band only discarded candidates (FB posted 0 comments)."""
 
     daily_comment_quota: dict[str, int]
     """Max comments per platform per day. Keys: 'facebook', 'instagram'."""
@@ -179,7 +171,6 @@ class EngagementPolicy:
         policy = cls(
             candidate_threshold=resolved["candidate_threshold"],
             comment_threshold=resolved["comment_threshold"],
-            approval_threshold=resolved["approval_threshold"],
             daily_comment_quota=daily_comment_quota,
             daily_like_quota=daily_like_quota,
         )
@@ -190,7 +181,6 @@ class EngagementPolicy:
                 "source": "data/rate_limits.json (derived from profiles/)",
                 "candidate_threshold": policy.candidate_threshold,
                 "comment_threshold": policy.comment_threshold,
-                "approval_threshold": policy.approval_threshold,
                 "daily_comment_quota": policy.daily_comment_quota,
                 "daily_like_quota": policy.daily_like_quota,
             },
@@ -204,7 +194,3 @@ class EngagementPolicy:
     def is_comment_candidate(self, score: float) -> bool:
         """True iff `score` qualifies a post for the comment queue."""
         return score >= self.comment_threshold
-
-    def requires_approval(self, score: float) -> bool:
-        """True iff a queued item must be flagged for manual approval."""
-        return score < self.approval_threshold

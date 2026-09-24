@@ -64,13 +64,12 @@ class TestFromEnforcedLimits:
         policy = _policy()
         assert policy.candidate_threshold == 0.70
         assert policy.comment_threshold == 0.75
-        assert policy.approval_threshold == 0.80
 
     def test_explicit_thresholds_win(self) -> None:
-        policy = _policy(thresholds={"candidate_threshold": 0.55, "approval_threshold": 0.9})
+        policy = _policy(thresholds={"candidate_threshold": 0.55, "comment_threshold": 0.9})
         assert policy.candidate_threshold == 0.55
-        assert policy.approval_threshold == 0.9
-        assert policy.comment_threshold == 0.75  # untouched key keeps its default
+        assert policy.comment_threshold == 0.9
+        assert policy.comment_threshold == 0.9
 
     def test_the_policy_matches_the_real_artifact(self) -> None:
         """The invariant the whole change exists for.
@@ -92,10 +91,16 @@ class TestFromEnforcedLimits:
 class TestThresholdsFromConfig:
     def test_reads_the_content_analysis_block(self) -> None:
         got = thresholds_from_config(
-            {"content_analysis": {"relevance_threshold": 0.66, "approval_threshold": 0.88}}
+            {"content_analysis": {"relevance_threshold": 0.66, "ig_comment_threshold": 0.88}}
         )
         assert got["candidate_threshold"] == 0.66
-        assert got["approval_threshold"] == 0.88
+        assert got["comment_threshold"] == 0.88
+
+    def test_a_legacy_approval_threshold_key_is_inert(self) -> None:
+        """Brand configs still carry `approval_threshold`; it gates nothing now."""
+        got = thresholds_from_config({"content_analysis": {"approval_threshold": 0.95}})
+        assert "approval_threshold" not in got
+        assert got["comment_threshold"] == 0.75
 
     def test_ig_comment_threshold_defaults_to_0_75(self) -> None:
         assert thresholds_from_config({})["comment_threshold"] == 0.75
@@ -106,7 +111,7 @@ class TestThresholdsFromConfig:
 
     def test_a_config_without_content_analysis_yields_defaults(self) -> None:
         got = thresholds_from_config({})
-        assert (got["candidate_threshold"], got["approval_threshold"]) == (0.70, 0.80)
+        assert (got["candidate_threshold"], got["comment_threshold"]) == (0.70, 0.75)
 
     def test_a_rate_limits_block_is_ignored(self) -> None:
         """Quotas in config.json are inert now; only thresholds are read."""
@@ -129,11 +134,13 @@ class TestIsCommentCandidate:
         assert policy.is_comment_candidate(0.74) is False
 
 
-class TestRequiresApproval:
-    def test_requires_approval_borderline(self) -> None:
+class TestNoApprovalBand:
+    def test_the_old_band_is_a_comment_candidate(self) -> None:
+        """0.75-0.80 used to need a (non-existent) human; it now comments."""
         policy = _policy()
-        assert policy.requires_approval(0.79) is True
-        assert policy.requires_approval(0.80) is False
+        assert policy.is_comment_candidate(0.78) is True
+        assert not hasattr(policy, "requires_approval")
+        assert not hasattr(policy, "approval_threshold")
 
 
 class TestFrozen:
