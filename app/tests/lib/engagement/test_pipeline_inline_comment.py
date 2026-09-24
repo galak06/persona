@@ -7,8 +7,8 @@ draft, comment — with no queue at all. Both engagers
 (``scripts/ig_engager.py`` and ``scripts/fb_engager.py``) run this path.
 
 These tests lock that contract, including the parts that are easy to break
-silently: the auto-approve gate is read from ``EngagementPolicy`` (not
-hardcoded), an agent decline never posts, a dry run still drafts but never
+silently: the comment floor is read from ``EngagementPolicy`` (not
+hardcoded) with no approval band above it, an agent decline never posts, a dry run still drafts but never
 posts, and every OPENED post is marked so it is never opened again.
 
 Sibling files own the rest of the single-pass contract (300-line cap):
@@ -215,31 +215,62 @@ def test_comment_quota_caps_the_run() -> None:
     assert report.comments_posted == 2
 
 
-def test_below_auto_approve_threshold_likes_but_does_not_comment() -> None:
-    """The 0.75-0.80 borderline band has no human in this loop, so it's skipped.
+def test_old_approval_band_score_is_commented() -> None:
+    """A 0.78 post (the retired 0.75-0.80 approval band) is now posted.
 
-    The threshold is read from ``EngagementPolicy.approval_threshold``; this
-    post clears the comment gate (0.75) but not the approval gate (0.80).
+    No human approves comments, so the band only discarded candidates — the
+    FB engager posted 0 comments for weeks behind it. The floor is
+    ``comment_threshold``; a post clearing it reaches the drafter and poster.
     """
     adapter = _ig_adapter(1)
-    dedup = FakeIterateOnceDedup()
     log = FakeLog()
+    report, _d, _rt, drafter = run(
+        adapter,
+        dedup=FakeIterateOnceDedup(),
+        log=log,
+        score=lambda post: 0.78,
+        inline_comment=True,
+    )
+
+    assert len(drafter.calls) == 1
+    assert len(adapter.comments) == 1
+    assert report.comments_posted == 1
+    assert "comment_skipped_needs_approval" not in _events(log)
+
+
+def test_old_approval_band_score_is_commented_on_facebook() -> None:
+    """Facebook shares the path: a band score reaches the poster there too."""
+    posts = make_ig_posts(1)
+    adapter = FakeAdapter("facebook", [make_src("s1")], {"s1": posts})
+    report, _d, _rt, _dr = run(
+        adapter,
+        dedup=FakeIterateOnceDedup(),
+        score=lambda post: 0.76,
+        inline_comment=True,
+    )
+
+    assert len(adapter.comments) == 1
+    assert report.comments_posted == 1
+
+
+def test_score_below_comment_floor_likes_but_does_not_comment() -> None:
+    """Below ``comment_threshold`` (0.75) a post is still skipped for comment."""
+    adapter = _ig_adapter(1)
+    dedup = FakeIterateOnceDedup()
     policy = make_policy()
-    assert policy.approval_threshold == 0.80, "fixture assumption"
+    assert policy.comment_threshold == 0.75, "fixture assumption"
 
     report, _d, _rt, drafter = run(
         adapter,
         policy=policy,
         dedup=dedup,
-        log=log,
-        score=lambda post: 0.78,
+        score=lambda post: 0.74,
         inline_comment=True,
     )
 
     assert drafter.calls == []
     assert adapter.comments == []
     assert report.comments_posted == 0
-    assert "comment_skipped_needs_approval" in _events(log)
     # ...but it was still liked and still marked seen.
     assert [p.post_id for p in adapter.likes_succeeded] == ["p0"]
     assert ("instagram", "p0") in dedup.seen_marked

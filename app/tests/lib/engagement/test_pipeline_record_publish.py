@@ -204,16 +204,18 @@ def test_gate_allow_lets_the_comment_proceed() -> None:
     assert report.comments_posted == 1
 
 
-def test_borderline_posts_never_reach_the_gate() -> None:
-    """The approval band runs FIRST, so borderline posts trigger no gate side
-    effects (e.g. first-comment flagging in a group we'd never comment in)."""
-    gate = FakeCommentGate("should_never_be_asked")
+def test_old_approval_band_posts_reach_the_gate() -> None:
+    """With the approval band gone, a 0.78 post is a real comment candidate:
+    the gate is consulted first and its veto still stops the comment."""
+    gate = FakeCommentGate("vetoed")
+    adapter = _ig_adapter(1)
     run(
-        _ig_adapter(1),
+        adapter,
         dedup=FakeIterateOnceDedup(),
-        score=lambda post: 0.78,  # candidate + comment band, below auto-approve
+        score=lambda post: 0.78,  # the retired 0.75-0.80 approval band
         inline_comment=True,
         comment_gate=gate,
     )
 
-    assert gate.checked == [], "the gate ran before the approval band"
+    assert gate.checked != [], "a band-score candidate must reach the gate"
+    assert adapter.comments == []

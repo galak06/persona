@@ -26,7 +26,6 @@ from lib.engagement.collaborators import (
     SupportsCommentClaim,
 )
 from lib.engagement.comment_submit import submit_comment
-from lib.engagement.policy import EngagementPolicy
 from lib.engagement.post import Post
 from lib.engagement.scan_results import CommentOutcome
 
@@ -37,7 +36,6 @@ def maybe_comment(
     source: Source,
     platform: str,
     score: float,
-    policy: EngagementPolicy,
     commenter: SupportsComment,
     drafter: Drafter,
     dedup: Dedup,
@@ -48,14 +46,15 @@ def maybe_comment(
 ) -> CommentOutcome:
     """Draft and post one comment during this post's visit.
 
-    Order: auto-approve gate -> comment gate -> comment quota -> claim
-    outage -> draft -> claim/post/settle (`comment_submit.submit_comment`).
+    Order: comment gate -> comment quota -> claim outage -> draft ->
+    claim/post/settle (`comment_submit.submit_comment`). The score floor is
+    `policy.comment_threshold`, applied upstream in `post_processor`; there
+    is no approval band above it — no human approves comments, so every
+    candidate that reaches here is posted unless a later gate stops it.
     Under `dry_run` the drafter still runs (so the preview shows the real
     text) but nothing leaves the process: no claim, no `comment()`, no rate
     spend, no dedup mark.
     """
-    if _blocked_by_approval_gate(post, score, platform, policy, log):
-        return CommentOutcome()
     if _blocked_by_comment_gate(post, source, platform, comment_gate, log):
         return CommentOutcome()
     if _blocked_by_comment_quota(platform, rate_tracker, log):
@@ -85,28 +84,6 @@ def maybe_comment(
     )
 
 
-def _blocked_by_approval_gate(
-    post: Post, score: float, platform: str, policy: EngagementPolicy, log: Log
-) -> bool:
-    """True if the score falls in the borderline band that needs a human.
-
-    Only the auto-approve tier comments unattended: `requires_approval`
-    scores (the 0.75-0.80 band) have no human in this loop, so they are
-    skipped rather than posted.
-    """
-    if not policy.requires_approval(score):
-        return False
-    log.info(
-        "comment_skipped_needs_approval platform=%s post_id=%s score=%.2f threshold=%.2f url=%s",
-        platform,
-        post.post_id,
-        score,
-        policy.approval_threshold,
-        post.post_url,
-    )
-    return True
-
-
 def _blocked_by_comment_gate(
     post: Post,
     source: Source,
@@ -116,9 +93,7 @@ def _blocked_by_comment_gate(
 ) -> bool:
     """True when the injected `CommentGate` vetoes this post's comment.
 
-    Runs after the approval band (so borderline posts never trigger gate
-    side effects like first-comment flagging) and before the quota/LLM
-    steps (a vetoed post must spend nothing). A gated skip is terminal,
+    Runs first, before the quota/LLM steps (a vetoed post must spend nothing). A gated skip is terminal,
     not retryable: the post is still liked upstream and gets marked seen,
     so it is never revisited even after the gate later opens.
     """

@@ -197,7 +197,6 @@ def _run_comment_step(
         source=source,
         platform=platform,
         score=score,
-        policy=policy,
         commenter=commenter,
         drafter=drafter,
         dedup=dedup,

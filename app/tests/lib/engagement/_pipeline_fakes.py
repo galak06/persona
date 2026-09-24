@@ -233,7 +233,6 @@ def make_policy(
     return EngagementPolicy.from_enforced_limits(
         thresholds={
             "candidate_threshold": 0.70,
-            "approval_threshold": 0.80,
             "comment_threshold": 0.75,
         },
         limits={
