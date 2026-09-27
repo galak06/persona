@@ -54,6 +54,18 @@ if [ ! -f "${PROJECT_ROOT}/.env" ]; then
     exit 0
 fi
 
+# Keys whose absence silently disables a feature rather than failing a flow.
+# Warn, don't abort: the stack still runs, those features just no-op.
+warn_if_unset() {
+    local key="$1" feature="$2"
+    local value
+    value="$(grep -E "^${key}=" "${PROJECT_ROOT}/.env" | tail -1 | cut -d= -f2-)"
+    if [ -z "${value}" ] || [[ "${value}" == *xxxxxxxx* ]]; then
+        log "WARNING: ${key} is not set in .env — ${feature} will be disabled."
+    fi
+}
+warn_if_unset OPENROUTER_API_KEY "the Jev decision gates (post + FB group, lib/decisions/)"
+
 # ── 3. Build + start the shared stack ────────────────────────────────────────
 log "Building images (postgres/redis are prebuilt, api + frontend are built locally)..."
 compose build
