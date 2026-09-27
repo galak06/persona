@@ -41,8 +41,9 @@ def test_settings_omitted_jev_modes_are_left_alone(monkeypatch: pytest.MonkeyPat
     )
     assert captured["update_kwargs"]["jev_post_gate_ig"] is None
     assert captured["update_kwargs"]["jev_post_gate_fb"] is None
-    # A row without the columns (pre-migration) reads as the column default.
-    assert resp.jev_post_gate_ig == "shadow"
+    # A row without the columns (pre-migration) reads as "off" -- exactly
+    # what the engine does with it -- never as a mode that is not running.
+    assert resp.jev_post_gate_ig == "off"
 
 
 def test_settings_rejects_unknown_mode_with_422(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -53,6 +54,28 @@ def test_settings_rejects_unknown_mode_with_422(monkeypatch: pytest.MonkeyPatch)
         "/api/v1/brands/acme-dogs/settings", json={"jev_post_gate_ig": "yolo"}
     )
     assert resp.status_code == 422
+
+
+def test_repository_update_survives_missing_jev_columns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """API rebuilt before db/schema.sql: other fields still save, jev ones drop."""
+    import psycopg
+
+    from lib.brands_db import repository
+
+    calls: list[dict[str, object]] = []
+
+    def _execute(sql: str, params: dict[str, object]) -> int:
+        calls.append(dict(params))
+        if "jev_post_gate_ig" in sql:
+            raise psycopg.errors.UndefinedColumn("column jev_post_gate_ig does not exist")
+        return 1
+
+    monkeypatch.setattr(repository.db, "execute", _execute)
+    repo = brands_db.BrandsRepository()
+    assert repo.update("acme-dogs", headless=False, jev_post_gate_ig="enforce") is True
+    assert calls[-1] == {"headless": False, "id": "acme-dogs"}
+    # Only-jev edit against an old DB: nothing left to save, no crash.
+    assert repo.update("acme-dogs", jev_post_gate_ig="enforce") is False
 
 
 def test_repository_rejects_unknown_mode() -> None:

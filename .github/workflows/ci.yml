@@ -215,6 +215,7 @@ jobs:
           lib/decisions/ api/decisions_api.py
           tests/test_jev_client.py tests/test_post_gate.py tests/test_decisions_db.py
           tests/test_decisions_api.py tests/test_api_brand_settings_jev.py
+          tests/_jev_fakes.py tests/test_jev_engager_gate.py tests/test_jev_gate_factory.py
           tests/lib/engagement/test_pipeline_decision_gate.py
 
       - name: Ruff format check
@@ -340,6 +341,7 @@ jobs:
           lib/decisions/ api/decisions_api.py
           tests/test_jev_client.py tests/test_post_gate.py tests/test_decisions_db.py
           tests/test_decisions_api.py tests/test_api_brand_settings_jev.py
+          tests/_jev_fakes.py tests/test_jev_engager_gate.py tests/test_jev_gate_factory.py
           tests/lib/engagement/test_pipeline_decision_gate.py
 
   typecheck:
@@ -654,6 +656,8 @@ jobs:
             tests/lib/runtime/test_singleton.py \
             tests/test_jev_client.py \
             tests/test_post_gate.py \
+            tests/test_jev_engager_gate.py \
+            tests/test_jev_gate_factory.py \
             tests/test_decisions_db.py \
             tests/test_decisions_api.py \
             tests/test_api_brand_settings_jev.py \

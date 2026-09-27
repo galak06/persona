@@ -96,9 +96,10 @@ class BrandDetail(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
-    # Jev post-gate mode per platform (off | shadow | enforce).
-    jev_post_gate_ig: GateMode = "shadow"
-    jev_post_gate_fb: GateMode = "shadow"
+    # Jev post-gate mode per platform (off | shadow | enforce). A DB that
+    # predates the columns reads as "off" -- exactly what the engine does.
+    jev_post_gate_ig: GateMode = "off"
+    jev_post_gate_fb: GateMode = "off"
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -150,9 +151,10 @@ class BrandProvisionResponse(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
-    # Jev post-gate mode per platform (off | shadow | enforce).
-    jev_post_gate_ig: GateMode = "shadow"
-    jev_post_gate_fb: GateMode = "shadow"
+    # Jev post-gate mode per platform (off | shadow | enforce). A DB that
+    # predates the columns reads as "off" -- exactly what the engine does.
+    jev_post_gate_ig: GateMode = "off"
+    jev_post_gate_fb: GateMode = "off"
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}

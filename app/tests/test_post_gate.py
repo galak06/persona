@@ -1,19 +1,17 @@
-"""Unit tests for `lib.decisions.post_gate` and `lib.decisions.engager_gate`.
+"""Unit tests for `lib.decisions.post_gate` (modes, thresholds, state shape).
 
-`decide` is always a fake -- no network. The engager-gate tests replace the
-`decisions_db` functions with in-memory recorders, so no database either.
+`decide` is always a fake -- no network. The engager collaborator is tested
+in `test_jev_engager_gate.py`, the factory + run budget in
+`test_jev_gate_factory.py`.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 import pytest
 
-from lib import draft_helper
-from lib.decisions import decisions_db, engager_gate, jev_client, post_gate
-from lib.decisions.engager_gate import JevPostGate, build_post_gate, outcome_for
+from lib.decisions import jev_client, post_gate
 from lib.decisions.jev_types import (
     ChoiceAnswer,
     JevResult,
@@ -21,8 +19,7 @@ from lib.decisions.jev_types import (
     NoulAnswer,
     Question,
 )
-from lib.decisions.modes import GateMode, parse_mode
-from lib.engagement.post import Post
+from lib.decisions.modes import parse_mode
 
 
 def _result(relevant: float, value: str, value_conf: float, unsafe: float) -> JevResult:
@@ -132,155 +129,3 @@ def test_parse_mode_fails_safe() -> None:
     assert parse_mode("enforce") == "enforce"
     assert parse_mode("bogus") == "off"
     assert parse_mode(None) == "off"
-
-
-# --- engager_gate ------------------------------------------------------------
-
-
-class _Store:
-    """In-memory stand-in for the three decisions_db functions the gate uses."""
-
-    def __init__(self, existing: bool = False) -> None:
-        self.existing = existing
-        self.decisions: list[decisions_db.DecisionRecord] = []
-        self.outcomes: list[tuple[str, str]] = []
-
-    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(decisions_db, "has_decision", lambda *_a: self.existing)
-        monkeypatch.setattr(decisions_db, "record_decision", self._record)
-        monkeypatch.setattr(decisions_db, "record_outcome", self._outcome)
-
-    def _record(self, record: decisions_db.DecisionRecord) -> bool:
-        self.decisions.append(record)
-        return True
-
-    def _outcome(self, key: str, outcome: str, **_kw: Any) -> bool:
-        self.outcomes.append((key, outcome))
-        return True
-
-
-def _post(pid: str = "p1") -> Post:
-    return Post(platform="instagram", post_id=pid, post_url=f"https://x/p/{pid}", text="Any tips?")
-
-
-def _gate(mode: GateMode, max_calls: int = 60) -> JevPostGate:
-    return JevPostGate(
-        brand_id="b",
-        flow="ig-engager",
-        platform="instagram",
-        mode=mode,
-        brand_focus="dog food",
-        max_calls=max_calls,
-    )
-
-
-def test_shadow_gate_records_and_never_skips(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = _Store()
-    store.install(monkeypatch)
-    monkeypatch.setattr(jev_client, "decide", _decider(_result(0.0, "nothing_to_add", 1.0, 1.0)))
-    gate = _gate("shadow")
-
-    assert gate.before_draft(_post()) is False
-    assert len(store.decisions) == 1
-    rec = store.decisions[0]
-    assert (rec.mode, rec.would_skip, rec.item_key) == ("shadow", True, "https://x/p/p1")
-    assert rec.cost_usd == 0.0001 and rec.latency_ms == 12
-    assert store.outcomes == []  # shadow never stamps skipped_by_gate
-
-
-def test_enforce_gate_skips_and_stamps_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = _Store()
-    store.install(monkeypatch)
-    monkeypatch.setattr(jev_client, "decide", _decider(_result(0.0, "nothing_to_add", 1.0, 1.0)))
-    assert _gate("enforce").before_draft(_post()) is True
-    assert store.outcomes == [("https://x/p/p1", "skipped_by_gate")]
-
-
-def test_gate_skips_jev_for_already_decided_post(monkeypatch: pytest.MonkeyPatch) -> None:
-    _Store(existing=True).install(monkeypatch)
-    calls: list[JsonDict] = []
-    monkeypatch.setattr(jev_client, "decide", _decider(_KEEP, calls))
-    assert _gate("enforce").before_draft(_post()) is False
-    assert calls == []
-
-
-def test_gate_respects_run_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    _Store().install(monkeypatch)
-    calls: list[JsonDict] = []
-    monkeypatch.setattr(jev_client, "decide", _decider(_KEEP, calls))
-    gate = _gate("shadow", max_calls=2)
-    for i in range(5):
-        gate.before_draft(_post(f"p{i}"))
-    assert len(calls) == 2 and gate.calls == 2
-
-
-def test_gate_swallows_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _boom(*_a: object, **_k: object) -> bool:
-        raise RuntimeError("db down")
-
-    monkeypatch.setattr(decisions_db, "has_decision", _boom)
-    monkeypatch.setattr(decisions_db, "record_outcome", _boom)
-    gate = _gate("enforce")
-    assert gate.before_draft(_post()) is False
-    gate.after_draft(_post(), drafted=True, reason=None)  # must not raise
-
-
-def test_after_draft_maps_drafter_outcomes(monkeypatch: pytest.MonkeyPatch) -> None:
-    store = _Store()
-    store.install(monkeypatch)
-    gate = _gate("shadow")
-    gate.after_draft(_post(), drafted=True, reason=None)
-    gate.after_draft(_post(), drafted=False, reason=draft_helper.AGENT_DECLINED)
-    gate.after_draft(_post(), drafted=False, reason=draft_helper.DRAFT_FAILED)
-    assert [o for _k, o in store.outcomes] == ["engaged", "declined", "drafter_error"]
-
-
-def test_outcome_mapping_pins_draft_helper_constants() -> None:
-    assert engager_gate.DRAFTER_ERROR_REASONS == {
-        draft_helper.DRAFT_FAILED,
-        draft_helper.DRAFT_BLANK,
-    }
-    assert engager_gate.VOICE_FAILED_REASON == draft_helper.VOICE_FAILED
-    assert outcome_for(drafted=False, reason=draft_helper.VOICE_FAILED) == "engaged"
-    assert outcome_for(drafted=False, reason=None) == "declined"
-
-
-# --- build_post_gate ---------------------------------------------------------
-
-
-def test_build_gate_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv(jev_client.API_KEY_ENV, raising=False)
-    monkeypatch.setattr(jev_client, "_missing_key_warned", True)
-    assert build_post_gate("instagram", "ig-engager") is None
-
-
-@pytest.mark.parametrize(
-    ("row", "platform", "expected"),
-    [
-        ({"jev_post_gate_ig": "shadow", "focus_category": "Dog Food"}, "instagram", "shadow"),
-        ({"jev_post_gate_fb": "enforce", "niche": "dogs"}, "facebook", "enforce"),
-        ({"jev_post_gate_ig": "off"}, "instagram", None),
-        (None, "instagram", None),
-        ({"jev_post_gate_ig": "shadow"}, "tiktok", None),
-    ],
-)
-def test_build_gate_reads_mode_from_brand_row(
-    monkeypatch: pytest.MonkeyPatch, row: dict[str, str] | None, platform: str, expected: str | None
-) -> None:
-    monkeypatch.setenv(jev_client.API_KEY_ENV, "test-not-a-real-key")
-    monkeypatch.setattr(engager_gate, "current_brand_id", lambda: "acme")
-    monkeypatch.setattr(engager_gate.brands_db, "get", lambda _bid: row)
-    gate = build_post_gate(platform, "flow")
-    assert (gate.mode if gate else None) == expected
-    if gate is not None and row is not None:
-        assert gate.brand_focus == (row.get("focus_category") or row.get("niche"))
-
-
-def test_build_gate_survives_db_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv(jev_client.API_KEY_ENV, "test-not-a-real-key")
-
-    def _boom(_bid: str) -> None:
-        raise RuntimeError("no db")
-
-    monkeypatch.setattr(engager_gate.brands_db, "get", _boom)
-    assert build_post_gate("instagram", "ig-engager") is None

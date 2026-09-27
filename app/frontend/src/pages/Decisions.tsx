@@ -62,7 +62,7 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
 function SummaryTiles({ s }: { s: DecisionsSummary }): React.JSX.Element {
   return (
     <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-      <Tile label="Decisions" value={String(s.total)} />
+      <Tile label="Decisions" value={String(s.total)} hint={`${s.failed ?? 0} failed Jev calls`} />
       <Tile label="Would skip" value={String(s.would_skip)} hint={pct(s.total ? s.would_skip / s.total : null)} />
       <Tile
         label="Agreement"
@@ -111,7 +111,11 @@ function Row({ d }: { d: JevDecision }): React.JSX.Element {
         </div>
       </td>
       <td className="py-2 pr-3 whitespace-nowrap text-sm">
-        {d.would_skip ? (
+        {d.error ? (
+          <span className="rounded bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700" title={d.error}>
+            failed
+          </span>
+        ) : d.would_skip ? (
           <span className="rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">skip</span>
         ) : (
           <span className="text-xs text-slate-500">keep</span>

@@ -1,23 +1,32 @@
 """Repository for ``jev_decisions`` (schema in ``db/schema.sql``).
 
-Writes are called from inside a live engager run, so they NEVER raise: a DB
-hiccup is logged and reported as ``False``. Reads back the API and may
-raise like any other query.
+The gate-path calls (``record_decision``, ``lookup_decision``,
+``record_outcome``) run inside a live engager, so they NEVER raise and are
+BOUNDED: each takes a pooled connection with a short checkout timeout and
+runs under ``SET LOCAL statement_timeout``, so a slow database costs the
+gate a couple of seconds at most, never the pool's 30s default. The read
+side (``list_recent``, ``summarize``) backs the API and may raise normally.
 
 Idempotent by construction: ``(brand_id, platform, item_key)`` is unique and
 ``record_decision`` is ``ON CONFLICT DO NOTHING`` -- a re-visited post keeps
-its first decision (the engager asks ``has_decision`` first so it does not
-pay Jev twice), and ``record_outcome`` only ever fills the outcome columns.
+its first decision (the gate reads it back via ``lookup_decision`` instead
+of paying Jev twice), and ``record_outcome`` only ever fills the outcome
+columns.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Final
 
+from psycopg import Cursor
+from psycopg.rows import DictRow, dict_row
 from psycopg.types.json import Jsonb
 
 from lib import db
+from lib.db_pool import get_pool
 from lib.decisions.jev_types import JsonDict
 from lib.decisions.modes import GateMode
 from lib.observability import get_logger
@@ -31,13 +40,21 @@ OUTCOME_SKIPPED_BY_GATE: Final = "skipped_by_gate"
 OUTCOMES: Final = frozenset(
     {OUTCOME_ENGAGED, OUTCOME_DECLINED, OUTCOME_DRAFTER_ERROR, OUTCOME_SKIPPED_BY_GATE}
 )
+ERROR_JEV_CALL_FAILED: Final = "jev_call_failed"
 
 MAX_LIST_LIMIT: Final = 500
+# Gate-path bounds: pool checkout wait and per-statement server timeout.
+GATE_DB_TIMEOUT_S: Final = 2.0
+_STATEMENT_TIMEOUT: Final = "2s"
 
 
 @dataclass(frozen=True)
 class DecisionRecord:
-    """Everything one evaluated post contributes to the log."""
+    """Everything one evaluated post contributes to the log.
+
+    ``error`` is set (and ``answers`` empty) when the Jev call failed;
+    ``outcome`` carries a drafter outcome that arrived before the row did.
+    """
 
     brand_id: str
     flow: str
@@ -49,6 +66,8 @@ class DecisionRecord:
     would_skip: bool
     latency_ms: int | None = None
     cost_usd: float | None = None
+    outcome: str | None = None
+    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,63 +76,86 @@ class DecisionSummary:
 
     ``agreement_rate`` compares Jev's ``would_skip`` with what the drafter
     did: agree = (would_skip and declined) or (not would_skip and engaged).
-    Rows without an engaged/declined outcome are not counted; ``None`` when
-    there is nothing to compare yet.
+    Failed calls and rows without an engaged/declined outcome are not
+    compared; ``None`` when there is nothing to compare yet.
     """
 
     total: int
     would_skip: int
+    failed: int
     compared: int
     agreed: int
     agreement_rate: float | None
     total_cost_usd: float
 
 
+@contextmanager
+def _gate_cursor() -> Iterator[Cursor[DictRow]]:
+    """A bounded cursor for gate-path statements (see module docstring)."""
+    with (
+        get_pool().connection(timeout=GATE_DB_TIMEOUT_S) as conn,
+        conn.cursor(row_factory=dict_row) as cur,
+    ):
+        cur.execute(f"SET LOCAL statement_timeout = '{_STATEMENT_TIMEOUT}'")
+        yield cur
+
+
 def record_decision(record: DecisionRecord) -> bool:
     """Insert one decision; True if a row was written. Never raises."""
+    outcome = record.outcome if record.outcome in OUTCOMES else None
     try:
-        written = db.execute(
-            """
-            INSERT INTO jev_decisions
-                (brand_id, flow, platform, item_key, questions, answers,
-                 mode, would_skip, latency_ms, cost_usd)
-            VALUES
-                (%(brand_id)s, %(flow)s, %(platform)s, %(item_key)s, %(questions)s,
-                 %(answers)s, %(mode)s, %(would_skip)s, %(latency_ms)s, %(cost_usd)s)
-            ON CONFLICT (brand_id, platform, item_key) DO NOTHING
-            """,
-            {
-                "brand_id": record.brand_id,
-                "flow": record.flow,
-                "platform": record.platform,
-                "item_key": record.item_key,
-                "questions": Jsonb(record.questions),
-                "answers": Jsonb(record.answers),
-                "mode": record.mode,
-                "would_skip": record.would_skip,
-                "latency_ms": record.latency_ms,
-                "cost_usd": record.cost_usd,
-            },
-        )
+        with _gate_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO jev_decisions
+                    (brand_id, flow, platform, item_key, questions, answers, mode,
+                     would_skip, latency_ms, cost_usd, outcome, outcome_at, error)
+                VALUES
+                    (%(brand_id)s, %(flow)s, %(platform)s, %(item_key)s, %(questions)s,
+                     %(answers)s, %(mode)s, %(would_skip)s, %(latency_ms)s, %(cost_usd)s,
+                     %(outcome)s, CASE WHEN %(outcome)s::text IS NULL THEN NULL ELSE NOW() END,
+                     %(error)s)
+                ON CONFLICT (brand_id, platform, item_key) DO NOTHING
+                """,
+                {
+                    "brand_id": record.brand_id,
+                    "flow": record.flow,
+                    "platform": record.platform,
+                    "item_key": record.item_key,
+                    "questions": Jsonb(record.questions),
+                    "answers": Jsonb(record.answers),
+                    "mode": record.mode,
+                    "would_skip": record.would_skip,
+                    "latency_ms": record.latency_ms,
+                    "cost_usd": record.cost_usd,
+                    "outcome": outcome,
+                    "error": record.error,
+                },
+            )
+            return cur.rowcount > 0
     except Exception as exc:
         log.warning("jev_decision_record_failed", error_type=type(exc).__name__)
         return False
-    return written > 0
 
 
-def has_decision(brand_id: str, platform: str, item_key: str) -> bool:
-    """True when this post already has a logged decision. Never raises
-    (a failed lookup answers True, so an outage never buys a second Jev call)."""
+def lookup_decision(brand_id: str, platform: str, item_key: str) -> bool | None:
+    """The stored ``would_skip`` for this post, or None if it has no row.
+
+    Never raises. A failed lookup answers ``False`` ("decided, keep"): an
+    outage must neither buy a second Jev call nor skip a post.
+    """
     try:
-        row = db.fetch_one(
-            "SELECT 1 AS hit FROM jev_decisions "
-            "WHERE brand_id = %s AND platform = %s AND item_key = %s",
-            (brand_id, platform, item_key),
-        )
+        with _gate_cursor() as cur:
+            cur.execute(
+                "SELECT would_skip FROM jev_decisions "
+                "WHERE brand_id = %s AND platform = %s AND item_key = %s",
+                (brand_id, platform, item_key),
+            )
+            row = cur.fetchone()
     except Exception as exc:
         log.warning("jev_decision_lookup_failed", error_type=type(exc).__name__)
-        return True
-    return row is not None
+        return False
+    return None if row is None else bool(row["would_skip"])
 
 
 def record_outcome(
@@ -141,15 +183,16 @@ def record_outcome(
         clauses.append("platform = %(platform)s")
         params["platform"] = platform
     try:
-        updated = db.execute(
-            "UPDATE jev_decisions SET outcome = %(outcome)s, outcome_at = NOW() "
-            f"WHERE {' AND '.join(clauses)}",
-            params,
-        )
+        with _gate_cursor() as cur:
+            cur.execute(
+                "UPDATE jev_decisions SET outcome = %(outcome)s, outcome_at = NOW() "
+                f"WHERE {' AND '.join(clauses)}",
+                params,
+            )
+            return cur.rowcount > 0
     except Exception as exc:
         log.warning("jev_outcome_record_failed", error_type=type(exc).__name__)
         return False
-    return updated > 0
 
 
 def _filters(brand_id: str | None, platform: str | None) -> tuple[str, dict[str, object]]:
@@ -178,22 +221,27 @@ def list_recent(
 
 
 def summarize(*, brand_id: str | None = None, platform: str | None = None) -> DecisionSummary:
-    """Totals, would-skip count, drafter agreement and spend for the filter."""
+    """Totals, would-skip count, failures, drafter agreement and spend."""
     where, params = _filters(brand_id, platform)
+    params.update(engaged=OUTCOME_ENGAGED, declined=OUTCOME_DECLINED)
     row = (
         db.fetch_one(
             f"""
-        SELECT
-            COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE would_skip) AS would_skip,
-            COUNT(*) FILTER (WHERE outcome IN ('engaged', 'declined')) AS compared,
-            COUNT(*) FILTER (
-                WHERE (would_skip AND outcome = 'declined')
-                   OR (NOT would_skip AND outcome = 'engaged')
-            ) AS agreed,
-            COALESCE(SUM(cost_usd), 0) AS total_cost_usd
-        FROM jev_decisions {where}
-        """,
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE would_skip) AS would_skip,
+                COUNT(*) FILTER (WHERE error IS NOT NULL) AS failed,
+                COUNT(*) FILTER (
+                    WHERE error IS NULL AND outcome IN (%(engaged)s, %(declined)s)
+                ) AS compared,
+                COUNT(*) FILTER (
+                    WHERE error IS NULL
+                      AND ((would_skip AND outcome = %(declined)s)
+                        OR (NOT would_skip AND outcome = %(engaged)s))
+                ) AS agreed,
+                COALESCE(SUM(cost_usd), 0) AS total_cost_usd
+            FROM jev_decisions {where}
+            """,
             params,
         )
         or {}
@@ -203,6 +251,7 @@ def summarize(*, brand_id: str | None = None, platform: str | None = None) -> De
     return DecisionSummary(
         total=int(row.get("total") or 0),
         would_skip=int(row.get("would_skip") or 0),
+        failed=int(row.get("failed") or 0),
         compared=compared,
         agreed=agreed,
         agreement_rate=(agreed / compared) if compared else None,

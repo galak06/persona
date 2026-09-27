@@ -36,6 +36,9 @@ class JevDecision(BaseModel):
     created_at: str = ""
     outcome: str | None = None
     outcome_at: str | None = None
+    # Set when the Jev call failed (answers empty); such rows never count
+    # toward agreement.
+    error: str | None = None
     # True/False once the drafter engaged or declined; None before that (or
     # for outcomes that are not a drafter decision).
     agrees: bool | None = None
@@ -44,6 +47,7 @@ class JevDecision(BaseModel):
 class DecisionsSummary(BaseModel):
     total: int
     would_skip: int
+    failed: int = 0
     compared: int
     agreed: int
     agreement_rate: float | None = None
@@ -61,7 +65,9 @@ def _iso(value: object) -> str | None:
     return value.isoformat() if isinstance(value, datetime) else str(value)
 
 
-def _agrees(would_skip: bool, outcome: object) -> bool | None:
+def _agrees(would_skip: bool, outcome: object, error: object) -> bool | None:
+    if error is not None:
+        return None
     if outcome == decisions_db.OUTCOME_DECLINED:
         return would_skip
     if outcome == decisions_db.OUTCOME_ENGAGED:
@@ -89,7 +95,8 @@ def _to_model(row: dict[str, Any]) -> JevDecision:
         created_at=_iso(row.get("created_at")) or "",
         outcome=str(outcome) if outcome is not None else None,
         outcome_at=_iso(row.get("outcome_at")),
-        agrees=_agrees(would_skip, outcome),
+        error=str(row["error"]) if row.get("error") is not None else None,
+        agrees=_agrees(would_skip, outcome, row.get("error")),
     )
 
 
@@ -107,6 +114,7 @@ def list_decisions(
         summary=DecisionsSummary(
             total=summary.total,
             would_skip=summary.would_skip,
+            failed=summary.failed,
             compared=summary.compared,
             agreed=summary.agreed,
             agreement_rate=summary.agreement_rate,

@@ -493,8 +493,12 @@ CREATE TABLE IF NOT EXISTS brand_secrets (
 -- in once the drafter ran -- what the drafter actually did (`outcome`:
 -- engaged | declined | drafter_error | skipped_by_gate). Comparing the two is
 -- the whole point of shadow mode. Append-only log: no FK to brands so a
--- decision is never lost to an unregistered brand id, and the unique key
--- makes a re-visited post update its row instead of duplicating it.
+-- decision is never lost to an unregistered brand id. The unique key plus
+-- INSERT ... ON CONFLICT DO NOTHING keeps a re-visited post's FIRST decision
+-- (the gate reads it back instead of asking Jev again); only the outcome
+-- columns are ever updated afterwards. A Jev call that failed (timeout, HTTP
+-- error, malformed answer) is still a row: `error` names the failure,
+-- `answers` is empty, and it is excluded from the agreement figures.
 -- ────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS jev_decisions (
     id          BIGSERIAL        PRIMARY KEY,
@@ -509,9 +513,26 @@ CREATE TABLE IF NOT EXISTS jev_decisions (
     latency_ms  INTEGER,
     cost_usd    DOUBLE PRECISION,
     created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    outcome     TEXT,
-    outcome_at  TIMESTAMPTZ
+    outcome     TEXT             CHECK (outcome IS NULL OR outcome IN
+                                    ('engaged', 'declined', 'drafter_error', 'skipped_by_gate')),
+    outcome_at  TIMESTAMPTZ,
+    error       TEXT
 );
+-- Catch-up for a jev_decisions created by the first cut of this table (no
+-- `error` column, no outcome CHECK). Both statements are no-ops on a table
+-- created by the definition above: the column exists, and Postgres names the
+-- inline CHECK jev_decisions_outcome_check, which the guard looks for.
+ALTER TABLE jev_decisions ADD COLUMN IF NOT EXISTS error TEXT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'jev_decisions_outcome_check'
+    ) THEN
+        ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check CHECK
+            (outcome IS NULL OR outcome IN
+                ('engaged', 'declined', 'drafter_error', 'skipped_by_gate'));
+    END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_jev_decisions_item
     ON jev_decisions(brand_id, platform, item_key);
 CREATE INDEX IF NOT EXISTS idx_jev_decisions_brand_created

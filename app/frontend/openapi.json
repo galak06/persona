@@ -472,7 +472,7 @@
             "type": "string"
           },
           "jev_post_gate_fb": {
-            "default": "shadow",
+            "default": "off",
             "enum": [
               "off",
               "shadow",
@@ -482,7 +482,7 @@
             "type": "string"
           },
           "jev_post_gate_ig": {
-            "default": "shadow",
+            "default": "off",
             "enum": [
               "off",
               "shadow",
@@ -688,7 +688,7 @@
             "type": "string"
           },
           "jev_post_gate_fb": {
-            "default": "shadow",
+            "default": "off",
             "enum": [
               "off",
               "shadow",
@@ -698,7 +698,7 @@
             "type": "string"
           },
           "jev_post_gate_ig": {
-            "default": "shadow",
+            "default": "off",
             "enum": [
               "off",
               "shadow",
@@ -1698,6 +1698,11 @@
           },
           "compared": {
             "title": "Compared",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
             "type": "integer"
           },
           "total": {
@@ -2860,6 +2865,17 @@
             "default": "",
             "title": "Created At",
             "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
           },
           "flow": {
             "default": "",

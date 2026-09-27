@@ -38,6 +38,11 @@ JEV_URL: Final = "https://openrouter.ai/api/alpha/decisions"
 JEV_MODEL: Final = "typesafe/jev-1.13"
 API_KEY_ENV: Final = "OPENROUTER_API_KEY"
 TIMEOUT_SECONDS: Final = 5.0
+CONNECT_TIMEOUT_SECONDS: Final = 2.0
+# Explicit per-phase bounds (read/write/pool 5s, connect 2s). httpx has no
+# total-request timeout, so callers that must bound wall-clock time also
+# keep their own budget (see lib/decisions/gate_budget.py).
+HTTP_TIMEOUT: Final = httpx.Timeout(TIMEOUT_SECONDS, connect=CONNECT_TIMEOUT_SECONDS)
 # The model's context is 32k tokens; a post longer than this is truncated
 # rather than rejected (a caption's first few thousand chars carry the topic).
 MAX_STATE_CHARS: Final = 8000
@@ -66,13 +71,21 @@ def _state_payload(state: str | JsonDict) -> str | JsonDict:
     return state
 
 
-def _post(payload: JsonDict, key: str) -> httpx.Response:
-    return httpx.post(
+def _post(payload: JsonDict, key: str) -> tuple[int, str]:
+    """POST and reduce the response to ``(status_code, body_text)``.
+
+    Deliberately NOT the ``httpx.Response``: this value is what
+    ``trace_llm_call`` hands to Langfuse as the generation output, and a
+    Response drags its Request -- Authorization header included -- along
+    into any serializer that walks object attributes.
+    """
+    response = httpx.post(
         JEV_URL,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json=payload,
-        timeout=TIMEOUT_SECONDS,
+        timeout=HTTP_TIMEOUT,
     )
+    return response.status_code, response.text
 
 
 def decide(state: str | JsonDict, questions: Mapping[str, Question]) -> JevResult | None:
@@ -95,7 +108,7 @@ def decide(state: str | JsonDict, questions: Mapping[str, Question]) -> JevResul
     }
     started = time.monotonic()
     try:
-        response = trace_llm_call(
+        status_code, text = trace_llm_call(
             _TRACE_NAME,
             model=JEV_MODEL,
             input_text=json.dumps(payload["state"], default=str)[:MAX_STATE_CHARS],
@@ -112,27 +125,27 @@ def decide(state: str | JsonDict, questions: Mapping[str, Question]) -> JevResul
         return None
     latency_ms = int((time.monotonic() - started) * 1000)
     try:
-        return _result_from_response(response, questions, latency_ms)
+        return _result_from_response(status_code, text, questions, latency_ms)
     except Exception as exc:
         log.warning("jev_unexpected_error", error_type=type(exc).__name__, stage="parse")
         return None
 
 
 def _result_from_response(
-    response: httpx.Response, questions: Mapping[str, Question], latency_ms: int
+    status_code: int, text: str, questions: Mapping[str, Question], latency_ms: int
 ) -> JevResult | None:
-    if response.status_code >= 400:
+    if status_code >= 400:
         # The body can echo request details; log the status and a short,
         # key-free prefix only.
         log.warning(
             "jev_http_error",
-            status_code=response.status_code,
-            body_prefix=response.text[:200],
+            status_code=status_code,
+            body_prefix=text[:200],
             latency_ms=latency_ms,
         )
         return None
     try:
-        body: object = response.json()
+        body: object = json.loads(text)
     except ValueError:
         log.warning("jev_malformed_response", reason="not_json", latency_ms=latency_ms)
         return None

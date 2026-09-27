@@ -44,6 +44,7 @@ def _row(i: int, would_skip: bool, outcome: str | None) -> dict[str, Any]:
         "created_at": datetime(2026, 9, 27, tzinfo=UTC),
         "outcome": outcome,
         "outcome_at": None,
+        "error": None,
     }
 
 
@@ -52,12 +53,19 @@ def test_decisions_route_shape(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _list(**kwargs: Any) -> list[dict[str, Any]]:
         seen["list"] = kwargs
-        return [_row(1, True, "declined"), _row(2, True, "engaged"), _row(3, False, None)]
+        failed = {**_row(4, False, "engaged"), "error": "jev_call_failed"}
+        return [_row(1, True, "declined"), _row(2, True, "engaged"), _row(3, False, None), failed]
 
     def _summary(**kwargs: Any) -> DecisionSummary:
         seen["summary"] = kwargs
         return DecisionSummary(
-            total=3, would_skip=2, compared=2, agreed=1, agreement_rate=0.5, total_cost_usd=0.003
+            total=4,
+            would_skip=2,
+            failed=1,
+            compared=2,
+            agreed=1,
+            agreement_rate=0.5,
+            total_cost_usd=0.003,
         )
 
     monkeypatch.setattr(decisions_api.decisions_db, "list_recent", _list)
@@ -68,7 +76,9 @@ def test_decisions_route_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     body = resp.json()
     assert seen["list"] == {"brand_id": "b1", "platform": "instagram", "limit": 10}
     assert seen["summary"] == {"brand_id": "b1", "platform": "instagram"}
-    assert [d["agrees"] for d in body["decisions"]] == [True, False, None]
+    assert [d["agrees"] for d in body["decisions"]] == [True, False, None, None]
+    assert body["decisions"][3]["error"] == "jev_call_failed"
+    assert body["summary"]["failed"] == 1
     assert body["decisions"][0]["created_at"].startswith("2026-09-27T00:00:00")
     assert body["summary"]["agreement_rate"] == 0.5
 
@@ -109,6 +119,7 @@ def test_decisions_route_live(pg: None) -> None:
     assert body["summary"] == {
         "total": 1,
         "would_skip": 1,
+        "failed": 0,
         "compared": 1,
         "agreed": 1,
         "agreement_rate": 1.0,

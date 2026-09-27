@@ -21,6 +21,8 @@ from lib.decisions.modes import GATE_MODES
 
 logger = logging.getLogger(__name__)
 
+_JEV_COLUMNS = frozenset({"jev_post_gate_ig", "jev_post_gate_fb"})
+
 
 class BrandAlreadyExistsError(ValueError):
     """Raised by `create()` when a brand with the given id already exists."""
@@ -236,8 +238,25 @@ class BrandsRepository:
 
         if not updates:
             return False
+        try:
+            return self._apply_update(brand_id, updates)
+        except psycopg.errors.UndefinedColumn:
+            # The API image can be rebuilt before db/schema.sql adds the Jev
+            # columns; that must not break every other settings edit.
+            rest = {k: v for k, v in updates.items() if k not in _JEV_COLUMNS}
+            if len(rest) == len(updates):
+                raise
+            logger.warning(
+                "brands.update: jev_post_gate columns missing (apply db/schema.sql); "
+                "saved the other fields for brand %s",
+                brand_id,
+            )
+            return self._apply_update(brand_id, rest) if rest else False
 
+    @staticmethod
+    def _apply_update(brand_id: str, updates: dict[str, Any]) -> bool:
         set_clause = ", ".join(f"{col} = %({col})s" for col in updates)
-        updates["id"] = brand_id
-        rowcount = db.execute(f"UPDATE brands SET {set_clause} WHERE id = %(id)s", updates)
+        rowcount = db.execute(
+            f"UPDATE brands SET {set_clause} WHERE id = %(id)s", {**updates, "id": brand_id}
+        )
         return rowcount > 0

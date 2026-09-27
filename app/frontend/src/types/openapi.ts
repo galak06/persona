@@ -1900,13 +1900,13 @@ export interface components {
             id: string;
             /**
              * Jev Post Gate Fb
-             * @default shadow
+             * @default off
              * @enum {string}
              */
             jev_post_gate_fb: "off" | "shadow" | "enforce";
             /**
              * Jev Post Gate Ig
-             * @default shadow
+             * @default off
              * @enum {string}
              */
             jev_post_gate_ig: "off" | "shadow" | "enforce";
@@ -2065,13 +2065,13 @@ export interface components {
             ig_login_command: string;
             /**
              * Jev Post Gate Fb
-             * @default shadow
+             * @default off
              * @enum {string}
              */
             jev_post_gate_fb: "off" | "shadow" | "enforce";
             /**
              * Jev Post Gate Ig
-             * @default shadow
+             * @default off
              * @enum {string}
              */
             jev_post_gate_ig: "off" | "shadow" | "enforce";
@@ -2494,6 +2494,11 @@ export interface components {
             agreement_rate?: number | null;
             /** Compared */
             compared: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
             /** Total */
             total: number;
             /** Total Cost Usd */
@@ -2991,6 +2996,8 @@ export interface components {
              * @default
              */
             created_at: string;
+            /** Error */
+            error?: string | null;
             /**
              * Flow
              * @default
