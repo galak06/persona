@@ -17,5 +17,6 @@ Slice 2 adds the fb-group-scout "is this group a match?" gate:
 * ``group_gate``    -- the four group questions and the enforce thresholds
 * ``scout_hooks``   -- the scout-side seam (protocol, null gate, helpers)
 * ``scout_gate``    -- the scout collaborator
+* ``scout_outcomes`` -- one final outcome per group per run; the flow deadline
 * ``shadow_worker`` -- the daemon FIFO worker shadow mode runs on
 """

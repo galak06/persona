@@ -45,7 +45,9 @@ from lib.decisions.post_gate import Decide
 
 # Enforce thresholds. Deliberately conservative: shadow data decides whether
 # they tighten before enforce is ever switched on.
-OFF_TOPIC_CONFIDENCE: Final = 0.8
+# Thresholded on the off_topic PROBABILITY (what the Decisions page shows),
+# not ChoiceAnswer.confidence, which Jev may report as a near-constant.
+OFF_TOPIC_PROBABILITY: Final = 0.8
 NORTH_AMERICA_SKIP_AT_OR_BELOW: Final = 0.2
 CAN_COMMENT_SKIP_AT_OR_BELOW: Final = 0.2
 ACTIVE_SKIP_BELOW: Final = 0.75
@@ -108,7 +110,7 @@ class GroupGateVerdict:
 
     mode: GateMode
     match: str
-    match_confidence: float
+    off_topic: float  # P(off_topic); falls back to confidence when absent
     north_america: float
     can_comment: float
     active: float
@@ -124,11 +126,11 @@ class GroupGateVerdict:
 
 
 def skip_reasons(
-    match: str, match_confidence: float, north_america: float, can_comment: float, active: float
+    match: str, off_topic: float, north_america: float, can_comment: float, active: float
 ) -> tuple[str, ...]:
     """Every enforce threshold this answer set trips (empty = keep the group)."""
     reasons: list[str] = []
-    if match == MATCH_OFF_TOPIC and match_confidence >= OFF_TOPIC_CONFIDENCE:
+    if match == MATCH_OFF_TOPIC and off_topic >= OFF_TOPIC_PROBABILITY:
         reasons.append("off_topic")
     if north_america <= NORTH_AMERICA_SKIP_AT_OR_BELOW:
         reasons.append("not_north_america")
@@ -137,6 +139,15 @@ def skip_reasons(
     if active < ACTIVE_SKIP_BELOW:
         reasons.append("inactive")
     return tuple(reasons)
+
+
+def off_topic_probability(match: ChoiceAnswer) -> float:
+    """P(off_topic) as the Decisions page renders it: the label's probability,
+    else the answer's confidence when it IS the chosen label, else 0."""
+    prob = match.probabilities.get(MATCH_OFF_TOPIC)
+    if prob is not None:
+        return prob
+    return match.confidence if match.choice == MATCH_OFF_TOPIC else 0.0
 
 
 def group_state(brand_focus: str, group: Mapping[str, object]) -> JsonDict:
@@ -181,13 +192,14 @@ def evaluate_group(
         and isinstance(active, ScoreAnswer)
     ):
         return None
+    off_topic = off_topic_probability(match)
     reasons = skip_reasons(
-        match.choice, match.confidence, north_america.noul, can_comment.noul, active.score
+        match.choice, off_topic, north_america.noul, can_comment.noul, active.score
     )
     return GroupGateVerdict(
         mode=mode,
         match=match.choice,
-        match_confidence=match.confidence,
+        off_topic=off_topic,
         north_america=north_america.noul,
         can_comment=can_comment.noul,
         active=active.score,

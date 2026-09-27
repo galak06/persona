@@ -196,8 +196,8 @@ def test_fb_group_agreement_math(pg: None) -> None:
         "g-req-keep": (False, "join_requested", True, True),
         "g-join-skip": (True, "joined", True, False),
         "g-low-skip": (True, "skipped_low_score", True, True),
-        "g-closed-keep": (False, "skipped_admission_closed", True, False),
-        "g-rank-skip": (True, "skipped_rank_cut", True, True),
+        "g-closed-keep": (False, "skipped_admission_closed", False, None),
+        "g-rank-skip": (True, "skipped_rank_cut", False, None),
         "g-cap": (True, "skipped_cap", False, None),
         "g-member": (False, "already_member", False, None),
         "g-failed": (False, "join_failed", False, None),
@@ -210,8 +210,8 @@ def test_fb_group_agreement_math(pg: None) -> None:
 
     summary = decisions_db.summarize(brand_id="b1", platform="fb_group")
     assert summary.total == len(cases)
-    assert summary.compared == sum(1 for c in cases.values() if c[2]) == 6
-    assert summary.agreed == sum(1 for c in cases.values() if c[3]) == 4
+    assert summary.compared == sum(1 for c in cases.values() if c[2]) == 4
+    assert summary.agreed == sum(1 for c in cases.values() if c[3]) == 3
     # A failed Jev call on a group is never compared, whatever the scout did.
     failed = replace(
         _record("g-err", would_skip=False, platform="fb_group"),
@@ -221,7 +221,7 @@ def test_fb_group_agreement_math(pg: None) -> None:
     )
     assert decisions_db.record_decision(failed)
     after = decisions_db.summarize(brand_id="b1", platform="fb_group")
-    assert (after.failed, after.compared, after.agreed) == (1, 6, 4)
+    assert (after.failed, after.compared, after.agreed) == (1, 4, 3)
     # The engager rows' math is untouched by the new vocabulary.
     assert decisions_db.summarize(brand_id="b1", platform="instagram").total == 0
 

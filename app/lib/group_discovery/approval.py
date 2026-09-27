@@ -115,7 +115,8 @@ def send_join_requests(
         except Exception as e:
             print(f"     ERROR: {e}")
             log_error(f"JOIN_FAILED: {group['name']} — {e}")
-            result = "error"
+            # A click that landed is still a join even if logging it failed.
+            result = result if result.startswith("clicked") else "error"
         _report(on_result, group, result)
         if not is_last:
             delay = pace_between_joins(is_last=False)

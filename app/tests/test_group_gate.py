@@ -129,9 +129,9 @@ def test_state_drops_unknown_member_count_and_truncates_description() -> None:
     ("kwargs", "expected"),
     [
         ({}, ()),
-        ({"match": "adjacent", "match_confidence": 0.99}, ()),
-        ({"match": "off_topic", "match_confidence": 0.8}, ("off_topic",)),
-        ({"match": "off_topic", "match_confidence": 0.79}, ()),
+        ({"match": "adjacent", "off_topic": 0.99}, ()),
+        ({"match": "off_topic", "off_topic": 0.8}, ("off_topic",)),
+        ({"match": "off_topic", "off_topic": 0.79}, ()),
         ({"north_america": 0.2}, ("not_north_america",)),
         ({"north_america": 0.21}, ()),
         ({"can_comment": 0.2}, ("members_cannot_comment",)),
@@ -147,7 +147,7 @@ def test_state_drops_unknown_member_count_and_truncates_description() -> None:
 def test_thresholds(kwargs: dict[str, Any], expected: tuple[str, ...]) -> None:
     args: dict[str, Any] = {
         "match": "match",
-        "match_confidence": 0.9,
+        "off_topic": 0.9,
         "north_america": 0.9,
         "can_comment": 0.9,
         "active": 2.0,
@@ -199,3 +199,19 @@ def test_default_decide_is_the_patchable_client(monkeypatch: pytest.MonkeyPatch)
     verdict = evaluate_group("f", CARD, mode="shadow")
     assert verdict is not None and verdict.skip_reasons == ("inactive",)
     assert len(fake.calls) == 1
+
+
+def test_off_topic_threshold_uses_the_label_probability() -> None:
+    """Not ChoiceAnswer.confidence: that may be a near-constant 1."""
+    answers = _answers()
+    answers[Q_MATCH] = ChoiceAnswer(
+        choice="off_topic", confidence=1.0, probabilities={"off_topic": 0.55, "adjacent": 0.45}
+    )
+    verdict = evaluate_group("f", CARD, mode="enforce", decide=FakeDecide(answers))
+    assert verdict is not None and verdict.off_topic == 0.55 and not verdict.would_skip
+    answers[Q_MATCH] = ChoiceAnswer(
+        choice="off_topic", confidence=0.1, probabilities={"off_topic": 0.9}
+    )
+    verdict = evaluate_group("f", CARD, mode="enforce", decide=FakeDecide(answers))
+    assert verdict is not None and verdict.skip_reasons == ("off_topic",)
+    assert group_gate.off_topic_probability(ChoiceAnswer(choice="match", confidence=0.9)) == 0.0

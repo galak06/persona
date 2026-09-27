@@ -13,24 +13,17 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Mapping
-from functools import partial
 from typing import Any
 
 import pytest
 
-from lib import brands_db
-from lib.decisions import decisions_db, gate_factory, outcomes, scout_gate
-from lib.decisions.gate_factory import build_group_gate
+from lib.decisions import decisions_db, outcomes
 from lib.decisions.jev_types import JevResult, JsonDict, Question
-from lib.decisions.scout_gate import JevGroupGate, flow_deadline
+from lib.decisions.scout_gate import JevGroupGate
 from lib.decisions.scout_hooks import (
-    NullGroupGate,
-    dropped,
     item_key,
-    outcome_for_join,
-    screen_ranked,
 )
-from lib.decisions.shadow_worker import ShadowWorker
+from lib.decisions.scout_outcomes import CLOSE_RESERVE_S, flow_deadline
 from tests.test_group_gate import FakeDecide, _answers
 
 
@@ -93,55 +86,6 @@ class SlowDecide(FakeDecide):
         return super().__call__(state, questions)
 
 
-def test_item_key_and_join_outcomes() -> None:
-    assert item_key({"url": " https://www.facebook.com/groups/AbC/ "}) == (
-        "https://www.facebook.com/groups/abc"
-    )
-    assert item_key({}) == ""
-    pub, priv = {"privacy": "public"}, {"privacy": "private"}
-    assert outcome_for_join(pub, "clicked:join group") == outcomes.OUTCOME_JOINED
-    assert outcome_for_join(priv, "clicked:request") == outcomes.OUTCOME_JOIN_REQUESTED
-    assert outcome_for_join(pub, "already_joined") == outcomes.OUTCOME_ALREADY_MEMBER
-    assert outcome_for_join(pub, "already_pending") == outcomes.OUTCOME_ALREADY_PENDING
-    assert outcome_for_join(pub, "not_found") == outcomes.OUTCOME_JOIN_FAILED
-    assert outcome_for_join(pub, "error") == outcomes.OUTCOME_JOIN_FAILED
-
-
-def test_screen_ranked_keeps_scout_order_and_identity() -> None:
-    groups = [_card(1, 10), _card(2, 90), _card(3, 50)]
-    assert screen_ranked(NullGroupGate(), groups, lambda g: g["score"]) is groups
-
-    class DropBest(NullGroupGate):
-        def screen(self, gs: list[Any]) -> list[Any]:
-            return gs[1:]  # drops the best-ranked, proving rank order was used
-
-    kept = screen_ranked(DropBest(), groups, lambda g: g["score"])
-    assert [g["name"] for g in kept] == ["g1", "g3"]
-    assert dropped(groups, kept) == [groups[1]]
-
-
-def test_shadow_worker_is_fifo_daemon_and_bounded() -> None:
-    worker = ShadowWorker("jev-gate-test")
-    seen: list[int] = []
-    for i in range(3):
-        worker.submit(partial(seen.append, i))
-    worker.submit(lambda: 1 / 0)  # a failing task does not kill the worker
-    worker.submit(lambda: seen.append(9))
-    assert worker.drain(2.0) == 0
-    assert seen == [0, 1, 2, 9]
-    worker.submit(lambda: seen.append(99))  # closed: ignored
-    assert seen == [0, 1, 2, 9]
-
-    slow = ShadowWorker("jev-gate-slow")
-    slow.submit(lambda: threading.Event().wait(0.5))
-    slow.submit(lambda: None)
-    started = time.monotonic()
-    assert slow.drain(0.05) >= 1
-    assert time.monotonic() - started < 0.4
-    assert slow._thread is not None and slow._thread.daemon
-    assert ShadowWorker("never-started").drain(1.0) == 0
-
-
 def test_shadow_screen_returns_at_once_and_stamps_this_runs_rows(store: FakeStore) -> None:
     decide = SlowDecide(0.2, match="off_topic", match_confidence=1.0)  # would skip all
     gate = _gate(decide)
@@ -181,7 +125,7 @@ def test_close_respects_the_flow_deadline(
     started = time.monotonic()
     gate.close()
     assert time.monotonic() - started < 0.3
-    assert flow_deadline(100.0) == pytest.approx(100.0 + 1 - scout_gate.CLOSE_RESERVE_S)
+    assert flow_deadline(100.0) == pytest.approx(100.0 + 1 - CLOSE_RESERVE_S)
     monkeypatch.setenv("FLOW_TIMEOUT_SECONDS", "junk")
     assert flow_deadline(0.0) is None
     monkeypatch.delenv("FLOW_TIMEOUT_SECONDS")
@@ -260,44 +204,6 @@ def test_off_mode_does_nothing(store: FakeStore) -> None:
     assert decide.calls == [] and store.decisions == []
 
 
-@pytest.mark.parametrize(
-    ("row", "expected"),
-    [
-        (None, None),
-        ({"id": "b1"}, None),  # DB predates the column: off
-        ({"id": "b1", "jev_group_gate": "off"}, None),
-        ({"id": "b1", "jev_group_gate": "bogus"}, None),
-        ({"id": "b1", "jev_group_gate": "shadow", "focus_category": "Raw"}, "shadow"),
-        ({"id": "b1", "jev_group_gate": "enforce"}, "enforce"),
-    ],
-)
-def test_build_group_gate_mode_from_row(
-    monkeypatch: pytest.MonkeyPatch, row: dict[str, Any] | None, expected: str | None
-) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-not-a-key")
-    monkeypatch.setattr(gate_factory, "current_brand_id", lambda: "b1")
-    monkeypatch.setattr(brands_db, "get", lambda _b: row)
-    gate = build_group_gate()
-    assert (gate.mode if gate else None) == expected
-    if gate and row and row.get("focus_category"):
-        assert gate.brand_focus == "Raw"
-
-
-def test_build_group_gate_disabled_paths(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-not-a-key")
-    monkeypatch.setattr(gate_factory, "current_brand_id", lambda: "b1")
-    monkeypatch.setattr(brands_db, "get", lambda _b: {"jev_group_gate": "shadow"})
-    assert build_group_gate(dry_run=True) is None
-
-    def boom(_b: str) -> None:
-        raise RuntimeError("db down")
-
-    monkeypatch.setattr(brands_db, "get", boom)
-    assert build_group_gate() is None
-    monkeypatch.delenv("OPENROUTER_API_KEY")
-    assert build_group_gate() is None
-
-
 def test_close_is_idempotent_and_zero_wait_close_never_waits(store: FakeStore) -> None:
     gate = _gate(SlowDecide(0.5))
     gate.screen([_card(1), _card(2)])
@@ -306,3 +212,30 @@ def test_close_is_idempotent_and_zero_wait_close_never_waits(store: FakeStore) -
     gate.close()  # already closed: no second drain, no wait
     assert time.monotonic() - started < 0.3
     _join_worker(gate)
+
+
+def test_each_group_is_stamped_once_with_its_final_outcome(store: FakeStore) -> None:
+    gate = _gate(FakeDecide(_answers()))
+    card = _card(1)
+    gate.screen([card])
+    gate.record([dict(card)], outcomes.OUTCOME_SKIPPED_LOW_SCORE)
+    gate.join_result(card, "clicked:join group")
+    gate.close()
+    assert store.outcomes == [(item_key(card), "joined")]
+
+
+def test_enforce_after_a_trip_skips_even_the_db_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = FakeStore().install(monkeypatch)
+    lookups: list[str] = []
+    real_lookup = decisions_db.lookup_decision
+
+    def counting_lookup(brand: str, platform: str, key: str) -> bool | None:
+        lookups.append(key)
+        return real_lookup(brand, platform, key)
+
+    monkeypatch.setattr(decisions_db, "lookup_decision", counting_lookup)
+    gate = _gate(FakeDecide(None), mode="enforce")
+    assert gate.screen([_card(i) for i in range(6)])
+    assert gate.budget.tripped == "circuit_breaker"
+    assert len(lookups) == 3  # two failed calls, then the lookup that tripped it
+    assert len(store.decisions) == 2

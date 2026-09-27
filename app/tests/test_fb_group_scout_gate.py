@@ -241,3 +241,46 @@ def test_enforce_only_removes_candidates(trace: Trace, monkeypatch: pytest.Monke
     assert store.final_outcomes()[item_key({"url": "https://www.facebook.com/groups/A"})] == (
         "skipped_by_gate"
     )
+
+
+class SkipNamed(FakeDecide):
+    """Would-skip (inactive) for the named groups, keep for everything else."""
+
+    def __init__(self, *names: str) -> None:
+        super().__init__(None)
+        self.names = set(names)
+
+    def __call__(self, state: Any, questions: Any) -> Any:
+        self.answers = _answers(active=0.0 if state["name"] in self.names else 2.0)
+        return super().__call__(state, questions)
+
+
+def test_enforce_emptying_the_preapproved_queue_falls_through_to_search(
+    trace: Trace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    FakeStore().install(monkeypatch)
+    queued = {**PENDING_P, "url": "https://www.facebook.com/groups/Q", "name": "Q"}
+    queued["status"] = "approved"
+    monkeypatch.setattr(scout, "load_pending", lambda: [dict(queued), dict(PENDING_P)])
+    gate = JevGroupGate(brand_id="b1", mode="enforce", brand_focus="f", decide=SkipNamed("Q"))
+    scout.main(FakeSession(), preselected="all", group_gate=gate)  # type: ignore[arg-type]
+    joins = [v for k, v in trace.events if k == "join"]
+    # The gated pre-approved group is not joined, and the search phase ran.
+    assert joins == ["https://www.facebook.com/groups/P", "https://www.facebook.com/groups/A"]
+    runs = [v for k, v in trace.events if k == "last_run"]
+    assert runs and all(r.get("mode") != "pre-approved" for r in runs)
+
+
+def test_group_in_pending_and_search_gets_its_final_outcome(
+    trace: Trace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P is both queued and re-found with a low score: the search copy says
+    skipped_low_score, the pending copy is joined -- the row must say joined."""
+    store = FakeStore().install(monkeypatch)
+    refound = {**_cards()[0], "url": PENDING_P["url"], "name": "P", "_s": 30}
+    monkeypatch.setattr(scout, "search_groups", lambda _p, _q: [*_cards(), dict(refound)])
+    gate = _shadow(SlowDecide(0.05))  # slow: the old per-record stamping raced this
+    scout.main(FakeSession(), preselected="all", group_gate=gate)  # type: ignore[arg-type]
+    key = item_key(PENDING_P)
+    assert [o for k, o in store.outcomes if k == key] == ["joined"]  # stamped once
+    assert store.final_outcomes()[key] == "joined"

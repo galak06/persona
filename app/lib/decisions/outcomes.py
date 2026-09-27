@@ -42,15 +42,16 @@ OUTCOMES: Final = frozenset(
 )
 # Agreement vocabulary: an outcome that is the flow's own editorial "keep"
 # agrees with would_skip=False, an editorial "skip" with would_skip=True.
-# Everything else (drafter/join errors, the budget cap, already-a-member,
-# the gate's own skip) is not a judgement about the item and is not compared.
+# Everything else is not a judgement about the item Jev was asked about, so
+# it is not compared: drafter/join errors, already-a-member, the gate's own
+# skip, and three scout outcomes --
+#   skipped_cap              the day's join budget ran out;
+#   skipped_rank_cut         relative to the day's pool (below the top 15),
+#                            not a property of the group;
+#   skipped_admission_closed admission friction, which none of the group
+#                            gate's four questions asks about.
 KEEP_OUTCOMES: Final = (OUTCOME_ENGAGED, OUTCOME_JOINED, OUTCOME_JOIN_REQUESTED)
-SKIP_OUTCOMES: Final = (
-    OUTCOME_DECLINED,
-    OUTCOME_SKIPPED_LOW_SCORE,
-    OUTCOME_SKIPPED_ADMISSION_CLOSED,
-    OUTCOME_SKIPPED_RANK_CUT,
-)
+SKIP_OUTCOMES: Final = (OUTCOME_DECLINED, OUTCOME_SKIPPED_LOW_SCORE)
 
 
 def agrees(would_skip: bool, outcome: object) -> bool | None:

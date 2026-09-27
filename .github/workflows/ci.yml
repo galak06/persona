@@ -219,6 +219,7 @@ jobs:
           tests/lib/engagement/test_pipeline_decision_gate.py
           tests/test_group_gate.py tests/test_scout_gate.py
           tests/test_fb_group_scout_gate.py tests/test_api_jev_group_gate.py
+          tests/test_scout_parts.py
 
       - name: Ruff format check
         run: >-
@@ -347,6 +348,7 @@ jobs:
           tests/lib/engagement/test_pipeline_decision_gate.py
           tests/test_group_gate.py tests/test_scout_gate.py
           tests/test_fb_group_scout_gate.py tests/test_api_jev_group_gate.py
+          tests/test_scout_parts.py
 
   typecheck:
     name: Type Check
@@ -416,6 +418,7 @@ jobs:
           lib/group_discovery/geo.py lib/group_discovery/relevance.py
           lib/decisions/ api/decisions_api.py
           tests/test_group_gate.py tests/test_scout_gate.py tests/test_fb_group_scout_gate.py
+          tests/test_scout_parts.py
           --ignore-missing-imports
 
   test:
@@ -671,6 +674,7 @@ jobs:
             tests/test_scout_gate.py \
             tests/test_fb_group_scout_gate.py \
             tests/test_api_jev_group_gate.py \
+            tests/test_scout_parts.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib/db.py --cov=lib/db.py_pool --cov=lib/groups_db \
             --cov=lib/engagements_db --cov=lib/worker_db.py --cov=lib/schedule_db.py --cov=lib/dedup_pg.py \

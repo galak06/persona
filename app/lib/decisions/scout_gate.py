@@ -5,20 +5,21 @@ gate (``engager_gate.JevPostGate``):
 
 **Shadow must not slow the scout.** ``screen`` hands each card to a single
 daemon worker (``ShadowWorker``) and returns the list untouched at once;
-every Jev call and DB write runs there. The worker is FIFO, so a group's
-outcome stamp always runs after its decision; an outcome that arrives before
-its row is parked in ``_pending_outcomes`` and folded into the INSERT.
-``close()`` drains the worker with a bounded wait that never runs past the
-flow's own fuse (``FLOW_TIMEOUT_SECONDS``, exported by the task worker).
+every Jev call and DB write runs there. ``close()`` drains the worker with a
+bounded wait that never runs past the flow's own fuse
+(``FLOW_TIMEOUT_SECONDS``, exported by the task worker).
 
-Outcomes are stamped only on rows decided THIS run: a group decided on an
-earlier run keeps the outcome it got then.
+Outcomes: each group gets ONE outcome per run, its final fate
+(``scout_outcomes.FinalOutcomes``), stamped once at ``close()`` -- after
+every decision, since the worker is FIFO -- and only on rows decided THIS
+run: a group decided on an earlier run keeps the outcome it got then.
 
 **Enforce blocks** (it must drop a card before the scout acts on it), bounded
 by ``RunBudget``: a call cap, a cumulative wall-clock budget and a 2-failure
-circuit breaker. A group decided on an earlier run is never re-asked; enforce
-re-applies its stored ``would_skip``. A failed call is recorded as an
-``error`` row with no verdict.
+circuit breaker; once that trips, not even the DB lookup runs. A group
+decided on an earlier run is never re-asked; enforce re-applies its stored
+``would_skip``. A failed call is recorded as an ``error`` row with no
+verdict.
 
 Every public method never raises -- a classifier bug must never alter the
 scout.
@@ -26,11 +27,9 @@ scout.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
 from functools import partial
 from typing import Final
 
@@ -47,6 +46,7 @@ from lib.decisions.jev_types import questions_to_json
 from lib.decisions.modes import MODE_ENFORCE, MODE_OFF, MODE_SHADOW, GateMode
 from lib.decisions.post_gate import Decide
 from lib.decisions.scout_hooks import G, item_key, outcome_for_join
+from lib.decisions.scout_outcomes import FinalOutcomes, flow_deadline
 from lib.decisions.shadow_worker import ShadowWorker
 from lib.observability import get_logger
 
@@ -61,20 +61,6 @@ MAX_CALLS_PER_RUN: Final = 40
 # Cards handed to the shadow worker per run (most are DB lookups of groups
 # seen on earlier runs, not Jev calls).
 MAX_SCREENED_PER_RUN: Final = 200
-# The end-of-run drain (gate_budget.DRAIN_TIMEOUT_S) is capped so it ends
-# this long before the task worker's SIGKILL fuse.
-FLOW_TIMEOUT_ENV: Final = "FLOW_TIMEOUT_SECONDS"
-CLOSE_RESERVE_S: Final = 15.0
-
-
-def flow_deadline(started: float) -> float | None:
-    """The monotonic instant ``close`` must be done by, or None when the
-    process runs without a fuse (a manual run)."""
-    try:
-        timeout = float(os.environ.get(FLOW_TIMEOUT_ENV, "") or 0)
-    except ValueError:
-        return None
-    return started + timeout - CLOSE_RESERVE_S if timeout > 0 else None
 
 
 class JevGroupGate:
@@ -107,7 +93,7 @@ class JevGroupGate:
         self._deadline = flow_deadline(clock())
         self._lock = threading.Lock()
         self._known: set[str] = set()  # keys whose row was written THIS run
-        self._pending_outcomes: dict[str, str] = {}
+        self._final = FinalOutcomes()
         self._verdicts: dict[str, bool] = {}  # this run's answer per key (dedupe)
         self._worker = ShadowWorker("jev-gate-groups")
         self._closed = False
@@ -158,6 +144,10 @@ class JevGroupGate:
             if timeout_s is None:
                 remaining = None if self._deadline is None else self._deadline - self._clock()
                 timeout_s = min(self.drain_timeout_s, drain_timeout(remaining))
+            if self.mode == MODE_SHADOW:
+                self._submit(self._stamp_all)  # FIFO: after every decision
+            elif self.mode == MODE_ENFORCE:
+                self._stamp_all()
             undrained = self._worker.drain(timeout_s)
             log.info(
                 "jev_gate_run_summary",
@@ -187,18 +177,13 @@ class JevGroupGate:
         if not key:
             return False
         if key not in self._verdicts:
+            if len(self._verdicts) >= MAX_SCREENED_PER_RUN:
+                return False
             self._verdicts[key] = self._decide(key, group)
         return self._verdicts[key]
 
     def _note(self, key: str, outcome: str) -> None:
-        if not key:
-            return
-        with self._lock:
-            self._pending_outcomes[key] = outcome
-        if self.mode == MODE_SHADOW:
-            self._submit(partial(self._stamp, key))
-        else:
-            self._stamp(key)
+        self._final.note(key, outcome)
 
     def _submit(self, task: Callable[[], object]) -> None:
         self._worker.submit(task)
@@ -213,11 +198,13 @@ class JevGroupGate:
             return False
 
     def _decide_unsafe(self, key: str, group: Mapping[str, object]) -> bool:
+        if self.budget.tripped is not None:
+            return False  # tripped: not even the (2s-bounded) DB lookup
         stored = decisions_db.lookup_decision(self.brand_id, PLATFORM, key)
         if stored is not None:  # decided on an earlier run: never re-asked
             skip = self.mode == MODE_ENFORCE and stored  # re-apply that verdict
             if skip:
-                self._skipped(key)
+                self._note(key, outcomes.OUTCOME_SKIPPED_BY_GATE)
             return skip
         if not self.budget.allow():
             return False
@@ -229,26 +216,19 @@ class JevGroupGate:
             return False
         self._record_verdict(key, verdict)
         if verdict.should_skip:
-            self._skipped(key)
+            self._note(key, outcomes.OUTCOME_SKIPPED_BY_GATE)
         return verdict.should_skip
 
-    def _skipped(self, key: str) -> None:
+    def _stamp_all(self) -> None:
+        """Write each final outcome once, only on rows this run inserted."""
         with self._lock:
-            self._pending_outcomes[key] = outcomes.OUTCOME_SKIPPED_BY_GATE
-        self._stamp(key)
-
-    def _stamp(self, key: str) -> None:
-        with self._lock:
-            if key not in self._known:
-                return  # no row this run: the outcome waits in _pending_outcomes
-            outcome = self._pending_outcomes.pop(key, None)
-        if outcome is not None:
-            decisions_db.record_outcome(key, outcome, brand_id=self.brand_id, platform=PLATFORM)
+            known = set(self._known)
+        for key, outcome in self._final.items():
+            if key in known:
+                decisions_db.record_outcome(key, outcome, brand_id=self.brand_id, platform=PLATFORM)
 
     def _insert(self, record: DecisionRecord) -> None:
-        with self._lock:
-            pending = self._pending_outcomes.pop(record.item_key, None)
-        written = decisions_db.record_decision(replace(record, outcome=pending))
+        written = decisions_db.record_decision(record)
         with self._lock:
             self._known.add(record.item_key)
             self.recorded += int(written)
@@ -264,7 +244,7 @@ class JevGroupGate:
                 answers={},
                 mode=self.mode,
                 would_skip=False,
-                latency_ms=int(max(0.0, time.monotonic() - started) * 1000),
+                latency_ms=int(max(0.0, self._clock() - started) * 1000),
                 error=decisions_db.ERROR_JEV_CALL_FAILED,
             )
         )
@@ -275,7 +255,7 @@ class JevGroupGate:
             mode=self.mode,
             item_key=key,
             match=verdict.match,
-            match_confidence=round(verdict.match_confidence, 3),
+            off_topic=round(verdict.off_topic, 3),
             north_america=round(verdict.north_america, 3),
             members_can_comment=round(verdict.can_comment, 3),
             active=round(verdict.active, 3),

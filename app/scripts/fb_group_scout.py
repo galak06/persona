@@ -292,13 +292,16 @@ def _scout(
     pre_approved = [g for g in load_pending() if g.get("status") == "approved"]
     pre_approved = drop_off_target(pre_approved, rules)
     pre_approved = [g for g in pre_approved if g["url"].lower() not in known_groups]
+    if pre_approved and (budget > 0 or dry_run):
+        # Before the branch: a queue enforce empties falls through to search,
+        # exactly like an empty queue. (budget>0: no Jev spend on capped days.)
+        pre_approved = gate.screen(pre_approved)
     if pre_approved:
         print(f"Pre-approved queue: {len(pre_approved)} group(s) waiting to join.")
         if budget <= 0 and not dry_run:
             print("ABORT: Daily limit already reached — pre-approved groups will join tomorrow.")
             skill_skipped("fb-group-scout", "Daily limit reached — pre-approved groups queued for tomorrow")
             return
-        pre_approved = gate.screen(pre_approved)
         to_join = pre_approved[:budget]
         print(f"Joining {len(to_join)} pre-approved group(s) (cap: {budget}).")
         skill_started("fb-group-scout", f"Joining {len(to_join)} pre-approved group(s) — budget: {budget} ({caps})")

@@ -520,7 +520,11 @@ CREATE TABLE IF NOT EXISTS jev_decisions (
     cost_usd    DOUBLE PRECISION,
     created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     outcome     TEXT             CHECK (outcome IS NULL OR outcome IN
-                                    ('engaged', 'declined', 'drafter_error', 'skipped_by_gate')),
+                                    ('engaged', 'declined', 'drafter_error', 'skipped_by_gate',
+                                     'joined', 'join_requested', 'already_member',
+                                     'already_pending', 'join_failed', 'skipped_low_score',
+                                     'skipped_admission_closed', 'skipped_rank_cut',
+                                     'skipped_cap')),
     outcome_at  TIMESTAMPTZ,
     error       TEXT
 );
@@ -544,7 +548,8 @@ END $$;
 -- Slice 2: fb-group-scout rows (platform 'fb_group') add the scout's own
 -- outcomes (lib/decisions/outcomes.py). Widen jev_decisions_outcome_check
 -- to the full list, idempotently: the constraint is dropped and re-added only
--- when its definition is missing one of the values. It only ever widens --
+-- when its definition is missing one of the values (a catch-up for tables
+-- created before slice 2; the CREATE TABLE above already has the full list). It only ever widens --
 -- every value the older CHECK accepted is still accepted -- and no row is
 -- touched.
 DO $$
@@ -561,7 +566,7 @@ BEGIN
     WHERE conname = 'jev_decisions_outcome_check'
       AND conrelid = 'jev_decisions'::regclass;
     IF current_def IS NULL OR EXISTS (
-        SELECT 1 FROM unnest(allowed) AS v WHERE current_def NOT LIKE '%''' || v || '''%'
+        SELECT 1 FROM unnest(allowed) AS v WHERE strpos(current_def, quote_literal(v)) = 0
     ) THEN
         ALTER TABLE jev_decisions DROP CONSTRAINT IF EXISTS jev_decisions_outcome_check;
         EXECUTE format(

@@ -31,6 +31,9 @@ const PLATFORM_LABEL: Record<PlatformFilter, string> = {
 
 const PLATFORM_ICON: Record<string, string> = { facebook: "📘", instagram: "📸", fb_group: "👥" };
 
+/** Chip order: the post gate's then the group gate's questions, as asked. */
+const ANSWER_ORDER = ["relevant", "value", "unsafe", "match", "north_america", "members_can_comment", "active"];
+
 /** Short labels for the group gate's answers (`lib/decisions/group_gate.py`). */
 const ANSWER_LABEL: Record<string, string> = {
   north_america: "NA",
@@ -56,7 +59,13 @@ function asNumber(value: unknown): number | null {
 function answerChips(d: JevDecision): { key: string; text: string }[] {
   if (d.error) return [{ key: "error", text: `Jev failed: ${d.error}` }];
   const answers = asRecord(d.answers);
-  return Object.entries(answers).map(([key, raw]) => {
+  // JSONB reorders keys (by length), so rank the known ones explicitly.
+  const rank = (key: string): number => {
+    const i = ANSWER_ORDER.indexOf(key);
+    return i === -1 ? ANSWER_ORDER.length : i;
+  };
+  const entries = Object.entries(answers).sort(([a], [b]) => rank(a) - rank(b));
+  return entries.map(([key, raw]) => {
     const a = asRecord(raw);
     const label = ANSWER_LABEL[key] ?? key;
     if (typeof a.choice === "string") {
