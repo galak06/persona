@@ -17,7 +17,8 @@ import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
 import ProductsPanel from "../components/products/ProductsPanel";
-import JevGateFields, { changedJevModes, type JevGateValues } from "../components/JevGateFields";
+import JevGateFields, { type JevGateValues } from "../components/JevGateFields";
+import { changedJevModes, jevBaseline, jevModesNotSaved } from "../components/jevGateDiff";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -120,10 +121,15 @@ export default function BrandSettings(): React.JSX.Element {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [result, setResult] = useState<BrandCreateResponse | null>(null);
+  // Last PERSISTED Jev modes: the diff baseline, refreshed from every save
+  // response (a page-load baseline silently drops an A→B→A revert).
+  const [savedJev, setSavedJev] = useState<JevGateValues>(jevBaseline(null));
 
   useEffect(() => {
+    if (!brand) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (brand) setForm(formStateFromBrand(brand));
+    setForm(formStateFromBrand(brand));
+    setSavedJev(jevBaseline(brand));
   }, [brand]);
 
   if (!id) return <Alert status="error">No brand id in URL.</Alert>;
@@ -144,12 +150,16 @@ export default function BrandSettings(): React.JSX.Element {
       // "" is meaningful here (clear the focus), so it is always sent --
       // only `undefined` means "leave alone" on the PATCH side.
       focus_category: form.focus_category.trim(),
-      ...changedJevModes(form, brand),
+      ...changedJevModes(form, savedJev),
     };
 
     const updated = await mutate(endpoints.brandSettings(id), payload);
     if (updated) {
       setResult(updated);
+      setSavedJev(jevBaseline(updated));
+      if (jevModesNotSaved(updated.warnings)) {
+        toast.error("Jev gate modes NOT saved — database migration pending");
+      }
       toast.success(`Settings saved for ${updated.name}`, updated.brand_dir);
     } else {
       toast.error(`Could not save settings for ${id}`);

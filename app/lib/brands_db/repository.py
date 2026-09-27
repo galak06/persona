@@ -240,11 +240,14 @@ class BrandsRepository:
             return False
         try:
             return self._apply_update(brand_id, updates)
-        except psycopg.errors.UndefinedColumn:
+        except psycopg.errors.UndefinedColumn as exc:
             # The API image can be rebuilt before db/schema.sql adds the Jev
-            # columns; that must not break every other settings edit.
+            # columns; that must not break every other settings edit. Only a
+            # missing JEV column qualifies -- anything else is a real error.
+            # The API detects the dropped modes by re-reading the row.
+            message = exc.diag.message_primary or str(exc)
             rest = {k: v for k, v in updates.items() if k not in _JEV_COLUMNS}
-            if len(rest) == len(updates):
+            if len(rest) == len(updates) or "jev_post_gate" not in message:
                 raise
             logger.warning(
                 "brands.update: jev_post_gate columns missing (apply db/schema.sql); "

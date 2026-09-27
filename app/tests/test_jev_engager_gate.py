@@ -6,6 +6,8 @@ Shadow runs Jev on a background worker, so every shadow test calls
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from lib import draft_helper
@@ -111,7 +113,31 @@ def test_enforce_reuses_stored_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
     assert gate.before_draft(make_post("p1")) is True
     assert gate.before_draft(make_post("p2")) is False
     assert jev.calls == []  # never re-asked
-    assert store.outcomes == [("https://x/p/p1", "skipped_by_gate")]
+    # An earlier run's row is evidence: read, never rewritten (additive only).
+    gate.after_draft(make_post("p2"), drafted=True, reason=None)
+    assert store.outcomes == []
+
+
+def test_shadow_revisit_never_stamps_a_previous_runs_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = FakeStore(stored={"https://x/p/p1": True}).install(monkeypatch)
+    FakeJev(KEEP).install(monkeypatch)
+    gate = _gate("shadow")
+    gate.before_draft(make_post("p1"))
+    gate.after_draft(make_post("p1"), drafted=True, reason=None)
+    gate.close()
+    assert store.outcomes == [] and store.decisions == []
+
+
+def test_tripped_budget_skips_even_the_db_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookups: list[str] = []
+    monkeypatch.setattr(decisions_db, "lookup_decision", lambda *a: lookups.append(a[2]))
+    monkeypatch.setattr(decisions_db, "record_decision", lambda _r: True)
+    FakeJev(None).install(monkeypatch)
+    gate = _gate("enforce")
+    for i in range(5):
+        gate.before_draft(make_post(f"p{i}"))
+    assert gate.budget.tripped == "circuit_breaker"
+    assert len(lookups) == 2  # none after the breaker opened
 
 
 def test_enforce_breaker_trips_after_two_failures(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,3 +222,35 @@ def test_off_mode_is_inert(monkeypatch: pytest.MonkeyPatch) -> None:
     assert gate.before_draft(make_post()) is False
     gate.close()
     assert jev.calls == []
+
+
+def test_close_is_idempotent_and_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeStore().install(monkeypatch)
+    FakeJev(KEEP).install(monkeypatch)
+    gate = _gate("shadow")
+    gate.before_draft(make_post())
+    summaries: list[str] = []
+    monkeypatch.setattr(engager_gate.log, "info", lambda e, **_k: summaries.append(e))
+    gate.close()
+    gate.close(timeout_s=0.0)  # the engagers' `finally` call
+    assert summaries.count("jev_gate_run_summary") == 1
+
+    def _boom(_t: float) -> int:
+        raise RuntimeError("worker broke")
+
+    other = _gate("shadow")
+    monkeypatch.setattr(other._worker, "drain", _boom)
+    other.close()  # must not raise
+    # Work submitted after close is dropped, not run.
+    assert gate.before_draft(make_post("late")) is False
+
+
+def test_shadow_worker_thread_is_a_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeStore().install(monkeypatch)
+    FakeJev(KEEP, sleep_s=0.2).install(monkeypatch)
+    gate = _gate("shadow")
+    gate.before_draft(make_post())
+    workers = [t for t in threading.enumerate() if t.name == "jev-gate"]
+    assert workers and all(t.daemon for t in workers)
+    gate.close(timeout_s=0.0)
+    join_gate_threads()

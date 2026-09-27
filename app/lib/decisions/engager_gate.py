@@ -9,12 +9,20 @@ The pipeline calls it at two points:
 * ``after_draft``, once the drafter has decided.
 
 **Shadow must not block the scan.** Every piece of DB and Jev work goes to a
-single background worker, and ``before_draft`` returns False immediately.
-The single worker runs tasks FIFO, so a post's outcome stamp always runs
-after that post's decision. The outcome is also parked in
-``_pending_outcomes`` and folded into the INSERT, so it is not lost whichever
-side lands first. ``close()`` drains the worker with a bounded wait at the
-end of the run.
+single DAEMON background worker (``ShadowWorker``), and ``before_draft``
+returns False immediately.
+
+* The worker runs tasks FIFO, so a post's outcome stamp always runs after
+  that post's decision.
+* The outcome is also parked in ``_pending_outcomes`` and folded into the
+  INSERT, so it is not lost whichever side lands first.
+* ``close()`` drains the worker with a bounded wait at the end of the run.
+  Callers clamp that wait to their deadline (``drain_timeout``).
+
+**Additive only.** Outcomes are stamped only on rows THIS run inserted, and
+only while their outcome is still NULL. A previous run's row, which is shadow
+agreement evidence, is read (enforce re-applies its verdict) but never
+rewritten.
 
 **Enforce blocks.** It is the only mode whose answer matters. It runs inline,
 bounded by ``RunBudget``: a call cap, a cumulative wall-clock budget and a
@@ -26,22 +34,24 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, replace
 from typing import Final, Protocol
 
 from lib.decisions import decisions_db
 from lib.decisions.decisions_db import DecisionRecord
-from lib.decisions.gate_budget import JEV_RUN_BUDGET_S, MAX_CALLS_PER_RUN, RunBudget
+from lib.decisions.gate_budget import (
+    DRAIN_TIMEOUT_S,
+    JEV_RUN_BUDGET_S,
+    MAX_CALLS_PER_RUN,
+    RunBudget,
+)
 from lib.decisions.jev_types import questions_to_json
 from lib.decisions.modes import MODE_ENFORCE, MODE_OFF, MODE_SHADOW, GateMode
 from lib.decisions.post_gate import PostGateVerdict, build_questions, evaluate_post
+from lib.decisions.shadow_worker import ShadowWorker
 from lib.observability import get_logger
 
 log = get_logger(__name__)
-
-# End-of-run drain wait for shadow work still queued or in flight.
-DRAIN_TIMEOUT_S: Final = 10.0
 
 # Mirrors lib.draft_helper's DRAFT_FAILED / DRAFT_BLANK (pinned by a test).
 # Those are upstream failures, not an editorial decision. Everything else
@@ -114,11 +124,11 @@ class JevPostGate:
         )
         self.recorded = 0
         self._lock = threading.Lock()
-        self._known: set[str] = set()  # keys with a row: decided this run, or found stored
+        self._decided: set[str] = set()  # keys whose row THIS run inserted
         self._pending_outcomes: dict[str, str] = {}
         self._submitted = 0
-        self._executor: ThreadPoolExecutor | None = None
-        self._futures: list[Future[object]] = []
+        self._worker = ShadowWorker("jev-gate")
+        self._summary_logged = False
 
     # --- DecisionGate -------------------------------------------------------
 
@@ -153,31 +163,34 @@ class JevPostGate:
             log.warning("jev_gate_error", stage="after_draft", error_type=type(exc).__name__)
 
     def close(self, timeout_s: float = DRAIN_TIMEOUT_S) -> None:
-        """Drain shadow work (bounded) and log the run's gate summary."""
-        undrained = 0
-        if self._executor is not None:
-            _done, not_done = wait(self._futures, timeout=timeout_s)
-            undrained = len(not_done)
-            self._executor.shutdown(wait=False, cancel_futures=True)
-            self._executor = None
-        log.info(
-            "jev_gate_run_summary",
-            platform=self.platform,
-            mode=self.mode,
-            calls=self.budget.calls,
-            failures=self.budget.failures,
-            recorded=self.recorded,
-            spent_s=round(self.budget.spent_s, 2),
-            disabled_reason=self.budget.tripped,
-            undrained=undrained,
-        )
+        """Drain shadow work (bounded), log the run summary once. Never raises.
+
+        Idempotent: the engagers call it with a deadline-clamped wait after
+        the last-run stamp, and again with ``timeout_s=0`` in ``finally``.
+        """
+        try:
+            if self._summary_logged:
+                return
+            undrained = self._worker.drain(timeout_s)
+            self._summary_logged = True
+            log.info(
+                "jev_gate_run_summary",
+                platform=self.platform,
+                mode=self.mode,
+                calls=self.budget.calls,
+                failures=self.budget.failures,
+                recorded=self.recorded,
+                spent_s=round(self.budget.spent_s, 2),
+                disabled_reason=self.budget.tripped,
+                undrained=undrained,
+            )
+        except Exception as exc:
+            log.warning("jev_gate_error", stage="close", error_type=type(exc).__name__)
 
     # --- work (scan thread under enforce, worker thread under shadow) -------
 
     def _submit(self, task: Callable[[], object]) -> None:
-        if self._executor is None:
-            self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jev-gate")
-        self._futures.append(self._executor.submit(task))
+        self._worker.submit(task)
 
     def _decide(self, snap: _Snapshot) -> bool:
         try:
@@ -187,17 +200,15 @@ class JevPostGate:
             return False
 
     def _decide_unsafe(self, snap: _Snapshot) -> bool:
-        stored = decisions_db.lookup_decision(self.brand_id, self.platform, snap.key)
-        if stored is not None:
-            with self._lock:
-                self._known.add(snap.key)
-            # Enforce re-applies the verdict stored by an earlier run.
-            skip = self.mode == MODE_ENFORCE and stored
-            if skip:
-                self._skipped(snap.key)
-            return skip
+        # Checked BEFORE the lookup: once the run's budget or breaker has
+        # tripped, the gate costs nothing more, not even a DB round trip.
         if not self.budget.allow():
             return False
+        stored = decisions_db.lookup_decision(self.brand_id, self.platform, snap.key)
+        if stored is not None:
+            # Enforce re-applies an earlier run's verdict. That row (and its
+            # outcome) belongs to that run and is never rewritten here.
+            return self.mode == MODE_ENFORCE and stored
         started = self.budget.start()
         verdict = evaluate_post(
             self.platform, self.brand_focus, snap.text, mode=self.mode, source_name=snap.source_name
@@ -218,8 +229,8 @@ class JevPostGate:
 
     def _stamp(self, key: str) -> None:
         with self._lock:
-            if key not in self._known:
-                return  # no row this run: the outcome waits in _pending_outcomes
+            if key not in self._decided:
+                return  # no row from this run: the outcome waits in _pending_outcomes
             outcome = self._pending_outcomes.pop(key, None)
         if outcome is not None:
             decisions_db.record_outcome(
@@ -230,9 +241,10 @@ class JevPostGate:
         with self._lock:
             pending = self._pending_outcomes.pop(record.item_key, None)
         written = decisions_db.record_decision(replace(record, outcome=pending))
-        with self._lock:
-            self._known.add(record.item_key)
-            self.recorded += int(written)
+        if written:  # a conflicting row belongs to someone else: never stamp it
+            with self._lock:
+                self._decided.add(record.item_key)
+                self.recorded += 1
 
     def _record_failure(self, key: str, started: float) -> None:
         self._insert(

@@ -735,6 +735,11 @@ jobs:
       - name: Generated API client is up to date
         run: npm run check:api
 
+      # Pure-logic unit tests (node --test; no framework). Currently the Jev
+      # gate save-diff, whose stale-baseline bug silently dropped reverts.
+      - name: Unit tests
+        run: npm test
+
       - name: Type check & build
         run: npm run build
 

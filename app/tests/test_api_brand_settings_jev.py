@@ -34,6 +34,43 @@ def test_settings_passes_jev_modes_through(monkeypatch: pytest.MonkeyPatch) -> N
     assert resp.jev_post_gate_fb == "off"
 
 
+def test_settings_warns_when_jev_modes_did_not_persist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Migration pending: the repository dropped the modes; say so, no silent 200."""
+    captured = _mock_backend(monkeypatch, _ROW)
+    real_update = brand_settings_api.brands_db.update
+
+    def _drop_jev(bid: str, **kwargs: object) -> bool:
+        kwargs = {k: (None if k.startswith("jev_") else v) for k, v in kwargs.items()}
+        return bool(real_update(bid, **kwargs))
+
+    monkeypatch.setattr(brand_settings_api.brands_db, "update", _drop_jev)
+    resp = brand_settings_api.update_brand_settings(
+        "acme-dogs", brand_settings_api.BrandSettingsRequest(jev_post_gate_ig="enforce")
+    )
+    assert brand_settings_api.JEV_MODES_NOT_SAVED in resp.warnings
+    assert resp.jev_post_gate_ig == "off"
+    del captured
+    # And a save whose modes did persist carries no such warning.
+    _mock_backend(monkeypatch, _ROW)
+    ok = brand_settings_api.update_brand_settings(
+        "acme-dogs", brand_settings_api.BrandSettingsRequest(jev_post_gate_ig="enforce")
+    )
+    assert brand_settings_api.JEV_MODES_NOT_SAVED not in ok.warnings
+
+
+def test_repository_reraises_unrelated_undefined_column(monkeypatch: pytest.MonkeyPatch) -> None:
+    import psycopg
+
+    from lib.brands_db import repository
+
+    def _execute(_sql: str, _params: dict[str, object]) -> int:
+        raise psycopg.errors.UndefinedColumn("column some_other_col does not exist")
+
+    monkeypatch.setattr(repository.db, "execute", _execute)
+    with pytest.raises(psycopg.errors.UndefinedColumn):
+        brands_db.BrandsRepository().update("acme-dogs", headless=False, jev_post_gate_ig="off")
+
+
 def test_settings_omitted_jev_modes_are_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _mock_backend(monkeypatch, _ROW)
     resp = brand_settings_api.update_brand_settings(

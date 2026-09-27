@@ -526,7 +526,9 @@ ALTER TABLE jev_decisions ADD COLUMN IF NOT EXISTS error TEXT;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'jev_decisions_outcome_check'
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'jev_decisions_outcome_check'
+          AND conrelid = 'jev_decisions'::regclass
     ) THEN
         ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check CHECK
             (outcome IS NULL OR outcome IN

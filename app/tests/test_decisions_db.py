@@ -71,6 +71,8 @@ def test_record_outcome_and_summary(pg: None) -> None:
     assert decisions_db.record_outcome("u3", "drafter_error") is True  # not compared
     assert decisions_db.record_outcome("u4", "engaged", platform="facebook") is True  # agree
     assert decisions_db.record_outcome("nope", "engaged") is False
+    # Fill-once: an existing outcome is never overwritten (additive only).
+    assert decisions_db.record_outcome("u1", "engaged", brand_id="b1") is False
     assert decisions_db.record_outcome("u1", "bogus") is False
 
     # A failed Jev call: a row, but never compared even with an outcome.

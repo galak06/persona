@@ -10,8 +10,8 @@ side (``list_recent``, ``summarize``) backs the API and may raise normally.
 Idempotent by construction: ``(brand_id, platform, item_key)`` is unique and
 ``record_decision`` is ``ON CONFLICT DO NOTHING`` -- a re-visited post keeps
 its first decision (the gate reads it back via ``lookup_decision`` instead
-of paying Jev twice), and ``record_outcome`` only ever fills the outcome
-columns.
+of paying Jev twice), and ``record_outcome`` only ever fills a NULL
+outcome -- nothing already recorded is rewritten.
 """
 
 from __future__ import annotations
@@ -168,13 +168,14 @@ def record_outcome(
     """Stamp what the drafter did for ``item_key``. Never raises.
 
     ``brand_id``/``platform`` narrow the match when given (the engager always
-    passes both). A later visit overwrites the outcome: it reflects the most
-    recent drafter decision for that post.
+    passes both). Fill-once: only a row whose outcome is still NULL is
+    updated, so an existing outcome (another run's agreement evidence) is
+    never overwritten. Returns False when nothing was filled.
     """
     if outcome not in OUTCOMES:
         log.warning("jev_outcome_invalid", outcome=outcome)
         return False
-    clauses = ["item_key = %(item_key)s"]
+    clauses = ["item_key = %(item_key)s", "outcome IS NULL"]
     params: dict[str, object] = {"item_key": item_key, "outcome": outcome}
     if brand_id is not None:
         clauses.append("brand_id = %(brand_id)s")

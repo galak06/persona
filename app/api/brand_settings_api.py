@@ -107,7 +107,29 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
     except Exception as exc:  # any failure here -> 502, row left as-is (already persisted)
         raise _provisioning_failed_response(brand_id, exc) from exc
 
-    return _provision_response(brand_id, result)
+    response = _provision_response(brand_id, result)
+    response.warnings.extend(_jev_modes_not_saved(body, updated_row))
+    return response
+
+
+JEV_MODES_NOT_SAVED = (
+    "Jev gate modes were NOT saved: the database migration is pending "
+    "(apply db/schema.sql). Every other setting was saved."
+)
+
+
+def _jev_modes_not_saved(body: BrandSettingsRequest, row: dict[str, Any]) -> list[str]:
+    """A warning when a requested Jev mode did not reach the row.
+
+    `BrandsRepository.update` drops the Jev columns (instead of failing the
+    whole save) on a DB that predates them; this turns that into a visible
+    signal rather than a silent 200.
+    """
+    for column in ("jev_post_gate_ig", "jev_post_gate_fb"):
+        requested = getattr(body, column)
+        if requested is not None and row.get(column) != requested:
+            return [JEV_MODES_NOT_SAVED]
+    return []
 
 
 @router.get("/brands/{brand_id}/idea-categories", response_model=BrandIdeaCategoriesResponse)

@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "gen:api": "openapi-typescript openapi.json -o src/types/openapi.ts",
     "gen:api:schema": "cd .. && python -m tools.dump_openapi -o frontend/openapi.json",
-    "check:api": "openapi-typescript openapi.json -o /tmp/openapi.check.ts && diff -q /tmp/openapi.check.ts src/types/openapi.ts"
+    "check:api": "openapi-typescript openapi.json -o /tmp/openapi.check.ts && diff -q /tmp/openapi.check.ts src/types/openapi.ts",
+    "test": "node --test tests/jevGateDiff.test.mjs"
   },
   "dependencies": {
     "axios": "^1.16.0",

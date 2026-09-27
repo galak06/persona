@@ -32,6 +32,21 @@ TRIP_TIME: Final = "time_budget"
 TRIP_FAILURES: Final = "circuit_breaker"
 
 
+# End-of-run drain wait for shadow work still queued or in flight.
+DRAIN_TIMEOUT_S: Final = 10.0
+
+
+def drain_timeout(remaining_s: float | None) -> float:
+    """The shadow drain wait for a run with ``remaining_s`` left on its deadline.
+
+    ``None`` means the run has no deadline. A passed deadline means no wait at
+    all: the run's own teardown and last-run stamp outrank shadow bookkeeping.
+    """
+    if remaining_s is None:
+        return DRAIN_TIMEOUT_S
+    return max(0.0, min(DRAIN_TIMEOUT_S, remaining_s))
+
+
 class RunBudget:
     """Counts calls, time and failures for one run; trips at most once."""
 

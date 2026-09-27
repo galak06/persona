@@ -1,35 +1,14 @@
 import { Link } from "react-router-dom";
 import { JEV_GATE_MODES, type JevGateMode } from "../api/brands";
+import type { JevGateValues } from "./jevGateDiff";
 
 /**
  * The two Jev post-gate mode selects on Brand Settings (one per engager).
- * Split out of `pages/BrandSettings.tsx` to keep that page from growing.
+ * Split out of `pages/BrandSettings.tsx` to keep that page from growing; the
+ * save-diff logic lives in `jevGateDiff.ts` (unit-tested).
  */
 
-export interface JevGateValues {
-  jev_post_gate_ig: JevGateMode;
-  jev_post_gate_fb: JevGateMode;
-}
-
-/**
- * Only the modes the user actually changed. A save that did not touch the
- * gate must not send the fields at all: against a DB that predates the
- * columns, sending them is what used to turn every settings save into a 500.
- */
-// eslint-disable-next-line react-refresh/only-export-components
-export function changedJevModes(
-  form: JevGateValues,
-  loaded: Partial<JevGateValues> | null | undefined,
-): Partial<JevGateValues> {
-  const out: Partial<JevGateValues> = {};
-  if (form.jev_post_gate_ig !== (loaded?.jev_post_gate_ig ?? "off")) {
-    out.jev_post_gate_ig = form.jev_post_gate_ig;
-  }
-  if (form.jev_post_gate_fb !== (loaded?.jev_post_gate_fb ?? "off")) {
-    out.jev_post_gate_fb = form.jev_post_gate_fb;
-  }
-  return out;
-}
+export type { JevGateValues };
 
 const MODE_LABEL: Record<JevGateMode, string> = {
   off: "Off — not consulted",
