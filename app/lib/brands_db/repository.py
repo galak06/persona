@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 
 from lib import db
 from lib.brands_db.models import BrandStatus, default_enabled_flows
+from lib.decisions.modes import GATE_MODES
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,8 @@ class BrandsRepository:
         enabled_flows: list[str] | None = None,
         group_join_limit: int | None = None,
         focus_category: str | None = None,
+        jev_post_gate_ig: str | None = None,
+        jev_post_gate_fb: str | None = None,
     ) -> bool:
         """Partial update -- only params passed a non-`None` value change.
 
@@ -220,6 +223,16 @@ class BrandsRepository:
             # Stored trimmed: "" is the meaningful "no focus" value, and a
             # stray-whitespace category would never match an idea's own.
             updates["focus_category"] = focus_category.strip()
+        # Jev post-gate modes: validated here as well as by the DB CHECK, so a
+        # bad value fails with a ValueError rather than a psycopg error.
+        for column, mode in (
+            ("jev_post_gate_ig", jev_post_gate_ig),
+            ("jev_post_gate_fb", jev_post_gate_fb),
+        ):
+            if mode is not None:
+                if mode not in GATE_MODES:
+                    raise ValueError(f"invalid {column}: {mode!r}")
+                updates[column] = mode
 
         if not updates:
             return False

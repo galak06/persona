@@ -70,7 +70,7 @@ def _merge_keywords(row: dict[str, Any], body: BrandSettingsRequest) -> dict[str
 @router.patch("/brands/{brand_id}/settings", response_model=BrandProvisionResponse)
 def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandProvisionResponse:
     """Partial settings edit: `headless`, the 4 keyword/competitor lists,
-    and the brand's one focus category.
+    the brand's one focus category, and the per-platform Jev gate modes.
 
     Every body field is optional and independent. Persists via
     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
@@ -94,6 +94,8 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         enabled_flows=(list(body.enabled_flows) if body.enabled_flows is not None else None),
         group_join_limit=body.group_join_limit,
         focus_category=body.focus_category,
+        jev_post_gate_ig=body.jev_post_gate_ig,
+        jev_post_gate_fb=body.jev_post_gate_fb,
     )
 
     updated_row = brands_db.get(brand_id)

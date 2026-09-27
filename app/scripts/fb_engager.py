@@ -46,6 +46,7 @@ WORKER_LABEL = worker_label_for_flow("fb-engager")
 
 from lib import draft_helper, rate_limiter
 from lib.comment_generator import score_relevance as _score_relevance
+from lib.decisions.engager_gate import build_post_gate
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
@@ -173,6 +174,10 @@ def run_fb_engager_scan(
             score_relevance=_score_post,
             dry_run=dry_run,
             inline_comment=True,
+            # Jev post gate (lib/decisions/): shadow by default -- logs a
+            # verdict per candidate, never alters the run. Skipped under a
+            # dry run, which consumes no state and spends nothing it can avoid.
+            decision_gate=None if dry_run else build_post_gate("facebook", "fb-engager"),
         )
     except (RuntimeError, FileNotFoundError) as exc:
         msg = str(exc)

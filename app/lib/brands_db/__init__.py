@@ -109,6 +109,8 @@ def update(
     enabled_flows: list[str] | None = None,
     group_join_limit: int | None = None,
     focus_category: str | None = None,
+    jev_post_gate_ig: str | None = None,
+    jev_post_gate_fb: str | None = None,
 ) -> bool:
     """Partial update -- only params passed a non-`None` value change."""
     return _repo().update(
@@ -119,6 +121,8 @@ def update(
         enabled_flows=enabled_flows,
         group_join_limit=group_join_limit,
         focus_category=focus_category,
+        jev_post_gate_ig=jev_post_gate_ig,
+        jev_post_gate_fb=jev_post_gate_fb,
     )
 
 

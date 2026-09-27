@@ -124,6 +124,15 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS group_join_limit    INTEGER NOT NULL
 -- Authoritative here; `<brand_dir>/config.json`'s `content_strategy`
 -- block is the rendered copy the engine reads at runtime.
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS focus_category      TEXT  NOT NULL DEFAULT '';
+-- Additive (Jev post gate, slice 1): per-platform mode of the Jev classifier
+-- that runs in front of the comment drafter (lib/decisions/). Kept as
+-- columns, not in config.json, because provision_brand() rewrites that file
+-- on every settings save. 'shadow' = decide + log only, never alters a run.
+-- The CHECK rides the ADD COLUMN, so re-applying this file is a no-op.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_ig    TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_post_gate_ig IN ('off', 'shadow', 'enforce'));
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_fb    TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_post_gate_fb IN ('off', 'shadow', 'enforce'));
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (
@@ -475,3 +484,35 @@ CREATE TABLE IF NOT EXISTS brand_secrets (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (brand_id, key)
 );
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- jev_decisions (lib/decisions/decisions_db.py)
+--
+-- One row per post the Jev post gate evaluated: the questions asked, Jev's
+-- raw answers, whether the gate WOULD have skipped the post, and -- filled
+-- in once the drafter ran -- what the drafter actually did (`outcome`:
+-- engaged | declined | drafter_error | skipped_by_gate). Comparing the two is
+-- the whole point of shadow mode. Append-only log: no FK to brands so a
+-- decision is never lost to an unregistered brand id, and the unique key
+-- makes a re-visited post update its row instead of duplicating it.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS jev_decisions (
+    id          BIGSERIAL        PRIMARY KEY,
+    brand_id    TEXT             NOT NULL,
+    flow        TEXT             NOT NULL DEFAULT '',
+    platform    TEXT             NOT NULL,
+    item_key    TEXT             NOT NULL,
+    questions   JSONB            NOT NULL DEFAULT '{}',
+    answers     JSONB            NOT NULL DEFAULT '{}',
+    mode        TEXT             NOT NULL CHECK (mode IN ('off', 'shadow', 'enforce')),
+    would_skip  BOOLEAN          NOT NULL DEFAULT FALSE,
+    latency_ms  INTEGER,
+    cost_usd    DOUBLE PRECISION,
+    created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    outcome     TEXT,
+    outcome_at  TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_jev_decisions_item
+    ON jev_decisions(brand_id, platform, item_key);
+CREATE INDEX IF NOT EXISTS idx_jev_decisions_brand_created
+    ON jev_decisions(brand_id, created_at DESC);

@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from lib.decisions.modes import GateMode
 from lib.worker_db import WorkerRunStatus
 
 
@@ -95,6 +96,9 @@ class BrandDetail(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
+    # Jev post-gate mode per platform (off | shadow | enforce).
+    jev_post_gate_ig: GateMode = "shadow"
+    jev_post_gate_fb: GateMode = "shadow"
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -118,6 +122,10 @@ class BrandSettingsRequest(BaseModel):
     # One WP category name to focus on, or "" to clear the focus. `None`
     # means "leave alone" -- "" is a meaningful value here, not absence.
     focus_category: str | None = None
+    # Jev post-gate mode per platform. `None` = leave alone; anything outside
+    # off/shadow/enforce is a 422 before it reaches the DB CHECK.
+    jev_post_gate_ig: GateMode | None = None
+    jev_post_gate_fb: GateMode | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -142,6 +150,9 @@ class BrandProvisionResponse(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
+    # Jev post-gate mode per platform (off | shadow | enforce).
+    jev_post_gate_ig: GateMode = "shadow"
+    jev_post_gate_fb: GateMode = "shadow"
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}

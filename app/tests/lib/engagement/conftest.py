@@ -39,6 +39,9 @@ def _hermetic_engagement_sinks(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(comment_submit, "log_engagement", lambda *_a, **_k: None)
     monkeypatch.setattr(comment_submit.engagements_db, "record_publish", lambda **_k: None)
+    # The engagers build a Jev post gate only when this key is set; unsetting
+    # it guarantees no engager test can reach OpenRouter.
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
 
 # --- FB fixture -------------------------------------------------------------

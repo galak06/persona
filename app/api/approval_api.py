@@ -107,6 +107,7 @@ from api.brand_flows_api import router as _brand_flows_router
 from api.brand_settings_api import router as _brand_settings_router
 from api.brands_api import router as _brands_router
 from api.campaigns_api import router as _campaigns_router
+from api.decisions_api import router as _decisions_router
 from api.engagements_api import router as _engagements_router
 from api.flow_templates_api import router as _flow_templates_router
 from api.ideas_api import router as _ideas_router
@@ -158,6 +159,7 @@ app.add_middleware(
 app.include_router(_campaigns_router, prefix="/api/v1/campaigns", tags=["campaigns"])
 app.include_router(_recipe_card_router, prefix="/api/v1")
 app.include_router(_engagements_router, prefix="/api/v1", tags=["engagements"])
+app.include_router(_decisions_router, prefix="/api/v1", tags=["decisions"])
 app.include_router(_ideas_router, prefix="/api/v1", tags=["ideas"])
 app.include_router(_social_posts_router, prefix="/api/v1", tags=["social-posts"])
 app.include_router(_social_posts_compose_router, prefix="/api/v1", tags=["social-posts"])

@@ -121,6 +121,20 @@ class CommentGate(Protocol):
     def check(self, post: Post, source: Source) -> str | None: ...
 
 
+class DecisionGate(Protocol):
+    """Optional classifier consulted right before the drafter runs.
+
+    `before_draft` returns True only when the gate is ENFORCING a skip; a
+    shadow-mode gate always returns False, so it can observe but never
+    change a run. `after_draft` reports what the drafter did (`reason` is
+    the drafter's `last_outcome`, when it tracks one). Implementations must
+    not raise -- see `lib/decisions/engager_gate.py`.
+    """
+
+    def before_draft(self, post: Post) -> bool: ...
+    def after_draft(self, post: Post, *, drafted: bool, reason: str | None) -> None: ...
+
+
 class Log(Protocol):
     """The subset of `logging.Logger` the pipeline uses."""
 

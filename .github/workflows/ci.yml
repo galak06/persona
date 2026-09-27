@@ -212,6 +212,10 @@ jobs:
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
           lib/group_discovery/geo.py lib/group_discovery/relevance.py tests/test_fb_group_scout_relevance.py
+          lib/decisions/ api/decisions_api.py
+          tests/test_jev_client.py tests/test_post_gate.py tests/test_decisions_db.py
+          tests/test_decisions_api.py tests/test_api_brand_settings_jev.py
+          tests/lib/engagement/test_pipeline_decision_gate.py
 
       - name: Ruff format check
         run: >-
@@ -333,6 +337,10 @@ jobs:
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
           lib/group_discovery/geo.py lib/group_discovery/relevance.py tests/test_fb_group_scout_relevance.py
+          lib/decisions/ api/decisions_api.py
+          tests/test_jev_client.py tests/test_post_gate.py tests/test_decisions_db.py
+          tests/test_decisions_api.py tests/test_api_brand_settings_jev.py
+          tests/lib/engagement/test_pipeline_decision_gate.py
 
   typecheck:
     name: Type Check
@@ -400,6 +408,7 @@ jobs:
           studio/ tests/test_studio.py ../cli.py
           tests/test_no_url_credentials.py
           lib/group_discovery/geo.py lib/group_discovery/relevance.py
+          lib/decisions/ api/decisions_api.py
           --ignore-missing-imports
 
   test:
@@ -643,6 +652,12 @@ jobs:
             tests/lib/engagement/test_scan_deadline.py \
             tests/lib/engagement/test_scan_truncation.py \
             tests/lib/runtime/test_singleton.py \
+            tests/test_jev_client.py \
+            tests/test_post_gate.py \
+            tests/test_decisions_db.py \
+            tests/test_decisions_api.py \
+            tests/test_api_brand_settings_jev.py \
+            tests/lib/engagement/test_pipeline_decision_gate.py \
             --deselect tests/test_comment_generator.py::TestValidateVoice::test_persona_url_rejected \
             --cov=lib/db.py --cov=lib/db.py_pool --cov=lib/groups_db \
             --cov=lib/engagements_db --cov=lib/worker_db.py --cov=lib/schedule_db.py --cov=lib/dedup_pg.py \
@@ -656,6 +671,7 @@ jobs:
             --cov=lib/crew/writer/context.py --cov=lib/crew/writer/link_guard.py \
             --cov=lib/crew/structured_output.py \
             --cov=lib/comment_outbox.py --cov=lib/scan_dedup.py \
+            --cov=lib/decisions --cov=api/decisions_api.py \
             --cov-report=term-missing --cov-fail-under=80
 
   security:

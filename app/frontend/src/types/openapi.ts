@@ -215,7 +215,7 @@ export interface paths {
         /**
          * Update Brand Settings
          * @description Partial settings edit: `headless`, the 4 keyword/competitor lists,
-         *     and the brand's one focus category.
+         *     the brand's one focus category, and the per-platform Jev gate modes.
          *
          *     Every body field is optional and independent. Persists via
          *     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
@@ -309,6 +309,26 @@ export interface paths {
          * @description Returns the current site configuration.
          */
         get: operations["get_config_api_v1_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Decisions
+         * @description Most-recent-first Jev decisions, optionally filtered, plus a summary.
+         */
+        get: operations["list_decisions_api_v1_decisions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1878,6 +1898,18 @@ export interface components {
             headless: boolean;
             /** Id */
             id: string;
+            /**
+             * Jev Post Gate Fb
+             * @default shadow
+             * @enum {string}
+             */
+            jev_post_gate_fb: "off" | "shadow" | "enforce";
+            /**
+             * Jev Post Gate Ig
+             * @default shadow
+             * @enum {string}
+             */
+            jev_post_gate_ig: "off" | "shadow" | "enforce";
             keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
@@ -2031,6 +2063,18 @@ export interface components {
             id: string;
             /** Ig Login Command */
             ig_login_command: string;
+            /**
+             * Jev Post Gate Fb
+             * @default shadow
+             * @enum {string}
+             */
+            jev_post_gate_fb: "off" | "shadow" | "enforce";
+            /**
+             * Jev Post Gate Ig
+             * @default shadow
+             * @enum {string}
+             */
+            jev_post_gate_ig: "off" | "shadow" | "enforce";
             keywords: components["schemas"]["BrandKeywords"];
             /**
              * Mascot Name
@@ -2090,6 +2134,10 @@ export interface components {
             group_join_limit?: number | null;
             /** Headless */
             headless?: boolean | null;
+            /** Jev Post Gate Fb */
+            jev_post_gate_fb?: ("off" | "shadow" | "enforce") | null;
+            /** Jev Post Gate Ig */
+            jev_post_gate_ig?: ("off" | "shadow" | "enforce") | null;
             /** Primary Keywords */
             primary_keywords?: string[] | null;
             /** Secondary Keywords */
@@ -2431,6 +2479,27 @@ export interface components {
             join_status?: "queued" | null;
             /** Status */
             status: string;
+        };
+        /** DecisionsResponse */
+        DecisionsResponse: {
+            /** Decisions */
+            decisions: components["schemas"]["JevDecision"][];
+            summary: components["schemas"]["DecisionsSummary"];
+        };
+        /** DecisionsSummary */
+        DecisionsSummary: {
+            /** Agreed */
+            agreed: number;
+            /** Agreement Rate */
+            agreement_rate?: number | null;
+            /** Compared */
+            compared: number;
+            /** Total */
+            total: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /** Would Skip */
+            would_skip: number;
         };
         /**
          * DiscoveredKeyword
@@ -2898,6 +2967,58 @@ export interface components {
             shows_mascot?: boolean | null;
             /** Shows Persona */
             shows_persona?: boolean | null;
+        };
+        /**
+         * JevDecision
+         * @description One evaluated post.
+         */
+        JevDecision: {
+            /** Agrees */
+            agrees?: boolean | null;
+            /**
+             * Answers
+             * @default {}
+             */
+            answers: {
+                [key: string]: unknown;
+            };
+            /** Brand Id */
+            brand_id: string;
+            /** Cost Usd */
+            cost_usd?: number | null;
+            /**
+             * Created At
+             * @default
+             */
+            created_at: string;
+            /**
+             * Flow
+             * @default
+             */
+            flow: string;
+            /** Id */
+            id: number;
+            /** Item Key */
+            item_key: string;
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Mode */
+            mode: string;
+            /** Outcome */
+            outcome?: string | null;
+            /** Outcome At */
+            outcome_at?: string | null;
+            /** Platform */
+            platform: string;
+            /**
+             * Questions
+             * @default {}
+             */
+            questions: {
+                [key: string]: unknown;
+            };
+            /** Would Skip */
+            would_skip: boolean;
         };
         /** KeywordsResponse */
         KeywordsResponse: {
@@ -4032,6 +4153,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    list_decisions_api_v1_decisions_get: {
+        parameters: {
+            query?: {
+                /** @description Brand id; omit for all brands */
+                brand_id?: string | null;
+                /** @description instagram | facebook */
+                platform?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

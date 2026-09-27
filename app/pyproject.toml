@@ -100,6 +100,7 @@ module = [
     "lib.policy.*",
     "lib.ig_follow.*",
     "lib.campaigns.*",
+    "lib.decisions.*",
 ]
 strict = true
 disallow_any_explicit = true
