@@ -3,8 +3,8 @@ import { JEV_GATE_MODES, type JevGateMode } from "../api/brands";
 import type { JevGateValues } from "./jevGateDiff";
 
 /**
- * The two Jev post-gate mode selects on Brand Settings (one per engager).
- * Split out of `pages/BrandSettings.tsx` to keep that page from growing; the
+ * The Jev gate mode selects on Brand Settings: one per engager (post gate)
+ * plus the fb-group-scout's group-match gate. Split out of `pages/BrandSettings.tsx` to keep that page from growing; the
  * save-diff logic lives in `jevGateDiff.ts` (unit-tested).
  */
 
@@ -13,12 +13,13 @@ export type { JevGateValues };
 const MODE_LABEL: Record<JevGateMode, string> = {
   off: "Off — not consulted",
   shadow: "Shadow — log decisions only",
-  enforce: "Enforce — may skip the drafter",
+  enforce: "Enforce — acts on its verdict",
 };
 
 const FIELDS: { key: keyof JevGateValues; label: string }[] = [
   { key: "jev_post_gate_ig", label: "Instagram engager" },
   { key: "jev_post_gate_fb", label: "Facebook engager" },
+  { key: "jev_group_gate", label: "FB group match" },
 ];
 
 export default function JevGateFields({
@@ -30,16 +31,17 @@ export default function JevGateFields({
 }): React.JSX.Element {
   return (
     <div className="border-t border-stone-100 pt-4 space-y-2">
-      <p className="text-sm font-medium text-slate-700">Jev post gate</p>
+      <p className="text-sm font-medium text-slate-700">Jev gates</p>
       <p className="text-xs text-slate-500">
-        A cheap classifier asked before the comment drafter runs. Shadow mode never changes what
-        the engager does — compare its calls on the{" "}
+        A cheap classifier asked before the comment drafter runs (engagers) or before the group
+        scout joins a group (FB group match). Shadow mode never changes what the flow does —
+        compare its calls on the{" "}
         <Link to="/decisions" className="text-amber-700 hover:underline">
           Decisions
         </Link>{" "}
         page before switching to enforce.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {FIELDS.map((field) => (
           <label key={field.key} className="text-sm">
             <span className="block mb-1 font-medium text-slate-700">{field.label}</span>

@@ -88,6 +88,7 @@ function formStateFromBrand(brand: Brand): FormState {
     focus_category: brand.focus_category ?? "",
     jev_post_gate_ig: brand.jev_post_gate_ig ?? "off",
     jev_post_gate_fb: brand.jev_post_gate_fb ?? "off",
+    jev_group_gate: brand.jev_group_gate ?? "off",
   };
 }
 

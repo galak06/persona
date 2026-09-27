@@ -9,5 +9,13 @@ Slice 1 covers the IG/FB post-relevance gate. Modules, one job each:
 * ``decisions_db``  -- the ``jev_decisions`` log table
 * ``gate_budget``   -- per-run call cap, wall-clock budget, circuit breaker
 * ``engager_gate``  -- the pipeline collaborator the engagers inject
-* ``gate_factory``  -- builds that collaborator from the brand row
+* ``gate_factory``  -- builds the gates from the brand row
+* ``outcomes``      -- what a flow did with an item, and the agreement rule
+
+Slice 2 adds the fb-group-scout "is this group a match?" gate:
+
+* ``group_gate``    -- the four group questions and the enforce thresholds
+* ``scout_hooks``   -- the scout-side seam (protocol, null gate, helpers)
+* ``scout_gate``    -- the scout collaborator
+* ``shadow_worker`` -- the daemon FIFO worker shadow mode runs on
 """

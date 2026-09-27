@@ -181,3 +181,58 @@ def test_gate_path_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     assert decisions_db.lookup_decision("b1", "instagram", "u") is None
     assert seen["timeout"] == decisions_db.GATE_DB_TIMEOUT_S
     assert "statement_timeout" in str(seen["first_sql"])
+
+
+# -- slice 2: fb_group rows (fb-group-scout outcomes) ------------------------
+
+
+@requires_postgres
+def test_fb_group_agreement_math(pg: None) -> None:
+    from lib.decisions.outcomes import agrees
+
+    cases = {
+        # key: (would_skip, scout outcome, counted?, agrees?)
+        "g-join-keep": (False, "joined", True, True),
+        "g-req-keep": (False, "join_requested", True, True),
+        "g-join-skip": (True, "joined", True, False),
+        "g-low-skip": (True, "skipped_low_score", True, True),
+        "g-closed-keep": (False, "skipped_admission_closed", True, False),
+        "g-rank-skip": (True, "skipped_rank_cut", True, True),
+        "g-cap": (True, "skipped_cap", False, None),
+        "g-member": (False, "already_member", False, None),
+        "g-failed": (False, "join_failed", False, None),
+        "g-gate": (True, "skipped_by_gate", False, None),
+    }
+    for key, (would_skip, outcome, _, expected) in cases.items():
+        decisions_db.record_decision(_record(key, would_skip=would_skip, platform="fb_group"))
+        assert decisions_db.record_outcome(key, outcome, brand_id="b1", platform="fb_group")
+        assert agrees(would_skip, outcome) is expected, key
+
+    summary = decisions_db.summarize(brand_id="b1", platform="fb_group")
+    assert summary.total == len(cases)
+    assert summary.compared == sum(1 for c in cases.values() if c[2]) == 6
+    assert summary.agreed == sum(1 for c in cases.values() if c[3]) == 4
+    # A failed Jev call on a group is never compared, whatever the scout did.
+    failed = replace(
+        _record("g-err", would_skip=False, platform="fb_group"),
+        answers={},
+        error=decisions_db.ERROR_JEV_CALL_FAILED,
+        outcome="joined",
+    )
+    assert decisions_db.record_decision(failed)
+    after = decisions_db.summarize(brand_id="b1", platform="fb_group")
+    assert (after.failed, after.compared, after.agreed) == (1, 6, 4)
+    # The engager rows' math is untouched by the new vocabulary.
+    assert decisions_db.summarize(brand_id="b1", platform="instagram").total == 0
+
+
+@requires_postgres
+def test_db_check_accepts_every_known_outcome(pg: None) -> None:
+    # One row per outcome: record_outcome is fill-once.
+    for outcome in sorted(decisions_db.OUTCOMES):
+        decisions_db.record_decision(_record(outcome, would_skip=False, platform="fb_group"))
+        assert decisions_db.record_outcome(outcome, outcome, platform="fb_group"), outcome
+        assert decisions_db.record_outcome(outcome, "joined", platform="fb_group") is False
+    decisions_db.record_decision(_record("any", would_skip=False, platform="fb_group"))
+    with pytest.raises(Exception, match="jev_decisions_outcome_check"):
+        db.execute("UPDATE jev_decisions SET outcome = 'bogus' WHERE item_key = 'any'")

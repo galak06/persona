@@ -1899,6 +1899,12 @@ export interface components {
             /** Id */
             id: string;
             /**
+             * Jev Group Gate
+             * @default off
+             * @enum {string}
+             */
+            jev_group_gate: "off" | "shadow" | "enforce";
+            /**
              * Jev Post Gate Fb
              * @default off
              * @enum {string}
@@ -2064,6 +2070,12 @@ export interface components {
             /** Ig Login Command */
             ig_login_command: string;
             /**
+             * Jev Group Gate
+             * @default off
+             * @enum {string}
+             */
+            jev_group_gate: "off" | "shadow" | "enforce";
+            /**
              * Jev Post Gate Fb
              * @default off
              * @enum {string}
@@ -2134,6 +2146,8 @@ export interface components {
             group_join_limit?: number | null;
             /** Headless */
             headless?: boolean | null;
+            /** Jev Group Gate */
+            jev_group_gate?: ("off" | "shadow" | "enforce") | null;
             /** Jev Post Gate Fb */
             jev_post_gate_fb?: ("off" | "shadow" | "enforce") | null;
             /** Jev Post Gate Ig */
@@ -4169,7 +4183,7 @@ export interface operations {
             query?: {
                 /** @description Brand id; omit for all brands */
                 brand_id?: string | null;
-                /** @description instagram | facebook */
+                /** @description instagram | facebook | fb_group */
                 platform?: string | null;
                 limit?: number;
             };

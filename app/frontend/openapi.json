@@ -471,6 +471,16 @@
             "title": "Id",
             "type": "string"
           },
+          "jev_group_gate": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Group Gate",
+            "type": "string"
+          },
           "jev_post_gate_fb": {
             "default": "off",
             "enum": [
@@ -687,6 +697,16 @@
             "title": "Ig Login Command",
             "type": "string"
           },
+          "jev_group_gate": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Group Gate",
+            "type": "string"
+          },
           "jev_post_gate_fb": {
             "default": "off",
             "enum": [
@@ -855,6 +875,22 @@
               }
             ],
             "title": "Headless"
+          },
+          "jev_group_gate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "shadow",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Group Gate"
           },
           "jev_post_gate_fb": {
             "anyOf": [
@@ -5180,7 +5216,7 @@
             }
           },
           {
-            "description": "instagram | facebook",
+            "description": "instagram | facebook | fb_group",
             "in": "query",
             "name": "platform",
             "required": false,
@@ -5193,7 +5229,7 @@
                   "type": "null"
                 }
               ],
-              "description": "instagram | facebook",
+              "description": "instagram | facebook | fb_group",
               "title": "Platform"
             }
           },

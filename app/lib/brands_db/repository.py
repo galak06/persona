@@ -21,7 +21,12 @@ from lib.decisions.modes import GATE_MODES
 
 logger = logging.getLogger(__name__)
 
-_JEV_COLUMNS = frozenset({"jev_post_gate_ig", "jev_post_gate_fb"})
+_JEV_COLUMNS = frozenset({"jev_post_gate_ig", "jev_post_gate_fb", "jev_group_gate"})
+
+
+def _names_jev_gate_column(message: str) -> bool:
+    """True when a Postgres error names one of the Jev gate-mode columns."""
+    return any(column in message for column in _JEV_COLUMNS)
 
 
 class BrandAlreadyExistsError(ValueError):
@@ -200,6 +205,7 @@ class BrandsRepository:
         focus_category: str | None = None,
         jev_post_gate_ig: str | None = None,
         jev_post_gate_fb: str | None = None,
+        jev_group_gate: str | None = None,
     ) -> bool:
         """Partial update -- only params passed a non-`None` value change.
 
@@ -230,6 +236,7 @@ class BrandsRepository:
         for column, mode in (
             ("jev_post_gate_ig", jev_post_gate_ig),
             ("jev_post_gate_fb", jev_post_gate_fb),
+            ("jev_group_gate", jev_group_gate),
         ):
             if mode is not None:
                 if mode not in GATE_MODES:
@@ -247,10 +254,10 @@ class BrandsRepository:
             # The API detects the dropped modes by re-reading the row.
             message = exc.diag.message_primary or str(exc)
             rest = {k: v for k, v in updates.items() if k not in _JEV_COLUMNS}
-            if len(rest) == len(updates) or "jev_post_gate" not in message:
+            if len(rest) == len(updates) or not _names_jev_gate_column(message):
                 raise
             logger.warning(
-                "brands.update: jev_post_gate columns missing (apply db/schema.sql); "
+                "brands.update: jev gate columns missing (apply db/schema.sql); "
                 "saved the other fields for brand %s",
                 brand_id,
             )

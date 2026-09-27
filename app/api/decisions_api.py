@@ -2,8 +2,9 @@
 
 `GET /decisions` returns the most recent decisions plus a summary computed
 over EVERY matching row (not just the returned page): totals, how many
-posts Jev would have skipped, how often that agreed with what the drafter
-actually did, and the total spend. Strictly read-only.
+items Jev would have skipped, how often that agreed with what the flow
+actually did (the drafter for posts, the group scout for ``fb_group``),
+and the total spend. Strictly read-only.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from lib.decisions import decisions_db
+from lib.decisions.outcomes import agrees
 
 router = APIRouter()
 
@@ -39,8 +41,9 @@ class JevDecision(BaseModel):
     # Set when the Jev call failed (answers empty); such rows never count
     # toward agreement.
     error: str | None = None
-    # True/False once the drafter engaged or declined; None before that (or
-    # for outcomes that are not a drafter decision).
+    # True/False once the flow made an editorial keep/skip call (drafter
+    # engaged/declined, scout joined/skipped); None before that or for
+    # outcomes that are not a judgement (budget cap, join errors, gate skip).
     agrees: bool | None = None
 
 
@@ -68,11 +71,7 @@ def _iso(value: object) -> str | None:
 def _agrees(would_skip: bool, outcome: object, error: object) -> bool | None:
     if error is not None:
         return None
-    if outcome == decisions_db.OUTCOME_DECLINED:
-        return would_skip
-    if outcome == decisions_db.OUTCOME_ENGAGED:
-        return not would_skip
-    return None
+    return agrees(would_skip, outcome)
 
 
 def _to_model(row: dict[str, Any]) -> JevDecision:
@@ -103,7 +102,7 @@ def _to_model(row: dict[str, Any]) -> JevDecision:
 @router.get("/decisions", response_model=DecisionsResponse)
 def list_decisions(
     brand_id: str | None = Query(None, description="Brand id; omit for all brands"),
-    platform: str | None = Query(None, description="instagram | facebook"),
+    platform: str | None = Query(None, description="instagram | facebook | fb_group"),
     limit: int = Query(50, ge=1, le=decisions_db.MAX_LIST_LIMIT),
 ) -> DecisionsResponse:
     """Most-recent-first Jev decisions, optionally filtered, plus a summary."""

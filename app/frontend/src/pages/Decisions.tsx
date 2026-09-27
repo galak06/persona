@@ -11,17 +11,32 @@ import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 
 /**
- * Decisions — the Jev post-gate log (`GET /decisions`). Read-only.
+ * Decisions — the Jev gate log (`GET /decisions`). Read-only.
  *
- * In shadow mode Jev never changes what the engagers do; this page is where
- * its would-skip calls are compared with what the comment drafter actually
- * did, to decide whether enforce is safe to switch on.
+ * In shadow mode Jev never changes what the engagers or the group scout do;
+ * this page is where its would-skip calls are compared with what the comment
+ * drafter (posts) or fb-group-scout (`fb_group`) actually did, to decide
+ * whether enforce is safe to switch on.
  */
 
-const PLATFORMS = ["all", "instagram", "facebook"] as const;
+const PLATFORMS = ["all", "instagram", "facebook", "fb_group"] as const;
 type PlatformFilter = (typeof PLATFORMS)[number];
 
-const PLATFORM_ICON: Record<string, string> = { facebook: "📘", instagram: "📸" };
+const PLATFORM_LABEL: Record<PlatformFilter, string> = {
+  all: "All",
+  instagram: "Instagram",
+  facebook: "Facebook",
+  fb_group: "FB groups",
+};
+
+const PLATFORM_ICON: Record<string, string> = { facebook: "📘", instagram: "📸", fb_group: "👥" };
+
+/** Short labels for the group gate's answers (`lib/decisions/group_gate.py`). */
+const ANSWER_LABEL: Record<string, string> = {
+  north_america: "NA",
+  members_can_comment: "can comment",
+  active: "activity",
+};
 
 function pct(value: number | null | undefined): string {
   return value === null || value === undefined ? "—" : `${Math.round(value * 100)}%`;
@@ -35,17 +50,22 @@ function asNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
-/** "relevant 91% · value answer_question (80%) · unsafe 4%" from raw answers. */
+/** "relevant 91% · value answer_question (80%) · unsafe 4%" from raw answers.
+ * Group rows show the match label with its own probability, then NA,
+ * can-comment and the 0–3 activity score. */
 function answerChips(d: JevDecision): { key: string; text: string }[] {
+  if (d.error) return [{ key: "error", text: `Jev failed: ${d.error}` }];
   const answers = asRecord(d.answers);
   return Object.entries(answers).map(([key, raw]) => {
     const a = asRecord(raw);
+    const label = ANSWER_LABEL[key] ?? key;
     if (typeof a.choice === "string") {
-      return { key, text: `${key}: ${a.choice} (${pct(asNumber(a.confidence))})` };
+      const prob = asNumber(asRecord(a.probabilities)[a.choice]) ?? asNumber(a.confidence);
+      return { key, text: `${label}: ${a.choice} (${pct(prob)})` };
     }
-    if (asNumber(a.noul) !== null) return { key, text: `${key}: ${pct(asNumber(a.noul))}` };
-    if (asNumber(a.score) !== null) return { key, text: `${key}: ${asNumber(a.score)?.toFixed(2)}` };
-    return { key, text: `${key}: ?` };
+    if (asNumber(a.noul) !== null) return { key, text: `${label}: ${pct(asNumber(a.noul))}` };
+    if (asNumber(a.score) !== null) return { key, text: `${label}: ${asNumber(a.score)?.toFixed(2)}` };
+    return { key, text: `${label}: ?` };
   });
 }
 
@@ -59,7 +79,7 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
-function SummaryTiles({ s }: { s: DecisionsSummary }): React.JSX.Element {
+function SummaryTiles({ s, versus }: { s: DecisionsSummary; versus: string }): React.JSX.Element {
   return (
     <div className="mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
       <Tile label="Decisions" value={String(s.total)} hint={`${s.failed ?? 0} failed Jev calls`} />
@@ -67,7 +87,7 @@ function SummaryTiles({ s }: { s: DecisionsSummary }): React.JSX.Element {
       <Tile
         label="Agreement"
         value={pct(s.agreement_rate)}
-        hint={`${s.agreed} of ${s.compared} vs drafter`}
+        hint={`${s.agreed} of ${s.compared} vs ${versus}`}
       />
       <Tile label="Total cost" value={`$${s.total_cost_usd.toFixed(4)}`} />
     </div>
@@ -151,8 +171,8 @@ export default function Decisions(): React.JSX.Element {
       <header className="mb-5">
         <h1 className="font-display text-2xl font-semibold text-slate-800">Decisions</h1>
         <p className="text-sm text-slate-500">
-          Jev post-gate calls for {selectedBrand} — what it would have skipped vs. what the comment
-          drafter actually did.
+          Jev gate calls for {selectedBrand} — what it would have skipped vs. what the comment
+          drafter or the FB group scout actually did.
         </p>
       </header>
 
@@ -162,16 +182,21 @@ export default function Decisions(): React.JSX.Element {
             key={p}
             type="button"
             onClick={() => setPlatform(p)}
-            className={`rounded-full px-3 py-1 text-sm capitalize transition-colors ${
+            className={`rounded-full px-3 py-1 text-sm transition-colors ${
               platform === p ? "bg-amber-600 text-white" : "bg-stone-100 text-slate-600 hover:bg-stone-200"
             }`}
           >
-            {p}
+            {PLATFORM_LABEL[p]}
           </button>
         ))}
       </div>
 
-      {data && <SummaryTiles s={data.summary} />}
+      {data && (
+        <SummaryTiles
+          s={data.summary}
+          versus={platform === "fb_group" ? "scout" : platform === "all" ? "flow" : "drafter"}
+        />
+      )}
 
       {loading && !data && <LoadingState message="Loading decisions…" />}
       {error && <ErrorState message={error} onRetry={() => void refetch()} retrying={loading} />}
@@ -185,10 +210,10 @@ export default function Decisions(): React.JSX.Element {
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-stone-200 text-xs uppercase tracking-wide text-slate-400">
-                <th className="py-2 px-3 font-medium">Post</th>
+                <th className="py-2 px-3 font-medium">{platform === "fb_group" ? "Group" : "Post"}</th>
                 <th className="py-2 pr-3 font-medium">Jev answers</th>
                 <th className="py-2 pr-3 font-medium">Jev</th>
-                <th className="py-2 pr-3 font-medium">Drafter</th>
+                <th className="py-2 pr-3 font-medium">{platform === "fb_group" ? "Scout" : "Outcome"}</th>
                 <th className="py-2 pr-3 font-medium">Match</th>
                 <th className="py-2 font-medium">When</th>
               </tr>

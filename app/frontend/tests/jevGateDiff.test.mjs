@@ -17,7 +17,7 @@ const { changedJevModes, jevBaseline, jevModesNotSaved } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 
-const loaded = { jev_post_gate_ig: "shadow", jev_post_gate_fb: "shadow" };
+const loaded = { jev_post_gate_ig: "shadow", jev_post_gate_fb: "shadow", jev_group_gate: "shadow" };
 
 test("untouched modes are not sent", () => {
   assert.deepEqual(changedJevModes({ ...loaded }, jevBaseline(loaded)), {});
@@ -38,10 +38,11 @@ test("A -> B -> A: the revert is sent because the baseline is the saved value", 
 });
 
 test("missing modes read as off, like the engine and the API", () => {
-  assert.deepEqual(jevBaseline(null), { jev_post_gate_ig: "off", jev_post_gate_fb: "off" });
-  assert.deepEqual(jevBaseline({}), { jev_post_gate_ig: "off", jev_post_gate_fb: "off" });
+  const allOff = { jev_post_gate_ig: "off", jev_post_gate_fb: "off", jev_group_gate: "off" };
+  assert.deepEqual(jevBaseline(null), allOff);
+  assert.deepEqual(jevBaseline({}), allOff);
   assert.deepEqual(
-    changedJevModes({ jev_post_gate_ig: "off", jev_post_gate_fb: "shadow" }, jevBaseline({})),
+    changedJevModes({ ...allOff, jev_post_gate_fb: "shadow" }, jevBaseline({})),
     { jev_post_gate_fb: "shadow" },
   );
 });
@@ -55,4 +56,14 @@ test("the migration-pending warning is recognised", () => {
   );
   assert.equal(jevModesNotSaved(["some other warning"]), false);
   assert.equal(jevModesNotSaved(undefined), false);
+});
+
+test("the FB group gate is diffed like the post gates", () => {
+  let baseline = jevBaseline(loaded);
+  assert.deepEqual(changedJevModes({ ...loaded, jev_group_gate: "off" }, baseline), {
+    jev_group_gate: "off",
+  });
+  baseline = jevBaseline({ ...loaded, jev_group_gate: "off" });
+  assert.deepEqual(changedJevModes({ ...loaded }, baseline), { jev_group_gate: "shadow" });
+  assert.deepEqual(changedJevModes({ ...loaded, jev_group_gate: "off" }, baseline), {});
 });

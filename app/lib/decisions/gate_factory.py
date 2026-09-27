@@ -1,7 +1,8 @@
-"""Build this process's Jev post gate from the brand row (or decline to).
+"""Build this process's Jev gates from the brand row (or decline to).
 
-The mode lives in the ``brands`` table (``jev_post_gate_ig`` /
-``jev_post_gate_fb``), not in config.json, because ``provision_brand()``
+The modes live in the ``brands`` table (``jev_post_gate_ig`` /
+``jev_post_gate_fb`` for the engagers, ``jev_group_gate`` for
+fb-group-scout), not in config.json, because ``provision_brand()``
 rewrites that file on every Brand Settings save.
 """
 
@@ -14,7 +15,9 @@ from lib import brands_db
 from lib.brand_context import current_brand_id
 from lib.decisions.engager_gate import JevPostGate
 from lib.decisions.jev_client import api_key_configured, warn_missing_key_once
-from lib.decisions.modes import MODE_OFF, parse_mode
+from lib.decisions.modes import MODE_OFF, GateMode, parse_mode
+from lib.decisions.scout_gate import MODE_COLUMN as GROUP_MODE_COLUMN
+from lib.decisions.scout_gate import JevGroupGate
 from lib.observability import get_logger
 
 log = get_logger(__name__)
@@ -45,6 +48,23 @@ def build_post_gate(platform: str, flow: str) -> JevPostGate | None:
     column = MODE_COLUMNS.get(platform)
     if column is None:
         return None
+    enabled = _enabled_mode(column)
+    if enabled is None:
+        return None
+    brand_id, row, mode = enabled
+    log.info("jev_gate_enabled", brand_id=brand_id, platform=platform, mode=mode)
+    return JevPostGate(
+        brand_id=brand_id, flow=flow, platform=platform, mode=mode, brand_focus=_brand_focus(row)
+    )
+
+
+def _enabled_mode(column: str) -> tuple[str, dict[str, object], GateMode] | None:
+    """(brand_id, brand row, mode) when the gate in ``column`` should run.
+
+    None when ``OPENROUTER_API_KEY`` is unset (warned once), the brand row
+    cannot be read or is not registered (warned), or the mode is off --
+    which includes a DB that predates the column. Never raises.
+    """
     if not api_key_configured():
         warn_missing_key_once()
         return None
@@ -64,9 +84,20 @@ def build_post_gate(platform: str, flow: str) -> JevPostGate | None:
         )
         return None
     mode = parse_mode(row.get(column))
-    if mode == MODE_OFF:
+    return None if mode == MODE_OFF else (brand_id, row, mode)
+
+
+def build_group_gate(*, dry_run: bool = False) -> JevGroupGate | None:
+    """fb-group-scout's gate, or None when it should not run.
+
+    None under ``--dry-run`` (a dry run consumes no state, so it records
+    none) and in every case ``_enabled_mode`` declines. Never raises.
+    """
+    if dry_run:
         return None
-    log.info("jev_gate_enabled", brand_id=brand_id, platform=platform, mode=mode)
-    return JevPostGate(
-        brand_id=brand_id, flow=flow, platform=platform, mode=mode, brand_focus=_brand_focus(row)
-    )
+    enabled = _enabled_mode(GROUP_MODE_COLUMN)
+    if enabled is None:
+        return None
+    brand_id, row, mode = enabled
+    log.info("jev_gate_enabled", brand_id=brand_id, platform="fb_group", mode=mode)
+    return JevGroupGate(brand_id=brand_id, mode=mode, brand_focus=_brand_focus(row))

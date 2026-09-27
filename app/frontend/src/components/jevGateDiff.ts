@@ -11,6 +11,7 @@ import type { JevGateMode } from "../api/brands";
 export interface JevGateValues {
   jev_post_gate_ig: JevGateMode;
   jev_post_gate_fb: JevGateMode;
+  jev_group_gate: JevGateMode;
 }
 
 /** A missing mode reads as "off", the same as the engine and the API. */
@@ -20,6 +21,7 @@ export function jevBaseline(
   return {
     jev_post_gate_ig: saved?.jev_post_gate_ig ?? "off",
     jev_post_gate_fb: saved?.jev_post_gate_fb ?? "off",
+    jev_group_gate: saved?.jev_group_gate ?? "off",
   };
 }
 
@@ -42,6 +44,9 @@ export function changedJevModes(
   }
   if (form.jev_post_gate_fb !== baseline.jev_post_gate_fb) {
     out.jev_post_gate_fb = form.jev_post_gate_fb;
+  }
+  if (form.jev_group_gate !== baseline.jev_group_gate) {
+    out.jev_group_gate = form.jev_group_gate;
   }
   return out;
 }

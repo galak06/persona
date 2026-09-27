@@ -26,6 +26,9 @@ from lib.bootstrap import init_script
 
 settings, log = init_script(__name__)
 
+from lib.decisions import outcomes
+from lib.decisions.gate_factory import build_group_gate
+from lib.decisions.scout_hooks import GroupGate, NullGroupGate, dropped, screen_ranked
 from lib.fb.session import FbSession, build_fb_session
 from lib.group_discovery.approval import (
     get_user_approval,
@@ -252,6 +255,25 @@ def apply_admission_likelihood(candidates: list[dict[str, Any]]) -> list[dict[st
 def main(
     session: FbSession, *, dry_run: bool = False,
     preselected: str | None = None, bypass_daily: bool = False,
+    group_gate: GroupGate | None = None,
+) -> None:
+    """Run the scout. ``group_gate`` is the Jev group-match gate
+    (lib/decisions/scout_gate.py): in shadow it only logs + records, off the
+    critical path, and never changes a join, skip, order or cap. Ignored in
+    dry runs. Its buffered outcomes are written however the run ends."""
+    gate: GroupGate = NullGroupGate() if dry_run or group_gate is None else group_gate
+    try:
+        # _scout writes last_run.json on every exit path before returning, so
+        # the bounded shadow drain below always runs after that stamp.
+        _scout(session, gate, dry_run=dry_run, preselected=preselected, bypass_daily=bypass_daily)
+        gate.close()
+    finally:
+        gate.close(timeout_s=0.0)  # no-op after the drain above; never waits
+
+
+def _scout(
+    session: FbSession, gate: GroupGate, *, dry_run: bool,
+    preselected: str | None, bypass_daily: bool,
 ) -> None:
     print("=== Facebook Group Scout (CLI) ===\n")
 
@@ -276,6 +298,7 @@ def main(
             print("ABORT: Daily limit already reached — pre-approved groups will join tomorrow.")
             skill_skipped("fb-group-scout", "Daily limit reached — pre-approved groups queued for tomorrow")
             return
+        pre_approved = gate.screen(pre_approved)
         to_join = pre_approved[:budget]
         print(f"Joining {len(to_join)} pre-approved group(s) (cap: {budget}).")
         skill_started("fb-group-scout", f"Joining {len(to_join)} pre-approved group(s) — budget: {budget} ({caps})")
@@ -297,7 +320,10 @@ def main(
                     print(f"  - {g['name']} [{g.get('privacy','?').upper()}]")
                 join_requests_sent = 0
             else:
-                join_requests_sent = send_join_requests(page, to_join, known_groups)
+                join_requests_sent = send_join_requests(
+                    page, to_join, known_groups, on_result=gate.join_result
+                )
+                gate.record(pre_approved[budget:], outcomes.OUTCOME_SKIPPED_CAP)
         if not dry_run:
             remove_from_pending([g["url"] for g in to_join])
         last_run["fb_group_scout"] = _success_record(
@@ -354,10 +380,17 @@ def main(
         all_candidates = collect_candidates(page, queries, known_groups, rules)
         candidates = list(all_candidates.values())
         apply_competitor_boost(candidates, rules)
+        candidates = screen_ranked(gate, candidates, lambda g: g["score"])
+        gate.record(
+            [c for c in candidates if c["score"] < MIN_SCORE], outcomes.OUTCOME_SKIPPED_LOW_SCORE
+        )
         candidates = [c for c in candidates if c["score"] >= MIN_SCORE]
         print(f"\nClassifying admission likelihood for {len(candidates)} candidate(s)...")
-        candidates = apply_admission_likelihood(candidates)
+        classified = apply_admission_likelihood(candidates)
+        gate.record(dropped(candidates, classified), outcomes.OUTCOME_SKIPPED_ADMISSION_CLOSED)
+        candidates = classified
         candidates.sort(key=lambda g: g["score"], reverse=True)
+        gate.record(candidates[15:], outcomes.OUTCOME_SKIPPED_RANK_CUT)
         candidates = candidates[:15]
 
         print(f"\nTotal qualifying candidates: {len(candidates)}")
@@ -378,7 +411,9 @@ def main(
             save_last_run(last_run)
             return
 
-        pending_to_join = [g for g in pending if g["url"].lower() not in known_groups]
+        pending_to_join = gate.screen(
+            [g for g in pending if g["url"].lower() not in known_groups]
+        )
         if pending_to_join:
             seen_urls = {g["url"].lower() for g in pending_to_join}
             fresh = [g for g in candidates if g["url"].lower() not in seen_urls]
@@ -387,12 +422,15 @@ def main(
             combined = candidates
 
         approved = get_user_approval(combined, budget, preselected or "all")
+        gate.record(dropped(combined, approved), outcomes.OUTCOME_SKIPPED_CAP)
         if not approved:
             print("\nNo groups approved.")
             add_to_pending(candidates, known_groups)
             return
 
-        join_requests_sent = send_join_requests(page, approved, known_groups)
+        join_requests_sent = send_join_requests(
+            page, approved, known_groups, on_result=gate.join_result
+        )
 
     remove_from_pending([g["url"] for g in approved])
     unapproved = [g for g in candidates if g not in approved]
@@ -452,6 +490,7 @@ if __name__ == "__main__":
                 # discovered groups up to the daily/weekly cap (the remaining limit).
                 preselected=args.approve if args.approve is not None else "all",
                 bypass_daily=args.bypass_daily_cap,
+                group_gate=build_group_gate(dry_run=args.dry_run),
             ),
             health_check=_session_health,
         )

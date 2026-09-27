@@ -96,6 +96,7 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         focus_category=body.focus_category,
         jev_post_gate_ig=body.jev_post_gate_ig,
         jev_post_gate_fb=body.jev_post_gate_fb,
+        jev_group_gate=body.jev_group_gate,
     )
 
     updated_row = brands_db.get(brand_id)
@@ -125,7 +126,7 @@ def _jev_modes_not_saved(body: BrandSettingsRequest, row: dict[str, Any]) -> lis
     whole save) on a DB that predates them; this turns that into a visible
     signal rather than a silent 200.
     """
-    for column in ("jev_post_gate_ig", "jev_post_gate_fb"):
+    for column in ("jev_post_gate_ig", "jev_post_gate_fb", "jev_group_gate"):
         requested = getattr(body, column)
         if requested is not None and row.get(column) != requested:
             return [JEV_MODES_NOT_SAVED]

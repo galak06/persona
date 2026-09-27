@@ -96,10 +96,12 @@ class BrandDetail(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
-    # Jev post-gate mode per platform (off | shadow | enforce). A DB that
+    # Jev gate modes: post gate per platform + FB group gate
+    # (off | shadow | enforce). A DB that
     # predates the columns reads as "off" -- exactly what the engine does.
     jev_post_gate_ig: GateMode = "off"
     jev_post_gate_fb: GateMode = "off"
+    jev_group_gate: GateMode = "off"
     status: str
     brand_dir: str = ""
     extra: dict[str, Any] = {}
@@ -123,10 +125,12 @@ class BrandSettingsRequest(BaseModel):
     # One WP category name to focus on, or "" to clear the focus. `None`
     # means "leave alone" -- "" is a meaningful value here, not absence.
     focus_category: str | None = None
-    # Jev post-gate mode per platform. `None` = leave alone; anything outside
+    # Jev gate modes (post gate per platform + FB group gate).
+    # `None` = leave alone; anything outside
     # off/shadow/enforce is a 422 before it reaches the DB CHECK.
     jev_post_gate_ig: GateMode | None = None
     jev_post_gate_fb: GateMode | None = None
+    jev_group_gate: GateMode | None = None
 
 
 class BrandProvisionResponse(BaseModel):
@@ -151,10 +155,12 @@ class BrandProvisionResponse(BaseModel):
     headless: bool = True
     group_join_limit: int = 10
     focus_category: str = ""
-    # Jev post-gate mode per platform (off | shadow | enforce). A DB that
+    # Jev gate modes: post gate per platform + FB group gate
+    # (off | shadow | enforce). A DB that
     # predates the columns reads as "off" -- exactly what the engine does.
     jev_post_gate_ig: GateMode = "off"
     jev_post_gate_fb: GateMode = "off"
+    jev_group_gate: GateMode = "off"
     status: str
     brand_dir: str
     extra: dict[str, Any] = {}

@@ -111,6 +111,7 @@ def update(
     focus_category: str | None = None,
     jev_post_gate_ig: str | None = None,
     jev_post_gate_fb: str | None = None,
+    jev_group_gate: str | None = None,
 ) -> bool:
     """Partial update -- only params passed a non-`None` value change."""
     return _repo().update(
@@ -123,6 +124,7 @@ def update(
         focus_category=focus_category,
         jev_post_gate_ig=jev_post_gate_ig,
         jev_post_gate_fb=jev_post_gate_fb,
+        jev_group_gate=jev_group_gate,
     )
 
 

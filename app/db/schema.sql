@@ -133,6 +133,12 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_ig    TEXT  NOT NULL D
     CHECK (jev_post_gate_ig IN ('off', 'shadow', 'enforce'));
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_fb    TEXT  NOT NULL DEFAULT 'shadow'
     CHECK (jev_post_gate_fb IN ('off', 'shadow', 'enforce'));
+-- Additive (Jev group gate, slice 2): mode of the "is this FB group a
+-- match?" classifier fb-group-scout consults before joining
+-- (lib/decisions/scout_gate.py). Same contract as the post-gate columns; an
+-- engine or API reading a DB without this column treats it as 'off'.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_group_gate      TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_group_gate IN ('off', 'shadow', 'enforce'));
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (
@@ -533,6 +539,35 @@ BEGIN
         ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check CHECK
             (outcome IS NULL OR outcome IN
                 ('engaged', 'declined', 'drafter_error', 'skipped_by_gate'));
+    END IF;
+END $$;
+-- Slice 2: fb-group-scout rows (platform 'fb_group') add the scout's own
+-- outcomes (lib/decisions/outcomes.py). Widen jev_decisions_outcome_check
+-- to the full list, idempotently: the constraint is dropped and re-added only
+-- when its definition is missing one of the values. It only ever widens --
+-- every value the older CHECK accepted is still accepted -- and no row is
+-- touched.
+DO $$
+DECLARE
+    allowed CONSTANT TEXT[] := ARRAY[
+        'engaged', 'declined', 'drafter_error', 'skipped_by_gate',
+        'joined', 'join_requested', 'already_member', 'already_pending',
+        'join_failed', 'skipped_low_score', 'skipped_admission_closed',
+        'skipped_rank_cut', 'skipped_cap'];
+    current_def TEXT;
+BEGIN
+    SELECT pg_get_constraintdef(oid) INTO current_def
+    FROM pg_constraint
+    WHERE conname = 'jev_decisions_outcome_check'
+      AND conrelid = 'jev_decisions'::regclass;
+    IF current_def IS NULL OR EXISTS (
+        SELECT 1 FROM unnest(allowed) AS v WHERE current_def NOT LIKE '%''' || v || '''%'
+    ) THEN
+        ALTER TABLE jev_decisions DROP CONSTRAINT IF EXISTS jev_decisions_outcome_check;
+        EXECUTE format(
+            'ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check '
+            'CHECK (outcome IS NULL OR outcome IN (%s))',
+            (SELECT string_agg(quote_literal(v), ', ') FROM unnest(allowed) AS v));
     END IF;
 END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_jev_decisions_item

@@ -124,6 +124,7 @@ def test_settings_no_fields_touches_nothing(monkeypatch: pytest.MonkeyPatch) -> 
         "focus_category": None,
         "jev_post_gate_ig": None,
         "jev_post_gate_fb": None,
+        "jev_group_gate": None,
     }
 
 

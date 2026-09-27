@@ -29,17 +29,19 @@ from lib import db
 from lib.db_pool import get_pool
 from lib.decisions.jev_types import JsonDict
 from lib.decisions.modes import GateMode
+
+# The outcome vocabulary lives in lib.decisions.outcomes (it grew the
+# fb-group-scout outcomes); slice-1 callers read these names off this module.
+from lib.decisions.outcomes import KEEP_OUTCOMES, SKIP_OUTCOMES
+from lib.decisions.outcomes import OUTCOME_DECLINED as OUTCOME_DECLINED
+from lib.decisions.outcomes import OUTCOME_DRAFTER_ERROR as OUTCOME_DRAFTER_ERROR
+from lib.decisions.outcomes import OUTCOME_ENGAGED as OUTCOME_ENGAGED
+from lib.decisions.outcomes import OUTCOME_SKIPPED_BY_GATE as OUTCOME_SKIPPED_BY_GATE
+from lib.decisions.outcomes import OUTCOMES as OUTCOMES
 from lib.observability import get_logger
 
 log = get_logger(__name__)
 
-OUTCOME_ENGAGED: Final = "engaged"
-OUTCOME_DECLINED: Final = "declined"
-OUTCOME_DRAFTER_ERROR: Final = "drafter_error"
-OUTCOME_SKIPPED_BY_GATE: Final = "skipped_by_gate"
-OUTCOMES: Final = frozenset(
-    {OUTCOME_ENGAGED, OUTCOME_DECLINED, OUTCOME_DRAFTER_ERROR, OUTCOME_SKIPPED_BY_GATE}
-)
 ERROR_JEV_CALL_FAILED: Final = "jev_call_failed"
 
 MAX_LIST_LIMIT: Final = 500
@@ -74,10 +76,12 @@ class DecisionRecord:
 class DecisionSummary:
     """Totals over every matching row (not just the listed page).
 
-    ``agreement_rate`` compares Jev's ``would_skip`` with what the drafter
-    did: agree = (would_skip and declined) or (not would_skip and engaged).
-    Failed calls and rows without an engaged/declined outcome are not
-    compared; ``None`` when there is nothing to compare yet.
+    ``agreement_rate`` compares Jev's ``would_skip`` with what the flow did:
+    agree = (would_skip and a ``SKIP_OUTCOMES`` outcome) or (not would_skip
+    and a ``KEEP_OUTCOMES`` outcome) -- declined/engaged for the engagers,
+    the scout's editorial skips/joins for ``fb_group``. Failed calls and
+    other outcomes are not compared; ``None`` when there is nothing to
+    compare yet.
     """
 
     total: int
@@ -165,7 +169,7 @@ def record_outcome(
     brand_id: str | None = None,
     platform: str | None = None,
 ) -> bool:
-    """Stamp what the drafter did for ``item_key``. Never raises.
+    """Stamp what the flow (drafter or scout) did for ``item_key``. Never raises.
 
     ``brand_id``/``platform`` narrow the match when given (the engager always
     passes both). Fill-once: only a row whose outcome is still NULL is
@@ -224,7 +228,7 @@ def list_recent(
 def summarize(*, brand_id: str | None = None, platform: str | None = None) -> DecisionSummary:
     """Totals, would-skip count, failures, drafter agreement and spend."""
     where, params = _filters(brand_id, platform)
-    params.update(engaged=OUTCOME_ENGAGED, declined=OUTCOME_DECLINED)
+    params.update(keep=list(KEEP_OUTCOMES), skip=list(SKIP_OUTCOMES))
     row = (
         db.fetch_one(
             f"""
@@ -233,12 +237,13 @@ def summarize(*, brand_id: str | None = None, platform: str | None = None) -> De
                 COUNT(*) FILTER (WHERE would_skip) AS would_skip,
                 COUNT(*) FILTER (WHERE error IS NOT NULL) AS failed,
                 COUNT(*) FILTER (
-                    WHERE error IS NULL AND outcome IN (%(engaged)s, %(declined)s)
+                    WHERE error IS NULL
+                      AND (outcome = ANY(%(keep)s) OR outcome = ANY(%(skip)s))
                 ) AS compared,
                 COUNT(*) FILTER (
                     WHERE error IS NULL
-                      AND ((would_skip AND outcome = %(declined)s)
-                        OR (NOT would_skip AND outcome = %(engaged)s))
+                      AND ((would_skip AND outcome = ANY(%(skip)s))
+                        OR (NOT would_skip AND outcome = ANY(%(keep)s)))
                 ) AS agreed,
                 COALESCE(SUM(cost_usd), 0) AS total_cost_usd
             FROM jev_decisions {where}

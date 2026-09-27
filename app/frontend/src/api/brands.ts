@@ -57,6 +57,7 @@ export interface Brand extends BrandSummary {
   focus_category: string;
   jev_post_gate_ig: JevGateMode;
   jev_post_gate_fb: JevGateMode;
+  jev_group_gate: JevGateMode;
   extra: Record<string, unknown>;
   updated_at: string;
 }
@@ -111,6 +112,7 @@ export interface BrandSettingsRequest {
   focus_category?: string;
   jev_post_gate_ig?: JevGateMode;
   jev_post_gate_fb?: JevGateMode;
+  jev_group_gate?: JevGateMode;
 }
 
 /** What onboarding/provisioning did (or would do). */
