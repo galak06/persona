@@ -202,7 +202,9 @@ its light and its framing, and describe only what the scene is doing."""
 `image_brief` describes a real physical moment -- the dog, hands, the setting, \
 the light, the camera angle. It must NOT contain packaging, a package, a label, \
 a logo, a bag, a box, brand text{brand_clause}, or any readable surface. There \
-is no shot of the product: the caption names it, the picture sells the moment.{owner_clause}
+is no shot of the product: the caption names it, the picture sells the moment. \
+Describe only what IS in the frame, never what is absent ("no packaging in \
+sight"): the image model draws every object a brief names, negated or not.{owner_clause}
 
 `cta_ribbon_text` stays a short all-caps line about the guide or the site. It \
 may not name a retailer or a store, and it may not carry a price, a discount or \
@@ -269,11 +271,10 @@ def build_spotlight_task_description(
       omit its block rather than sending an empty header.
     * ``product_in_post`` is ``False`` -> do not claim the article reviews,
       tests or mentions the product.
-    * A certification only if it is in
-      ``product_terms.verified_certifications(product)``, and only that one;
-      when that tuple is empty, name no certification at all.
+    * A certification only if in ``product_terms.verified_certifications(product)``,
+      and only that one; when that tuple is empty, name no certification at all.
     * ``image_brief`` = the scene only (dog, hands, setting, light): no
-      packaging, label, logo, bag, box or brand text.
+      packaging, label, logo, bag, box or brand text -- not even as absent.
       ``photo_is_owner_pick`` is ``True`` -> add "do not redraw or restyle
       anything already in the reference photo".
     * Ribbon (``cta_ribbon_text``): no retailer names, no prices.
