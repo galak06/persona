@@ -48,7 +48,7 @@ from lib.decisions.gate_budget import (
 from lib.decisions.jev_types import questions_to_json
 from lib.decisions.modes import MODE_ENFORCE, MODE_OFF, MODE_SHADOW, GateMode
 from lib.decisions.post_gate import PostGateVerdict, build_questions, evaluate_post
-from lib.decisions.shadow_worker import ShadowWorker
+from lib.decisions.shadow_worker import ShadowWorker, warn_if_drain_incomplete
 from lib.observability import get_logger
 
 log = get_logger(__name__)
@@ -183,6 +183,11 @@ class JevPostGate:
                 spent_s=round(self.budget.spent_s, 2),
                 disabled_reason=self.budget.tripped,
                 undrained=undrained,
+            )
+            with self._lock:  # an abandoned worker may still be writing these
+                counts = {"pending": len(self._pending_outcomes), "recorded": self.recorded}
+            warn_if_drain_incomplete(
+                undrained, platform=self.platform, submitted=self._submitted, **counts
             )
         except Exception as exc:
             log.warning("jev_gate_error", stage="close", error_type=type(exc).__name__)

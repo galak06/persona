@@ -11,7 +11,7 @@ import threading
 import pytest
 
 from lib import draft_helper
-from lib.decisions import decisions_db, engager_gate
+from lib.decisions import decisions_db, engager_gate, shadow_worker
 from lib.decisions.engager_gate import JevPostGate, outcome_for
 from lib.decisions.modes import GateMode
 from tests._jev_fakes import KEEP, SKIP_ALL, FakeJev, FakeStore, join_gate_threads, make_post
@@ -90,8 +90,14 @@ def test_close_is_bounded_when_jev_hangs(monkeypatch: pytest.MonkeyPatch) -> Non
         gate.before_draft(make_post(f"p{i}"))
     logged: list[dict[str, object]] = []
     monkeypatch.setattr(engager_gate.log, "info", lambda _e, **kw: logged.append(kw))
+    warned: list[dict[str, object]] = []
+    monkeypatch.setattr(shadow_worker.log, "warning", lambda _e, **kw: warned.append(kw))
     gate.close(timeout_s=0.1)
     assert logged[-1]["undrained"] >= 3  # type: ignore[operator]
+    # R3: the loss is a warning, attributable to what was asked and what landed.
+    assert warned and warned[0]["undrained"] == logged[-1]["undrained"]
+    assert warned[0]["submitted"] == 4
+    assert {"platform", "pending", "recorded"} <= warned[0].keys()
     join_gate_threads()  # let the in-flight call finish under the fakes
 
 

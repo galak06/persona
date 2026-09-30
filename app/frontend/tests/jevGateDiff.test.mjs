@@ -13,7 +13,7 @@ const source = readFileSync(new URL("../src/components/jevGateDiff.ts", import.m
 const { outputText } = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 });
-const { changedJevModes, jevBaseline, jevModesNotSaved } = await import(
+const { changedJevModes, jevBaseline, jevModesNotSaved, jevModesToSend } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 
@@ -66,4 +66,20 @@ test("the FB group gate is diffed like the post gates", () => {
   baseline = jevBaseline({ ...loaded, jev_group_gate: "off" });
   assert.deepEqual(changedJevModes({ ...loaded }, baseline), { jev_group_gate: "shadow" });
   assert.deepEqual(changedJevModes({ ...loaded, jev_group_gate: "off" }, baseline), {});
+});
+
+test("R4: after a failed save that persisted anyway, the revert still reaches the DB", () => {
+  // Save 1: shadow -> enforce. The PATCH writes the row, provisioning 502s,
+  // the page never sees a response, so its baseline stays on shadow.
+  const baseline = jevBaseline(loaded);
+  const reverted = { ...loaded }; // the user sets IG back to shadow
+  // A diff would omit the field (shadow == stale shadow) and leave the DB on enforce.
+  assert.deepEqual(changedJevModes(reverted, baseline), {});
+  // Untrusted baseline: every mode is sent, so the server writes shadow.
+  assert.deepEqual(jevModesToSend(reverted, baseline, false), loaded);
+});
+
+test("a trusted baseline still sends only the diff", () => {
+  const form = { ...loaded, jev_group_gate: "enforce" };
+  assert.deepEqual(jevModesToSend(form, jevBaseline(loaded), true), { jev_group_gate: "enforce" });
 });

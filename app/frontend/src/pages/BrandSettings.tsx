@@ -18,7 +18,7 @@ import LoadingState from "../components/ui/LoadingState";
 import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
 import ProductsPanel from "../components/products/ProductsPanel";
 import JevGateFields, { type JevGateValues } from "../components/JevGateFields";
-import { changedJevModes, jevBaseline, jevModesNotSaved } from "../components/jevGateDiff";
+import { jevBaseline, jevModesNotSaved, jevModesToSend } from "../components/jevGateDiff";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -125,12 +125,16 @@ export default function BrandSettings(): React.JSX.Element {
   // Last PERSISTED Jev modes: the diff baseline, refreshed from every save
   // response (a page-load baseline silently drops an A→B→A revert).
   const [savedJev, setSavedJev] = useState<JevGateValues>(jevBaseline(null));
+  // False after a failed save, whose PATCH may have persisted anyway: the next
+  // save then sends every mode instead of a diff against `savedJev`.
+  const [savedJevTrusted, setSavedJevTrusted] = useState(true);
 
   useEffect(() => {
     if (!brand) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setForm(formStateFromBrand(brand));
     setSavedJev(jevBaseline(brand));
+    setSavedJevTrusted(true);
   }, [brand]);
 
   if (!id) return <Alert status="error">No brand id in URL.</Alert>;
@@ -151,18 +155,20 @@ export default function BrandSettings(): React.JSX.Element {
       // "" is meaningful here (clear the focus), so it is always sent --
       // only `undefined` means "leave alone" on the PATCH side.
       focus_category: form.focus_category.trim(),
-      ...changedJevModes(form, savedJev),
+      ...jevModesToSend(form, savedJev, savedJevTrusted),
     };
 
     const updated = await mutate(endpoints.brandSettings(id), payload);
     if (updated) {
       setResult(updated);
       setSavedJev(jevBaseline(updated));
+      setSavedJevTrusted(true);
       if (jevModesNotSaved(updated.warnings)) {
         toast.error("Jev gate modes NOT saved — database migration pending");
       }
       toast.success(`Settings saved for ${updated.name}`, updated.brand_dir);
     } else {
+      setSavedJevTrusted(false);
       toast.error(`Could not save settings for ${id}`);
     }
   };
