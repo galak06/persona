@@ -48,6 +48,7 @@ from lib.crew.socialpost.hook_render import render_from_reference
 from lib.crew.socialpost.models import SocialPostPlan
 from lib.crew.socialpost.retry import resolve_retry_reference
 from lib.crew.spotlight import inputs
+from lib.crew.spotlight.brief_scrub import scrub_image_brief
 from lib.crew.spotlight.post_products import asins_in_html, post_slug
 from lib.crew.spotlight.result import SpotlightResult
 from lib.crew.writer.context import mascot_facts_summary
@@ -119,6 +120,9 @@ def _compose(row: dict[str, Any], *, brand_dir: Path, dry_run: bool) -> Spotligh
             ig_caption=plan.ig_caption[:400],
         )
         return SpotlightResult(True, "dry_run")
+    # The rule passed on the scrubbed brief; the image model must get that same
+    # text, since "no labels" is a prompt that mentions labels.
+    plan = plan.model_copy(update={"image_brief": scrub_image_brief(plan.image_brief)})
     return _render_and_commit(
         plan,
         row=row,
