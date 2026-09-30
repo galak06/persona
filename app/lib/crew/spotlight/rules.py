@@ -32,6 +32,7 @@ from typing import Final
 
 from lib.affiliate_resolver import ProductEntry
 from lib.crew.socialpost.models import SocialPostPlan
+from lib.crew.spotlight.brief_scrub import PACKAGING_RE, scrub_image_brief
 from lib.crew.spotlight.cert_gate import claimed_certifications
 from lib.crew.spotlight.product_terms import (
     brand_token,
@@ -58,19 +59,6 @@ _DISCLOSURE_PLACEMENT: Final[dict[str, str]] = {
     "fb_caption": "on its own last line, AFTER the closing question",
     "ig_caption": "on its own line, just BEFORE the hashtag line",
 }
-
-# Nouns that make an image model paint a product surface. `brand text` is not
-# listed: a brief saying "no brand text" would then fail its own instruction,
-# and the brand half of rule 5 is the token check instead. Everything past
-# `boxes` was added 2026-09-18: the prompt's own catch-all is "or any readable
-# surface", and a pouch, a tub or a jar is exactly as paintable as a bag.
-# Whole-word throughout, on purpose -- `tin` must not fire on "tiny", `tub` not
-# on "tube", `jar` not on "jarring".
-_PACKAGING_RE: Final[re.Pattern[str]] = re.compile(
-    r"\b(?:packaging|packages?|labels?|logos?|bags?|box|boxes|pouch(?:es)?"
-    r"|tubs?|canisters?|jars?|packets?|wrappers?|tins?|cartons?|containers?)\b",
-    re.IGNORECASE,
-)
 
 # A price the reader can check. Amazon's operating agreement forbids quoting
 # one because it goes stale between composition and the reader seeing it.
@@ -179,10 +167,19 @@ def _naming_violations(plan: SocialPostPlan, product: ProductEntry) -> list[str]
 
 def _image_brief_violations(plan: SocialPostPlan, product: ProductEntry) -> list[str]:
     """Rule 5 -- the scene only. An image model asked for a branded bag paints
-    a plausible, entirely fake label onto a real product."""
-    brief = plan.image_brief
+    a plausible, entirely fake label onto a real product.
+
+    Checked on the SCRUBBED brief -- the text the image model actually gets --
+    so "Nothing in frame carries labels" is dropped, not rejected
+    (``brief_scrub`` has why)."""
+    brief = scrub_image_brief(plan.image_brief)
+    if not brief:
+        return [
+            "image_brief must describe what IS in the frame -- the dog, the hands, "
+            "the setting and the light -- not only what is absent from it."
+        ]
     violations: list[str] = []
-    found = sorted({m.group(0).lower() for m in _PACKAGING_RE.finditer(brief)})
+    found = sorted({m.group(0).lower() for m in PACKAGING_RE.finditer(brief)})
     if found:
         violations.append(
             f"image_brief must describe the scene only -- remove "
@@ -226,8 +223,10 @@ def find_spotlight_violations(plan: SocialPostPlan, *, product: ProductEntry) ->
     5. ``image_brief`` mentions packaging -- any of ``packaging``, ``package``,
        ``label``, ``logo``, ``bag``, ``box``, ``pouch``, ``tub``, ``canister``,
        ``jar``, ``packet``, ``wrapper``, ``tin``, ``carton``, ``container`` as
-       whole words -- or the brand token
-       (``product_terms.mentions_brand``). An image model asked for a
+       whole words, after ``brief_scrub.scrub_image_brief`` has dropped the
+       sentences that only say packaging is absent -- or the brand token
+       (``product_terms.mentions_brand``). A brief that is ONLY such
+       sentences fails too: there is no scene left to draw. An image model asked for a
        branded bag invents a label, and an invented label on a real product is
        a misrepresentation.
 
