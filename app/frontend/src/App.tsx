@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import SideNav from "./components/layout/SideNav";
 import { ToastProvider } from "./components/ui/Toast";
 import Activity from "./pages/Activity";
-import Campaigns from "./pages/Campaigns";
 import Dashboard from "./pages/Dashboard";
 import Ideas from "./pages/Ideas";
 import Reels from "./pages/Reels";
@@ -32,7 +31,8 @@ export default function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/human-mimic" element={<HumanMimic />} />
               <Route path="/activity" element={<Activity />} />
-              <Route path="/campaigns" element={<Campaigns />} />
+              {/* Retired recipe-era campaigns — hidden; old links land on the dashboard. */}
+              <Route path="/campaigns" element={<Navigate to="/dashboard" replace />} />
               <Route path="/inbox" element={<Inbox />} />
               <Route path="/ideas" element={<Ideas />} />
               <Route path="/reels" element={<Reels />} />
