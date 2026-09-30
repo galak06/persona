@@ -32,6 +32,10 @@ class ShadowWorker:
         self._queue: queue.Queue[object] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._closed = False
+        # Set only while a task runs. `drain` counts in-flight work from THIS,
+        # not from `is_alive()`: after `join(0)` an idle thread that simply has
+        # not been scheduled to read _STOP yet is alive too (review R1).
+        self._busy = threading.Event()
 
     def submit(self, task: Callable[[], object]) -> None:
         """Queue ``task``; ignored once the worker is draining or drained."""
@@ -63,7 +67,7 @@ class ShadowWorker:
                     break
                 dropped += int(item is not _STOP)
             self._queue.put(_STOP)
-            return dropped + 1  # the dropped tasks plus the one in flight
+            return dropped + int(self._busy.is_set())  # plus the one in flight, if any
         except Exception as exc:
             log.warning("jev_gate_error", stage="drain", error_type=type(exc).__name__)
             return -1
@@ -74,6 +78,7 @@ class ShadowWorker:
             if task is _STOP:
                 return
             started = time.monotonic()
+            self._busy.set()
             try:
                 if callable(task):
                     task()
@@ -84,3 +89,17 @@ class ShadowWorker:
                     error_type=type(exc).__name__,
                     elapsed_s=round(time.monotonic() - started, 2),
                 )
+            finally:
+                self._busy.clear()
+
+
+def warn_if_drain_incomplete(undrained: int, **context: object) -> None:
+    """One ``warning`` when a drain lost work (review R3).
+
+    ``undrained`` is ``drain``'s return: > 0 = tasks dropped or cut off in
+    flight, -1 = the drain itself failed. The run summary only carries it at
+    ``info``, where a Loki alert on ``level=warning`` never looks. ``context``
+    is the caller's counts, read under its own lock, so the loss is
+    attributable (how much was submitted, how much reached the table)."""
+    if undrained:
+        log.warning("jev_gate_drain_incomplete", undrained=undrained, **context)

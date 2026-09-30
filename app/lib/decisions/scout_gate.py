@@ -47,7 +47,7 @@ from lib.decisions.modes import MODE_ENFORCE, MODE_OFF, MODE_SHADOW, GateMode
 from lib.decisions.post_gate import Decide
 from lib.decisions.scout_hooks import G, item_key, outcome_for_join
 from lib.decisions.scout_outcomes import FinalOutcomes, flow_deadline
-from lib.decisions.shadow_worker import ShadowWorker
+from lib.decisions.shadow_worker import ShadowWorker, warn_if_drain_incomplete
 from lib.observability import get_logger
 
 log = get_logger(__name__)
@@ -160,6 +160,9 @@ class JevGroupGate:
                 disabled_reason=self.budget.tripped,
                 undrained=undrained,
             )
+            with self._lock:  # an abandoned worker may still be writing these
+                counts = {"screened": len(self._verdicts), "recorded": self.recorded}
+            warn_if_drain_incomplete(undrained, platform=PLATFORM, **counts)
         except Exception as exc:
             log.warning("jev_gate_error", stage="close", error_type=type(exc).__name__)
 

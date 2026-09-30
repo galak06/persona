@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from lib.decisions import decisions_db, outcomes
+from lib.decisions import decisions_db, outcomes, shadow_worker
 from lib.decisions.jev_types import JevResult, JsonDict, Question
 from lib.decisions.scout_gate import JevGroupGate
 from lib.decisions.scout_hooks import (
@@ -202,6 +202,21 @@ def test_off_mode_does_nothing(store: FakeStore) -> None:
     assert gate.screen(groups) is groups
     gate.close()
     assert decide.calls == [] and store.decisions == []
+
+
+def test_r3_a_cut_off_drain_warns_with_what_was_screened(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    warned: list[dict[str, object]] = []
+    monkeypatch.setattr(shadow_worker.log, "warning", lambda _e, **kw: warned.append(kw))
+    gate = _gate(SlowDecide(0.5))
+    gate.screen([_card(1), _card(2)])
+    gate.close(timeout_s=0.0)
+    assert len(warned) == 1
+    assert warned[0]["undrained"] >= 1  # type: ignore[operator]
+    assert warned[0]["screened"] == 2
+    assert {"platform", "recorded"} <= warned[0].keys()
+    _join_worker(gate)
 
 
 def test_close_is_idempotent_and_zero_wait_close_never_waits(store: FakeStore) -> None:

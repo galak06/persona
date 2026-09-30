@@ -7,10 +7,10 @@ import time
 
 import pytest
 
-from lib.decisions import gate_factory, jev_client
+from lib.decisions import gate_factory, jev_client, shadow_worker
 from lib.decisions.gate_budget import DRAIN_TIMEOUT_S, RunBudget, drain_timeout
 from lib.decisions.gate_factory import build_post_gate
-from lib.decisions.shadow_worker import ShadowWorker
+from lib.decisions.shadow_worker import ShadowWorker, warn_if_drain_incomplete
 
 
 def test_build_gate_none_without_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -124,6 +124,38 @@ def test_worker_close_discards_queued_and_reports_them() -> None:
     release.set()
     time.sleep(0.1)
     assert ran == []  # queued work was discarded, never run
+
+
+def test_r1_an_idle_worker_drained_with_no_wait_reports_nothing_lost() -> None:
+    """REGRESSION (review R1). `join(0)` returns before an idle thread is
+    scheduled to read _STOP, so `is_alive()` was True and every zero-wait
+    close -- every exception path, every IG run past its deadline -- logged a
+    phantom `undrained=1`. Repeated because the old bug was scheduling-bound."""
+    for _ in range(50):
+        worker = ShadowWorker("jev-gate-test")
+        done = threading.Event()
+        worker.submit(done.set)
+        assert done.wait(1.0)
+        time.sleep(0.005)  # past the task's `finally`: the thread is idle again
+        assert worker.drain(0.0) == 0
+
+
+def test_r3_lost_work_is_a_warning_and_nothing_lost_is_silent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warned: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(shadow_worker.log, "warning", lambda e, **kw: warned.append((e, kw)))
+    warn_if_drain_incomplete(0, platform="instagram")
+    assert warned == []
+    warn_if_drain_incomplete(3, platform="instagram", submitted=5, recorded=2)
+    warn_if_drain_incomplete(-1, platform="facebook")  # the drain itself failed
+    assert warned == [
+        (
+            "jev_gate_drain_incomplete",
+            {"undrained": 3, "platform": "instagram", "submitted": 5, "recorded": 2},
+        ),
+        ("jev_gate_drain_incomplete", {"undrained": -1, "platform": "facebook"}),
+    ]
 
 
 def test_worker_survives_a_failing_task() -> None:

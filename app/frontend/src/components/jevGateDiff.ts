@@ -51,6 +51,29 @@ export function changedJevModes(
   return out;
 }
 
+/**
+ * The Jev fields for the next save.
+ *
+ * After a FAILED save the baseline cannot be trusted: the PATCH persists the
+ * row before provisioning runs, so a provisioning 502 can leave the DB on the
+ * new mode while `baseline` still holds the old one. Reverting the select then
+ * diffs as "unchanged", the field is omitted, and the DB silently stays on
+ * the mode the user just undid (review R4). So until a save succeeds again,
+ * send all three -- the server writes whatever the form says.
+ */
+export function jevModesToSend(
+  form: JevGateValues,
+  baseline: JevGateValues,
+  baselineTrusted: boolean,
+): Partial<JevGateValues> {
+  if (baselineTrusted) return changedJevModes(form, baseline);
+  return {
+    jev_post_gate_ig: form.jev_post_gate_ig,
+    jev_post_gate_fb: form.jev_post_gate_fb,
+    jev_group_gate: form.jev_group_gate,
+  };
+}
+
 /** The API's warning when the modes could not be stored (migration pending). */
 export function jevModesNotSaved(warnings: readonly string[] | undefined): boolean {
   return (warnings ?? []).some((w) => w.startsWith("Jev gate modes were NOT saved"));
