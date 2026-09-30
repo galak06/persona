@@ -16,7 +16,33 @@ import pytest
 from api import social_posts_api
 from fastapi import HTTPException
 
+from lib import social_post_slots
+
 _IDEA_ID = "idea-1"
+
+
+def _patch_slot_readers(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    regular: datetime | None,
+    derivative: datetime | None,
+) -> None:
+    """Both halves of the shared FB calendar must be faked.
+
+    Approve now goes through `lib.social_slot_allocator`, which asks the
+    derivative table too; left unpatched that reader would hit Postgres (or,
+    before phase 1A lands, `NotImplementedError`).
+    """
+    monkeypatch.setattr(
+        social_posts_api.social_slot_allocator.social_post_db,
+        "last_scheduled_fb_slot",
+        lambda **_kw: regular,
+    )
+    monkeypatch.setattr(
+        social_posts_api.social_slot_allocator.derivatives_db,
+        "last_scheduled_fb_slot",
+        lambda **_kw: derivative,
+    )
 
 
 def _fake_run(returncode: int = 0) -> Any:
@@ -68,11 +94,7 @@ def test_approve_schedules_and_publishes_nothing(monkeypatch: pytest.MonkeyPatch
     """Approve claims a slot; no publish subprocess may run."""
     monkeypatch.setattr(social_posts_api, "datetime", _FrozenDatetime)
     monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
-    monkeypatch.setattr(
-        social_posts_api.social_post_db,
-        "last_scheduled_fb_slot",
-        lambda **_kw: datetime(2026, 8, 11, 13, tzinfo=UTC),
-    )
+    _patch_slot_readers(monkeypatch, regular=datetime(2026, 8, 11, 13, tzinfo=UTC), derivative=None)
     scheduled: list[tuple[str, datetime]] = []
     monkeypatch.setattr(
         social_posts_api.social_post_db,
@@ -94,9 +116,7 @@ def test_approve_schedules_and_publishes_nothing(monkeypatch: pytest.MonkeyPatch
 
 def test_approve_first_post_takes_next_window(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
-    monkeypatch.setattr(
-        social_posts_api.social_post_db, "last_scheduled_fb_slot", lambda **_kw: None
-    )
+    _patch_slot_readers(monkeypatch, regular=None, derivative=None)
     captured: list[datetime] = []
     monkeypatch.setattr(
         social_posts_api.social_post_db,
@@ -109,7 +129,32 @@ def test_approve_first_post_takes_next_window(monkeypatch: pytest.MonkeyPatch) -
     assert len(captured) == 1
     # Always a future preferred-hour window, never "now".
     assert captured[0] > datetime.now(UTC)
-    assert captured[0].hour == social_posts_api.social_post_slots.DEFAULT_PREFERRED_HOUR_UTC
+    assert captured[0].hour == social_post_slots.DEFAULT_PREFERRED_HOUR_UTC
+
+
+def test_approve_spaces_off_a_derivative_holding_a_later_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The spotlight track claims slots in its own table. A regular post that
+    only consulted `content_ideas` would land ON TOP of a scheduled spotlight
+    and blow the 3/day page-post cap."""
+    monkeypatch.setattr(social_posts_api, "datetime", _FrozenDatetime)
+    monkeypatch.setattr(social_posts_api.ideas_db, "get_idea", lambda _id: _queued_idea())
+    _patch_slot_readers(
+        monkeypatch,
+        regular=datetime(2026, 8, 11, 13, tzinfo=UTC),
+        derivative=datetime(2026, 8, 14, 13, tzinfo=UTC),
+    )
+    captured: list[datetime] = []
+    monkeypatch.setattr(
+        social_posts_api.social_post_db,
+        "schedule_fb",
+        lambda _i, *, due_at: captured.append(due_at) or True,
+    )
+
+    social_posts_api.approve_social_post(_IDEA_ID)
+
+    assert captured == [datetime(2026, 8, 15, 13, tzinfo=UTC)]
 
 
 def test_approve_409_when_not_queued(monkeypatch: pytest.MonkeyPatch) -> None:

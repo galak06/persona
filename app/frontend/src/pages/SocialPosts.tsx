@@ -13,6 +13,7 @@ import type { CategorySummary } from "../api/referenceImages";
 import { useApiQuery } from "../hooks/useApiQuery";
 import { useImageRetries } from "../hooks/useImageRetries";
 import SocialPostCard from "../components/SocialPostCard";
+import ProductSpotlightSection from "../components/ProductSpotlightSection";
 import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import EmptyState from "../components/ui/EmptyState";
@@ -202,6 +203,8 @@ export default function SocialPosts(): React.JSX.Element {
           </button>
         </div>
       </div>
+
+      <ProductSpotlightSection categories={categories} />
 
       {visible.length === 0 ? (
         <EmptyState

@@ -12,9 +12,11 @@ the file-size limit. This track gets its own resource-shaped routes instead:
   POST  /api/v1/social-posts/{id}/reject         — terminal reject + cleanup
 
 Approve SCHEDULES; it does not publish. Each approval claims the next free
-slot (``lib.social_post_slots``), so approving a batch of five spreads them
-across the following days instead of dumping them at once — which reads as
-inorganic and would breach the 3/day page-post cap besides. Publishing is done
+slot (``lib.social_slot_allocator``, which spaces off BOTH this table and the
+product-spotlight derivatives sharing the same FB calendar), so approving a
+batch of five spreads them across the following days instead of dumping them
+at once — which reads as inorganic and would breach the 3/day page-post cap
+besides. Publishing is done
 by ``scripts/crewai_social_posts_pipeline.py``'s release sweep: FB when its
 slot arrives, then IG once the FB<->IG gap has elapsed on top of that.
 """
@@ -32,7 +34,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from lib import ideas_db, social_post_db, social_post_slots
+from lib import ideas_db, social_post_db, social_slot_allocator
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -172,9 +174,8 @@ def approve_social_post(idea_id: str) -> dict[str, str]:
             detail=f"idea is '{idea.get('social_post_status')}', not 'queued'",
         )
 
-    due_at = social_post_slots.next_free_slot(
-        datetime.now(UTC),
-        last_scheduled=social_post_db.last_scheduled_fb_slot(brand_id=idea.get("brand_id")),
+    due_at = social_slot_allocator.next_shared_fb_slot(
+        datetime.now(UTC), brand_id=idea.get("brand_id")
     )
     if not social_post_db.schedule_fb(idea_id, due_at=due_at):
         raise HTTPException(status_code=409, detail="idea is no longer 'queued'")
