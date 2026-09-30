@@ -15,6 +15,7 @@ from collections.abc import Callable
 from lib.engagement.adapter import OutboundAdapter, Source, SupportsComment
 from lib.engagement.collaborators import (
     CommentGate,
+    DecisionGate,
     Dedup,
     Drafter,
     Log,
@@ -54,6 +55,7 @@ def process_post(
     commenter: SupportsComment | None = None,
     drafter: Drafter | None = None,
     comment_gate: CommentGate | None = None,
+    decision_gate: DecisionGate | None = None,
 ) -> PostOutcome:
     """Score, like, optionally comment, and mark one post."""
     platform = adapter.platform
@@ -76,6 +78,7 @@ def process_post(
         commenter=commenter,
         drafter=drafter,
         comment_gate=comment_gate,
+        decision_gate=decision_gate,
     )
     # Iterate-once, marked AFTER the visit so an unconfirmed or blocked
     # comment stays retryable (see `PostOutcome.is_retryable`). The tradeoff:
@@ -110,6 +113,7 @@ def _visit_post(
     commenter: SupportsComment | None,
     drafter: Drafter | None,
     comment_gate: CommentGate | None,
+    decision_gate: DecisionGate | None = None,
 ) -> PostOutcome:
     """Filter, score, like and comment one non-duplicate post."""
     platform = adapter.platform
@@ -145,6 +149,7 @@ def _visit_post(
         commenter=commenter,
         drafter=drafter,
         comment_gate=comment_gate,
+        decision_gate=decision_gate,
     )
     return PostOutcome(
         like_attempted=like.attempted,
@@ -172,6 +177,7 @@ def _run_comment_step(
     commenter: SupportsComment | None,
     drafter: Drafter | None,
     comment_gate: CommentGate | None,
+    decision_gate: DecisionGate | None = None,
 ) -> tuple[CommentOutcome, float | None]:
     """Comment inline if the post qualifies; return the outcome + its score.
 
@@ -204,6 +210,7 @@ def _run_comment_step(
         log=log,
         dry_run=dry_run,
         comment_gate=comment_gate,
+        decision_gate=decision_gate,
     )
     return outcome, score
 

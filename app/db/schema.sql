@@ -124,6 +124,21 @@ ALTER TABLE brands ADD COLUMN IF NOT EXISTS group_join_limit    INTEGER NOT NULL
 -- Authoritative here; `<brand_dir>/config.json`'s `content_strategy`
 -- block is the rendered copy the engine reads at runtime.
 ALTER TABLE brands ADD COLUMN IF NOT EXISTS focus_category      TEXT  NOT NULL DEFAULT '';
+-- Additive (Jev post gate, slice 1): per-platform mode of the Jev classifier
+-- that runs in front of the comment drafter (lib/decisions/). Kept as
+-- columns, not in config.json, because provision_brand() rewrites that file
+-- on every settings save. 'shadow' = decide + log only, never alters a run.
+-- The CHECK rides the ADD COLUMN, so re-applying this file is a no-op.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_ig    TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_post_gate_ig IN ('off', 'shadow', 'enforce'));
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_post_gate_fb    TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_post_gate_fb IN ('off', 'shadow', 'enforce'));
+-- Additive (Jev group gate, slice 2): mode of the "is this FB group a
+-- match?" classifier fb-group-scout consults before joining
+-- (lib/decisions/scout_gate.py). Same contract as the post-gate columns; an
+-- engine or API reading a DB without this column treats it as 'off'.
+ALTER TABLE brands ADD COLUMN IF NOT EXISTS jev_group_gate      TEXT  NOT NULL DEFAULT 'shadow'
+    CHECK (jev_group_gate IN ('off', 'shadow', 'enforce'));
 CREATE INDEX IF NOT EXISTS idx_brands_status ON brands(status);
 
 CREATE TABLE IF NOT EXISTS fb_groups (
@@ -584,3 +599,92 @@ CREATE TABLE IF NOT EXISTS brand_secrets (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (brand_id, key)
 );
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- jev_decisions (lib/decisions/decisions_db.py)
+--
+-- One row per post the Jev post gate evaluated: the questions asked, Jev's
+-- raw answers, whether the gate WOULD have skipped the post, and -- filled
+-- in once the drafter ran -- what the drafter actually did (`outcome`:
+-- engaged | declined | drafter_error | skipped_by_gate). Comparing the two is
+-- the whole point of shadow mode. Append-only log: no FK to brands so a
+-- decision is never lost to an unregistered brand id. The unique key plus
+-- INSERT ... ON CONFLICT DO NOTHING keeps a re-visited post's FIRST decision
+-- (the gate reads it back instead of asking Jev again); only the outcome
+-- columns are ever updated afterwards. A Jev call that failed (timeout, HTTP
+-- error, malformed answer) is still a row: `error` names the failure,
+-- `answers` is empty, and it is excluded from the agreement figures.
+-- ────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS jev_decisions (
+    id          BIGSERIAL        PRIMARY KEY,
+    brand_id    TEXT             NOT NULL,
+    flow        TEXT             NOT NULL DEFAULT '',
+    platform    TEXT             NOT NULL,
+    item_key    TEXT             NOT NULL,
+    questions   JSONB            NOT NULL DEFAULT '{}',
+    answers     JSONB            NOT NULL DEFAULT '{}',
+    mode        TEXT             NOT NULL CHECK (mode IN ('off', 'shadow', 'enforce')),
+    would_skip  BOOLEAN          NOT NULL DEFAULT FALSE,
+    latency_ms  INTEGER,
+    cost_usd    DOUBLE PRECISION,
+    created_at  TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+    outcome     TEXT             CHECK (outcome IS NULL OR outcome IN
+                                    ('engaged', 'declined', 'drafter_error', 'skipped_by_gate',
+                                     'joined', 'join_requested', 'already_member',
+                                     'already_pending', 'join_failed', 'skipped_low_score',
+                                     'skipped_admission_closed', 'skipped_rank_cut',
+                                     'skipped_cap')),
+    outcome_at  TIMESTAMPTZ,
+    error       TEXT
+);
+-- Catch-up for a jev_decisions created by the first cut of this table (no
+-- `error` column, no outcome CHECK). Both statements are no-ops on a table
+-- created by the definition above: the column exists, and Postgres names the
+-- inline CHECK jev_decisions_outcome_check, which the guard looks for.
+ALTER TABLE jev_decisions ADD COLUMN IF NOT EXISTS error TEXT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'jev_decisions_outcome_check'
+          AND conrelid = 'jev_decisions'::regclass
+    ) THEN
+        ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check CHECK
+            (outcome IS NULL OR outcome IN
+                ('engaged', 'declined', 'drafter_error', 'skipped_by_gate'));
+    END IF;
+END $$;
+-- Slice 2: fb-group-scout rows (platform 'fb_group') add the scout's own
+-- outcomes (lib/decisions/outcomes.py). Widen jev_decisions_outcome_check
+-- to the full list, idempotently: the constraint is dropped and re-added only
+-- when its definition is missing one of the values (a catch-up for tables
+-- created before slice 2; the CREATE TABLE above already has the full list). It only ever widens --
+-- every value the older CHECK accepted is still accepted -- and no row is
+-- touched.
+DO $$
+DECLARE
+    allowed CONSTANT TEXT[] := ARRAY[
+        'engaged', 'declined', 'drafter_error', 'skipped_by_gate',
+        'joined', 'join_requested', 'already_member', 'already_pending',
+        'join_failed', 'skipped_low_score', 'skipped_admission_closed',
+        'skipped_rank_cut', 'skipped_cap'];
+    current_def TEXT;
+BEGIN
+    SELECT pg_get_constraintdef(oid) INTO current_def
+    FROM pg_constraint
+    WHERE conname = 'jev_decisions_outcome_check'
+      AND conrelid = 'jev_decisions'::regclass;
+    IF current_def IS NULL OR EXISTS (
+        SELECT 1 FROM unnest(allowed) AS v WHERE strpos(current_def, quote_literal(v)) = 0
+    ) THEN
+        ALTER TABLE jev_decisions DROP CONSTRAINT IF EXISTS jev_decisions_outcome_check;
+        EXECUTE format(
+            'ALTER TABLE jev_decisions ADD CONSTRAINT jev_decisions_outcome_check '
+            'CHECK (outcome IS NULL OR outcome IN (%s))',
+            (SELECT string_agg(quote_literal(v), ', ') FROM unnest(allowed) AS v));
+    END IF;
+END $$;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_jev_decisions_item
+    ON jev_decisions(brand_id, platform, item_key);
+CREATE INDEX IF NOT EXISTS idx_jev_decisions_brand_created
+    ON jev_decisions(brand_id, created_at DESC);

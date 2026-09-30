@@ -13,6 +13,7 @@ import HumanMimic from "./pages/HumanMimic";
 import Onboarding from "./pages/Onboarding";
 import BrandSettings from "./pages/BrandSettings";
 import Published from "./pages/Published";
+import Decisions from "./pages/Decisions";
 import TikTokCandidates from "./pages/TikTokCandidates";
 import Connect from "./pages/Connect";
 import Explorer from "./pages/Explorer";
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="/social-posts" element={<SocialPosts />} />
               <Route path="/groups" element={<Groups />} />
               <Route path="/published" element={<Published />} />
+              <Route path="/decisions" element={<Decisions />} />
               <Route path="/onboarding" element={<Onboarding />} />
               <Route path="/onboarding/:id/settings" element={<BrandSettings />} />
               <Route path="/onboarding/:id/connect" element={<Connect />} />

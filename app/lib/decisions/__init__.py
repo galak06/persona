@@ -1,0 +1,22 @@
+"""Cheap classifier decisions (Jev via OpenRouter) in front of the LLM drafter.
+
+Slice 1 covers the IG/FB post-relevance gate. Modules, one job each:
+
+* ``jev_types``     -- question/answer dataclasses and response parsing
+* ``jev_client``    -- the HTTP call (never raises, returns None on failure)
+* ``modes``         -- the off/shadow/enforce gate-mode vocabulary
+* ``post_gate``     -- the three post questions and the enforce thresholds
+* ``decisions_db``  -- the ``jev_decisions`` log table
+* ``gate_budget``   -- per-run call cap, wall-clock budget, circuit breaker
+* ``engager_gate``  -- the pipeline collaborator the engagers inject
+* ``gate_factory``  -- builds the gates from the brand row
+* ``outcomes``      -- what a flow did with an item, and the agreement rule
+
+Slice 2 adds the fb-group-scout "is this group a match?" gate:
+
+* ``group_gate``    -- the four group questions and the enforce thresholds
+* ``scout_hooks``   -- the scout-side seam (protocol, null gate, helpers)
+* ``scout_gate``    -- the scout collaborator
+* ``scout_outcomes`` -- one final outcome per group per run; the flow deadline
+* ``shadow_worker`` -- the daemon FIFO worker shadow mode runs on
+"""

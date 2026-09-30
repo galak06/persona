@@ -28,6 +28,11 @@ export type BrandKeywords = components["schemas"]["BrandKeywords"];
 /** `GET /brands/{id}/idea-categories` — focus-field suggestions. */
 export type BrandIdeaCategories = components["schemas"]["BrandIdeaCategoriesResponse"];
 
+/** Jev post-gate mode — generated from `lib.decisions.modes.GateMode`.
+ * `shadow` only logs decisions; `enforce` lets Jev skip the drafter. */
+export type JevGateMode = NonNullable<components["schemas"]["BrandSettingsRequest"]["jev_post_gate_ig"]>;
+export const JEV_GATE_MODES: readonly JevGateMode[] = ["off", "shadow", "enforce"];
+
 /** Row shape returned by `GET /brands` (list). */
 export interface BrandSummary {
   id: string;
@@ -50,6 +55,9 @@ export interface Brand extends BrandSummary {
   headless: boolean;
   group_join_limit: number;
   focus_category: string;
+  jev_post_gate_ig: JevGateMode;
+  jev_post_gate_fb: JevGateMode;
+  jev_group_gate: JevGateMode;
   extra: Record<string, unknown>;
   updated_at: string;
 }
@@ -102,6 +110,9 @@ export interface BrandSettingsRequest {
   group_join_limit?: number;
   /** "" clears the focus — a meaningful value, unlike an absent field. */
   focus_category?: string;
+  jev_post_gate_ig?: JevGateMode;
+  jev_post_gate_fb?: JevGateMode;
+  jev_group_gate?: JevGateMode;
 }
 
 /** What onboarding/provisioning did (or would do). */

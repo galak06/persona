@@ -19,6 +19,7 @@ from __future__ import annotations
 from lib.engagement.adapter import Source, SupportsComment
 from lib.engagement.collaborators import (
     CommentGate,
+    DecisionGate,
     Dedup,
     Drafter,
     Log,
@@ -43,10 +44,12 @@ def maybe_comment(
     log: Log,
     dry_run: bool,
     comment_gate: CommentGate | None = None,
+    decision_gate: DecisionGate | None = None,
 ) -> CommentOutcome:
     """Draft and post one comment during this post's visit.
 
-    Order: comment gate -> comment quota -> claim outage -> draft ->
+    Order: comment gate -> comment quota -> claim outage -> decision gate
+    (Jev; skips only when enforcing, see `_decision_gate_skips`) -> draft ->
     claim/post/settle (`comment_submit.submit_comment`). The score floor is
     `policy.comment_threshold`, applied upstream in `post_processor`; there
     is no approval band above it — no human approves comments, so every
@@ -62,7 +65,11 @@ def maybe_comment(
     if _blocked_by_claim_outage(platform, dedup, log):
         return CommentOutcome(blocked=True)
 
+    if _decision_gate_skips(post, platform, decision_gate, log):
+        return CommentOutcome(declined=True)
+
     text = _draft(post, platform, drafter)
+    _report_draft(post, text, drafter, decision_gate, log)
     if not text:
         _log_decline(post, platform, score, log, drafter)
         return CommentOutcome(declined=True)
@@ -138,6 +145,49 @@ def _blocked_by_claim_outage(platform: str, dedup: Dedup, log: Log) -> bool:
         platform,
     )
     return True
+
+
+def _decision_gate_skips(
+    post: Post, platform: str, decision_gate: DecisionGate | None, log: Log
+) -> bool:
+    """True only when an ENFORCING decision gate vetoes the draft.
+
+    Shadow-mode gates return False by contract. The try/except makes that
+    hold even for a buggy gate: a classifier failure must never cost (or
+    alter) a comment, so it degrades to "not skipped".
+    """
+    if decision_gate is None:
+        return False
+    try:
+        skip = decision_gate.before_draft(post)
+    except Exception as exc:
+        log.warning("decision_gate_error platform=%s stage=before_draft error=%s", platform, exc)
+        return False
+    if skip:
+        log.info(
+            "comment_skipped_decision_gate platform=%s post_id=%s url=%s",
+            platform,
+            post.post_id,
+            post.post_url,
+        )
+    return skip
+
+
+def _report_draft(
+    post: Post, text: str, drafter: Drafter, decision_gate: DecisionGate | None, log: Log
+) -> None:
+    """Tell the decision gate what the drafter did (never raises)."""
+    if decision_gate is None:
+        return
+    reason = getattr(drafter, "last_outcome", None)
+    try:
+        decision_gate.after_draft(
+            post, drafted=bool(text), reason=reason if isinstance(reason, str) else None
+        )
+    except Exception as exc:
+        log.warning(
+            "decision_gate_error platform=%s stage=after_draft error=%s", post.platform, exc
+        )
 
 
 def _draft(post: Post, platform: str, drafter: Drafter) -> str:

@@ -471,6 +471,36 @@
             "title": "Id",
             "type": "string"
           },
+          "jev_group_gate": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Group Gate",
+            "type": "string"
+          },
+          "jev_post_gate_fb": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Post Gate Fb",
+            "type": "string"
+          },
+          "jev_post_gate_ig": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Post Gate Ig",
+            "type": "string"
+          },
           "keywords": {
             "$ref": "#/components/schemas/BrandKeywords"
           },
@@ -667,6 +697,36 @@
             "title": "Ig Login Command",
             "type": "string"
           },
+          "jev_group_gate": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Group Gate",
+            "type": "string"
+          },
+          "jev_post_gate_fb": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Post Gate Fb",
+            "type": "string"
+          },
+          "jev_post_gate_ig": {
+            "default": "off",
+            "enum": [
+              "off",
+              "shadow",
+              "enforce"
+            ],
+            "title": "Jev Post Gate Ig",
+            "type": "string"
+          },
           "keywords": {
             "$ref": "#/components/schemas/BrandKeywords"
           },
@@ -815,6 +875,54 @@
               }
             ],
             "title": "Headless"
+          },
+          "jev_group_gate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "shadow",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Group Gate"
+          },
+          "jev_post_gate_fb": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "shadow",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Post Gate Fb"
+          },
+          "jev_post_gate_ig": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "shadow",
+                  "enforce"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jev Post Gate Ig"
           },
           "primary_keywords": {
             "anyOf": [
@@ -1643,6 +1751,75 @@
           "decided_at"
         ],
         "title": "DecisionResponse",
+        "type": "object"
+      },
+      "DecisionsResponse": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/JevDecision"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/DecisionsSummary"
+          }
+        },
+        "required": [
+          "decisions",
+          "summary"
+        ],
+        "title": "DecisionsResponse",
+        "type": "object"
+      },
+      "DecisionsSummary": {
+        "properties": {
+          "agreed": {
+            "title": "Agreed",
+            "type": "integer"
+          },
+          "agreement_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agreement Rate"
+          },
+          "compared": {
+            "title": "Compared",
+            "type": "integer"
+          },
+          "failed": {
+            "default": 0,
+            "title": "Failed",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "total_cost_usd": {
+            "title": "Total Cost Usd",
+            "type": "number"
+          },
+          "would_skip": {
+            "title": "Would Skip",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "would_skip",
+          "compared",
+          "agreed",
+          "total_cost_usd"
+        ],
+        "title": "DecisionsSummary",
         "type": "object"
       },
       "DiscoveredKeyword": {
@@ -2741,6 +2918,133 @@
           }
         },
         "title": "ImageUpdate",
+        "type": "object"
+      },
+      "JevDecision": {
+        "description": "One evaluated post.",
+        "properties": {
+          "agrees": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agrees"
+          },
+          "answers": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Answers",
+            "type": "object"
+          },
+          "brand_id": {
+            "title": "Brand Id",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "created_at": {
+            "default": "",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "flow": {
+            "default": "",
+            "title": "Flow",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "item_key": {
+            "title": "Item Key",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "outcome_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome At"
+          },
+          "platform": {
+            "title": "Platform",
+            "type": "string"
+          },
+          "questions": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Questions",
+            "type": "object"
+          },
+          "would_skip": {
+            "title": "Would Skip",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "brand_id",
+          "platform",
+          "item_key",
+          "mode",
+          "would_skip"
+        ],
+        "title": "JevDecision",
         "type": "object"
       },
       "KeywordsResponse": {
@@ -5239,7 +5543,7 @@
     },
     "/api/v1/brands/{brand_id}/settings": {
       "patch": {
-        "description": "Partial settings edit: `headless`, the 4 keyword/competitor lists,\nand the brand's one focus category.\n\nEvery body field is optional and independent. Persists via\n`BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-\nfrom-row + `provision_brand()` path `POST .../provision` uses -- this is\nwhat makes a headless toggle or keyword edit actually take effect on the\nnext scanner run (`brand.json`/`config.json`/`instagram_accounts.csv`\nall get rewritten), not just stored inertly in Postgres. 404 if the\nbrand row doesn't exist.",
+        "description": "Partial settings edit: `headless`, the 4 keyword/competitor lists,\nthe brand's one focus category, and the per-platform Jev gate modes.\n\nEvery body field is optional and independent. Persists via\n`BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-\nfrom-row + `provision_brand()` path `POST .../provision` uses -- this is\nwhat makes a headless toggle or keyword edit actually take effect on the\nnext scanner run (`brand.json`/`config.json`/`instagram_accounts.csv`\nall get rewritten), not just stored inertly in Postgres. 404 if the\nbrand row doesn't exist.",
         "operationId": "update_brand_settings_api_v1_brands__brand_id__settings_patch",
         "parameters": [
           {
@@ -5415,6 +5719,88 @@
           }
         },
         "summary": "Get Config"
+      }
+    },
+    "/api/v1/decisions": {
+      "get": {
+        "description": "Most-recent-first Jev decisions, optionally filtered, plus a summary.",
+        "operationId": "list_decisions_api_v1_decisions_get",
+        "parameters": [
+          {
+            "description": "Brand id; omit for all brands",
+            "in": "query",
+            "name": "brand_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Brand id; omit for all brands",
+              "title": "Brand Id"
+            }
+          },
+          {
+            "description": "instagram | facebook | fb_group",
+            "in": "query",
+            "name": "platform",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "instagram | facebook | fb_group",
+              "title": "Platform"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Decisions",
+        "tags": [
+          "decisions"
+        ]
       }
     },
     "/api/v1/engagements": {

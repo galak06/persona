@@ -46,6 +46,8 @@ WORKER_LABEL = worker_label_for_flow("fb-engager")
 
 from lib import draft_helper, rate_limiter
 from lib.comment_generator import score_relevance as _score_relevance
+from lib.decisions.gate_budget import drain_timeout
+from lib.decisions.gate_factory import build_post_gate
 from lib.engagement.adapter import OutboundAdapter
 from lib.engagement.adapters.facebook import FacebookGroupAdapter
 from lib.engagement.pipeline import ScanReport, run_outbound_scan
@@ -158,6 +160,10 @@ def run_fb_engager_scan(
     # adapters included — exactly as the retired fb_scan.py wrapped its
     # `_WarmFiltered`: newly joined groups sit out the comment warmup.
     active = WarmFilteredAdapter(adapter or FacebookGroupAdapter(config))
+    # Jev post gate (lib/decisions/): shadow by default -- logs a verdict per
+    # candidate off the scan thread, never alters the run. Not built for a
+    # dry run, which consumes no state and spends nothing it can avoid.
+    gate = None if dry_run else build_post_gate("facebook", "fb-engager")
     try:
         report = run_outbound_scan(
             active,
@@ -173,26 +179,34 @@ def run_fb_engager_scan(
             score_relevance=_score_post,
             dry_run=dry_run,
             inline_comment=True,
+            decision_gate=gate,
         )
     except (RuntimeError, FileNotFoundError) as exc:
         msg = str(exc)
         log_trace("facebook", f"Aborted: {msg}")
         skill_skipped("fb-engager", msg)
         return None
-
-    # A dry run consumes no state: no dedup marks (the pipeline suppresses
-    # them, so posts stay eligible) and no last-run stamp (the
-    # already-ran-today guard is not burned).
-    if not dry_run:
-        last_run["fb_engager"] = {
-            "last_run_at": datetime.now(UTC).isoformat(),
-            "groups_scanned": report.sources_visited,
-            "posts_liked": report.likes_succeeded,
-            "posts_commented": report.comments_posted,
-            "comments_declined": report.comments_declined,
-            "status": "success",
-        }
-        write_json(LAST_RUN_FILE, last_run)
+    else:
+        # A dry run consumes no state: no dedup marks (the pipeline suppresses
+        # them, so posts stay eligible) and no last-run stamp (the
+        # already-ran-today guard is not burned).
+        if not dry_run:
+            last_run["fb_engager"] = {
+                "last_run_at": datetime.now(UTC).isoformat(),
+                "groups_scanned": report.sources_visited,
+                "posts_liked": report.likes_succeeded,
+                "posts_commented": report.comments_posted,
+                "comments_declined": report.comments_declined,
+                "status": "success",
+            }
+            write_json(LAST_RUN_FILE, last_run)
+        # Drain shadow Jev work only AFTER the stamp, clamped to what is
+        # left of the run's deadline (none left -> no wait at all).
+        if gate is not None:
+            gate.close(timeout_s=drain_timeout(None))
+    finally:
+        if gate is not None:
+            gate.close(timeout_s=0.0)  # no-op after the drain above; never waits
 
     # The funnel goes to BOTH sinks: the summary is what a human reads in
     # Telegram, the log line is what survives to be grepped afterwards.

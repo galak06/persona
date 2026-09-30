@@ -32,6 +32,7 @@ from lib import brands_db
 from lib.brand_provisioning import ProvisionResult, provision_brand
 from lib.brand_templates import BrandSpec
 from lib.brands_db.repository import BrandAlreadyExistsError
+from lib.decisions.modes import parse_mode
 from lib.groups_db.models import slugify
 
 router = APIRouter()
@@ -105,6 +106,9 @@ def _provision_response(brand_id: str, result: ProvisionResult) -> BrandProvisio
         headless=bool(row.get("headless", True)),
         group_join_limit=int(row.get("group_join_limit") or 10),
         focus_category=str(row.get("focus_category") or ""),
+        jev_post_gate_ig=parse_mode(row.get("jev_post_gate_ig")),
+        jev_post_gate_fb=parse_mode(row.get("jev_post_gate_fb")),
+        jev_group_gate=parse_mode(row.get("jev_group_gate")),
         status=str(row.get("status") or ""),
         brand_dir=brand_dir,
         extra=dict(row.get("extra") or {}),
@@ -228,6 +232,9 @@ def get_brand(brand_id: str) -> BrandDetail:
         headless=bool(row.get("headless", True)),
         group_join_limit=int(row.get("group_join_limit") or 10),
         focus_category=str(row.get("focus_category") or ""),
+        jev_post_gate_ig=parse_mode(row.get("jev_post_gate_ig")),
+        jev_post_gate_fb=parse_mode(row.get("jev_post_gate_fb")),
+        jev_group_gate=parse_mode(row.get("jev_group_gate")),
         status=str(row.get("status") or ""),
         brand_dir=str(row.get("brand_dir") or ""),
         extra=dict(row.get("extra") or {}),

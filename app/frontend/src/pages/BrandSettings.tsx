@@ -17,6 +17,8 @@ import ErrorState from "../components/ui/ErrorState";
 import LoadingState from "../components/ui/LoadingState";
 import ReferenceLibrarySection from "../components/references/ReferenceLibrarySection";
 import ProductsPanel from "../components/products/ProductsPanel";
+import JevGateFields, { type JevGateValues } from "../components/JevGateFields";
+import { changedJevModes, jevBaseline, jevModesNotSaved } from "../components/jevGateDiff";
 
 /**
  * Brand settings — edit an already-provisioned brand's headless mode and
@@ -29,7 +31,7 @@ import ProductsPanel from "../components/products/ProductsPanel";
  * separate dirty-tracking).
  */
 
-interface FormState {
+interface FormState extends JevGateValues {
   headless: boolean;
   primary_keywords: string;
   secondary_keywords: string;
@@ -84,6 +86,9 @@ function formStateFromBrand(brand: Brand): FormState {
     enabled_flows: brand.enabled_flows ?? [],
     group_join_limit: String(brand.group_join_limit),
     focus_category: brand.focus_category ?? "",
+    jev_post_gate_ig: brand.jev_post_gate_ig ?? "off",
+    jev_post_gate_fb: brand.jev_post_gate_fb ?? "off",
+    jev_group_gate: brand.jev_group_gate ?? "off",
   };
 }
 
@@ -117,10 +122,15 @@ export default function BrandSettings(): React.JSX.Element {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [result, setResult] = useState<BrandCreateResponse | null>(null);
+  // Last PERSISTED Jev modes: the diff baseline, refreshed from every save
+  // response (a page-load baseline silently drops an A→B→A revert).
+  const [savedJev, setSavedJev] = useState<JevGateValues>(jevBaseline(null));
 
   useEffect(() => {
+    if (!brand) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (brand) setForm(formStateFromBrand(brand));
+    setForm(formStateFromBrand(brand));
+    setSavedJev(jevBaseline(brand));
   }, [brand]);
 
   if (!id) return <Alert status="error">No brand id in URL.</Alert>;
@@ -141,11 +151,16 @@ export default function BrandSettings(): React.JSX.Element {
       // "" is meaningful here (clear the focus), so it is always sent --
       // only `undefined` means "leave alone" on the PATCH side.
       focus_category: form.focus_category.trim(),
+      ...changedJevModes(form, savedJev),
     };
 
     const updated = await mutate(endpoints.brandSettings(id), payload);
     if (updated) {
       setResult(updated);
+      setSavedJev(jevBaseline(updated));
+      if (jevModesNotSaved(updated.warnings)) {
+        toast.error("Jev gate modes NOT saved — database migration pending");
+      }
       toast.success(`Settings saved for ${updated.name}`, updated.brand_dir);
     } else {
       toast.error(`Could not save settings for ${id}`);
@@ -318,6 +333,8 @@ export default function BrandSettings(): React.JSX.Element {
               </label>
             ))}
           </div>
+
+          <JevGateFields values={form} onChange={(next) => setForm({ ...form, ...next })} />
 
           {saveError && <Alert status="error">{saveError}</Alert>}
 

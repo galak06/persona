@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from lib.group_discovery.fb_search import pace_between_joins, try_join
 from lib.group_discovery.state import (
     append_to_tracker,
@@ -61,13 +63,33 @@ def get_user_approval(
     return approved[:budget]
 
 
-def send_join_requests(page, approved: list[dict], known: set[str]) -> int:
-    """Execute the join flow for each approved group. Returns count sent."""
+def _report(on_result: Callable[[dict, str], None] | None, group: dict, result: str) -> None:
+    """Hand one join result to the observer; an observer bug never stops joins."""
+    if on_result is None:
+        return
+    try:
+        on_result(group, result)
+    except Exception as e:
+        print(f"     (join observer failed: {type(e).__name__})")
+
+
+def send_join_requests(
+    page,
+    approved: list[dict],
+    known: set[str],
+    on_result: Callable[[dict, str], None] | None = None,
+) -> int:
+    """Execute the join flow for each approved group. Returns count sent.
+
+    ``on_result`` (optional, read-only observer) receives each group with the
+    ``try_join`` result, or ``"error"`` when the attempt raised.
+    """
     sent = 0
     print(f"\nSending {len(approved)} join request(s)...\n")
     for i, group in enumerate(approved):
         is_last = i == len(approved) - 1
         print(f"  → {group['name']} [{group['privacy'].upper()}]")
+        result = "error"
         try:
             result = try_join(page, group["url"])
             print(f"     Button result: {result}")
@@ -93,6 +115,9 @@ def send_join_requests(page, approved: list[dict], known: set[str]) -> int:
         except Exception as e:
             print(f"     ERROR: {e}")
             log_error(f"JOIN_FAILED: {group['name']} — {e}")
+            # A click that landed is still a join even if logging it failed.
+            result = result if result.startswith("clicked") else "error"
+        _report(on_result, group, result)
         if not is_last:
             delay = pace_between_joins(is_last=False)
             print(f"     Waited {delay:.0f}s before next request")

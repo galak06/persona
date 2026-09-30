@@ -25,6 +25,9 @@ from lib.engagement.collaborators import (
     CommentGate as _CommentGate,
 )
 from lib.engagement.collaborators import (
+    DecisionGate as _DecisionGate,
+)
+from lib.engagement.collaborators import (
     Dedup as _Dedup,
 )
 from lib.engagement.collaborators import (
@@ -80,6 +83,7 @@ def run_outbound_scan(
     inline_comment: bool = False,
     comment_gate: _CommentGate | None = None,
     deadline: ScanDeadline | None = None,
+    decision_gate: _DecisionGate | None = None,
 ) -> ScanReport:
     """Run one outbound-engagement scan and return a `ScanReport`.
 
@@ -93,7 +97,8 @@ def run_outbound_scan(
     degrades to like-only (and logs `inline_comment_unavailable` once when
     inline mode was requested). An optional `comment_gate` can veto
     individual comments — see `lib/engagement/collaborators.py`; the like
-    step is never gated.
+    step is never gated. An optional `decision_gate` (Jev) sees each post
+    just before drafting; only an enforcing one can skip the draft.
 
     `now_iso` is retained for the wrappers' call sites (collaborators such
     as the first-comment gate take their own clock).
@@ -148,6 +153,7 @@ def run_outbound_scan(
                         commenter=commenter,
                         drafter=drafter,
                         comment_gate=comment_gate,
+                        decision_gate=decision_gate,
                     ),
                 )
             if counters.stopped_reason is not None:

@@ -70,7 +70,7 @@ def _merge_keywords(row: dict[str, Any], body: BrandSettingsRequest) -> dict[str
 @router.patch("/brands/{brand_id}/settings", response_model=BrandProvisionResponse)
 def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandProvisionResponse:
     """Partial settings edit: `headless`, the 4 keyword/competitor lists,
-    and the brand's one focus category.
+    the brand's one focus category, and the per-platform Jev gate modes.
 
     Every body field is optional and independent. Persists via
     `BrandsRepository.update()`, then re-runs the same rebuild-`BrandSpec`-
@@ -94,6 +94,9 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
         enabled_flows=(list(body.enabled_flows) if body.enabled_flows is not None else None),
         group_join_limit=body.group_join_limit,
         focus_category=body.focus_category,
+        jev_post_gate_ig=body.jev_post_gate_ig,
+        jev_post_gate_fb=body.jev_post_gate_fb,
+        jev_group_gate=body.jev_group_gate,
     )
 
     updated_row = brands_db.get(brand_id)
@@ -105,7 +108,29 @@ def update_brand_settings(brand_id: str, body: BrandSettingsRequest) -> BrandPro
     except Exception as exc:  # any failure here -> 502, row left as-is (already persisted)
         raise _provisioning_failed_response(brand_id, exc) from exc
 
-    return _provision_response(brand_id, result)
+    response = _provision_response(brand_id, result)
+    response.warnings.extend(_jev_modes_not_saved(body, updated_row))
+    return response
+
+
+JEV_MODES_NOT_SAVED = (
+    "Jev gate modes were NOT saved: the database migration is pending "
+    "(apply db/schema.sql). Every other setting was saved."
+)
+
+
+def _jev_modes_not_saved(body: BrandSettingsRequest, row: dict[str, Any]) -> list[str]:
+    """A warning when a requested Jev mode did not reach the row.
+
+    `BrandsRepository.update` drops the Jev columns (instead of failing the
+    whole save) on a DB that predates them; this turns that into a visible
+    signal rather than a silent 200.
+    """
+    for column in ("jev_post_gate_ig", "jev_post_gate_fb", "jev_group_gate"):
+        requested = getattr(body, column)
+        if requested is not None and row.get(column) != requested:
+            return [JEV_MODES_NOT_SAVED]
+    return []
 
 
 @router.get("/brands/{brand_id}/idea-categories", response_model=BrandIdeaCategoriesResponse)
