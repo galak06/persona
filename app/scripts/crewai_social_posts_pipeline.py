@@ -18,13 +18,18 @@ Three phases, run together on every invocation:
    -- the human gate sees the flags), and lands the row at
    `social_post_status='queued'` for review on the frontend. Publishing only
    happens after approval (`worker_wp_ideas_social_post.py`).
-3. **Release sweep** -- approval SCHEDULES rather than publishes (each
-   approved post takes the next free daily slot, see `lib.social_post_slots`),
-   so this phase is what actually posts: FB rows whose slot has arrived, then
-   IG halves whose FB<->IG gap has elapsed. Runs on every invocation, so any
-   run flushes whatever became due; `--release-only` runs just this, which is
-   the mode the hourly `social-posts-release` cron flow runs. Skipped under
-   `--dry-run` and under `--compose-only`.
+3. **Release sweep** (`lib.social_release.release_due`) -- approval SCHEDULES
+   rather than publishes (each approved post takes the next free daily slot,
+   see `lib.social_post_slots`), so this phase is what actually posts: FB rows
+   whose slot has arrived, then IG halves whose FB<->IG gap has elapsed. Runs
+   on every invocation, so any run flushes whatever became due;
+   `--release-only` runs just this, which is the mode the hourly
+   `social-posts-release` cron flow runs. Skipped under `--dry-run` and under
+   `--compose-only`. It lives in `lib/` rather than here because it also
+   sweeps the `content_derivatives` table (product spotlights, a different
+   worker) and because it is the one path that publishes publicly -- as a
+   module it is directly testable (`tests/test_social_release.py`) instead of
+   only reachable by running this pipeline for real.
 
 The two cron flows are deliberately disjoint modes of this one script:
 `social-posts-compose` (daily, `--compose-only`) fills the review queue and
@@ -53,7 +58,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -77,6 +81,7 @@ from lib.crew.socialpost.prompts import build_social_post_task_description
 from lib.local_env import load_brand_env_into_environ, load_local_env
 from lib.medical_claims_validator import find_banned_claims
 from lib.observability import get_logger
+from lib.social_release import release_due
 
 logger = get_logger(__name__)
 
@@ -88,7 +93,6 @@ _RELEASE_ENV_VARS = ("WP_URL", "WP_USER", "WP_APP_PASSWORD")
 # Composition additionally needs the writer LLM and the image model.
 _COMPOSE_ENV_VARS = ("DEEPSEEK_API_KEY", "GEMINI_API_KEY", *_RELEASE_ENV_VARS)
 _BODY_TRUNCATE_CHARS = 3000
-_RECIPE_PUBLISHER_ROOT = _ENGINE_ROOT / "recipe-publisher"
 
 
 def _infer_brand_dir() -> Path:
@@ -214,64 +218,6 @@ def _process_idea(row: dict[str, Any], *, dry_run: bool, brand_dir: Path) -> str
     return f"composed_{source}"
 
 
-def _publish_one(idea_id: str, platform: str, *, brand_dir: Path) -> bool:
-    """Subprocess-invoke the publish worker for one row on one platform."""
-    try:
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "workers.worker_wp_ideas_social_post",
-                "--idea-id",
-                idea_id,
-                "--platform",
-                platform,
-            ],
-            cwd=_RECIPE_PUBLISHER_ROOT,
-            env={**os.environ, "BRAND_DIR": str(brand_dir)},
-            capture_output=True,
-            text=True,
-            timeout=600,
-        )
-    except Exception as exc:  # includes subprocess.TimeoutExpired
-        logger.error(
-            "social_posts_release_error", idea_id=idea_id, platform=platform, error=str(exc)
-        )
-        return False
-    if result.returncode != 0:
-        logger.error(
-            "social_posts_release_failed",
-            idea_id=idea_id,
-            platform=platform,
-            returncode=result.returncode,
-            stderr=(result.stderr or "")[-2000:],
-        )
-        return False
-    return True
-
-
-def _release_due(*, brand_id: str, brand_dir: Path) -> dict[str, int]:
-    """Phase 3: publish everything whose time has come -- FB posts whose
-    scheduled slot has arrived, then IG halves whose FB<->IG gap has elapsed.
-
-    This is what turns approval-as-scheduling into actual posts, so it runs on
-    EVERY invocation (not just `--release-only`): any run of this pipeline
-    flushes whatever became due since the last one.
-
-    FB first, deliberately: a row that publishes to FB in this pass arms its
-    IG due-time as a side effect, and that time is always in the future, so it
-    can't also fire in the same pass. No double-post, no ordering surprise.
-    """
-    outcomes: dict[str, int] = {}
-    for row in social_post_db.list_due_for_fb(brand_id=brand_id):
-        key = "fb_published" if _publish_one(str(row["id"]), "fb", brand_dir=brand_dir) else "error"
-        outcomes[key] = outcomes.get(key, 0) + 1
-    for row in social_post_db.list_due_for_ig(brand_id=brand_id):
-        key = "ig_published" if _publish_one(str(row["id"]), "ig", brand_dir=brand_dir) else "error"
-        outcomes[key] = outcomes.get(key, 0) + 1
-    return outcomes
-
-
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--brand-dir", type=Path, default=None)
@@ -306,7 +252,10 @@ def _exit_code(results: dict[str, int]) -> int:
     `summary:` line (and in the worker message, which now keeps stdout).
 
     Every non-`error` key is a success: `composed_gemini` / `composed_fallback`
-    from compose, `fb_published` / `ig_published` from release.
+    from compose, `fb_published` / `ig_published` / `derivative_fb_published` /
+    `derivative_ig_published` from release. That is exactly why the release
+    sweep tallies all of its failures under one shared `error` key rather than
+    a per-track one -- a `derivative_error` key would read as a success here.
     """
     succeeded = sum(count for key, count in results.items() if key != "error")
     if results.get("error", 0) and not succeeded:
@@ -354,7 +303,7 @@ def main() -> int:
             results[outcome] = results.get(outcome, 0) + 1
 
     if not args.dry_run and not args.compose_only:
-        for key, count in _release_due(brand_id=brand_id, brand_dir=brand_dir).items():
+        for key, count in release_due(brand_id=brand_id, brand_dir=brand_dir).items():
             results[key] = results.get(key, 0) + count
 
     print(f"summary: {json.dumps(results)}")

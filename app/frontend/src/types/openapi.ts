@@ -1228,6 +1228,253 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/social-derivatives": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Social Derivatives
+         * @description Spotlights for the review page, ``'queued'`` by default.
+         *
+         *     422 when ``status`` is not in ``derivatives_db.STATUSES`` (detail lists the
+         *     valid values, like ``GET /social-posts``). Then ``resolve_api_brand()``,
+         *     ``derivatives_db.fail_stale_composing(brand_id=brand_id)`` (so a dead run
+         *     surfaces as 'failed' on the next poll instead of spinning forever), and
+         *     ``derivatives_db.list_for_review(brand_id=brand_id, status=status,
+         *     limit=limit)`` mapped with ``SocialDerivative.from_row``.
+         *
+         *     ``status="queued"`` also carries 'composing' rows and recently 'failed'
+         *     ones -- see ``list_for_review``. ``composing: true`` on any row is the
+         *     page's cue to keep polling every 5 s.
+         */
+        get: operations["list_social_derivatives_api_v1_social_derivatives_get"];
+        put?: never;
+        /**
+         * Create Spotlight
+         * @description Create one spotlight in ``'composing'`` and dispatch its compose run.
+         *     202 immediately; the page polls ``GET /social-derivatives``.
+         *
+         *     Order (each step's failure stops the rest):
+         *
+         *     1. ``resolve_api_brand()``.
+         *     2. ``derivatives_db.fail_stale_composing(brand_id=brand_id)`` -- a killed
+         *        run must not block re-creating its spotlight, and step 6 leans on it.
+         *     3. Load the idea (404; 409 without ``wp_post_id``/``wp_url``) and apply the
+         *        focus gate (422).
+         *     4. ``load_candidate_pool(Path(brand_dir)).get(body.product_key)`` -> 422
+         *        when absent. A product that is NOT in the post is ALLOWED.
+         *     5. ``reference_category``: ``slugify`` + must be a key of
+         *        ``existing_images_by_category(Path(brand_dir))`` -> 422 otherwise
+         *        (``social_posts_retry_api._validated_category`` semantics; ``""`` passes).
+         *     6. Under ``_dispatch_lock``: 409 when ``worker_db.get_one(brand_dir,
+         *        _label(brand_id), brand_id)`` is ``_IN_FLIGHT`` AND a 'composing' row
+         *        survived step 2; then ``derivatives_db.insert_composing(NewDerivative(...))``.
+         *        ``None`` -> ``derivatives_db.find_active(idea_id, product_key, format)``:
+         *        found -> 409 with ``detail={"message": ..., "existing_id": <id>}``; not
+         *        found -> 503. Then ``flow_queue.dispatch(schedule_task_id=_label(brand_id),
+         *        script=_COMPOSE_SCRIPT, args=["--derivative-id", new_id], brand=brand_id,
+         *        brand_dir=brand_dir, timeout_seconds=_COMPOSE_TIMEOUT_SECONDS)``; if it
+         *        raises -> ``derivatives_db.mark_failed(new_id, error="dispatch_failed")``
+         *        FIRST, log ``social_derivative_dispatch_failed``, then 503. Finally
+         *        ``worker_db.record_queued(brand_dir, _label(brand_id), brand_id)``.
+         *
+         *     The row is inserted BEFORE the push (the reverse of the retry route)
+         *     because the script needs the row's id as its argument; ``mark_failed`` on a
+         *     failed push is what keeps that ordering from leaving a wedged row.
+         *
+         *     Logs ``social_derivative_created`` then
+         *     ``social_derivative_compose_dispatched``. Returns ``{id, status:
+         *     "composing"}``.
+         */
+        post: operations["create_spotlight_api_v1_social_derivatives_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Spotlight Sources
+         * @description Published posts a spotlight can be made from, newest first.
+         *
+         *     ``resolve_api_brand()`` -> ``ideas_db.list_ideas(status=s, brand_id=...)``
+         *     for each ``_ELIGIBLE_IDEA_STATUSES`` -> keep rows that have BOTH
+         *     ``wp_post_id`` and ``wp_url`` and pass
+         *     ``is_in_focus(row["category"], ContentStrategy(focus_category=
+         *     brands_db.focus_category(brand_id)))`` (the ``ideas_db.py:147`` pattern).
+         *     An idea whose own social post is already published is still a valid source
+         *     -- that is the point of the feature.
+         *
+         *     Errors: 404 / 500 from ``resolve_api_brand``.
+         */
+        get: operations["list_spotlight_sources_api_v1_social_derivatives_sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/sources/{idea_id}/products": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Spotlight Products
+         * @description The product picker for one post: the merged catalog, marked up.
+         *
+         *     Source is the WHOLE ``load_candidate_pool(Path(brand_dir))``.
+         *     ``scope="category"`` keeps entries whose ``slugify(entry.category or "")``
+         *     equals ``slugify(idea["category"])`` PLUS every in-post product whatever
+         *     its category; ``scope="all"`` keeps everything, and so does
+         *     ``scope="category"`` when that slug is ``""`` (an uncategorised idea of a
+         *     brand with no focus -- filtering on "" would hide the whole catalog).
+         *     ``slugify`` is ``lib.crew.reference_library.slugify`` on BOTH sides: the
+         *     idea says "Dental Care", the catalog says "dental-care". Order: in-post
+         *     products first (post link order), then the rest by ``display``
+         *     (case-insensitive).
+         *
+         *     WordPress is best-effort. ``wp_source.fetch_post(str(idea["wp_post_id"]))``
+         *     returning ``None`` OR raising ``lib.errors.ConfigurationError`` (WP_* env
+         *     missing in this container), ``httpx.HTTPError`` or ``ValueError`` (non-JSON
+         *     body) => ``post_scan="unavailable"``, every ``in_post=False``,
+         *     ``unknown_asins=[]``, slug from ``post_slug(None, wp_url=..., fallback_title=
+         *     topic)`` -- a 200, never an error, so the list still works. Otherwise
+         *     ``post_scan="ok"`` and ``products_in_post(post["content"]["rendered"], pool)``.
+         *
+         *     Logs ``social_derivative_products_listed``.
+         *
+         *     Errors: 404 idea not found (or another brand's); 409 idea has no
+         *     ``wp_post_id``/``wp_url``; 422 idea out of focus; 422 bad ``scope``
+         *     (FastAPI, from the ``Literal``).
+         */
+        get: operations["list_spotlight_products_api_v1_social_derivatives_sources__idea_id__products_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/{derivative_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Social Derivative
+         * @description Approve a queued spotlight by claiming the next free SHARED FB slot.
+         *
+         *     ``derivatives_db.get`` (404; 409 unless ``status == 'queued'``) ->
+         *     ``due_at = social_slot_allocator.next_shared_fb_slot(datetime.now(UTC),
+         *     brand_id=row["brand_id"])`` -> ``derivatives_db.schedule_fb(id,
+         *     due_at=due_at)`` (``False`` -> 409 "no longer 'queued'"). Nothing
+         *     publishes here. Logs ``social_derivative_scheduled``. Returns ``{id,
+         *     status: "scheduled", fb_due_at: due_at.isoformat()}``.
+         */
+        post: operations["approve_social_derivative_api_v1_social_derivatives__derivative_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/{derivative_id}/image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Social Derivative Image
+         * @description Serve the composed hook image: ``image/jpeg``, ``Cache-Control: no-store``.
+         *
+         *     The stored path is resolved under ``_brand_root()`` and must stay under it:
+         *     ``target = (root / image_path).resolve()`` and
+         *     ``target.is_relative_to(root.resolve())``, else 404 -- a row is
+         *     worker-written data, and a ``../`` in it must not become a file read.
+         *
+         *     Errors: 404 no row / no ``image_path`` / escapes the root / not a file.
+         */
+        get: operations["get_social_derivative_image_api_v1_social_derivatives__derivative_id__image_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/{derivative_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Social Derivative
+         * @description Reject a queued spotlight: terminal ``'rejected'`` + delete its image.
+         *
+         *     ``derivatives_db.get`` (404) -> ``derivatives_db.reject(id)`` (``False`` ->
+         *     409) -> unlink the image, resolved with the same ``is_relative_to`` guard
+         *     as the image route (``missing_ok``). 'rejected' is outside the unique
+         *     index, so the same spotlight can be created again afterwards. Logs
+         *     ``social_derivative_rejected``. Returns ``{id, status: "rejected"}``.
+         */
+        post: operations["reject_social_derivative_api_v1_social_derivatives__derivative_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/social-derivatives/{derivative_id}/unschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unschedule Social Derivative
+         * @description Release a scheduled spotlight's slot and put it back in review.
+         *
+         *     ``derivatives_db.unschedule_fb(id)`` -> ``False`` = 409 (not 'scheduled',
+         *     which includes "the worker already claimed it"). Logs
+         *     ``social_derivative_unscheduled``. Returns ``{id, status: "queued"}``.
+         */
+        post: operations["unschedule_social_derivative_api_v1_social_derivatives__derivative_id__unschedule_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/social-posts": {
         parameters: {
             query?: never;
@@ -2465,6 +2712,34 @@ export interface components {
             /** Topic */
             topic: string;
         };
+        /** CreateSpotlightRequest */
+        CreateSpotlightRequest: {
+            /**
+             * Format
+             * @default feed_post
+             * @constant
+             */
+            format: "feed_post";
+            /** Idea Id */
+            idea_id: string;
+            /** Product Key */
+            product_key: string;
+            /**
+             * Reference Category
+             * @default
+             */
+            reference_category: string;
+        };
+        /** CreateSpotlightResponse */
+        CreateSpotlightResponse: {
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "composing" | "queued" | "scheduled" | "fb_publishing" | "fb_published" | "ig_publishing" | "published" | "rejected" | "failed";
+        };
         /**
          * CuratedKeyword
          * @description One term from the brand's own `content_analysis.keywords` block.
@@ -3545,6 +3820,100 @@ export interface components {
             /** Sessions */
             sessions: components["schemas"]["SessionStatus"][];
         };
+        /**
+         * SocialDerivative
+         * @description One ``content_derivatives`` row as the review page sees it.
+         */
+        SocialDerivative: {
+            /** Brand Id */
+            brand_id: string;
+            /** Comment Keyword */
+            comment_keyword?: string | null;
+            /**
+             * Composing
+             * @default false
+             */
+            composing: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /**
+             * Dm Disclosure
+             * @default As an Amazon Associate I earn from qualifying purchases.
+             */
+            dm_disclosure: string;
+            /** Error */
+            error?: string | null;
+            /** Fb Affiliate Url */
+            fb_affiliate_url?: string | null;
+            /** Fb Caption */
+            fb_caption?: string | null;
+            /** Fb Due At */
+            fb_due_at?: string | null;
+            /** Fb Page Post Url */
+            fb_page_post_url?: string | null;
+            /** Format */
+            format: string;
+            /**
+             * Has Image
+             * @default false
+             */
+            has_image: boolean;
+            /** Id */
+            id: string;
+            /** Idea Id */
+            idea_id: string;
+            /** Ig Affiliate Url */
+            ig_affiliate_url?: string | null;
+            /** Ig Caption */
+            ig_caption?: string | null;
+            /** Ig Due At */
+            ig_due_at?: string | null;
+            /** Ig Post Url */
+            ig_post_url?: string | null;
+            /** Image Alt */
+            image_alt?: string | null;
+            /** Kind */
+            kind: string;
+            /** Product Asin */
+            product_asin: string;
+            /** Product Display */
+            product_display: string;
+            /** Product Key */
+            product_key: string;
+            /**
+             * Reference Category
+             * @default
+             */
+            reference_category: string;
+            /** Source */
+            source?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "composing" | "queued" | "scheduled" | "fb_publishing" | "fb_published" | "ig_publishing" | "published" | "rejected" | "failed";
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /**
+             * Validation Flags
+             * @default []
+             */
+            validation_flags: string[];
+            /** Wp Url */
+            wp_url?: string | null;
+        };
+        /** SocialDerivativesResponse */
+        SocialDerivativesResponse: {
+            /** Derivatives */
+            derivatives: components["schemas"]["SocialDerivative"][];
+            /** Total */
+            total: number;
+        };
         /** SocialPost */
         SocialPost: {
             /** Fb Caption */
@@ -3585,6 +3954,101 @@ export interface components {
             posts: components["schemas"]["SocialPost"][];
             /** Total */
             total: number;
+        };
+        /**
+         * SpotlightDecisionResponse
+         * @description Answer of approve / unschedule / reject.
+         */
+        SpotlightDecisionResponse: {
+            /** Fb Due At */
+            fb_due_at?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "composing" | "queued" | "scheduled" | "fb_publishing" | "fb_published" | "ig_publishing" | "published" | "rejected" | "failed";
+        };
+        /**
+         * SpotlightProduct
+         * @description One catalog entry in the picker.
+         *
+         *     ``category`` and ``notes`` are optional on ``ProductEntry`` and normalised
+         *     to ``""`` here so the dialog never branches on null.
+         */
+        SpotlightProduct: {
+            /** Asin */
+            asin: string;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+            /**
+             * Certification Verified
+             * @default false
+             */
+            certification_verified: boolean;
+            /** Display */
+            display: string;
+            /**
+             * In Post
+             * @default false
+             */
+            in_post: boolean;
+            /** Key */
+            key: string;
+            /**
+             * Notes
+             * @default
+             */
+            notes: string;
+        };
+        /** SpotlightProductsResponse */
+        SpotlightProductsResponse: {
+            /** Category */
+            category: string;
+            /** Idea Id */
+            idea_id: string;
+            /**
+             * Post Scan
+             * @enum {string}
+             */
+            post_scan: "ok" | "unavailable";
+            /** Products */
+            products: components["schemas"]["SpotlightProduct"][];
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "category" | "all";
+            /** Slug */
+            slug: string;
+            /**
+             * Unknown Asins
+             * @default []
+             */
+            unknown_asins: string[];
+        };
+        /**
+         * SpotlightSource
+         * @description One published, in-focus post a spotlight can be made from.
+         */
+        SpotlightSource: {
+            /** Category */
+            category: string;
+            /** Idea Id */
+            idea_id: string;
+            /** Topic */
+            topic: string;
+            /** Wp Url */
+            wp_url: string;
+        };
+        /** SpotlightSourcesResponse */
+        SpotlightSourcesResponse: {
+            /** Posts */
+            posts: components["schemas"]["SpotlightSource"][];
         };
         /** StatusBody */
         StatusBody: {
@@ -5465,6 +5929,339 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SessionStatusResponse"];
+                };
+            };
+        };
+    };
+    list_social_derivatives_api_v1_social_derivatives_get: {
+        parameters: {
+            query?: {
+                /** @description content_derivatives.status filter */
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocialDerivativesResponse"];
+                };
+            };
+            /** @description brand is not registered */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spotlight_api_v1_social_derivatives_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpotlightRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateSpotlightResponse"];
+                };
+            };
+            /** @description idea not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description duplicate active spotlight (detail.existing_id carries its id), a compose run already in flight for this brand, or no WordPress post */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description compose dispatch failed; the row was marked 'failed' first */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_spotlight_sources_api_v1_social_derivatives_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotlightSourcesResponse"];
+                };
+            };
+            /** @description brand is not registered */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_spotlight_products_api_v1_social_derivatives_sources__idea_id__products_get: {
+        parameters: {
+            query?: {
+                /** @description 'category' = the post's category; 'all' = the whole catalog */
+                scope?: "category" | "all";
+            };
+            header?: never;
+            path: {
+                idea_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotlightProductsResponse"];
+                };
+            };
+            /** @description idea not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description idea has no published WordPress post */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_social_derivative_api_v1_social_derivatives__derivative_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                derivative_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotlightDecisionResponse"];
+                };
+            };
+            /** @description spotlight not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description spotlight is not 'queued' */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_social_derivative_image_api_v1_social_derivatives__derivative_id__image_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                derivative_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description spotlight, image path or file not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_social_derivative_api_v1_social_derivatives__derivative_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                derivative_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotlightDecisionResponse"];
+                };
+            };
+            /** @description spotlight not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description spotlight is not 'queued' */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unschedule_social_derivative_api_v1_social_derivatives__derivative_id__unschedule_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                derivative_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotlightDecisionResponse"];
+                };
+            };
+            /** @description spotlight is not 'scheduled' */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

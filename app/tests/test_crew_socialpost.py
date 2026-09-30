@@ -408,3 +408,37 @@ def test_kickoff_failure_still_bails_immediately(mock_crew: MagicMock) -> None:
     result = execute_social_post_crew(MagicMock(), _make_task_with_output(""), target_keyword=_KW)
     assert result is None
     assert mock_crew.call_count == 1
+
+
+@patch("crewai.Crew")
+def test_extra_violations_ride_the_same_retry_loop(mock_crew: MagicMock) -> None:
+    """The one seam the product-spotlight track adds. Caller-supplied blocking
+    rules must feed THIS loop -- the only place a rejected draft is handed
+    back for a surgical correction. A second validation pass after the crew
+    could only discard a composition that has already been paid for.
+
+    The default (`None`) is asserted in the same test on purpose: a regular
+    post's behaviour has to stay byte-for-byte what it was.
+    """
+    task = _make_task_with_output(_plan_json(_good_plan()))
+    assert execute_social_post_crew(MagicMock(), task, target_keyword=_KW) is not None
+    assert mock_crew.call_count == 1
+    assert task.description == "base description"  # no correction block appended
+
+    mock_crew.reset_mock()
+    task = _make_task_with_output(_plan_json(_good_plan()))
+    seen: list[SocialPostPlan] = []
+
+    def reject_the_first_draft(plan: SocialPostPlan) -> list[str]:
+        seen.append(plan)
+        return [] if len(seen) > 1 else ["fb_caption must contain the affiliate disclosure."]
+
+    result = execute_social_post_crew(
+        MagicMock(), task, target_keyword=_KW, extra_violations=reject_the_first_draft
+    )
+    assert result is not None
+    assert mock_crew.call_count == 2
+    # The extra rule reached the correction prompt verbatim, exactly as a
+    # built-in rule's message does.
+    assert "fb_caption must contain the affiliate disclosure." in task.description
+    assert "YOUR PREVIOUS DRAFT WAS REJECTED" in task.description

@@ -151,6 +151,23 @@ jobs:
           tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
           tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
           tests/_socialpost_retry_fakes.py
+          lib/derivatives_db/ lib/crew/spotlight/
+          lib/social_slot_allocator.py lib/social_release.py
+          api/social_derivatives_schemas.py api/social_derivatives_create_api.py
+          api/social_derivatives_api.py api/social_derivatives_support.py
+          scripts/social_derivative_compose.py
+          recipe-publisher/workers/worker_social_derivative.py
+          tests/test_derivatives_db.py tests/test_derivatives_db_pg.py
+          tests/test_crew_products_social_links.py
+          tests/test_spotlight_product_terms.py tests/test_spotlight_post_products.py
+          tests/test_spotlight_prompts.py tests/test_spotlight_rules.py
+          tests/test_spotlight_compose.py
+          tests/test_social_slot_allocator.py tests/test_social_release.py
+          tests/test_worker_social_derivative.py
+          tests/test_social_derivatives_schemas.py
+          tests/test_social_derivatives_create_api.py tests/test_social_derivatives_api.py
+          tests/test_social_derivative_compose_script.py
+          tests/_spotlight_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
@@ -281,6 +298,23 @@ jobs:
           tests/test_social_posts_compose_api.py tests/test_social_posts_retry_api.py
           tests/test_socialpost_retry.py tests/test_socialpost_retry_safety.py
           tests/_socialpost_retry_fakes.py
+          lib/derivatives_db/ lib/crew/spotlight/
+          lib/social_slot_allocator.py lib/social_release.py
+          api/social_derivatives_schemas.py api/social_derivatives_create_api.py
+          api/social_derivatives_api.py api/social_derivatives_support.py
+          scripts/social_derivative_compose.py
+          recipe-publisher/workers/worker_social_derivative.py
+          tests/test_derivatives_db.py tests/test_derivatives_db_pg.py
+          tests/test_crew_products_social_links.py
+          tests/test_spotlight_product_terms.py tests/test_spotlight_post_products.py
+          tests/test_spotlight_prompts.py tests/test_spotlight_rules.py
+          tests/test_spotlight_compose.py
+          tests/test_social_slot_allocator.py tests/test_social_release.py
+          tests/test_worker_social_derivative.py
+          tests/test_social_derivatives_schemas.py
+          tests/test_social_derivatives_create_api.py tests/test_social_derivatives_api.py
+          tests/test_social_derivative_compose_script.py
+          tests/_spotlight_fakes.py
           lib/brand_secrets.py scripts/brand_secrets.py tests/test_brand_secrets.py
           api/ideas_generate_api.py tests/test_ideas_generate_api.py
           api/reels_compose_api.py tests/test_reels_compose_api.py
@@ -400,6 +434,11 @@ jobs:
           scripts/crewai_social_posts_pipeline.py api/social_posts_api.py
           scripts/social_post_retry_image.py
           api/social_posts_compose_api.py api/social_posts_retry_api.py
+          lib/derivatives_db/ lib/crew/spotlight/
+          lib/social_slot_allocator.py lib/social_release.py
+          scripts/social_derivative_compose.py
+          api/social_derivatives_schemas.py api/social_derivatives_create_api.py
+          api/social_derivatives_api.py api/social_derivatives_support.py
           lib/brand_secrets.py scripts/brand_secrets.py
           api/ideas_generate_api.py
           scripts/pg_backup.py
@@ -618,6 +657,21 @@ jobs:
             tests/test_social_posts_retry_api.py \
             tests/test_socialpost_retry.py \
             tests/test_socialpost_retry_safety.py \
+            tests/test_derivatives_db.py \
+            tests/test_derivatives_db_pg.py \
+            tests/test_crew_products_social_links.py \
+            tests/test_spotlight_product_terms.py \
+            tests/test_spotlight_post_products.py \
+            tests/test_spotlight_prompts.py \
+            tests/test_spotlight_rules.py \
+            tests/test_spotlight_compose.py \
+            tests/test_social_slot_allocator.py \
+            tests/test_social_release.py \
+            tests/test_worker_social_derivative.py \
+            tests/test_social_derivatives_schemas.py \
+            tests/test_social_derivatives_create_api.py \
+            tests/test_social_derivatives_api.py \
+            tests/test_social_derivative_compose_script.py \
             tests/test_brand_secrets.py \
             tests/test_ideas_generate_api.py \
             tests/test_managed_flow_ids_consistency.py \
@@ -689,6 +743,8 @@ jobs:
             --cov=lib/crew/structured_output.py \
             --cov=lib/comment_outbox.py --cov=lib/scan_dedup.py \
             --cov=lib/decisions --cov=api/decisions_api.py \
+            --cov=lib/derivatives_db --cov=lib/crew/spotlight \
+            --cov=lib/social_release.py --cov=lib/social_slot_allocator.py \
             --cov-report=term-missing --cov-fail-under=80
 
   security:
